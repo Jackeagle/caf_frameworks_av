@@ -561,6 +561,11 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 CODEC_LOGE("Malformed AVC codec specific data.");
                 return err;
             }
+            if(!strcmp(mComponentName, "OMX.google.h264.decoder")
+                && (profile != kAVCProfileBaseline)) {
+                // The profile is unsupported by the decoder
+                return ERROR_UNSUPPORTED;
+            }
 
             CODEC_LOGI(
                     "AVC profile = %u (%s), level = %u",
