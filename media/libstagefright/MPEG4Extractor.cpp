@@ -1257,8 +1257,9 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             char buffer[23];
             if (chunk_data_size != 7 &&
                 chunk_data_size != 23) {
-                ALOGE("Incorrect D263 box size %lld", chunk_data_size);
-                return ERROR_MALFORMED;
+                ALOGW("Incorrect D263 box size %lld, skipping this atom", chunk_data_size);
+                *offset += chunk_size;
+                break;
             }
 
             if (mDataSource->readAt(
