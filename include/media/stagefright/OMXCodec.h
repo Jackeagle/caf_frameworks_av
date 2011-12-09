@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+/*--------------------------------------------------------------------------
+Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+--------------------------------------------------------------------------*/
+
 #ifndef OMX_CODEC_H_
 
 #define OMX_CODEC_H_
@@ -230,6 +234,8 @@ private:
     List<int64_t> mDecodingTimeList;
 
     bool mThumbnailMode;
+    bool mSPSParsed;
+    bool mUseArbitraryMode;
 
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,

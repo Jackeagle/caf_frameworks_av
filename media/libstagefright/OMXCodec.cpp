@@ -412,7 +412,27 @@ status_t OMXCodec::parseAVCCodecSpecificData(
     // CHECK((ptr[5] >> 5) == 7);  // reserved
 
     size_t numSeqParameterSets = ptr[5] & 31;
-
+    uint16_t spsSize = (((uint16_t)ptr[6]) << 8)
+      + (uint16_t)(ptr[7]);
+    CODEC_LOGV("numSeqParameterSets = %d , spsSize = %d",
+               numSeqParameterSets,spsSize);
+    SpsInfo info;
+    if (parseSps(spsSize, ptr + 9, &info) == OK) {
+        mSPSParsed = true;
+        CODEC_LOGV("SPS parsed");
+        if (info.mInterlaced) {
+            //mInterlaceFormatDetected = true; //Enable when Interlace is supported
+            mUseArbitraryMode = true;
+            CODEC_LOGI("Interlace format detected");
+        } else {
+            CODEC_LOGI("Non-Interlaced format detected");
+        }
+    }
+    else {
+      CODEC_LOGI("ParseSPS could not find if content is interlaced");
+      mSPSParsed = false;
+      //mInterlaceFormatDetected = false; //Enable when Interlace is supported
+    }
     ptr += 6;
     size -= 6;
 
@@ -475,6 +495,16 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         uint32_t type;
         const void *data;
         size_t size;
+        const char *mime_type;
+
+        if (!strncasecmp(mMIME, "video/", 6)) {
+            int32_t arbitraryMode = 1;
+            bool success = meta->findInt32(kKeyUseArbitraryMode, &arbitraryMode);
+            if (success) {
+                mUseArbitraryMode = arbitraryMode ? true : false;
+            }
+        }
+
         if (meta->findData(kKeyESDS, &type, &data, &size)) {
             ESDS esds((const char *)data, size);
             CHECK_EQ(esds.InitCheck(), (status_t)OK);
@@ -493,7 +523,7 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             status_t err;
             if ((err = parseAVCCodecSpecificData(
                             data, size, &profile, &level)) != OK) {
-                ALOGE("Malformed AVC codec specific data.");
+                CODEC_LOGE("Malformed AVC codec specific data.");
                 return err;
             }
 
@@ -586,6 +616,21 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
 
             if (err != OK) {
                 return err;
+            }
+            if (mUseArbitraryMode) {
+                CODEC_LOGI("Decoder should be in arbitrary mode");
+                // Is it required to set OMX_QCOM_FramePacking_Arbitrary ??
+            }
+            else{
+                CODEC_LOGI("Enable frame by frame mode");
+                OMX_QCOM_PARAM_PORTDEFINITIONTYPE portFmt;
+                portFmt.nPortIndex = kPortIndexInput;
+                portFmt.nFramePackingFormat = OMX_QCOM_FramePacking_OnlyOneCompleteFrame;
+                err = mOMX->setParameter(
+                        mNode, (OMX_INDEXTYPE)OMX_QcomIndexPortDefn, (void *)&portFmt, sizeof(portFmt));
+                if(err != OK) {
+                    ALOGW("Failed to set frame packing format on component");
+                }
             }
         }
     }
@@ -1353,7 +1398,9 @@ OMXCodec::OMXCodec(
               (!strncmp(componentName, "OMX.google.", 11)
               || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
                         ? NULL : nativeWindow),
-      mThumbnailMode(false) {
+      mThumbnailMode(false),
+      mSPSParsed(false),
+      mUseArbitraryMode(true) {
 
     parseFlags();
     mPortStatus[kPortIndexInput] = ENABLED;
