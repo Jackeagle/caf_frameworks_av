@@ -132,7 +132,7 @@ protected:
     virtual ~OMXCodec();
 
 private:
-
+    static bool mSecureStart;
     // Make sure mLock is accessible to OMXCodecObserver
     friend class OMXCodecObserver;
 

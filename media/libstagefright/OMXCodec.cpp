@@ -53,8 +53,14 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include <OMX_QCOMExtns.h>
 #include "include/avc_utils.h"
 
+#include <ActivityManager.h>
+#include <binder/IBinder.h>
+#include <binder/IMemory.h>
+#include <binder/Parcel.h>
+
 namespace android {
 
+const uint32_t START_BROADCAST_TRANSACTION = IBinder::FIRST_CALL_TRANSACTION + 13;
 // Treat time out as an error if we have not received any output
 // buffers after 3 seconds.
 const static int64_t kBufferFilledEventTimeOutNs = 3000000000LL;
@@ -131,6 +137,55 @@ private:
     OMXCodecObserver(const OMXCodecObserver &);
     OMXCodecObserver &operator=(const OMXCodecObserver &);
 };
+
+bool sendBroadCastEvent(String16 intentName) {
+    // Fall through to try to connect through the activity manager
+    sp<IServiceManager> sm = defaultServiceManager();
+    sp<IBinder> am = sm->getService(String16("activity"));
+    if (am == NULL) {
+        ALOGE("startServiceThroughActivityManager() couldn't find activity service!\n");
+        return false;
+    }
+
+    Parcel data, reply;
+    data.writeInterfaceToken(String16("android.app.IActivityManager"));
+
+    data.writeStrongBinder(NULL); // The application thread
+    ALOGV("Sending NULL Binder ");
+
+    // Intent Start
+    data.writeString16(intentName); // mAction (null)
+    data.writeInt32(0); // mData (null)
+    data.writeInt32(-1); // mType (null)
+    data.writeInt32(0); // mFlags (0)
+
+    // The ComponentName
+    data.writeInt32(-1);
+    data.writeInt32(-1);
+
+    data.writeInt32(0); // mSourceBounds (null)
+    data.writeInt32(0); // mCatogories (null)
+    data.writeInt32(0); // mSelector (null)
+    data.writeInt32(0); // mClipData (null)
+    data.writeInt32(-1); // mExtras (null)
+    //Intent Finish
+
+    //ResolveType
+    data.writeInt32(-1); // "resolvedType" String16 (null)
+
+
+    data.writeStrongBinder(NULL); // mResultTo
+    data.writeInt32(-1); // mResultCode
+    data.writeInt32(-1); // mResultData
+    data.writeInt32(-1); // mResultExtras
+    data.writeInt32(-1); // required permission
+    data.writeInt32(0); // serialize
+    data.writeInt32(0); // sticky
+    data.writeInt32(0); // userId
+
+    status_t ret = am->transact(START_BROADCAST_TRANSACTION, data, &reply, 0);
+    return true;
+}
 
 template<class T>
 static void InitOMXParams(T *params) {
@@ -299,6 +354,7 @@ bool OMXCodec::findCodecQuirks(const char *componentName, uint32_t *quirks) {
     return true;
 }
 
+bool OMXCodec::mSecureStart = false ;
 // static
 sp<MediaSource> OMXCodec::Create(
         const sp<IOMX> &omx,
@@ -393,9 +449,25 @@ sp<MediaSource> OMXCodec::Create(
             }
         }
 
+        if (!strncasecmp(componentName,"OMX.qcom",8) &&
+        (flags & kUseSecureInputBuffers) && (!createEncoder) &&
+        (!strncasecmp(mime, "video/", 6)) && mSecureStart == false) {
+              //send secure start event
+              mSecureStart = true;
+              sendBroadCastEvent(String16("android.intent.action.SECURE_START"));
+        }
+
         status_t err = omx->allocateNode(componentName, observer, &node);
+
         if (err == OK) {
             ALOGV("Successfully allocated OMX node '%s'", componentName);
+            if (!strncasecmp(componentName,"OMX.qcom",8) &&
+               (flags & kUseSecureInputBuffers) &&(!createEncoder) &&
+               (!strncasecmp(mime, "video/", 6)) ) {
+                        //send secure start done event
+                        sendBroadCastEvent(String16
+                        ("android.intent.action.SECURE_START_DONE"));
+               }
 
             sp<OMXCodec> codec = new OMXCodec(
                     omx, node, quirks, flags,
@@ -1714,7 +1786,21 @@ OMXCodec::~OMXCodec() {
 
     CHECK(mState == LOADED || mState == ERROR || mState == LOADED_TO_IDLE);
 
+    if (!strncasecmp(mComponentName,"OMX.qcom",8) &&
+       (mFlags & kUseSecureInputBuffers) &&
+       (!mIsEncoder) && (!strncasecmp(mMIME, "video/", 6)) ) {
+        //send secure end event
+        sendBroadCastEvent(String16("android.intent.action.SECURE_END"));
+    }
     status_t err = mOMX->freeNode(mNode);
+    if (!strncasecmp(mComponentName,"OMX.qcom",8) &&
+       (mFlags & kUseSecureInputBuffers) &&
+       (!mIsEncoder) && (!strncasecmp(mMIME, "video/", 6)) ) {
+        //send secure end done event
+        sendBroadCastEvent(String16("android.intent.action.SECURE_END_DONE"));
+        mSecureStart = false;
+    }
+
     CHECK_EQ(err, (status_t)OK);
 
     mNode = NULL;
