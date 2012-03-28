@@ -75,8 +75,11 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
         $(TOP)/hardware/qcom/display/libgralloc \
-        $(TOP)/hardware/qcom/media/mm-core/inc \
-        $(TOP)/system/core/include
+	$(TOP)/hardware/qcom/media/mm-core/inc \
+	$(TOP)/system/core/include \
+	$(TOP)/frameworks/av/media/libmediaplayerservice \
+	$(TOP)/frameworks/native/include/binder
+
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
