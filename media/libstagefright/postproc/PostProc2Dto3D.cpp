@@ -1,0 +1,269 @@
+/*
+ * Copyright (c) 2012, The Linux Foundation. All rights reserved.
+ * Not a Contribution, Apache license notifications and license are retained
+ * for attribution purposes only.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+//#define LOG_NDEBUG 0
+#define LOG_TAG "PostProc2Dto3D"
+#include <PostProc2Dto3D.h>
+#include <qdMetaData.h>
+
+#define BYTES_PER_PIXEL 3
+#define NUMBER_3D_BUFFERS 6
+
+namespace android {
+
+PostProc2Dto3D::PostProc2Dto3D()
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+}
+
+PostProc2Dto3D::~PostProc2Dto3D()
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    status_t err = mLib3dDeAllocResources(mLib3dContext);
+    CHECK_EQ(err, from2dTo3d_ERROR_NONE);
+
+    err = mLib3dDeinit(&mLib3dContext);
+    CHECK_EQ(err, from2dTo3d_ERROR_NONE);
+}
+
+status_t PostProc2Dto3D::init(sp<MediaSource> decoder, sp<PostProcNativeWindow> nativeWindow, const sp<MetaData> &meta, char *name)
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    status_t err = PostProc::init(decoder, nativeWindow, meta, LOG_TAG);
+    if (err != OK) {
+        POSTPROC_LOGE("PostProc2Dto3D Init failed in base class");
+        return err;
+    }
+    return init2DTo3DLibrary();
+}
+
+status_t PostProc2Dto3D::postProcessBuffer(MediaBuffer* inputBuffer, MediaBuffer* outputBuffer)
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    CHECK(inputBuffer);
+    CHECK(outputBuffer);
+    return convert2DTo3D(inputBuffer, outputBuffer);
+}
+
+status_t PostProc2Dto3D::setBufferInfo(const sp<MetaData> &meta)
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    mOutputFormat = new MetaData(*(meta.get()));
+    int32_t width;
+    int32_t height;
+
+    CHECK(mOutputFormat->findInt32(kKeyWidth, &width));
+    CHECK(mOutputFormat->findInt32(kKeyHeight, &height));
+
+    mWidth = width;
+    mHeight = height;
+
+    mDstFormat = HAL_PIXEL_FORMAT_YCbCr_444_SP;
+    mNumBuffers = NUMBER_3D_BUFFERS;
+
+    mStride = ALIGN(width, ALIGN16);
+    mSlice = height;
+    mBufferSize = ALIGN(mStride * mSlice * BYTES_PER_PIXEL, ALIGN8K);
+    return OK;
+}
+
+bool PostProc2Dto3D::postProcessingPossible()
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    int32_t threeDFormat, interlacedFormat;
+    if ((mSource->getFormat()->findInt32(kKey3D, &threeDFormat)) ||
+            (mSource->getFormat()->findInt32(kKeyInterlaced, &interlacedFormat))) {
+        POSTPROC_LOGV("Detected 3D or interlaced format\n");
+        return false;
+    }
+    return true;
+}
+
+status_t PostProc2Dto3D::init2DTo3DLibrary()
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    mLib3dHandle = dlopen("libswdec_2dto3d.so", RTLD_LAZY);
+    mLib3dInit = NULL;
+    mLib3dDeinit = NULL;
+    mLib3dSetProperty = NULL;
+    mLib3dGetProperty = NULL;
+    mLib3dAllocResources = NULL;
+    mLib3dConvertFrom2dto3d = NULL;
+
+    if (mLib3dHandle) {
+        mLib3dInit = (init_deinit_Func_t *)dlsym(mLib3dHandle,"from2dTo3d_init");
+        mLib3dDeinit = (init_deinit_Func_t *)dlsym(mLib3dHandle,"from2dTo3d_deInit");
+        mLib3dSetProperty = (set_get_property_Func_t *)dlsym(mLib3dHandle,"from2dTo3d_setProperty");
+        mLib3dGetProperty = (set_get_property_Func_t *)dlsym(mLib3dHandle,"from2dTo3d_getProperty");
+        mLib3dAllocResources = (alloc_dealloc_resources_Func_t *)dlsym(mLib3dHandle,"from2dTo3d_allocResources");
+        mLib3dDeAllocResources = (alloc_dealloc_resources_Func_t *)dlsym(mLib3dHandle,"from2dTo3d_deAllocResources");
+        mLib3dConvertFrom2dto3d = (from2dTo3d_convert_Func_t *)dlsym(mLib3dHandle,"from2dTo3d_convert");
+        if (mLib3dInit == NULL || mLib3dDeinit == NULL || mLib3dSetProperty == NULL || mLib3dGetProperty == NULL ||
+            mLib3dAllocResources == NULL || mLib3dDeAllocResources == NULL || mLib3dConvertFrom2dto3d == NULL) {
+            POSTPROC_LOGE("Could not get the 2dTo3d lib function pointers\n");
+            CHECK(0);
+        }
+    }
+    else {
+        POSTPROC_LOGE("Could not get 2dTo3d conversion lib handle\n");
+        CHECK(0);
+    }
+
+    mLib3dContext = NULL;
+    {
+        from2dTo3d_ErrorType err = mLib3dInit(&mLib3dContext);
+        CHECK_EQ(err, from2dTo3d_ERROR_NONE);
+    }
+    return configure2DTo3DLibrary();
+}
+
+status_t PostProc2Dto3D::configure2DTo3DLibrary()
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    from2dTo3d_ErrorType err;
+    from2dTo3d_property prop;
+    from2dTo3d_dimension dim;
+
+    dim.width = mWidth;
+    dim.height = mHeight;
+    dim.srcLumaStride = ALIGN(mStride, ALIGN32); //Input format is SemiPlanar
+    dim.srcCbCrStride = ALIGN(mStride, ALIGN32);
+    dim.dstLumaStride = mStride * 3; // YUV444I is one plane
+    dim.dstCbCrStride = NULL;
+
+    POSTPROC_LOGV("width = %d, height = %d, \
+            srcLumaStride = %d, srcCbCrStride = %d, \
+            dstLumaStride = %d, dstCrStride = %d",
+            dim.width, dim.height,
+            dim.srcLumaStride, dim.srcCbCrStride,
+            dim.dstLumaStride, dim.dstCbCrStride);
+
+    prop.propId = from2dTo3d_PROP_DIMENSION;
+    prop.propPayload.dim = dim;
+
+    err = mLib3dSetProperty(mLib3dContext, prop);
+    CHECK_EQ(err, from2dTo3d_ERROR_NONE);
+
+    from2dTo3d_viewType framepacking;
+    framepacking = isConversionTopBottom() ? from2dTo3d_TOP_DOWN : from2dTo3d_SIDE_BY_SIDE;
+    prop.propId = from2dTo3d_PROP_VIEW_TYPE;
+    prop.propPayload.view = framepacking;
+
+    err = mLib3dSetProperty(mLib3dContext, prop);
+    CHECK_EQ(err, from2dTo3d_ERROR_NONE);
+
+    from2dTo3d_DepthLutArgs args;
+    args.disparityN = 18;
+    args.disparityP = 15;
+    args.depthZero = 100;
+    args.deltaD = 0;
+    prop.propId = from2dTo3d_PROP_DEPTH_LUT_ARGS;
+    prop.propPayload.depthLutArgs = args;
+
+    err = mLib3dSetProperty(mLib3dContext, prop);
+    CHECK_EQ(err, from2dTo3d_ERROR_NONE);
+
+    err = mLib3dAllocResources(mLib3dContext);
+    CHECK_EQ(err, from2dTo3d_ERROR_NONE);
+    return OK;
+}
+
+status_t PostProc2Dto3D::convert2DTo3D(MediaBuffer* inputBuffer, MediaBuffer* outputBuffer)
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    DurationTimer dt;
+    dt.start();
+
+    void * srcLuma = NULL;
+    void * dstLuma = NULL;
+
+    if (inputBuffer->graphicBuffer() != 0) {
+        private_handle_t *inputHandle =
+        (private_handle_t *) inputBuffer->graphicBuffer()->getNativeBuffer()->handle;
+        inputBuffer->graphicBuffer()->lock(GRALLOC_USAGE_SW_READ_OFTEN |
+            GRALLOC_USAGE_SW_WRITE_OFTEN, &srcLuma);
+    } else {
+        post_proc_media_buffer_type * packet = (post_proc_media_buffer_type *)inputBuffer->data();
+        native_handle_t * nh = const_cast<native_handle_t *>(packet->meta_handle);
+        srcLuma = (void *)nh->data[4];
+    }
+
+    POSTPROC_LOGV("srcLuma = %p", srcLuma);
+
+    if (outputBuffer->graphicBuffer() != 0) {
+        private_handle_t *outputHandle =
+        (private_handle_t *) outputBuffer->graphicBuffer()->getNativeBuffer()->handle;
+        outputBuffer->graphicBuffer()->lock(GRALLOC_USAGE_SW_READ_OFTEN |
+            GRALLOC_USAGE_SW_WRITE_OFTEN, &dstLuma);
+    } else {
+        post_proc_media_buffer_type * packet = (post_proc_media_buffer_type *)outputBuffer->data();
+        native_handle_t * nh = const_cast<native_handle_t *>(packet->meta_handle);
+        dstLuma = (void *)nh->data[4];
+    }
+
+    POSTPROC_LOGV("dstLuma = %p", dstLuma);
+
+    from2dTo3d_ErrorType lib3dErr =
+        mLib3dConvertFrom2dto3d(mLib3dContext,
+                (unsigned char *)srcLuma,
+                (unsigned char *)srcLuma + (ALIGN(mStride, ALIGN32) * mSlice),
+                NULL,
+                (unsigned char *)dstLuma,
+                (unsigned char *)dstLuma + (mStride * mSlice),
+                NULL);
+    CHECK_EQ(lib3dErr, from2dTo3d_ERROR_NONE); // return err
+
+    size_t format3D = isConversionTopBottom() ? (HAL_3D_OUT_TOP_BOTTOM | HAL_3D_IN_TOP_BOTTOM)
+                      : (HAL_3D_OUT_SIDE_BY_SIDE | HAL_3D_IN_SIDE_BY_SIDE_L_R);
+
+    setMetaData((private_handle_t*)outputBuffer->graphicBuffer()->getNativeBuffer()->handle, PP_PARAM_S3D_VIDEO, (void*)&format3D);
+
+    if (inputBuffer->graphicBuffer() != 0) {
+        inputBuffer->graphicBuffer()->unlock();
+    }
+
+    if (outputBuffer->graphicBuffer() != 0) {
+        outputBuffer->graphicBuffer()->unlock();
+    }
+
+    dt.stop();
+    POSTPROC_LOGV("convert to 3d elapsed = %f ms", ((float)dt.durationUsecs()/(float)1000));
+    return OK;
+}
+
+bool PostProc2Dto3D::isConversionTopBottom()
+{
+    POSTPROC_LOGV("%s:  begin", __func__);
+
+    char value[PROPERTY_VALUE_MAX];
+    if (property_get("VideoPostProc.2Dto3D.TopDown", value, 0) > 0 && atoi(value) > 0){
+        POSTPROC_LOGV("In top Down Mode\n");
+        return true;
+    }
+    return false; // side by side
+}
+
+}

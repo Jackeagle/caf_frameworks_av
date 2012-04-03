@@ -80,6 +80,9 @@ static int64_t kVideoLateMarginUs = 100000LL;  //100 ms
 static int64_t kVideoTooLateMarginUs = 500000LL;
 int AwesomePlayer::mTunnelAliveAP = 0;
 
+static const char * kQcomComponent = "OMX.qcom.";
+static const char * kPostProcOn = "VideoPostProc.Enable";
+
 struct AwesomeEvent : public TimedEventQueue::Event {
     AwesomeEvent(
             AwesomePlayer *player,
@@ -210,7 +213,10 @@ AwesomePlayer::AwesomePlayer()
       mDecryptHandle(NULL),
       mLastVideoTimeUs(-1),
       mTextDriver(NULL),
-      mBufferingDone(false) {
+      mBufferingDone(false),
+      mPostProcNativeWindow(NULL),
+      mPostProcController(NULL),
+      mIsLocalPlayback(true) {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -324,6 +330,11 @@ status_t AwesomePlayer::setDataSource_l(
     reset_l();
 
     mUri = uri;
+
+    if ((strncmp(uri, "http", 4) == 0) || (strncmp(uri, "widevine", 8) == 0)) {
+        ALOGV("PostProc Disabled");
+        mIsLocalPlayback = false;
+    }
 
     if (headers) {
         mUriHeaders = *headers;
@@ -1128,6 +1139,13 @@ status_t AwesomePlayer::play_l() {
 
     if (mVideoSource != NULL) {
         // Kick off video playback
+        if (isPostProcEnabled()) { // to resume from pause
+            status_t err = mVideoSource->start();
+            if (err != OK) {
+                ALOGE("VideoSource failed to start\n");
+                return err;
+            }
+        }
         postVideoEvent_l();
 
         if (mAudioSource != NULL && mVideoSource != NULL) {
@@ -1359,6 +1377,9 @@ status_t AwesomePlayer::pause_l(bool at_eos) {
         params |= IMediaPlayerService::kBatteryDataTrackAudio;
     }
     if (mVideoSource != NULL) {
+        if (isPostProcEnabled()) { // to pause the post proc modules
+            mVideoSource->pause();
+        }
         params |= IMediaPlayerService::kBatteryDataTrackVideo;
     }
 
@@ -1392,6 +1413,10 @@ void AwesomePlayer::shutdownVideoDecoder_l() {
 
     mVideoSource->stop();
 
+    if (mPostProcController) {
+        delete mPostProcController; // needs to be after stop in case we get a reply on a message back.
+    }
+
     // The following hack is necessary to ensure that the OMX
     // component is completely released by the time we may try
     // to instantiate it again.
@@ -1405,7 +1430,13 @@ void AwesomePlayer::shutdownVideoDecoder_l() {
 }
 
 status_t AwesomePlayer::setNativeWindow_l(const sp<ANativeWindow> &native) {
-    mNativeWindow = native;
+
+    if (isPostProcEnabled()) {
+        mPostProcNativeWindow = new PostProcNativeWindow(native);
+        mNativeWindow = mPostProcNativeWindow;
+    } else {
+        mNativeWindow = native;
+    }
 
     if (mVideoSource == NULL) {
         return OK;
@@ -1547,6 +1578,9 @@ status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
 
         if ((mFlags & PREPARED) && mVideoSource != NULL) {
             modifyFlags(SEEK_PREVIEW, SET);
+            if (isPostProcEnabled()) {
+                mVideoSource->start();
+            }
             postVideoEvent_l();
         }
     }
@@ -1792,11 +1826,22 @@ status_t AwesomePlayer::initVideoDecoder(uint32_t flags) {
     }
 #endif
     ALOGV("initVideoDecoder flags=0x%x", flags);
-    mVideoSource = OMXCodec::Create(
+    sp<MediaSource> decoder = OMXCodec::Create(
             mClient.interface(), mVideoTrack->getFormat(),
             false, // createEncoder
             mVideoTrack,
             NULL, flags, USE_SURFACE_ALLOC ? mNativeWindow : NULL);
+
+    mVideoSource = decoder;
+    if (isPostProcEnabled()) {
+        const char * decoderComponentName = NULL;
+        if (decoder != NULL) {
+            CHECK(decoder->getFormat()->findCString(kKeyDecoderComponent, &decoderComponentName));
+            if (strncmp(decoderComponentName , kQcomComponent, strlen(kQcomComponent)) == 0) {
+                mVideoSource = PostProcFactoryCreate(decoder, mPostProcNativeWindow, decoder->getFormat(), &mPostProcController, PostProcType2DTo3D);
+            }
+        }
+    }
 
     if (mVideoSource != NULL) {
         int64_t durationUs;
@@ -1961,6 +2006,9 @@ void AwesomePlayer::onVideoEvent() {
                         : MediaSource::ReadOptions::SEEK_CLOSEST_SYNC);
         }
         for (;;) {
+            if (isPostProcEnabled() && mPostProcController) {
+                mPostProcController->checkToggleIssued();
+            }
             status_t err = mVideoSource->read(&mVideoBuffer, &options);
             options.clearSeekTo();
 
@@ -2230,6 +2278,9 @@ void AwesomePlayer::onVideoEvent() {
 
     if (wasSeeking != NO_SEEK && (mFlags & SEEK_PREVIEW)) {
         modifyFlags(SEEK_PREVIEW, CLEAR);
+        if (isPostProcEnabled()) {
+            mVideoSource->pause();
+        }
         return;
     }
 
@@ -3175,4 +3226,16 @@ void AwesomePlayer::notifyVideoAttributes_l() {
                      KEY_PARAMETER_3D_ATTRIBUTE, format3D);
 }
 
-}  // namespace android
+bool AwesomePlayer::isPostProcEnabled()
+{
+    char value[PROPERTY_VALUE_MAX];
+    bool postProcOn = false;
+    if (mIsLocalPlayback) {
+        if (property_get(kPostProcOn, value, 0) > 0 && atoi(value) > 0) {
+            postProcOn = true;
+        }
+    }
+    return postProcOn;
+}
+
+}// namespace android
