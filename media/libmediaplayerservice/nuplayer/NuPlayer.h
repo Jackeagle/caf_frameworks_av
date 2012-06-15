@@ -79,6 +79,8 @@ private:
     struct RTSPSource;
     struct Source;
     struct StreamingSource;
+    struct RTSPSource;
+    struct MPQHALWrapper;
 
     enum {
         kWhatSetDataSource              = '=DaS',

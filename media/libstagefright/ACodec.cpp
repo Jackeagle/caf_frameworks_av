@@ -33,6 +33,8 @@
 #include <media/stagefright/OMXCodec.h>
 
 #include <OMX_Component.h>
+#include <OMX_QCOMExtns.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -2783,7 +2785,7 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
             mCodec->signalError(OMX_ErrorUndefined, err);
             info->mStatus = BufferInfo::OWNED_BY_US;
         }
-    } else {
+    }else {
         info->mStatus = BufferInfo::OWNED_BY_US;
     }
 
@@ -3006,6 +3008,22 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         notify->post();
     }
 
+    int32_t value = 0;
+
+    if (msg->findInt32("decodeOrderEnable", &value) && (value == 1) &&
+       !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str())) {
+
+       QOMX_VIDEO_DECODER_PICTURE_ORDER prm;
+       InitOMXParams(&prm);
+
+       prm.eOutputPictureOrder = QOMX_VIDEO_DECODE_ORDER;
+
+       status_t err =  mCodec->mOMX->setParameter(mCodec->mNode, (OMX_INDEXTYPE)OMX_QcomIndexParamVideoDecoderPictureOrder,
+                              (OMX_PTR)&prm, sizeof(prm));
+       if (err != OK) {
+          ALOGE("ERROR:: unable to set decoder in Decode Order..");
+       }
+    }
     mCodec->changeState(mCodec->mLoadedState);
 
     return true;

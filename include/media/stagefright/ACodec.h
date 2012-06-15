@@ -24,6 +24,7 @@
 #include <media/stagefright/foundation/AHierarchicalStateMachine.h>
 #include <media/stagefright/SkipCutBuffer.h>
 #include <OMX_Audio.h>
+#include <OMX_Component.h>
 
 namespace android {
 
@@ -251,6 +252,10 @@ private:
     void signalError(
             OMX_ERRORTYPE error = OMX_ErrorUndefined,
             status_t internalError = UNKNOWN_ERROR);
+    //Smooth streaming related
+    status_t InitSmoothStreaming();
+    OMX_PARAM_PORTDEFINITIONTYPE mOutputPortDef;
+    bool mSmoothStreaming;
 
     sp<FlushingOutputState> mFlushingOutputState;
     DISALLOW_EVIL_CONSTRUCTORS(ACodec);
