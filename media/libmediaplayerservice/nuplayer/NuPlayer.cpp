@@ -70,7 +70,8 @@ NuPlayer::NuPlayer()
       mVideoLateByUs(0ll),
       mNumFramesTotal(0ll),
       mNumFramesDropped(0ll),
-      mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW) {
+      mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
+      mPauseIndication(false) {
 }
 
 NuPlayer::~NuPlayer() {
@@ -285,59 +286,61 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatScanSources:
         {
-            int32_t generation;
-            CHECK(msg->findInt32("generation", &generation));
-            if (generation != mScanSourcesGeneration) {
-                // Drop obsolete msg.
-                break;
-            }
-
-            mScanSourcesPending = false;
-
-            ALOGV("scanning sources haveAudio=%d, haveVideo=%d",
-                 mAudioDecoder != NULL, mVideoDecoder != NULL);
-
-            bool mHadAnySourcesBefore =
-                (mAudioDecoder != NULL) || (mVideoDecoder != NULL);
-
-            if (mNativeWindow != NULL) {
-                instantiateDecoder(false, &mVideoDecoder);
-            }
-
-            if (mAudioSink != NULL) {
-                instantiateDecoder(true, &mAudioDecoder);
-            }
-
-            if (!mHadAnySourcesBefore
-                    && (mAudioDecoder != NULL || mVideoDecoder != NULL)) {
-                // This is the first time we've found anything playable.
-
-                uint32_t flags = mSource->flags();
-
-                if (flags & Source::FLAG_DYNAMIC_DURATION) {
-                    schedulePollDuration();
+            if (!mPauseIndication) {
+                int32_t generation;
+                CHECK(msg->findInt32("generation", &generation));
+                if (generation != mScanSourcesGeneration) {
+                    // Drop obsolete msg.
+                    break;
                 }
-            }
 
-            status_t err;
-            if ((err = mSource->feedMoreTSData()) != OK) {
-                if (mAudioDecoder == NULL && mVideoDecoder == NULL) {
-                    // We're not currently decoding anything (no audio or
-                    // video tracks found) and we just ran out of input data.
+                mScanSourcesPending = false;
 
-                    if (err == ERROR_END_OF_STREAM) {
-                        notifyListener(MEDIA_PLAYBACK_COMPLETE, 0, 0);
-                    } else {
-                        notifyListener(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, err);
+                ALOGV("scanning sources haveAudio=%d, haveVideo=%d",
+                     mAudioDecoder != NULL, mVideoDecoder != NULL);
+
+                bool mHadAnySourcesBefore =
+                    (mAudioDecoder != NULL) || (mVideoDecoder != NULL);
+
+                if (mNativeWindow != NULL) {
+                    instantiateDecoder(false, &mVideoDecoder);
+                }
+
+                if (mAudioSink != NULL) {
+                    instantiateDecoder(true, &mAudioDecoder);
+                }
+
+                if (!mHadAnySourcesBefore
+                        && (mAudioDecoder != NULL || mVideoDecoder != NULL)) {
+                    // This is the first time we've found anything playable.
+
+                    uint32_t flags = mSource->flags();
+
+                    if (flags & Source::FLAG_DYNAMIC_DURATION) {
+                        schedulePollDuration();
                     }
                 }
-                break;
-            }
 
-            if ((mAudioDecoder == NULL && mAudioSink != NULL)
-                    || (mVideoDecoder == NULL && mNativeWindow != NULL)) {
-                msg->post(100000ll);
-                mScanSourcesPending = true;
+                status_t err;
+                if ((err = mSource->feedMoreTSData()) != OK) {
+                    if (mAudioDecoder == NULL && mVideoDecoder == NULL) {
+                        // We're not currently decoding anything (no audio or
+                        // video tracks found) and we just ran out of input data.
+
+                        if (err == ERROR_END_OF_STREAM) {
+                            notifyListener(MEDIA_PLAYBACK_COMPLETE, 0, 0);
+                        } else {
+                            notifyListener(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, err);
+                        }
+                    }
+                    break;
+                }
+
+                if ((mAudioDecoder == NULL && mAudioSink != NULL)
+                        || (mVideoDecoder == NULL && mNativeWindow != NULL)) {
+                    msg->post(100000ll);
+                    mScanSourcesPending = true;
+                }
             }
             break;
         }
@@ -367,9 +370,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 CHECK(codecRequest->findInt32("err", &err));
 
                 if (err == ERROR_END_OF_STREAM) {
-                    ALOGV("got %s decoder EOS", audio ? "audio" : "video");
+                    ALOGW("got %s decoder EOS", audio ? "audio" : "video");
                 } else {
-                    ALOGV("got %s decoder EOS w/ error %d",
+                    ALOGE("got %s decoder EOS w/ error %d",
                          audio ? "audio" : "video",
                          err);
                 }
@@ -412,7 +415,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     int32_t sampleRate;
                     CHECK(codecRequest->findInt32("sample-rate", &sampleRate));
 
-                    ALOGV("Audio output format changed to %d Hz, %d channels",
+                    ALOGW("Audio output format changed to %d Hz, %d channels",
                          sampleRate, numChannels);
 
                     mAudioSink->close();
@@ -461,7 +464,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                                 "crop",
                                 &cropLeft, &cropTop, &cropRight, &cropBottom));
 
-                    ALOGV("Video output format changed to %d x %d "
+                    ALOGW("Video output format changed to %d x %d "
                          "(crop: %d x %d @ (%d, %d))",
                          width, height,
                          (cropRight - cropLeft + 1),
@@ -521,7 +524,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 }
 
                 if (finalResult == ERROR_END_OF_STREAM) {
-                    ALOGV("reached %s EOS", audio ? "audio" : "video");
+                    ALOGW("reached %s EOS", audio ? "audio" : "video");
                 } else {
                     ALOGE("%s track encountered an error (%d)",
                          audio ? "audio" : "video", finalResult);
@@ -620,7 +623,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             int64_t seekTimeUs;
             CHECK(msg->findInt64("seekTimeUs", &seekTimeUs));
 
-            ALOGV("kWhatSeek seekTimeUs=%lld us (%.2f secs)",
+            ALOGW("kWhatSeek seekTimeUs=%lld us (%.2f secs)",
                  seekTimeUs, seekTimeUs / 1E6);
 
             mSource->seekTo(seekTimeUs);
@@ -639,6 +642,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         {
             CHECK(mRenderer != NULL);
             mRenderer->pause();
+            mPauseIndication = true;
             break;
         }
 
@@ -646,6 +650,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         {
             CHECK(mRenderer != NULL);
             mRenderer->resume();
+            mPauseIndication = false;
+            if (mAudioDecoder == NULL || mVideoDecoder == NULL) {
+                mScanSourcesPending = false;
+                postScanSources();
+            }
             break;
         }
 
@@ -799,7 +808,7 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
 
                 bool timeChange = (type & ATSParser::DISCONTINUITY_TIME) != 0;
 
-                ALOGI("%s discontinuity (formatChange=%d, time=%d)",
+                ALOGW("%s discontinuity (formatChange=%d, time=%d)",
                      audio ? "audio" : "video", formatChange, timeChange);
 
                 if (audio) {
@@ -815,7 +824,7 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
                         int64_t resumeAtMediaTimeUs;
                         if (extra->findInt64(
                                     "resume-at-mediatimeUs", &resumeAtMediaTimeUs)) {
-                            ALOGI("suppressing rendering of %s until %lld us",
+                            ALOGW("suppressing rendering of %s until %lld us",
                                     audio ? "audio" : "video", resumeAtMediaTimeUs);
 
                             if (audio) {
