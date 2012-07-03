@@ -128,6 +128,8 @@ private:
     int64_t mVideoLateByUs;
     int64_t mNumFramesTotal, mNumFramesDropped;
 
+    bool mPauseIndication;
+
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 
     status_t feedDecoderInputData(bool audio, const sp<AMessage> &msg);
