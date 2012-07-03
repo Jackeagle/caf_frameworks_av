@@ -71,6 +71,9 @@ void NuPlayer::Renderer::queueBuffer(
 void NuPlayer::Renderer::queueEOS(bool audio, status_t finalResult) {
     CHECK_NE(finalResult, (status_t)OK);
 
+    if(mSyncQueues)
+      syncQueuesDone();
+
     sp<AMessage> msg = new AMessage(kWhatQueueEOS, id());
     msg->setInt32("audio", static_cast<int32_t>(audio));
     msg->setInt32("finalResult", finalResult);
@@ -661,6 +664,9 @@ void NuPlayer::Renderer::onPause() {
     if (mHasAudio) {
         mAudioSink->pause();
     }
+    //for only video stream without audio, reset mAnchorTimeMediaUs on stream's pause scenario
+    if (mHasVideo && !mHasAudio)
+        mAnchorTimeMediaUs = -1;
 
     ALOGV("now paused audio queue has %d entries, video has %d entries",
           mAudioQueue.size(), mVideoQueue.size());
