@@ -1357,7 +1357,8 @@ status_t ACodec::setSupportedOutputFormat() {
            || format.eColorFormat == OMX_COLOR_FormatYUV420SemiPlanar
            || format.eColorFormat == OMX_COLOR_FormatCbYCrY
            || format.eColorFormat == OMX_TI_COLOR_FormatYUV420PackedSemiPlanar
-           || format.eColorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar);
+           || format.eColorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar
+           || format.eColorFormat == OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka);
 
     return mOMX->setParameter(
             mNode, OMX_IndexParamVideoPortFormat,
@@ -3156,6 +3157,7 @@ status_t ACodec::LoadedToIdleState::allocateBuffers() {
 bool ACodec::LoadedToIdleState::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatShutdown:
+        case kWhatFlush:
         {
             mCodec->deferMessage(msg);
             return true;
@@ -3200,6 +3202,7 @@ void ACodec::IdleToExecutingState::stateEntered() {
 
 bool ACodec::IdleToExecutingState::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
+        case kWhatFlush:
         case kWhatShutdown:
         {
             mCodec->deferMessage(msg);
