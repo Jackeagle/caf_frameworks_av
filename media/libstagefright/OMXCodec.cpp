@@ -1757,6 +1757,7 @@ status_t OMXCodec::applyRotation() {
 status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
     // Get the number of buffers needed.
     OMX_PARAM_PORTDEFINITIONTYPE def;
+    int format;
     InitOMXParams(&def);
     def.nPortIndex = kPortIndexOutput;
 
@@ -1770,12 +1771,17 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
             def.format.video.eColorFormat);
+    format = def.format.video.eColorFormat;
+    if(def.format.video.eColorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar)
+      format = HAL_PIXEL_FORMAT_YCrCb_420_SP;
+      /*if(def.format.video.eColorFormat == (OMX_COLOR_FORMATTYPE) QOMX_COLOR_FormatYVU420PackedSemiPlanar32m4ka)
+          format = HAL_PIXEL_FORMAT_YCrCb_420_SP_ADRENO;*/
 
     err = native_window_set_buffers_geometry(
             mNativeWindow.get(),
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
-            def.format.video.eColorFormat);
+            format);
 
     if (err != 0) {
         ALOGE("native_window_set_buffers_geometry failed: %s (%d)",
