@@ -113,6 +113,11 @@ public:
         ALOGV("%s(%s) buf %p", __FUNCTION__, mName.string(), buf.get());
 
         if (mDevice->ops->set_preview_window) {
+            ALOGV("%s buf %p mPreviewWindow %p", __FUNCTION__, buf.get(), mPreviewWindow.get());
+            if (mPreviewWindow.get() && (buf.get() != mPreviewWindow.get())) {
+                 mDevice->ops->set_preview_window(mDevice, 0);
+            }
+
             mPreviewWindow = buf;
             mHalPreviewWindow.user = this;
             ALOGV("%s &mHalPreviewWindow %p mHalPreviewWindow.user %p", __FUNCTION__,
@@ -456,13 +461,17 @@ private:
         ALOGV("%s", __FUNCTION__);
         CameraHardwareInterface *__this =
                 static_cast<CameraHardwareInterface *>(user);
-        sp<CameraHeapMemory> mem(static_cast<CameraHeapMemory *>(data->handle));
-        if (index >= mem->mNumBufs) {
+        if (data != NULL) {
+          sp<CameraHeapMemory> mem(static_cast<CameraHeapMemory *>(data->handle));
+          if (index >= mem->mNumBufs) {
             ALOGE("%s: invalid buffer index %d, max allowed is %d", __FUNCTION__,
                  index, mem->mNumBufs);
             return;
+          }
+          __this->mDataCb(msg_type, mem->mBuffers[index], metadata, __this->mCbUser);
+        } else {
+          __this->mDataCb(msg_type, NULL, metadata, __this->mCbUser);
         }
-        __this->mDataCb(msg_type, mem->mBuffers[index], metadata, __this->mCbUser);
     }
 
     static void __data_cb_timestamp(nsecs_t timestamp, int32_t msg_type,
