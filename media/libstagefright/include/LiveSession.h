@@ -46,12 +46,14 @@ struct LiveSession : public AHandler {
     void disconnect();
 
     // Blocks until seek is complete.
-    void seekTo(int64_t timeUs);
+    void seekTo(int64_t timeUs, int64_t* newSeekTime = NULL);
 
     status_t getDuration(int64_t *durationUs) const;
 
     bool isSeekable() const;
     bool hasDynamicDuration() const;
+
+    void setCurrentPlayingTime(int64_t curPlayTime);
 
 protected:
     virtual ~LiveSession();
@@ -103,7 +105,7 @@ private:
     Condition mCondition;
     int64_t mDurationUs;
     bool mDurationFixed;  // Duration has been determined once and for all.
-    bool mSeekDone;
+    bool mSeeking;
     bool mDisconnectPending;
 
     int32_t mMonitorQueueGeneration;
@@ -117,6 +119,8 @@ private:
     RefreshState mRefreshState;
 
     uint8_t mPlaylistHash[16];
+    int64_t mCurrentPlayingTime;
+    int32_t mFirstSeqNumber;
 
     void onConnect(const sp<AMessage> &msg);
     void onDisconnect();
