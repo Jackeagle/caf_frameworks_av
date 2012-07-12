@@ -130,6 +130,19 @@ private:
 
     bool mPauseIndication;
 
+    Mutex mLock;
+
+    enum NuSourceType {
+        kHttpLiveSource = 0,
+        kHttpDashSource,
+        kRtspSource,
+        kStreamingSource,
+        kWfdSource,
+        kGenericSource,
+        kDefaultSource
+    };
+    NuSourceType mSourceType;
+
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 
     status_t feedDecoderInputData(bool audio, const sp<AMessage> &msg);

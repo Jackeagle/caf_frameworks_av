@@ -47,9 +47,9 @@ NuPlayer::Renderer::Renderer(
       mHasVideo(false),
       mSyncQueues(false),
       mPaused(false),
+      mWasPaused(false),
       mLastPositionUpdateUs(-1ll),
-      mVideoLateByUs(0ll),
-      mWasPaused(false) {
+      mVideoLateByUs(0ll) {
 }
 
 NuPlayer::Renderer::~Renderer() {
