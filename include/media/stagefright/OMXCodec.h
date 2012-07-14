@@ -60,6 +60,7 @@ struct OMXCodec : public MediaSource,
 
         // Secure decoding mode
         kUseSecureInputBuffers = 256,
+        kEnableThumbnailMode = 512,
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
@@ -228,6 +229,8 @@ private:
     // a video encoder.
     List<int64_t> mDecodingTimeList;
 
+    bool mThumbnailMode;
+
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
              bool isEncoder, const char *mime, const char *componentName,
@@ -349,6 +352,7 @@ private:
 
     int64_t getDecodingTimeUs();
 
+    void parseFlags();
     status_t parseAVCCodecSpecificData(
             const void *data, size_t size,
             unsigned *profile, unsigned *level);
