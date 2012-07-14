@@ -109,6 +109,8 @@ struct ATSParser::Stream : public RefBase {
 
     sp<MediaSource> getSource(SourceType type);
 
+    void updateSource();
+
 protected:
     virtual ~Stream();
 
@@ -116,6 +118,9 @@ private:
     Program *mProgram;
     unsigned mElementaryPID;
     unsigned mStreamType;
+
+    bool      mFirstStreamPTSValid;
+    uint64_t  mFirstStreamPTS;
 
     sp<ABuffer> mBuffer;
     sp<AnotherPacketSource> mSource;
@@ -376,6 +381,7 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
                            stream->pid(), infos.itemAt(i).mPID, infos.itemAt(i).mType);
                         mStreams.removeItem(stream->pid());
                         stream->setPID(infos.itemAt(i).mPID);
+                        stream->updateSource();
                         mStreams.add(stream->pid(), stream);
                     }
                 }
@@ -402,7 +408,9 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
                 unsigned pid1 = s1->pid();
                 unsigned pid2 = s2->pid();
                 s1->setPID(pid2);
+                s1->updateSource();
                 s2->setPID(pid1);
+                s2->updateSource();
 
                 mStreams.clear();
                 mStreams.add(s1->pid(), s1);
@@ -471,6 +479,8 @@ ATSParser::Stream::Stream(
     : mProgram(program),
       mElementaryPID(elementaryPID),
       mStreamType(streamType),
+      mFirstStreamPTSValid(false),
+      mFirstStreamPTS(0),
       mPayloadStarted(false),
       mFormatChanged(false),
       mQueue(NULL) {
@@ -585,6 +595,12 @@ bool ATSParser::Stream::isAudio() const {
 
         default:
             return false;
+    }
+}
+
+void ATSParser::Stream::updateSource() {
+    if (mSource != NULL) {
+        mSource->setStreamInfo(mElementaryPID, mProgram->programMapPID(), mFirstStreamPTS);
     }
 }
 
@@ -717,7 +733,11 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
             CHECK_EQ(br->getBits(1), 1u);
 
             ALOGV("PTS = %llu", PTS);
-            // ALOGI("PTS = %.2f secs", PTS / 90000.0f);
+            if (!mFirstStreamPTSValid) {
+                mFirstStreamPTS = PTS;
+                mFirstStreamPTSValid = true;
+            }
+            // LOGI("PTS = %.2f secs", PTS / 90000.0f);
 
             optional_bytes_remaining -= 5;
 
@@ -857,6 +877,7 @@ void ATSParser::Stream::onPayloadData(
 
                 mSource = new AnotherPacketSource(meta);
                 mSource->queueAccessUnit(accessUnit);
+                mSource->setStreamInfo(mElementaryPID, mProgram->programMapPID(), mFirstStreamPTS);
             }
         } else if (mQueue->getFormat() != NULL) {
             // After a discontinuity we invalidate the queue's format
@@ -1086,7 +1107,12 @@ status_t ATSParser::parseTS(ABitReader *br) {
     ALOGV("---");
 
     unsigned sync_byte = br->getBits(8);
-    CHECK_EQ(sync_byte, 0x47u);
+    //CHECK_EQ(sync_byte, 0x47u);
+
+    if(sync_byte != 0x47u) {
+        ALOGE("parseTS --> sync_byte != 0x47u --- sending DEAD_OBJECT");
+        return DEAD_OBJECT;
+    }
 
     MY_LOGV("transport_error_indicator = %u", br->getBits(1));
 
@@ -1205,6 +1231,165 @@ const uint8_t *ATSParser::PSISection::data() const {
 
 size_t ATSParser::PSISection::size() const {
     return mBuffer == NULL ? 0 : mBuffer->size();
+}
+
+status_t ATSParser::parseTSToGetPTS(const void *data, size_t size,
+                                    unsigned streamPID, uint64_t& PTSparsed) {
+
+    // Get PID based on source type
+    CHECK_EQ(size, kTSPacketSize);
+
+    ABitReader br((const uint8_t *)data, kTSPacketSize);
+
+    unsigned sync_byte = br.getBits(8);
+    //CHECK_EQ(sync_byte, 0x47u);
+    if(sync_byte != 0x47u) {
+        ALOGE("parseTSToGetPTS --> sync_byte != 0x47u FOUND --> bad Packet");
+        return DEAD_OBJECT;
+    }
+
+    br.skipBits(1);
+
+    unsigned payload_unit_start_indicator = br.getBits(1);
+    br.skipBits(1);
+
+    unsigned PID = br.getBits(13);
+    ALOGV("PID = 0x%04x", PID);
+    if (PID != streamPID) {
+        return BAD_VALUE;
+    }
+    if (payload_unit_start_indicator != 1) {
+        return BAD_VALUE;
+    }
+
+    br.skipBits(2);
+
+    unsigned adaptation_field_control = br.getBits(2);
+    br.skipBits(4);
+
+    if (adaptation_field_control == 2 || adaptation_field_control == 3) {
+        unsigned adaptation_field_length = br.getBits(8);
+        if (adaptation_field_length > 0) {
+            br.skipBits(adaptation_field_length * 8);  // XXX
+        }
+    }
+
+    if (adaptation_field_control != 1 && adaptation_field_control != 3) {
+        ALOGE("TS Packet is corrupt, incorrect adaptation field");
+        return BAD_VALUE;
+    }
+    // parse PES
+    unsigned packet_startcode_prefix = br.getBits(24);
+
+    ALOGV("packet_startcode_prefix = 0x%08x", packet_startcode_prefix);
+
+    if (packet_startcode_prefix != 1) {
+        ALOGE("Supposedly payload_unit_start=1 unit does not start "
+             "with startcode.");
+
+        return ERROR_MALFORMED;
+    }
+
+    CHECK_EQ(packet_startcode_prefix, 0x000001u);
+
+    unsigned stream_id = br.getBits(8);
+    ALOGV("stream_id = 0x%02x", stream_id);
+
+    unsigned PES_packet_length = br.getBits(16);
+    ALOGV("PES_packet_length = %u", PES_packet_length);
+
+    if (stream_id != 0xbc  // program_stream_map
+            && stream_id != 0xbe  // padding_stream
+            && stream_id != 0xbf  // private_stream_2
+            && stream_id != 0xf0  // ECM
+            && stream_id != 0xf1  // EMM
+            && stream_id != 0xff  // program_stream_directory
+            && stream_id != 0xf2  // DSMCC
+            && stream_id != 0xf8) {
+            CHECK_EQ(br.getBits(2), 2u);
+
+        br.skipBits(6);
+
+        unsigned PTS_DTS_flags = br.getBits(2);
+        ALOGV("PTS_DTS_flags = %u", PTS_DTS_flags);
+
+        br.skipBits(6);
+
+        unsigned PES_header_data_length = br.getBits(8);
+        ALOGV("PES_header_data_length = %u", PES_header_data_length);
+
+        unsigned optional_bytes_remaining = PES_header_data_length;
+
+        uint64_t PTS = 0, DTS = 0;
+
+        if (PTS_DTS_flags == 2 || PTS_DTS_flags == 3) {
+            CHECK_GE(optional_bytes_remaining, 5u);
+
+            CHECK_EQ(br.getBits(4), PTS_DTS_flags);
+
+            PTS = ((uint64_t)br.getBits(3)) << 30;
+            CHECK_EQ(br.getBits(1), 1u);
+            PTS |= ((uint64_t)br.getBits(15)) << 15;
+            CHECK_EQ(br.getBits(1), 1u);
+            PTS |= br.getBits(15);
+            CHECK_EQ(br.getBits(1), 1u);
+
+            ALOGV("PTS = %llu", PTS);
+            PTSparsed = PTS;
+            // LOGI("PTS = %.2f secs", PTS / 90000.0f);
+
+            optional_bytes_remaining -= 5;
+
+            if (PTS_DTS_flags == 3) {
+                CHECK_GE(optional_bytes_remaining, 5u);
+
+                CHECK_EQ(br.getBits(4), 1u);
+
+                DTS = ((uint64_t)br.getBits(3)) << 30;
+                CHECK_EQ(br.getBits(1), 1u);
+                DTS |= ((uint64_t)br.getBits(15)) << 15;
+                CHECK_EQ(br.getBits(1), 1u);
+                DTS |= br.getBits(15);
+                CHECK_EQ(br.getBits(1), 1u);
+
+                ALOGV("DTS = %llu", DTS);
+
+                optional_bytes_remaining -= 5;
+            }
+        }
+    } else {
+       ALOGE("stream id %d not supported", stream_id);
+       return BAD_VALUE;
+    }
+    return OK;
+}
+
+status_t ATSParser::parseTSToGetPID(const void *data, size_t size,
+                                    unsigned& streamPID) {
+
+    CHECK_EQ(size, kTSPacketSize);
+
+    ABitReader br((const uint8_t *)data, kTSPacketSize);
+
+    unsigned sync_byte = br.getBits(8);
+    //CHECK_EQ(sync_byte, 0x47u);
+
+    if(sync_byte != 0x47u) {
+        ALOGE("parseTSToGetPID --> sync_byte != 0x47u --- sending DEAD_OBJECT");
+        return DEAD_OBJECT;
+    }
+
+    br.skipBits(1);
+
+    unsigned payload_unit_start_indicator = br.getBits(1);
+    br.skipBits(1);
+
+    unsigned PID = br.getBits(13);
+    ALOGV("parseTSToGetPID PID = 0x%04x", PID);
+    streamPID = PID;
+
+    return OK;
+
 }
 
 }  // namespace android

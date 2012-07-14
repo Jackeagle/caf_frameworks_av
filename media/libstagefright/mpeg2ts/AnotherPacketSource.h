@@ -60,6 +60,12 @@ struct AnotherPacketSource : public MediaSource {
     void updateFormat(const sp<MetaData> &meta);
     int getQueueSize();
 
+    status_t getStreamInfo(unsigned& streamPID, unsigned& programPID, uint64_t& firstPTS);
+
+    void setStreamInfo(unsigned streamPID, unsigned programPID, uint64_t firstPTS);
+
+    status_t nextBufferIsSync(bool* isSyncFrame);
+
 protected:
     virtual ~AnotherPacketSource();
 
@@ -71,6 +77,9 @@ private:
     sp<MetaData> mFormat;
     List<sp<ABuffer> > mBuffers;
     status_t mEOSResult;
+    unsigned mStreamPID;
+    unsigned mProgramPID;
+    uint64_t mFirstPTS;
 
     bool wasFormatChange(int32_t discontinuityType) const;
 

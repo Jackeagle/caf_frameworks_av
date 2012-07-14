@@ -42,9 +42,9 @@ ElementaryStreamQueue::ElementaryStreamQueue(Mode mode)
       mAACFrameDuration(0),
       mPrevPESPartial(false),
       mCurPESPartial(false),
+      mMode(mode),
       mPreTimeStamp(-1),
-      mCount(0),
-      mMode(mode) {
+      mCount(0) {
     char value[PROPERTY_VALUE_MAX] = {0};
     if (property_get("ro.product.device", value, "0"))
     {
