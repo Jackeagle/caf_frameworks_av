@@ -62,7 +62,7 @@ AudioSource::AudioSource(
       mMime(MEDIA_MIMETYPE_AUDIO_RAW) {
 
     ALOGV("sampleRate: %d, channelCount: %d", sampleRate, channelCount);
-    CHECK(channelCount == 1 || channelCount == 2);
+    CHECK(channelCount == 1 || channelCount == 2 || channelCount == 6);
 
     int minFrameCount;
     status_t status = AudioRecord::getMinFrameCount(&minFrameCount,
