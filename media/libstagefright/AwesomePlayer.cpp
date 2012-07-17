@@ -43,8 +43,10 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include <media/stagefright/timedtext/TimedTextDriver.h>
 #include <media/stagefright/AudioPlayer.h>
 #ifndef NON_QCOM_TARGET
+#include <media/stagefright/LPAPlayer.h>
 #ifdef USE_TUNNEL_MODE
 #include <media/stagefright/MPQAudioPlayer.h>
+#include <media/stagefright/TunnelPlayer.h>
 #endif
 #endif
 #include <media/stagefright/DataSource.h>
@@ -634,6 +636,8 @@ void AwesomePlayer::reset_l() {
     // Disable Tunnel MPQ Audio
     mIsMPQAudio = false;
     mIsMPQTunnelAudio = false;
+    // Disable Tunnel Mode Audio
+    mIsTunnelAudio = false;
 }
 
 void AwesomePlayer::notifyListener_l(int msg, int ext1, int ext2) {
@@ -961,9 +965,10 @@ status_t AwesomePlayer::play_l() {
         if (mAudioPlayer == NULL) {
             if (mAudioSink != NULL) {
                 sp<MetaData> format = mAudioTrack->getFormat();
-	            const char *mime;
-	            bool success = format->findCString(kKeyMIMEType, &mime);
-	            CHECK(success);
+                const char *mime;
+                bool success = format->findCString(kKeyMIMEType, &mime);
+                CHECK(success);
+
                 bool allowDeepBuffering;
                 int64_t cachedDurationUs;
                 bool eos;
@@ -981,6 +986,7 @@ status_t AwesomePlayer::play_l() {
                 IS_TARGET_MPQ(is_mpq);
                 if(mIsMPQAudio) {
                     ALOGD("MPQ Audio player created for  mime %s duration %lld\n", mime, mDurationUs);
+
                     bool initCheck =  false;
                     if(mVideoSource != NULL) {
                         // The parameter true is to inform tunnel player that
@@ -998,11 +1004,54 @@ status_t AwesomePlayer::play_l() {
                        mAudioPlayer = NULL;
                     }
                 }
+                // Create tunnel player if tunnel mode is enabled
+                ALOGE("Trying to create tunnel player mIsTunnelAudio %d, LPAPlayer::objectsAlive %d,\
+                        (mAudioPlayer == NULL) %d",mIsTunnelAudio,LPAPlayer::objectsAlive, (mAudioPlayer == NULL));
+
+                if(mIsTunnelAudio && (mAudioPlayer == NULL) &&
+                        (LPAPlayer::objectsAlive == 0)) {
+                    ALOGD("Tunnel player created for  mime %s duration %lld\n",\
+                        mime, mDurationUs);
+                    bool initCheck =  false;
+                    if(mVideoSource != NULL) {
+                        // The parameter true is to inform tunnel player that
+                        // clip is audio video
+                        mAudioPlayer = new TunnelPlayer(mAudioSink, initCheck,
+                                this, true);
+                    }
+                    else {
+                        mAudioPlayer = new TunnelPlayer(mAudioSink, initCheck,
+                                this);
+                    }
+                    if(!initCheck) {
+                        ALOGE("deleting Tunnel Player - initCheck failed");
+                        delete mAudioPlayer;
+                        mAudioPlayer = NULL;
+                    }
+                }
                 mpqAudioObjetcsAlive = (MPQAudioPlayer::getMPQAudioObjectsAlive());
+                tunnelObjectsAlive = (TunnelPlayer::mTunnelObjectsAlive);
 #endif
+                char lpaDecode[128];
+                property_get("lpa.decode",lpaDecode,"0");
+                if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) && tunnelObjectsAlive==0 )
+                {
+                    ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::objectsAlive);
+                    if ( mDurationUs > 60000000
+                         && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+                         && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL) {
+                        ALOGE("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
+                        bool initCheck =  false;
+                        mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
+                        if(!initCheck) {
+                             delete mAudioPlayer;
+                             mAudioPlayer = NULL;
+                        }
+                    }
+                }
 #endif
                 if(mAudioPlayer == NULL) {
-                    ALOGV("AudioPlayer created, Non-LPA mode mime %s duration %lld\n", mime, mDurationUs);
+                    ALOGV("AudioPlayer created, Non-LPA mode mime %s duration %lld\n", mime, durationUs);
                     mAudioPlayer = new AudioPlayer(mAudioSink, allowDeepBuffering, this);
                 }
                 mAudioPlayer->setSource(mAudioSource);
@@ -1023,13 +1072,14 @@ status_t AwesomePlayer::play_l() {
             // We don't want to post an error notification at this point,
             // the error returned from MediaPlayer::start() will suffice.
             bool sendErrorNotification = false;
-            if (mIsMPQTunnelAudio) {
+            if(mIsTunnelAudio || mIsMPQTunnelAudio) {
                 // For tunnel Audio error has to be posted to the client
                 sendErrorNotification = true;
             }
             status_t err = startAudioPlayer_l(sendErrorNotification);
 
             if (err != OK) {
+                ALOGE("deleting Audio Player - start failed");
                 delete mAudioPlayer;
                 mAudioPlayer = NULL;
 
@@ -1516,21 +1566,22 @@ status_t AwesomePlayer::initAudioDecoder() {
     CHECK(meta->findCString(kKeyMIMEType, &mime));
 #ifndef NON_QCOM_TARGET
 #ifdef USE_TUNNEL_MODE
-
     char value[PROPERTY_VALUE_MAX];
-
     char mpqAudioDecode[128];
     int is_mpq;
     IS_TARGET_MPQ(is_mpq);
     property_get("mpq.audio.decode",mpqAudioDecode,"0");
 
+    char tunnelDecode[128];
+    property_get("tunnel.decode",tunnelDecode,"0");
     // Enable tunnel mode for mp3 and aac and if the clip is not aac adif
     // and if no other tunnel mode instances aare running.
+
     ALOGD("MPQ Mime Type: %s,\
             getMPQObjectsAlive = %d", mime,\
             (MPQAudioPlayer::getMPQAudioObjectsAlive()));
-
-
+    ALOGD("Tunnel Mime Type: %s, object alive = %d",\
+            mime, (TunnelPlayer::mTunnelObjectsAlive == 0));
     if((is_mpq)&&((strcmp("true",mpqAudioDecode) == 0)||(atoi(mpqAudioDecode))) &&
             (MPQAudioPlayer::getMPQAudioObjectsAlive() == 0) &&
             (property_get("ro.product.device", value, "0") &&
@@ -1539,7 +1590,6 @@ status_t AwesomePlayer::initAudioDecoder() {
             //TODO: Modify if target is MPQ instead of 8960
             ALOGI("MPQ Audio Enabled - MPQ Audio Player");
             mIsMPQAudio = true;
-            //Add WMA / DTS
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC) ||
@@ -1550,11 +1600,30 @@ status_t AwesomePlayer::initAudioDecoder() {
                 mIsMPQTunnelAudio = true;
             }
     }
+    else if(((strcmp("true",tunnelDecode) == 0)||(atoi(tunnelDecode))) &&
+            (TunnelPlayer::mTunnelObjectsAlive == 0) &&
+            ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) ||
+            (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC)))) {
+
+        if(mVideoSource != NULL) {
+           char tunnelAVDecode[128];
+           property_get("tunnel.audiovideo.decode",tunnelAVDecode,"0");
+           if(((strncmp("true", tunnelAVDecode, 4) == 0)||(atoi(tunnelAVDecode)))) {
+               ALOGD("Enable Tunnel Mode for A-V playback");
+               mIsTunnelAudio = true;
+           }
+        }
+        else {
+            ALOGI("Tunnel Mode Audio Enabled");
+            mIsTunnelAudio = true;
+        }
+    }
     else
        ALOGE("Normal Audio Playback");
 #endif
 #endif
-    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) || mIsMPQTunnelAudio) {
+    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) || mIsTunnelAudio || mIsMPQTunnelAudio) {
+        ALOGD("Set Audio Track as Audio Source");
         mAudioSource = mAudioTrack;
     } else {
         mAudioSource = OMXCodec::Create(
