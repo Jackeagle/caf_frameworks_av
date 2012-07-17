@@ -17,7 +17,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayer"
 #include <utils/Log.h>
-
+#include <dlfcn.h>  // for dlopen/dlclose
 #include "NuPlayer.h"
 
 #include "HTTPLiveSource.h"
@@ -115,7 +115,19 @@ void NuPlayer::setDataSource(
     } else if (!strncasecmp(url, "rtsp://", 7)) {
         source = new RTSPSource(url, headers, mUIDValid, mUID);
         mSourceType = kRtspSource;
-    } else {
+    } else if (!strncasecmp(url, "http://", 7) &&
+	    (strlen(url) >= 4 && !strcasecmp(".mpd", &url[strlen(url) - 4]))) {
+           /* Load the DASH HTTP Live source librery here */
+           ALOGV("NuPlayer setDataSource url sting %s",url);
+           source = LoadCreateSource(url, headers, mUIDValid, mUID,kHttpDashSource);
+           if (source != NULL) {
+              mSourceType = kHttpDashSource;
+              msg->setObject("source", source);
+           } else {
+             ALOGE("Error creating DASH source");
+             //return UNKNOWN_ERROR;
+           }
+	} else {
         source = new GenericSource(url, headers, mUIDValid, mUID);
         mSourceType = kGenericSource;
     }
@@ -590,7 +602,32 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 mSource->getNewSeekTime(&newSeekTime);
                 ALOGV("newSeekTime %lld", newSeekTime);
             }
-           if( (newSeekTime >= 0 ) && (mSourceType != kHttpDashSource)) {
+            else if ( (mSourceType == kHttpDashSource) && (nRet == OK)) // if seek success then flush the audio,video decoder and renderer
+            {
+                mTimeDiscontinuityPending = true;
+                if( (mVideoDecoder != NULL) &&
+                    (mFlushingVideo == NONE || mFlushingVideo == AWAITING_DISCONTINUITY) ) {
+                    flushDecoder( false, true ); // flush video, shutdown
+                }
+
+               if( (mAudioDecoder != NULL) &&
+                   (mFlushingAudio == NONE|| mFlushingAudio == AWAITING_DISCONTINUITY) )
+               {
+                   flushDecoder( true, true );  // flush audio,  shutdown
+               }
+               if( mAudioDecoder == NULL ) {
+                   ALOGV("Audio is not there, set it to shutdown");
+                   mFlushingAudio = SHUT_DOWN;
+               }
+               if( mVideoDecoder == NULL ) {
+                   ALOGV("Video is not there, set it to shutdown");
+                   mFlushingVideo = SHUT_DOWN;
+               }
+               // get the new seeked position
+               newSeekTime = seekTimeUs;
+               ALOGV("newSeekTime %lld", newSeekTime);
+            }
+            if( (newSeekTime >= 0 ) && (mSourceType != kHttpDashSource)) {
                mTimeDiscontinuityPending = true;
                if( (mAudioDecoder != NULL) &&
                    (mFlushingAudio == NONE || mFlushingAudio == AWAITING_DISCONTINUITY) ) {
@@ -642,6 +679,29 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }
             break;
         }
+
+        case kWhatPrepareAsync:
+            if (mSource == NULL)
+            {
+                ALOGE("Source is null in prepareAsync\n");
+                break;
+            }
+            mSource->prepareAsync();
+            postIsPrepareDone();
+            break;
+
+        case kWhatIsPrepareDone:
+            if (mSource == NULL)
+            {
+                ALOGE("Source is null when checking for prepare done\n");
+                break;
+            }
+            if (mSource->isPrepareDone()) {
+                notifyListener(MEDIA_PREPARED, 0, 0);
+            } else {
+                msg->post(100000ll);
+            }
+            break;
 
         default:
             TRESPASS();
@@ -1013,6 +1073,136 @@ void NuPlayer::flushDecoder(bool audio, bool needShutdown) {
                 : FLUSHED;
         }
     }
+}
+
+sp<NuPlayer::Source>
+    NuPlayer::LoadCreateSource(const char * uri, const KeyedVector<String8,String8> *headers,
+                               bool uidValid, uid_t uid, NuSourceType srcTyp)
+{
+   const char* STREAMING_SOURCE_LIB = "libmmipstreamaal.so";
+   const char* DASH_HTTP_LIVE_CREATE_SOURCE = "CreateDashHttpLiveSource";
+   const char* WFD_CREATE_SOURCE = "CreateWFDSource";
+
+   void* pStreamingSourceLib = NULL;
+
+   typedef NuPlayer::Source* (*SourceFactory)(const char * uri, const KeyedVector<String8, String8> *headers, bool uidValid, uid_t uid);
+
+   /* Open librery */
+   pStreamingSourceLib = ::dlopen(STREAMING_SOURCE_LIB, RTLD_LAZY);
+
+   if (pStreamingSourceLib == NULL) {
+       return NULL;
+   }
+
+   SourceFactory StreamingSourcePtr;
+
+   if(srcTyp == kHttpDashSource) {
+
+       /* Get the entry level symbol which gets us the pointer to DASH HTTP Live Source object */
+       StreamingSourcePtr = (SourceFactory) dlsym(pStreamingSourceLib, DASH_HTTP_LIVE_CREATE_SOURCE);
+   } else if (srcTyp == kWfdSource){
+
+       /* Get the entry level symbol which gets us the pointer to WFD Source object */
+       StreamingSourcePtr = (SourceFactory) dlsym(pStreamingSourceLib, WFD_CREATE_SOURCE);
+
+   }
+
+   if (StreamingSourcePtr == NULL) {
+       return NULL;
+   }
+
+    /*Get the Streaming (DASH\WFD) Source object, which will be used to communicate with Source (DASH\WFD) */
+    sp<NuPlayer::Source> StreamingSource = StreamingSourcePtr(uri, headers, uidValid, uid);
+
+    if(StreamingSource==NULL) {
+        return NULL;
+    }
+
+
+    return StreamingSource;
+}
+
+status_t NuPlayer::prepareAsync() // only for DASH
+{
+    if (mSourceType == kHttpDashSource) {
+        sp<AMessage> msg = new AMessage(kWhatPrepareAsync, id());
+        if (msg == NULL)
+        {
+            ALOGE("Out of memory, AMessage is null for kWhatPrepareAsync\n");
+            return NO_MEMORY;
+        }
+        msg->post();
+    }
+    return OK;
+}
+
+status_t NuPlayer::getParameter(int key, Parcel *reply)
+{
+    void * data_8;
+    void * data_16;
+    size_t data_8_Size;
+    size_t data_16_Size;
+
+    status_t err = OK;
+    if (key == 8002) {
+
+        if (mSource == NULL)
+        {
+            ALOGE("Source is NULL in getParameter\n");
+            return UNKNOWN_ERROR;
+        }
+        err = mSource->getParameter(key, &data_8, &data_8_Size);
+        if (err != OK)
+        {
+            ALOGE("source getParameter returned error: %d\n",err);
+            return err;
+        }
+
+        data_16_Size = data_8_Size * sizeof(char16_t);
+        data_16 = malloc(data_16_Size);
+        if (data_16 == NULL)
+        {
+            ALOGE("Out of memory in getParameter\n");
+            return NO_MEMORY;
+        }
+
+        utf8_to_utf16_no_null_terminator((uint8_t *)data_8, data_8_Size, (char16_t *) data_16);
+        err = reply->writeString16((char16_t *)data_16, data_8_Size);
+        free(data_16);
+    }
+    return err;
+}
+
+status_t NuPlayer::setParameter(int key, const Parcel &request)
+{
+    status_t err = OK;
+    if (key == 8002) {
+
+        size_t len = 0;
+        const char16_t* str = request.readString16Inplace(&len);
+        void * data = malloc(len + 1);
+        if (data == NULL)
+        {
+            ALOGE("Out of memory in setParameter\n");
+            return NO_MEMORY;
+        }
+
+        utf16_to_utf8(str, len, (char*) data);
+        err = mSource->setParameter(key, data, len);
+        free(data);
+    }
+    return err;
+}
+
+void NuPlayer::postIsPrepareDone()
+{
+    sp<AMessage> msg = new AMessage(kWhatIsPrepareDone, id());
+    if (msg == NULL)
+    {
+        ALOGE("Out of memory, AMessage is null for kWhatIsPrepareDone\n");
+        return;
+    }
+    msg->post();
 }
 
 }  // namespace android

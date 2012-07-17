@@ -55,6 +55,21 @@ struct NuPlayer::Source : public RefBase {
         return INVALID_OPERATION;
     }
 
+    virtual status_t prepareAsync() {
+        return INVALID_OPERATION;
+    }
+
+    virtual bool isPrepareDone() {
+        return INVALID_OPERATION;
+    }
+
+    virtual status_t getParameter(int key, void **data, size_t *size) {
+        return INVALID_OPERATION;
+    }
+
+    virtual status_t setParameter(int key, void *data, size_t size) {
+        return INVALID_OPERATION;
+    }
     virtual void notifyRenderingPosition(int64_t nRenderingTS){}
 
 protected:
