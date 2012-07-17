@@ -356,6 +356,9 @@ private:
 
     bool mBufferingDone;
 
+    //Flag to check if tunnel mode audio is enabled
+    bool mIsTunnelAudio;
+
     status_t setVideoScalingMode(int32_t mode);
     status_t setVideoScalingMode_l(int32_t mode);
     status_t getTrackInfo(Parcel* reply) const;
