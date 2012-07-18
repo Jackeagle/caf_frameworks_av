@@ -52,6 +52,8 @@
 
 #include "ARTPWriter.h"
 
+#include <cutils/properties.h>
+
 namespace android {
 
 // To collect the encoder usage for the battery app
@@ -1409,9 +1411,15 @@ status_t StagefrightRecorder::setupVideoEncoder(
     CHECK_EQ(client.connect(), (status_t)OK);
 
     uint32_t encoder_flags = 0;
+    char value[PROPERTY_VALUE_MAX];
     if (mIsMetaDataStoredInVideoBuffers) {
         encoder_flags |= OMXCodec::kHardwareCodecsOnly;
         encoder_flags |= OMXCodec::kStoreMetaDataInVideoBuffers;
+        if (property_get("ro.board.platform", value, "0")
+            && (!strncmp(value, "msm7627", sizeof("msm7627") - 1))) {
+            ALOGW("msm7627 family of chipsets supports, only one buffer at a time");
+            encoder_flags |= OMXCodec::kOnlySubmitOneInputBufferAtOneTime;
+        }
     }
 
     // Do not wait for all the input buffers to become available.
