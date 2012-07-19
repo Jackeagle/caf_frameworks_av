@@ -21,6 +21,7 @@
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/foundation/AHandler.h>
 #include <media/stagefright/NativeWindowWrapper.h>
+#include "NuPlayerStats.h"
 
 namespace android {
 
@@ -173,6 +174,10 @@ private:
                                  String8> *headers, bool uidValid, uid_t uid, NuSourceType srcTyp);
 
     void postIsPrepareDone();
+
+    // for qualcomm statistics profiling
+    sp<NuPlayerStats> mStats;
+
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
 };
 
