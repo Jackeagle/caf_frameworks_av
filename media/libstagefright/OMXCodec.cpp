@@ -272,6 +272,10 @@ uint32_t OMXCodec::getComponentQuirks(
                 index, "requires-wma-pro-component")) {
         quirks |= kRequiresWMAProComponent;
     }
+    if (list->codecHasQuirk(
+                index, "defers-output-buffer-allocation")) {
+      quirks |= kDefersOutputBufferAllocation;
+    }
 
     return quirks;
 }
@@ -1536,7 +1540,9 @@ OMXCodec::OMXCodec(
                         ? NULL : nativeWindow),
       mThumbnailMode(false),
       mSPSParsed(false),
-      mUseArbitraryMode(true) {
+      mUseArbitraryMode(true),
+      latenessUs(0),
+      LC_level(0) {
 
     parseFlags();
     mPortStatus[kPortIndexInput] = ENABLED;
@@ -1917,19 +1923,30 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
-    ALOGV("set_buffers_geometry w %lu, h %lu format %d",
+    ALOGV("set_buffers_geometry w %lu, h %lu,stride %lu "
+          "SliceHeight %lu format %d",
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
+            def.format.video.nStride,
+            def.format.video.nSliceHeight,
             def.format.video.eColorFormat);
     format = def.format.video.eColorFormat;
     if(def.format.video.eColorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar)
       format = HAL_PIXEL_FORMAT_YCrCb_420_SP;
 
-    err = native_window_set_buffers_geometry(
-            mNativeWindow.get(),
-            def.format.video.nFrameWidth,
-            def.format.video.nFrameHeight,
-            format);
+    if(!strncmp("OMX.ittiam.video.decoder", mComponentName, 24)) {
+        err = native_window_set_buffers_geometry(
+                mNativeWindow.get(),
+                def.format.video.nStride,
+                def.format.video.nSliceHeight,
+                format);
+    } else {
+        err = native_window_set_buffers_geometry(
+                mNativeWindow.get(),
+                def.format.video.nFrameWidth,
+                def.format.video.nFrameHeight,
+                format);
+    }
 
     if (err != 0) {
         ALOGE("native_window_set_buffers_geometry failed: %s (%d)",
@@ -4342,6 +4359,49 @@ status_t OMXCodec::read(
         }
     }
 
+    if (!strncmp("OMX.ittiam.video.decoder", mComponentName, 24)) {
+        OMX_INDEXTYPE index;
+        OMX_U32 set_level = 0;
+        #define LC_LEVEL2_HIGH_CUTOFF 125000
+        #define LC_LEVEL2_LOW_CUTOFF 100000
+        #define LC_LEVEL1_HIGH_CUTOFF 75000
+        #define LC_LEVEL1_LOW_CUTOFF 50000
+        CODEC_LOGV("OMXCodec latenessUs = %lld", latenessUs);
+        if((LC_level == 0) && (latenessUs > LC_LEVEL1_HIGH_CUTOFF))
+        {
+          LC_level = 1;
+          set_level = 1;
+        }
+        else if((LC_level == 1) && (latenessUs > LC_LEVEL2_HIGH_CUTOFF))
+        {
+          LC_level = 2;
+          set_level = 1;
+        }
+        else if((LC_level == 1) && (latenessUs < LC_LEVEL1_LOW_CUTOFF))
+        {
+          LC_level = 0;
+          set_level = 1;
+        }
+        else if((LC_level == 2) && (latenessUs < LC_LEVEL2_LOW_CUTOFF))
+        {
+          LC_level = 1;
+          set_level = 1;
+        }
+        if(set_level == 1)
+        {
+          CODEC_LOGV("set_level = 1");
+          status_t err = mOMX->getExtensionIndex(
+            mNode,
+            "OMX.ITTIAM.index.LClevel",
+            &index);
+          if (err != OK) {
+              return err;
+          }
+          mOMX->setConfig(mNode, index, &LC_level, sizeof(LC_level));
+        }
+    }
+
+
     while (mState != ERROR && !mNoMoreOutputData && mFilledBuffers.empty()) {
         if ((err = waitForBufferFilled_l()) != OK) {
             return err;
@@ -4399,6 +4459,8 @@ void OMXCodec::signalBufferReturned(MediaBuffer *buffer) {
                 if (!metaData->findInt32(kKeyRendered, &rendered)) {
                     rendered = 0;
                 }
+                // Set latenessUs here from kKeyLateness
+                metaData->findInt64(kKeyLateness, &latenessUs);
                 if (!rendered) {
                     status_t err = cancelBufferToNativeWindow(info);
                     if (err < 0) {
@@ -4964,8 +5026,19 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                     CHECK_GE(rect.nTop, 0);
                     CHECK_GE(rect.nWidth, 0u);
                     CHECK_GE(rect.nHeight, 0u);
-                    CHECK_LE(rect.nLeft + rect.nWidth - 1, video_def->nFrameWidth);
-                    CHECK_LE(rect.nTop + rect.nHeight - 1, video_def->nFrameHeight);
+                    /* Due to padding requirements of Ittiam SW decoder, nStride,
+                     * nSliceHeight contains actual buffer width where as crop will
+                     * give actual frame resolution.
+                     * TBD: implement padding without changing crop values in next
+                     * release and remove the below check */
+                    if (!strncmp("OMX.ittiam.video.decoder", mComponentName, 24)) {
+                        CHECK_LE(rect.nLeft + rect.nWidth - 1, (video_def->nStride));
+                        CHECK_LE(rect.nTop + rect.nHeight - 1, (video_def->nSliceHeight));
+                    }
+                    else {
+                        CHECK_LE(rect.nLeft + rect.nWidth - 1, video_def->nFrameWidth);
+                        CHECK_LE(rect.nTop + rect.nHeight - 1, video_def->nFrameHeight);
+                    }
 
                     mOutputFormat->setRect(
                             kKeyCropRect,
