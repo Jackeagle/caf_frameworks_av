@@ -135,6 +135,7 @@ public:
     virtual status_t startTone(audio_policy_tone_t tone, audio_stream_type_t stream);
     virtual status_t stopTone();
     virtual status_t setVoiceVolume(float volume, int delayMs = 0);
+    virtual status_t setFmVolume(float volume, int delayMs = 0);
 
 private:
                         AudioPolicyService();
@@ -158,7 +159,8 @@ private:
             STOP_TONE,
             SET_VOLUME,
             SET_PARAMETERS,
-            SET_VOICE_VOLUME
+            SET_VOICE_VOLUME,
+            SET_FM_VOLUME
         };
 
         AudioCommandThread (String8 name);
@@ -179,6 +181,7 @@ private:
                     status_t    parametersCommand(audio_io_handle_t ioHandle,
                                             const char *keyValuePairs, int delayMs = 0);
                     status_t    voiceVolumeCommand(float volume, int delayMs = 0);
+                    status_t    fmVolumeCommand(float volume, int delayMs = 0);
                     void        insertCommand_l(AudioCommand *command, int delayMs = 0);
 
     private:
@@ -219,6 +222,11 @@ private:
         };
 
         class VoiceVolumeData {
+        public:
+            float mVolume;
+        };
+
+        class FmVolumeData {
         public:
             float mVolume;
         };

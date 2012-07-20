@@ -394,6 +394,13 @@ void AudioSystem::releaseAudioSessionId(int audioSession) {
     }
 }
 
+status_t AudioSystem::setFmVolume(float value)
+{
+    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
+    if (af == 0) return PERMISSION_DENIED;
+    return af->setFmVolume(value);
+}
+
 // ---------------------------------------------------------------------------
 
 void AudioSystem::AudioFlingerClient::binderDied(const wp<IBinder>& who) {

@@ -210,6 +210,7 @@ public:
     virtual uint32_t getPrimaryOutputSamplingRate() = 0;
     virtual size_t getPrimaryOutputFrameCount() = 0;
 
+    virtual status_t setFmVolume(float volume) = 0;
 };
 
 
