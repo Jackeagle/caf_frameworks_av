@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2007, The Android Open Source Project
+** Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -70,6 +71,7 @@ enum {
     GET_EFFECT_DESCRIPTOR,
     CREATE_EFFECT,
     MOVE_EFFECTS,
+    SET_FM_VOLUME,
     LOAD_HW_MODULE
 };
 
@@ -674,6 +676,15 @@ public:
         return reply.readInt32();
     }
 
+    virtual status_t setFmVolume(float volume)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
+        data.writeFloat(volume);
+        remote()->transact(SET_FM_VOLUME, data, &reply);
+        return reply.readInt32();
+    }
+
     virtual audio_module_handle_t loadHwModule(const char *name)
     {
         Parcel data, reply;
@@ -1030,6 +1041,12 @@ status_t BnAudioFlinger::onTransact(
             audio_io_handle_t srcOutput = (audio_io_handle_t) data.readInt32();
             audio_io_handle_t dstOutput = (audio_io_handle_t) data.readInt32();
             reply->writeInt32(moveEffects(session, srcOutput, dstOutput));
+            return NO_ERROR;
+        } break;
+        case SET_FM_VOLUME: {
+            CHECK_INTERFACE(IAudioFlinger, data, reply);
+            float volume = data.readFloat();
+            reply->writeInt32( setFmVolume(volume) );
             return NO_ERROR;
         } break;
         case LOAD_HW_MODULE: {

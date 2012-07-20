@@ -56,6 +56,7 @@ LOCAL_SRC_FILES:=                         \
         avc_utils.cpp                     \
         ExtendedExtractor.cpp             \
         ExtendedWriter.cpp                \
+        FMA2DPWriter.cpp                  \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
