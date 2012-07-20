@@ -1,4 +1,4 @@
-/*
+/*D
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,6 +43,7 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <utils/String8.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -86,6 +87,12 @@ private:
     bool mWantsNALFragments;
 
     uint8_t *mSrcBuffer;
+
+    //For statistics profiling
+    uint32_t mNumSamplesReadError;
+    bool mStatistics;
+    void logExpectedFrames();
+    void logTrackStatistics();
 
     size_t parseNALSize(const uint8_t *data) const;
 
@@ -2006,10 +2013,17 @@ MPEG4Source::MPEG4Source(
       mGroup(NULL),
       mBuffer(NULL),
       mWantsNALFragments(false),
-      mSrcBuffer(NULL) {
+      mSrcBuffer(NULL),
+      mNumSamplesReadError(0){
     const char *mime;
     bool success = mFormat->findCString(kKeyMIMEType, &mime);
     CHECK(success);
+
+    //for statistics profiling
+    char value[PROPERTY_VALUE_MAX];
+    mStatistics = false;
+    property_get("persist.debug.sf.statistics", value, "0");
+    if(atoi(value)) mStatistics = true;
 
     mIsAVC = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC);
 
@@ -2031,6 +2045,7 @@ MPEG4Source::MPEG4Source(
     //MPEG4 extractor can give complete frames,
     //set arbitrary mode to false
     format->setInt32(kKeyUseArbitraryMode, 0);
+    if (mStatistics) logExpectedFrames();
 }
 
 MPEG4Source::~MPEG4Source() {
@@ -2043,6 +2058,9 @@ status_t MPEG4Source::start(MetaData *params) {
     Mutex::Autolock autoLock(mLock);
 
     CHECK(!mStarted);
+
+    if (mStatistics)
+        logTrackStatistics();
 
     int32_t val;
     if (params && params->findInt32(kKeyWantsNALFragments, &val)
@@ -2217,6 +2235,7 @@ status_t MPEG4Source::read(
                     mCurrentSampleIndex, &offset, &size, &cts, &isSyncSample);
 
         if (err != OK) {
+            if (mStatistics) mNumSamplesReadError++;
             return err;
         }
 
@@ -2224,6 +2243,7 @@ status_t MPEG4Source::read(
 
         if (err != OK) {
             CHECK(mBuffer == NULL);
+            if (mStatistics) mNumSamplesReadError++;
             return err;
         }
     }
@@ -2237,6 +2257,7 @@ status_t MPEG4Source::read(
                 mBuffer->release();
                 mBuffer = NULL;
 
+                if (mStatistics) mNumSamplesReadError++;
                 return ERROR_IO;
             }
 
@@ -2280,6 +2301,7 @@ status_t MPEG4Source::read(
             mBuffer->release();
             mBuffer = NULL;
 
+            if (mStatistics) mNumSamplesReadError++;
             return ERROR_MALFORMED;
         }
 
@@ -2317,6 +2339,7 @@ status_t MPEG4Source::read(
             mBuffer->release();
             mBuffer = NULL;
 
+            if (mStatistics) mNumSamplesReadError++;
             return ERROR_IO;
         }
 
@@ -2342,6 +2365,8 @@ status_t MPEG4Source::read(
                     ALOGE("Video is malformed");
                     mBuffer->release();
                     mBuffer = NULL;
+
+                    if (mStatistics) mNumSamplesReadError++;
                     return ERROR_MALFORMED;
                 }
 
@@ -2580,5 +2605,33 @@ bool SniffMPEG4(
 
     return false;
 }
+
+void MPEG4Source::logTrackStatistics()
+{
+    const char *mime;
+    mFormat->findCString(kKeyMIMEType, &mime);
+    ALOGW("=====================================================");
+    ALOGW("Mime Type: %s",mime);
+    ALOGW("Total number of samples in track: %u",mSampleTable->countSamples());
+    ALOGW("Number of key samples: %u",mSampleTable->getNumSyncSamples());
+    ALOGW("Number of corrupt samples: %u",mNumSamplesReadError ?
+           mNumSamplesReadError-1 : mNumSamplesReadError); //last sample reads error for EOS
+    ALOGW("=====================================================");
+}
+
+void MPEG4Source::logExpectedFrames()
+{
+    const char *mime;
+    mFormat->findCString(kKeyMIMEType, &mime);
+    int64_t durationUs;
+    getFormat()->findInt64(kKeyDuration, &durationUs);
+    ALOGW("=====================================================");
+    ALOGW("Mime type: %s",mime);
+    ALOGW("Track duration: %lld",durationUs/1000);
+    ALOGW("Total number of samples in track: %u",mSampleTable->countSamples());
+    ALOGW("Expected frames per second: %.2f",((float)mSampleTable->countSamples()*1000)/((float)durationUs/1000));
+    ALOGW("=====================================================");
+}
+
 
 }  // namespace android
