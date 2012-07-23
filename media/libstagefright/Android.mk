@@ -54,6 +54,7 @@ LOCAL_SRC_FILES:=                         \
         XINGSeeker.cpp                    \
         avc_utils.cpp                     \
         ExtendedExtractor.cpp             \
+        ExtendedWriter.cpp                \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
@@ -64,7 +65,8 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
         $(TOP)/hardware/qcom/display/libgralloc \
-        $(TOP)/hardware/qcom/media/mm-core/inc
+        $(TOP)/hardware/qcom/media/mm-core/inc \
+        $(TOP)/system/core/include
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
