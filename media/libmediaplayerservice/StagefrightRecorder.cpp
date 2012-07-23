@@ -31,6 +31,7 @@
 #include <media/stagefright/AMRWriter.h>
 #include <media/stagefright/AACWriter.h>
 #include <media/stagefright/ExtendedWriter.h>
+#include <media/stagefright/WAVEWriter.h>
 #include <media/stagefright/CameraSource.h>
 #include <media/stagefright/CameraSourceTimeLapse.h>
 #include <media/stagefright/MPEG2TSWriter.h>
@@ -169,7 +170,13 @@ status_t StagefrightRecorder::setAudioEncoder(audio_encoder ae) {
         mSampleRate = mSampleRate ? mSampleRate : 48000;
         mAudioChannels = mAudioChannels ? mAudioChannels : 2;
         mAudioBitRate = mAudioBitRate ? mAudioBitRate : 156000;
-    } else{
+    }
+    else if(mAudioEncoder == AUDIO_ENCODER_LPCM) {
+        mSampleRate = mSampleRate ? mSampleRate : 48000;
+        mAudioChannels = mAudioChannels ? mAudioChannels : 2;
+        mAudioBitRate = mAudioBitRate ? mAudioBitRate : 4608000;
+    }
+    else{
         mSampleRate = mSampleRate ? mSampleRate : 8000;
         mAudioChannels = mAudioChannels ? mAudioChannels : 1;
         mAudioBitRate = mAudioBitRate ? mAudioBitRate : 12200;
@@ -788,6 +795,10 @@ status_t StagefrightRecorder::start() {
             status = startExtendedRecording( );
             break;
 
+        case OUTPUT_FORMAT_WAVE:
+            status = startWAVERecording( );
+            break;
+
         default:
             ALOGE("Unsupported output file format: %d", mOutputFormat);
             status = UNKNOWN_ERROR;
@@ -867,6 +878,9 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
     sp<MetaData> encMeta = new MetaData;
     const char *mime;
     switch (mAudioEncoder) {
+        case AUDIO_ENCODER_LPCM:
+            mime = MEDIA_MIMETYPE_AUDIO_RAW;
+            break;
         case AUDIO_ENCODER_AMR_NB:
         case AUDIO_ENCODER_DEFAULT:
             mime = MEDIA_MIMETYPE_AUDIO_AMR_NB;
@@ -916,6 +930,12 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
     sp<MediaSource> audioEncoder =
         OMXCodec::Create(client.interface(), encMeta,
                          true /* createEncoder */, audioSource);
+    // If encoder could not be created (as in LPCM), then
+    // use the AudioSource directly as the MediaSource.
+    if (audioEncoder == NULL) {
+        ALOGV("If encoder could not be created (as in LPCM), then use the AudioSource directly as the MediaSource.");
+        audioEncoder = audioSource;
+    }
     mAudioSourceNode = audioSource;
 
     return audioEncoder;
@@ -982,6 +1002,22 @@ status_t StagefrightRecorder::startAMRRecording() {
         mWriter.clear();
         mWriter = NULL;
     }
+    return status;
+}
+
+status_t StagefrightRecorder::startWAVERecording() {
+    CHECK(mOutputFormat == OUTPUT_FORMAT_WAVE);
+
+    CHECK(mAudioEncoder == AUDIO_ENCODER_LPCM);
+    CHECK(mAudioSource != AUDIO_SOURCE_CNT);
+
+    mWriter = new WAVEWriter(mOutputFd);
+    status_t status = startRawAudioRecording();
+    if (status != OK) {
+        mWriter.clear();
+        mWriter = NULL;
+    }
+
     return status;
 }
 
@@ -1537,6 +1573,7 @@ status_t StagefrightRecorder::setupAudioEncoder(const sp<MediaWriter>& writer) {
         case AUDIO_ENCODER_AAC:
         case AUDIO_ENCODER_HE_AAC:
         case AUDIO_ENCODER_AAC_ELD:
+        case AUDIO_ENCODER_LPCM:
             break;
 
         default:
