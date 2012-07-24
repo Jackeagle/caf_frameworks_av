@@ -385,6 +385,16 @@ private:
     OMXCodec &operator=(const OMXCodec &);
     status_t setWMAFormat(const sp<MetaData> &inputFormat);
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
+
+    /* Dynamic Port Reconfig support */
+    typedef enum {
+        BUFFER_WITH_CLIENT = 0x1,
+        FILLED_BUFFERS_PRESENT = 0x2,
+    } DeferReason;
+
+    int32_t mDeferReason;
+
+    size_t countOutputBuffers(BufferStatus);
 };
 
 struct CodecCapabilities {
