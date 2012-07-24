@@ -608,7 +608,10 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         }
 
         if (mIsEncoder) {
-            setVideoInputFormat(mMIME, meta);
+            status_t err = setVideoInputFormat(mMIME, meta);
+            if (err != OK) {
+                return err;
+            }
         } else {
             int32_t width, height;
             bool success = meta->findInt32(kKeyWidth, &width);
@@ -871,7 +874,7 @@ status_t OMXCodec::isColorFormatSupported(
     return UNKNOWN_ERROR;
 }
 
-void OMXCodec::setVideoInputFormat(
+status_t OMXCodec::setVideoInputFormat(
         const char *mime, const sp<MetaData>& meta) {
 
     int32_t width, height, frameRate, bitRate, stride, sliceHeight;
@@ -932,7 +935,10 @@ void OMXCodec::setVideoInputFormat(
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
-    CHECK_EQ(err, (status_t)OK);
+    if(err != OK) {
+        ALOGE("Setting Video InPort Definition failed");
+        return err;
+    }
 
     //////////////////////// Output port /////////////////////////
     CHECK_EQ(setVideoPortFormatType(
@@ -960,7 +966,10 @@ void OMXCodec::setVideoInputFormat(
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
-    CHECK_EQ(err, (status_t)OK);
+    if(err != OK) {
+        ALOGE("Setting Video OutPort Definition failed");
+        return err;
+    }
 
     /////////////////// Codec-specific ////////////////////////
     switch (compressionFormat) {
@@ -984,6 +993,7 @@ void OMXCodec::setVideoInputFormat(
             CHECK(!"Support for this compressionFormat to be implemented.");
             break;
     }
+    return OK;
 }
 
 static OMX_U32 setPFramesSpacing(int32_t iFramesInterval, int32_t frameRate) {
