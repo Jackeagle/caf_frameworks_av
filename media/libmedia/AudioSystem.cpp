@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006-2007 The Android Open Source Project
+ * Copyright (C) 2012, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -568,6 +569,14 @@ status_t AudioSystem::setPhoneState(audio_mode_t state)
     if (aps == 0) return PERMISSION_DENIED;
 
     return aps->setPhoneState(state);
+}
+
+status_t AudioSystem::setInCallPhoneState(audio_mode_t state)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+
+    return aps->setInCallPhoneState(state);
 }
 
 status_t AudioSystem::setForceUse(audio_policy_force_use_t usage, audio_policy_forced_cfg_t config)

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (C) 2012, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,6 +41,8 @@
 #include <system/audio_policy.h>
 #include <hardware/audio_policy.h>
 #include <audio_effects/audio_effects_conf.h>
+
+#define MODE_CALL_KEY "CALL_KEY"
 
 namespace android {
 
@@ -185,6 +188,26 @@ status_t AudioPolicyService::setPhoneState(audio_mode_t state)
 
     Mutex::Autolock _l(mLock);
     mpAudioPolicy->set_phone_state(mpAudioPolicy, state);
+    return NO_ERROR;
+}
+
+status_t AudioPolicyService::setInCallPhoneState(audio_mode_t state)
+{
+    if (mpAudioPolicy == NULL) {
+        return NO_INIT;
+    }
+    if (!settingsAllowed()) {
+        return PERMISSION_DENIED;
+    }
+
+    ALOGV("setPhoneState() tid %d", gettid());
+    audio_mode_t callMode = state ? AUDIO_MODE_IN_CALL : AUDIO_MODE_NORMAL;
+    AudioSystem::setMode(callMode);
+    AudioParameter param = AudioParameter();
+    param.addInt(String8(MODE_CALL_KEY), (int)state);
+    AudioSystem::setParameters(0,param.toString());
+    Mutex::Autolock _l(mLock);
+    mpAudioPolicy->set_phone_state(mpAudioPolicy, callMode);
     return NO_ERROR;
 }
 
