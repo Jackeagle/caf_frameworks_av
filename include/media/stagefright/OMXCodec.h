@@ -246,7 +246,9 @@ private:
     bool mUseArbitraryMode;
     int64_t latenessUs;
     uint32_t LC_level; // LOW_COMPLEXITY level
-
+    bool mNumBFrames;
+    bool mInterlaceFormatDetected;
+    int32_t mInterlaceFrame;
 
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
@@ -380,8 +382,6 @@ private:
     OMXCodec &operator=(const OMXCodec &);
     status_t setWMAFormat(const sp<MetaData> &inputFormat);
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
-
-    bool mNumBFrames;
 };
 
 struct CodecCapabilities {
