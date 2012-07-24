@@ -359,7 +359,24 @@ status_t convertMetaDataToMessage(
         buffer->meta()->setInt32("csd", true);
         buffer->meta()->setInt64("timeUs", 0);
         msg->setBuffer("csd-1", buffer);
+    } else if (meta->findData(kKeyAacCodecSpecificData, &type, &data, &size)) {
+      if (size > 0 && data != NULL) {
+        sp<ABuffer> buffer = new ABuffer(size);
+        if (buffer != NULL) {
+          memcpy(buffer->data(), data, size);
+          buffer->meta()->setInt32("csd", true);
+          buffer->meta()->setInt64("timeUs", 0);
+          msg->setBuffer("csd-0", buffer);
+        }
+        else {
+          ALOGE("kKeyAacCodecSpecificData ABuffer Allocation failed");
+        }
+      }
+      else {
+          ALOGE("Not a valid data pointer or size == 0");
+      }
     }
+
 
     *format = msg;
 
