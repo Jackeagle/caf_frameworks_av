@@ -370,7 +370,6 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     CHECK(success);
     VideoFrame *frame = NULL;
 
-    /* TBD!
     if ((!strcmp(mime, MEDIA_MIMETYPE_VIDEO_DIVX))||
             (!strcmp(mime, MEDIA_MIMETYPE_VIDEO_DIVX311))||
             (!strcmp(mime, MEDIA_MIMETYPE_VIDEO_DIVX4))||
@@ -378,7 +377,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     {
         ALOGV("Software codec is not being used for %s clips for thumbnail ",
             mime);
-    } else {*/
+    } else {
         char value[PROPERTY_VALUE_MAX];
         if (property_get("debug.thumbnail.disablesw", value, NULL) &&
             atoi(value)) {
@@ -398,7 +397,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
                 }
             }
         }
-//    }
+    }
     if (frame == NULL) {
         ALOGV("Software decoder failed to extract thumbnail, "
              "trying hardware decoder.");
