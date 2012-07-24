@@ -237,6 +237,14 @@ private:
     // a video encoder.
     List<int64_t> mDecodingTimeList;
 
+    /* Dynamic Port Reconfig support */
+    typedef enum {
+        BUFFER_WITH_CLIENT = 0x1,
+        FILLED_BUFFERS_PRESENT = 0x2,
+    } DeferReason;
+
+    int32_t mDeferReason;
+
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
              bool isEncoder, const char *mime, const char *componentName,
@@ -371,6 +379,7 @@ private:
     bool mNumBFrames;
     status_t releaseMediaBuffersOn(OMX_U32 portIndex);
     bool mInSmoothStreamingMode;
+    size_t countOutputBuffers(BufferStatus);
 };
 
 struct CodecCapabilities {
