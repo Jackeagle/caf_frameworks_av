@@ -1132,6 +1132,7 @@ status_t NuPlayer::prepareAsync() // only for DASH
             return NO_MEMORY;
         }
         msg->post();
+        return -EWOULDBLOCK;
     }
     return OK;
 }
