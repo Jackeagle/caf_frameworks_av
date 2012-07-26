@@ -37,9 +37,11 @@
 #ifdef QCOM_LISTEN_FEATURE_ENABLE
 #include "ListenService.h"
 #endif
+#include <dlfcn.h>
 
 using namespace android;
 
+typedef void (*MPQSInstantiateFunc)();
 int main(int argc, char** argv)
 {
     signal(SIGPIPE, SIG_IGN);
@@ -134,6 +136,25 @@ int main(int argc, char** argv)
         ALOGI("ListenService instantiated");
         ListenService::instantiate();
 #endif
+   {
+      void* pMPQSHandle = NULL;
+      MPQSInstantiateFunc mpqsInstantaite;
+      pMPQSHandle = dlopen("libmpqstobinder.so", RTLD_NOW);
+
+      if (! pMPQSHandle ) {
+      ALOGE("Error Loading libmpqstobinder \nError: %s \n", dlerror());
+      } else {
+         // Clear any existing error
+         dlerror();
+         mpqsInstantaite = (MPQSInstantiateFunc)dlsym(pMPQSHandle, "_ZN7android12MPQSToBinder11instantiateEv");
+         if (NULL == pMPQSHandle) {
+            ALOGE("Error Loading symbol libmpqstobinder.instantiate \n Error is : %s\n", dlerror());
+         } else {
+            ALOGE("Loaded symbol libmpqstobinder.instantiate \n");
+         }
+         mpqsInstantaite();
+      }
+   }
         AudioPolicyService::instantiate();
         registerExtensions();
         ProcessState::self()->startThreadPool();
