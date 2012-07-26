@@ -26,7 +26,7 @@
 #include <sys/time.h>
 #include <dirent.h>
 #include <unistd.h>
-
+#include <dlfcn.h>
 #include <string.h>
 
 #include <cutils/atomic.h>
@@ -76,6 +76,8 @@ sp<MediaPlayerBase> createAAH_TXPlayer();
 sp<MediaPlayerBase> createAAH_RXPlayer();
 }
 
+class MPQ_PlayerClient;
+
 namespace {
 using android::media::Metadata;
 using android::status_t;
@@ -89,7 +91,7 @@ const int kMaxFilterSize = 64;  // I pulled that out of thin air.
 
 // FIXME: Move all the metadata related function in the Metadata.cpp
 
-
+typedef MPQ_PlayerClient* (*CreateMPQ_PlayerClientFunc)(void);
 // Unmarshall a filter from a Parcel.
 // Filter format in a parcel:
 //
@@ -628,6 +630,9 @@ player_type getPlayerType(const char* url)
         }
     }
 
+    if (!strncasecmp("mpq", url, 3))
+        return MPQ_PLAYER;
+
     return getDefaultPlayerType();
 }
 
@@ -672,6 +677,8 @@ player_type MediaPlayerService::Client::getPlayerType(
 static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
         notify_callback_f notifyFunc)
 {
+    void* handle;
+    CreateMPQ_PlayerClientFunc funcHandle;
     sp<MediaPlayerBase> p;
     switch (playerType) {
         case SONIVOX_PLAYER:
@@ -687,7 +694,7 @@ static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
             p = new NuPlayerDriver;
             break;
         case TEST_PLAYER:
-            ALOGV("Create Test Player stub");
+            ALOGV(" create Test Player stub");
             p = new TestPlayerStub();
             break;
         case AAH_RX_PLAYER:
@@ -697,6 +704,12 @@ static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
         case AAH_TX_PLAYER:
             ALOGV(" create A@H TX Player");
             p = createAAH_TXPlayer();
+            break;
+        case MPQ_PLAYER:
+            ALOGE(" create MPQ PLAYER");
+            handle = dlopen("libmpqplayerclient.so", RTLD_NOW);
+            funcHandle = (CreateMPQ_PlayerClientFunc)dlsym(handle, "_ZN16MPQ_PlayerClient22CreateMPQ_PlayerClientEv");
+            p = (MediaPlayerBase*)funcHandle();
             break;
         default:
             ALOGE("Unknown player type: %d", playerType);
