@@ -120,6 +120,16 @@ public:
     static const char KEY_QC_FACE_DETECTION[];
     static const char KEY_QC_SUPPORTED_FACE_DETECTION[];
 
+    // supported camera features to be queried by Snapdragon SDK
+    //Read only
+    static const char KEY_QC_SUPPORTED_CAMERA_FEATURES[];
+
+    //Indicates number of faces requested by the application.
+    //This value will be rejected if the requested faces
+    //greater than supported by hardware.
+    //Write only.
+    static const char KEY_QC_MAX_NUM_REQUESTED_FACES[];
+
     //Redeye Reduction
     static const char KEY_QC_REDEYE_REDUCTION[];
     static const char KEY_QC_SUPPORTED_REDEYE_REDUCTION[];
