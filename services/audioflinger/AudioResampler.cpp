@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
+ * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +24,8 @@
 #include <cutils/log.h>
 #include <cutils/properties.h>
 #include "AudioResampler.h"
-#if 0
 #include "AudioResamplerSinc.h"
 #include "AudioResamplerCubic.h"
-#endif
 
 #ifdef __arm__
 #include <machine/cpu-features.h>
@@ -91,7 +90,6 @@ AudioResampler* AudioResampler::create(int bitDepth, int inChannelCount,
         quality = atoi(value);
         ALOGD("forcing AudioResampler quality to %d", quality);
     }
-
     if (quality == DEFAULT)
         quality = LOW_QUALITY;
 
@@ -101,16 +99,15 @@ AudioResampler* AudioResampler::create(int bitDepth, int inChannelCount,
         ALOGV("Create linear Resampler");
         resampler = new AudioResamplerOrder1(bitDepth, inChannelCount, sampleRate);
         break;
-#if 0
     case MED_QUALITY:
         ALOGV("Create cubic Resampler");
         resampler = new AudioResamplerCubic(bitDepth, inChannelCount, sampleRate);
         break;
     case HIGH_QUALITY:
-        ALOGV("Create sinc Resampler");
-        resampler = new AudioResamplerSinc(bitDepth, inChannelCount, sampleRate);
+    case QCOM_QUALITY:
+        ALOGV("Create sinc Resampler = %d",quality);
+        resampler = new AudioResamplerSinc(bitDepth, inChannelCount, sampleRate, quality);
         break;
-#endif
     }
 
     // initialize resampler

@@ -44,9 +44,9 @@ LOCAL_SRC_FILES:=               \
     AudioMixer.cpp.arm          \
     AudioResampler.cpp.arm      \
     AudioPolicyService.cpp      \
-    ServiceUtilities.cpp
-#   AudioResamplerSinc.cpp.arm
-#   AudioResamplerCubic.cpp.arm
+    ServiceUtilities.cpp        \
+    AudioResamplerSinc.cpp.arm  \
+    AudioResamplerCubic.cpp.arm
 
 LOCAL_SRC_FILES += StateQueue.cpp
 
