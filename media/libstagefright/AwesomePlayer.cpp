@@ -1858,6 +1858,8 @@ void AwesomePlayer::onVideoEvent() {
         latenessUs = nowUs - timeUs;
 
         ATRACE_INT("Video Lateness (ms)", latenessUs / 1E3);
+        mVideoBuffer->meta_data()->setInt64(kKeyLateness, latenessUs);
+
 
         if (latenessUs > kVideoTooLateMarginUs
                 && mAudioPlayer != NULL

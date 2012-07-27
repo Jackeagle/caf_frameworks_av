@@ -244,6 +244,9 @@ private:
     bool mThumbnailMode;
     bool mSPSParsed;
     bool mUseArbitraryMode;
+    int64_t latenessUs;
+    uint32_t LC_level; // LOW_COMPLEXITY level
+
 
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
