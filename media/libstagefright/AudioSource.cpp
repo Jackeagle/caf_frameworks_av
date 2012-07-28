@@ -79,7 +79,7 @@ AudioSource::AudioSource(
     if (status == OK) {
         // make sure that the AudioRecord callback never returns more than the maximum
         // buffer size
-        int frameCount = kMaxBufferSize / sizeof(int16_t) / channelCount;
+        int frameCount = mMaxBufferSize / sizeof(int16_t) / channelCount;
 
         // make sure that the AudioRecord total buffer size is large enough
         int bufCount = 2;
@@ -94,7 +94,7 @@ AudioSource::AudioSource(
         mRecord = new AudioRecord(
                     inputSource, sampleRate, AUDIO_FORMAT_PCM_16_BIT,
                     audio_channel_in_mask_from_count(channelCount),
-                    4 * kMaxBufferSize / sizeof(int16_t), /* Enable ping-pong buffers */
+                    4 * mMaxBufferSize / sizeof(int16_t), /* Enable ping-pong buffers */
                     flags,
                     AudioRecordCallbackFunction,
                     this,
