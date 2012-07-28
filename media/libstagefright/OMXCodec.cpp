@@ -636,6 +636,15 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             CODEC_LOGE("setAACFormat() failed (err = %d)", err);
             return err;
         }
+
+        uint32_t type;
+        const void *data;
+        size_t size;
+
+        if (meta->findData(kKeyAacCodecSpecificData, &type, &data, &size)) {
+            ALOGV("OMXCodec:: configureCodec found kKeyAacCodecSpecificData of size %d\n", size);
+            addCodecSpecificData(data, size);
+        }
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_AC3, mMIME)) {
         return BAD_TYPE;
         /*int32_t numChannels, sampleRate;
