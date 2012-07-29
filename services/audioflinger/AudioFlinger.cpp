@@ -6011,6 +6011,7 @@ status_t AudioFlinger::DirectAudioTrack::start() {
 
 void AudioFlinger::DirectAudioTrack::stop() {
     mOutputDesc->mActive = false;
+    mOutputDesc->stream->stop(mOutputDesc->stream);
     AudioSystem::stopOutput(mOutput, (audio_stream_type_t)mOutputDesc->mStreamType);
 }
 
