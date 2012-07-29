@@ -316,7 +316,6 @@ private:
     void printStats();
     int64_t getTimeOfDayUs();
     bool mStatistics;
-    int64_t mLateAVSyncMargin;
 
     struct TrackStat {
         String8 mMIME;
@@ -379,6 +378,12 @@ private:
 
     //Flag to check if tunnel mode audio is enabled
     bool mIsTunnelAudio;
+
+    //Flag to check if audio is enabled for MPQ
+    bool mIsMPQAudio;
+    //Flag to check if tunnel mode audio is enabled for MPQ
+    bool mIsMPQTunnelAudio;
+
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
 };

@@ -21,6 +21,9 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+    ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+    endif
     ifeq ($(USE_TUNNEL_MODE),true)
         LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
         LOCAL_CFLAGS += -DUSE_LPA_MODE
@@ -150,6 +153,16 @@ LOCAL_STATIC_LIBRARIES := \
 
 LOCAL_SRC_FILES += \
         chromium_http_stub.cpp
+
+ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+    ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+        LOCAL_SRC_FILES += MPQAudioPlayer.cpp
+    endif
+    LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/libalsa-intf
+    LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/sound
+    LOCAL_SHARED_LIBRARIES += libalsa-intf
+endif
+
 LOCAL_CPPFLAGS += -DCHROMIUM_AVAILABLE=1
 
 LOCAL_SHARED_LIBRARIES += libstlport
