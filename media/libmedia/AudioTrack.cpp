@@ -394,7 +394,7 @@ int AudioTrack::channelCount() const
 uint32_t AudioTrack::frameCount() const
 {
     if(mAudioDirectOutput != -1) {
-        return 0;
+        return mAudioFlinger->frameCount(mAudioDirectOutput);
     }
     return mCblk->frameCount;
 }
