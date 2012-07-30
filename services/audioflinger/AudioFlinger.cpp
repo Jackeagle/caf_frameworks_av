@@ -92,6 +92,11 @@
 #include "Soaker.h"
 #endif
 
+#ifdef SRS_PROCESSING
+#include "srs_processing.h"
+#include "postpro_patch_ics.h"
+#endif
+
 // ----------------------------------------------------------------------------
 
 // Note: the following macro is used for extremely verbose logging message.  In
@@ -855,9 +860,21 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
         return PERMISSION_DENIED;
     }
 
+#ifdef SRS_PROCESSING
+    AudioParameter param = AudioParameter(keyValuePairs);
+    String8 key = String8(AudioParameter::keyRouting);
+    int device;
+    if (param.getInt(key, device) == NO_ERROR) {
+        ALOGV("setParameters:: routing change to device %d", device);
+        SRS_Processing::ProcessOutRoute(SRS_Processing::AUTO, this, device);
+    }
+#endif
     // ioHandle == 0 means the parameters are global to the audio hardware interface
     if (ioHandle == 0) {
         Mutex::Autolock _l(mLock);
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_ICS_PARAMS_SET(keyValuePairs);
+#endif
         status_t final_result = NO_ERROR;
         {
             AutoMutex lock(mHardwareLock);
@@ -939,6 +956,9 @@ String8 AudioFlinger::getParameters(audio_io_handle_t ioHandle, const String8& k
     if (ioHandle == 0) {
         String8 out_s8;
 
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_ICS_PARAMS_GET(keys, out_s8);
+#endif
         for (size_t i = 0; i < mAudioHwDevs.size(); i++) {
             char *s;
             {
@@ -2512,6 +2532,13 @@ bool AudioFlinger::PlaybackThread::threadLoop()
 if (mType == MIXER) {
     longStandbyExit = false;
 }
+#ifdef SRS_PROCESSING
+if (mType == MIXER) {
+        POSTPRO_PATCH_ICS_OUTPROC_MIX_INIT(this, gettid());
+    } else if (mType == DUPLICATING) {
+        POSTPRO_PATCH_ICS_OUTPROC_DUPE_INIT(this, gettid());
+    }
+#endif
 
     // DUPLICATING
     // FIXME could this be made local to while loop?
@@ -2620,6 +2647,15 @@ if (mType == MIXER) {
         // sleepTime == 0 means we must write to audio hardware
         if (sleepTime == 0) {
 
+#ifdef SRS_PROCESSING
+        if (mType == MIXER) {
+             POSTPRO_PATCH_ICS_OUTPROC_MIX_SAMPLES(this, mFormat, mMixBuffer,
+                mixBufferSize, mSampleRate, mChannelCount);
+        } else if (mType == DUPLICATING) {
+            POSTPRO_PATCH_ICS_OUTPROC_DUPE_SAMPLES(this, mFormat, mMixBuffer,
+                mixBufferSize, mSampleRate, mChannelCount);
+        }
+#endif
             threadLoop_write();
 
 if (mType == MIXER) {
@@ -2677,6 +2713,15 @@ if (mType == MIXER || mType == DIRECT) {
 if (mType == DUPLICATING) {
     // for DuplicatingThread, standby mode is handled by the outputTracks
 }
+
+#ifdef SRS_PROCESSING
+        if (mType == MIXER) {
+            POSTPRO_PATCH_ICS_OUTPROC_MIX_EXIT(this, gettid());
+        } else if (mType == DUPLICATING) {
+            POSTPRO_PATCH_ICS_OUTPROC_DUPE_EXIT(this, gettid());
+        }
+#endif
+
 
     releaseWakeLock();
 
@@ -3429,7 +3474,9 @@ bool AudioFlinger::MixerThread::checkForNewParameters_l()
         String8 keyValuePair = mNewParameters[0];
         AudioParameter param = AudioParameter(keyValuePair);
         int value;
-
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(this, param, value);
+#endif
         if (param.getInt(String8(AudioParameter::keySamplingRate), value) == NO_ERROR) {
             reconfig = true;
         }
@@ -6930,6 +6977,10 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
             ALOGI("Using module %d has the primary audio interface", module);
             mPrimaryHardwareDev = outHwDev;
 
+#ifdef SRS_PROCESSING
+            SRS_Processing::RawDataSet(NULL, "qdsp hook", &mPrimaryHardwareDev,
+                sizeof(&mPrimaryHardwareDev));
+#endif
             AutoMutex lock(mHardwareLock);
             mHardwareStatus = AUDIO_HW_SET_MODE;
             outHwDev->set_mode(outHwDev, mMode);
