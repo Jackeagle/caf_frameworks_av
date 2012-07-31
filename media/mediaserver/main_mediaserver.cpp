@@ -29,9 +29,11 @@
 #include "MediaPlayerService.h"
 #include "AudioPolicyService.h"
 #include "GestureDeviceService.h"
+#include <dlfcn.h>
 
 using namespace android;
 
+typedef void (*MPQSInstantiateFunc)();
 int main(int argc, char** argv)
 {
     sp<ProcessState> proc(ProcessState::self());
@@ -41,6 +43,25 @@ int main(int argc, char** argv)
     MediaPlayerService::instantiate();
     CameraService::instantiate();
     AudioPolicyService::instantiate();
+   {
+      void* pMPQSHandle = NULL;
+      MPQSInstantiateFunc mpqsInstantaite;
+      pMPQSHandle = dlopen("libmpqstobinder.so", RTLD_NOW);
+
+      if (! pMPQSHandle ) {
+      ALOGE("Error Loading libmpqstobinder \nError: %s \n", dlerror());
+      } else {
+         // Clear any existing error
+         dlerror();
+         mpqsInstantaite = (MPQSInstantiateFunc)dlsym(pMPQSHandle, "_ZN7android12MPQSToBinder11instantiateEv");
+         if (NULL == pMPQSHandle) {
+            ALOGE("Error Loading symbol libmpqstobinder.instantiate \n Error is : %s\n", dlerror());
+         } else {
+            ALOGE("Loaded symbol libmpqstobinder.instantiate \n");
+         }
+         mpqsInstantaite();
+      }
+   }
     GestureDeviceService::instantiate();
     ProcessState::self()->startThreadPool();
     IPCThreadState::self()->joinThreadPool();
