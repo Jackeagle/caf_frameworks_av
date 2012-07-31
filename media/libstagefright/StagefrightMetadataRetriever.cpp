@@ -277,7 +277,7 @@ static VideoFrame *extractVideoFrameWithCodecFlags(
                 width, height,
                 crop_left, crop_top, crop_right, crop_bottom,
                 frame->mData,
-                frame->mWidth,
+                frame_width_rounded,
                 frame->mHeight,
                 0, 0, frame->mWidth - 1, frame->mHeight - 1);
     } else {
