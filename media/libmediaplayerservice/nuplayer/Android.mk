@@ -11,6 +11,7 @@ LOCAL_SRC_FILES:=                       \
         NuPlayerStreamListener.cpp      \
         RTSPSource.cpp                  \
         StreamingSource.cpp             \
+        NuPlayerStats.cpp
 
 LOCAL_C_INCLUDES := \
 	$(TOP)/frameworks/av/media/libstagefright/httplive            \
