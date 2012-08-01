@@ -658,6 +658,7 @@ public:
     // other modes.
     static const char FOCUS_MODE_CONTINUOUS_PICTURE[];
 
+    static const char KEY_SINGLE_ISP_OUTPUT_ENABLED[];
 private:
     DefaultKeyedVector<String8,String8>    mMap;
 };
