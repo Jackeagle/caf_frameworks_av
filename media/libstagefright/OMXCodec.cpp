@@ -549,8 +549,11 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             esds.getCodecSpecificInfo(
                     &codec_specific_data, &codec_specific_data_size);
 
+            meta->findCString(kKeyMIMEType, &mime_type);
+            if (strncmp(mime_type, MEDIA_MIMETYPE_AUDIO_MPEG, 10)) {
             addCodecSpecificData(
                     codec_specific_data, codec_specific_data_size);
+            }
         } else if (meta->findData(kKeyAVCC, &type, &data, &size)) {
             // Parse the AVCDecoderConfigurationRecord
 
