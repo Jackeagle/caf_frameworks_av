@@ -1961,6 +1961,18 @@ status_t MPEG4Writer::Track::threadEntry() {
         meta_data->findInt32(kKeyIsSyncFrame, &isSync);
         CHECK(meta_data->findInt64(kKeyTime, &timestampUs));
 
+        if(!mIsAudio) {
+          int32_t frameRate, hfr = 0, multiple;
+          bool success = mMeta->findInt32(kKeyFrameRate, &frameRate);
+          CHECK(success);
+          success = mMeta->findInt32(kKeyHFR, &hfr);
+          if (!success) {
+              hfr = 0;
+          }
+          multiple = hfr?(hfr/frameRate):1;
+          timestampUs = multiple * timestampUs;
+        }
+
 ////////////////////////////////////////////////////////////////////////////////
         if (mNumSamples == 0) {
             mFirstSampleTimeRealUs = systemTime() / 1000;
@@ -1988,6 +2000,15 @@ status_t MPEG4Writer::Track::threadEntry() {
              */
             int64_t decodingTimeUs;
             CHECK(meta_data->findInt64(kKeyDecodingTime, &decodingTimeUs));
+            {
+              int32_t frameRate, hfr, multiple;
+              bool success = mMeta->findInt32(kKeyHFR, &hfr);
+              CHECK(success);
+              success = mMeta->findInt32(kKeyFrameRate, &frameRate);
+              CHECK(success);
+              multiple = hfr?(hfr/frameRate):1;
+              decodingTimeUs = multiple * decodingTimeUs;
+            }
             decodingTimeUs -= previousPausedDurationUs;
             cttsOffsetTimeUs =
                     timestampUs + kMaxCttsOffsetTimeUs - decodingTimeUs;
