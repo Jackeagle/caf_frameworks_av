@@ -1,7 +1,7 @@
 /*
 **
 ** Copyright 2007, The Android Open Source Project
-** Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+** Copyright (c) 2012 Code Aurora Forum. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -397,6 +397,7 @@ private:
                                         audio_format_t format,
                                         uint32_t channelMask,
                                         int frameCount,
+                                        uint32_t flags,
                                         const sp<IMemory>& sharedBuffer,
                                         int sessionId);
             virtual             ~TrackBase();
@@ -468,6 +469,7 @@ private:
                                 // support dynamic rates, the current value is in control block
             const audio_format_t mFormat;
             bool                mStepServerFailed;
+            uint32_t            mFlags;
             const int           mSessionId;
             uint8_t             mChannelCount;
             uint32_t            mChannelMask;
@@ -1375,6 +1377,7 @@ private:
                                         audio_format_t format,
                                         uint32_t channelMask,
                                         int frameCount,
+                                        uint32_t flags,
                                         int sessionId);
             virtual             ~RecordTrack();
 
@@ -1423,6 +1426,7 @@ private:
                         audio_format_t format,
                         int channelMask,
                         int frameCount,
+                        uint32_t flags,
                         int sessionId,
                         status_t *status);
 
@@ -1472,7 +1476,6 @@ private:
                 const int                           mReqChannelCount;
                 const uint32_t                      mReqSampleRate;
                 ssize_t                             mBytesRead;
-                int16_t                             mInputSource;
                 // sync event triggering actual audio capture. Frames read before this event will
                 // be dropped and therefore not read by the application.
                 sp<SyncEvent>                       mSyncStartEvent;
@@ -1480,6 +1483,7 @@ private:
                 // when < 0, maximum frames to drop before starting capture even if sync event is
                 // not received
                 ssize_t                             mFramestoDrop;
+                int16_t                             mInputSource;
     };
 
     // server side of the client's IAudioRecord
