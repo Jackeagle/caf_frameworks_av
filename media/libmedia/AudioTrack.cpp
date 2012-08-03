@@ -19,7 +19,6 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "AudioTrack"
-
 #include <stdint.h>
 #include <sys/types.h>
 #include <limits.h>
@@ -262,6 +261,15 @@ status_t AudioTrack::set(
         flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
     }
 
+    if ((streamType == AUDIO_STREAM_VOICE_CALL)
+         && (channelMask == AUDIO_CHANNEL_OUT_MONO)
+         && ((sampleRate == 8000 || sampleRate == 16000)))
+    {
+        ALOGD("Turn on Direct Output for VOIP RX");
+        flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
+    }
+
+
     if (!audio_is_output_channel(channelMask)) {
         ALOGE("Invalid channel mask");
         return BAD_VALUE;
@@ -401,10 +409,18 @@ uint32_t AudioTrack::frameCount() const
 
 size_t AudioTrack::frameSize() const
 {
-    if (audio_is_linear_pcm(mFormat)) {
-        return channelCount()*audio_bytes_per_sample(mFormat);
+    if ((audio_stream_type_t)mStreamType == AUDIO_STREAM_VOICE_CALL) {
+       if (audio_is_linear_pcm(mFormat)) {
+          return channelCount()*audio_bytes_per_sample(mFormat);
+       } else {
+          return channelCount()*sizeof(int16_t);
+       }
     } else {
-        return sizeof(uint8_t);
+        if (audio_is_linear_pcm(mFormat)) {
+            return channelCount()*audio_bytes_per_sample(mFormat);
+        } else {
+            return sizeof(uint8_t);
+        }
     }
 }
 
