@@ -76,7 +76,12 @@ LOCAL_SHARED_LIBRARIES := \
 
 # SRS Processing
 ifeq ($(strip $(BOARD_USES_SRS_TRUEMEDIA)),true)
-LOCAL_SHARED_LIBRARIES += libsrsprocessing
+LOCAL_SHARED_LIBRARIES += libsrsprocessing_tm
+LOCAL_CFLAGS += -DSRS_PROCESSING
+LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-effects
+endif
+ifeq ($(strip $(BOARD_USES_SRS_SS3D)),true)
+LOCAL_SHARED_LIBRARIES += libsrsprocessing_ss3d
 LOCAL_CFLAGS += -DSRS_PROCESSING
 LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-effects
 endif
