@@ -577,7 +577,7 @@ sp<IDirectTrack> AudioFlinger::createDirectTrack(
     }
     desc->mStreamType = streamType;
     if (sessionId != NULL && *sessionId != AUDIO_SESSION_OUTPUT_MIX) {
-        for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
+        /*for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
             sp<PlaybackThread> t = mPlaybackThreads.valueAt(i);
             // Check if the session ID is already associated with a track
             uint32_t sessions = t->hasAudioSession(*sessionId);
@@ -599,7 +599,7 @@ sp<IDirectTrack> AudioFlinger::createDirectTrack(
                 mLPAEffectChain->setVolume_l(&volume,&volume);
                 t->mLock.unlock();
             }
-        }
+        }*/
     } else {
         if(sessionId != NULL) {
             ALOGE("Error: Invalid sessionID (%d) for direct audio track", *sessionId);
