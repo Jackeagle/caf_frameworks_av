@@ -77,6 +77,7 @@ static const size_t kHighWaterMarkBytes = 200000;
 static int64_t kVideoEarlyMarginUs = -10000LL;   //50 ms
 static int64_t kVideoLateMarginUs = 100000LL;  //100 ms
 static int64_t kVideoTooLateMarginUs = 500000LL;
+int AwesomePlayer::mTunnelAliveAP = 0;
 
 struct AwesomeEvent : public TimedEventQueue::Event {
     AwesomeEvent(
@@ -637,7 +638,15 @@ void AwesomePlayer::reset_l() {
     mIsMPQAudio = false;
     mIsMPQTunnelAudio = false;
     // Disable Tunnel Mode Audio
+    if (mIsTunnelAudio) {
+      if(mTunnelAliveAP > 0) {
+           mTunnelAliveAP--;
+           ALOGE("mTunnelAliveAP = %d", mTunnelAliveAP);
+       }
+    }
     mIsTunnelAudio = false;
+
+
 }
 
 void AwesomePlayer::notifyListener_l(int msg, int ext1, int ext2) {
@@ -1580,8 +1589,9 @@ status_t AwesomePlayer::initAudioDecoder() {
     ALOGD("MPQ Mime Type: %s,\
             getMPQObjectsAlive = %d", mime,\
             (MPQAudioPlayer::getMPQAudioObjectsAlive()));
-    ALOGD("Tunnel Mime Type: %s, object alive = %d",\
-            mime, (TunnelPlayer::mTunnelObjectsAlive == 0));
+
+    ALOGD("Tunnel Mime Type: %s, object alive = %d, mTunnelAliveAP = %d",\
+            mime, (TunnelPlayer::mTunnelObjectsAlive), mTunnelAliveAP);
     if((is_mpq)&&((strcmp("true",mpqAudioDecode) == 0)||(atoi(mpqAudioDecode))) &&
             (MPQAudioPlayer::getMPQAudioObjectsAlive() == 0) &&
             (property_get("ro.product.device", value, "0") &&
@@ -1602,6 +1612,7 @@ status_t AwesomePlayer::initAudioDecoder() {
     }
     else if(((strcmp("true",tunnelDecode) == 0)||(atoi(tunnelDecode))) &&
             (TunnelPlayer::mTunnelObjectsAlive == 0) &&
+            mTunnelAliveAP == 0 &&
             ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) ||
             (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC)))) {
 
@@ -1611,11 +1622,13 @@ status_t AwesomePlayer::initAudioDecoder() {
            if(((strncmp("true", tunnelAVDecode, 4) == 0)||(atoi(tunnelAVDecode)))) {
                ALOGD("Enable Tunnel Mode for A-V playback");
                mIsTunnelAudio = true;
+               mTunnelAliveAP++;
            }
         }
         else {
             ALOGI("Tunnel Mode Audio Enabled");
             mIsTunnelAudio = true;
+            mTunnelAliveAP++;
         }
     }
     else
