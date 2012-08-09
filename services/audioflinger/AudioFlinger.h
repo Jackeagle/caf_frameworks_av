@@ -1343,6 +1343,8 @@ private:
         int  mOutput;
         bool mIsPaused;
         audio_output_flags_t mFlag;
+        int32_t mSampleRate;
+        int32_t mChannelCount;
 
         class BufferInfo {
         public:
