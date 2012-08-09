@@ -76,6 +76,7 @@ static const size_t kHighWaterMarkBytes = 200000;
 static int64_t kVideoEarlyMarginUs = -10000LL;   //50 ms
 static int64_t kVideoLateMarginUs = 100000LL;  //100 ms
 static int64_t kVideoTooLateMarginUs = 500000LL;
+int AwesomePlayer::mTunnelAliveAP = 0;
 
 struct AwesomeEvent : public TimedEventQueue::Event {
     AwesomeEvent(
@@ -633,7 +634,15 @@ void AwesomePlayer::reset_l() {
     mWatchForAudioSeekComplete = false;
     mWatchForAudioEOS = false;
     // Disable Tunnel Mode Audio
+    if (mIsTunnelAudio) {
+      if(mTunnelAliveAP > 0) {
+           mTunnelAliveAP--;
+           ALOGE("mTunnelAliveAP = %d", mTunnelAliveAP);
+       }
+    }
     mIsTunnelAudio = false;
+
+
 }
 
 void AwesomePlayer::notifyListener_l(int msg, int ext1, int ext2) {
@@ -1542,6 +1551,7 @@ status_t AwesomePlayer::initAudioDecoder() {
             mime, (TunnelPlayer::mTunnelObjectsAlive == 0));
     if(((strcmp("true",tunnelDecode) == 0)||(atoi(tunnelDecode))) &&
             (TunnelPlayer::mTunnelObjectsAlive == 0) &&
+            mTunnelAliveAP == 0 &&
             ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) ||
             (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC)))) {
 
@@ -1551,11 +1561,13 @@ status_t AwesomePlayer::initAudioDecoder() {
            if(((strncmp("true", tunnelAVDecode, 4) == 0)||(atoi(tunnelAVDecode)))) {
                ALOGD("Enable Tunnel Mode for A-V playback");
                mIsTunnelAudio = true;
+               mTunnelAliveAP++;
            }
         }
         else {
             ALOGI("Tunnel Mode Audio Enabled");
             mIsTunnelAudio = true;
+            mTunnelAliveAP++;
         }
     }
     else
