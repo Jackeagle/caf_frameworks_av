@@ -1572,6 +1572,21 @@ status_t MediaPlayerService::AudioOutput::open(
                 return NO_INIT;
             }
         }
+
+        if (mRecycledTrack) {
+            //usleep(500000);
+            // if we're not going to reuse the track, unblock and flush it
+            if (mCallbackData != NULL) {
+                mCallbackData->setOutput(NULL);
+                mCallbackData->endTrackSwitch();
+            }
+            mRecycledTrack->flush();
+            delete mRecycledTrack;
+            mRecycledTrack = NULL;
+            delete mCallbackData;
+            mCallbackData = NULL;
+            close();
+        }
         ALOGV("setVolume");
         mCallbackData = newcbd;
         t->setVolume(mLeftVolume, mRightVolume);
@@ -1679,7 +1694,7 @@ status_t MediaPlayerService::AudioOutput::open(
             delete newcbd;
             return OK;
         }
-
+        //usleep(500000);
         // if we're not going to reuse the track, unblock and flush it
         if (mCallbackData != NULL) {
             mCallbackData->setOutput(NULL);

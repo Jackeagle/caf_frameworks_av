@@ -465,6 +465,7 @@ size_t LPAPlayer::AudioSinkCallback(
 void LPAPlayer::reset() {
 
     // Close the audiosink after all the threads exited to make sure
+    mReachedEOS = true;
     mAudioSink->stop();
     mAudioSink->close();
     mAudioSink.clear();
