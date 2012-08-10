@@ -162,7 +162,7 @@ status_t AudioRecord::set(
         return BAD_VALUE;
     }
 
-    int channelCount = popcount((channelMask) & (AUDIO_CHANNEL_IN_STEREO | AUDIO_CHANNEL_IN_MONO));
+    int channelCount = popcount((channelMask) & (AUDIO_CHANNEL_IN_STEREO | AUDIO_CHANNEL_IN_MONO | AUDIO_CHANNEL_IN_5POINT1));
 
     if (sessionId == 0 ) {
         mSessionId = AudioSystem::newAudioSessionId();
