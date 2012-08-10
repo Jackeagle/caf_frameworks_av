@@ -40,8 +40,6 @@ AnotherPacketSource::AnotherPacketSource(const sp<MetaData> &meta)
 
     if (!strncasecmp("audio/", mime, 6)) {
         mIsAudio = true;
-    } else {
-        CHECK(!strncasecmp("video/", mime, 6));
     }
 }
 
