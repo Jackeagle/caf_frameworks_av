@@ -1,6 +1,12 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+	ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+	    LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+	endif
+endif
+
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 LOCAL_SRC_FILES:=                         \
@@ -103,6 +109,17 @@ LOCAL_STATIC_LIBRARIES := \
         libstagefright_httplive \
         libstagefright_id3 \
         libFLAC \
+
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+    ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+        ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+            LOCAL_SRC_FILES += MPQAudioPlayer.cpp
+        endif
+        LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/libalsa-intf
+        LOCAL_C_INCLUDES += $(TOP)/kernel/include/sound
+        LOCAL_SHARED_LIBRARIES += libalsa-intf
+    endif
+endif
 
 ifneq ($(TARGET_BUILD_PDK), true)
 LOCAL_STATIC_LIBRARIES += \
