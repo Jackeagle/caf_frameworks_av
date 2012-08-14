@@ -204,8 +204,13 @@ private:
     // is a frame available for dequeuing
     Condition mFrameAvailableCondition;
 
+    // onBufferReleased is called twice, first on setBufferCount, second on disconnect
+    // Do not stop recording on the first call
+    bool mFirstBufferReleased;
+
     status_t reset();
 
+    void releaseBuffers();
     // Avoid copying and equating and default constructor
     DISALLOW_IMPLICIT_CONSTRUCTORS(SurfaceMediaSource);
 };
