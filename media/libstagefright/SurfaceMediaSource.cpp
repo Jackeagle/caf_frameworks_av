@@ -44,7 +44,8 @@ SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeig
     mStopped(false),
     mNumFramesReceived(0),
     mNumFramesEncoded(0),
-    mFirstFrameTimestamp(0)
+    mFirstFrameTimestamp(0),
+    mFirstBufferReleased(true)
 {
     ALOGV("SurfaceMediaSource::SurfaceMediaSource");
 
@@ -80,7 +81,11 @@ SurfaceMediaSource::~SurfaceMediaSource() {
     ALOGV("SurfaceMediaSource::~SurfaceMediaSource");
     if (!mStopped) {
         reset();
+    } else {
+        Mutex::Autolock lock(mMutex);
+        releaseBuffers();
     }
+
 }
 
 nsecs_t SurfaceMediaSource::getTimestamp() {
@@ -155,6 +160,7 @@ status_t SurfaceMediaSource::reset()
     mStopped = true;
 
     mFrameAvailableCondition.signal();
+    releaseBuffers();
     mBufferQueue->consumerDisconnect();
 
     return OK;
@@ -373,11 +379,22 @@ void SurfaceMediaSource::onBuffersReleased() {
 
     Mutex::Autolock lock(mMutex);
 
-    mFrameAvailableCondition.signal();
-    mStopped = true;
+    if (!mFirstBufferReleased) {
+        mFrameAvailableCondition.signal();
+        mStopped = true;
+    } else {
+        mFirstBufferReleased = false;
+    }
+    if (!mStopped) {
+        releaseBuffers();
+    }
+}
+
+void SurfaceMediaSource::releaseBuffers() {
+    ALOGV("releaseBuffers");
 
     for (int i = 0; i < BufferQueue::NUM_BUFFER_SLOTS; i++) {
-       mBufferSlot[i] = 0;
+        mBufferSlot[i] = 0;
     }
 }
 
