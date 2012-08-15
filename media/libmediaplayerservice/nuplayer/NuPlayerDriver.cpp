@@ -346,12 +346,12 @@ status_t NuPlayerDriver::dump(int fd, const Vector<String16> &args) const {
     return OK;
 }
 
-void NuPlayerDriver::notifyListener(int msg, int ext1, int ext2) {
+void NuPlayerDriver::notifyListener(int msg, int ext1, int ext2, const Parcel *obj) {
     if (msg == MEDIA_PLAYBACK_COMPLETE || msg == MEDIA_ERROR) {
         mAtEOS = true;
     }
 
-    sendEvent(msg, ext1, ext2);
+    sendEvent(msg, ext1, ext2, obj);
 }
 
 }  // namespace android
