@@ -367,21 +367,19 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             CHECK(codecRequest->findInt32("what", &what));
 
             if (what == ACodec::kWhatFillThisBuffer) {
-                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++ (%s) kWhatFillThisBuffer",track == kAudio?"Audio":"Video");
+                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++ (%s) kWhatFillThisBuffer",mTrackName);
+                if ( (track == kText) && (mTextDecoder == NULL)) {
+                    break; // no need to proceed further
+                }
                 status_t err = feedDecoderInputData(
                         track, codecRequest);
 
                 if (err == -EWOULDBLOCK) {
                     if (mSource->feedMoreTSData() == OK) {
-                        if (track != kText) {
                            msg->post(10000ll);
-                        }
                     }
                 }
 
-                if (mSourceType == kHttpDashSource && track == kText && (err != ERROR_END_OF_STREAM)) {
-                    msg->post(4000000ll);
-                }
             } else if (what == ACodec::kWhatEOS) {
                 ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatEOS");
                 int32_t err;
@@ -647,15 +645,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 flushDecoder(false /* audio */, true /* needShutdown */);
             }
 
-            if ( (mSourceType == kHttpDashSource) &&
-                 (mTextDecoder != NULL) )
-            {
-              sp<AMessage> codecRequest;
-              mTextNotify->findMessage("codec-request", &codecRequest);
-              codecRequest = NULL;
-              mTextNotify = NULL;
-              mTextDecoder.clear();
-            }
             mResetInProgress = true;
             break;
         }
@@ -882,6 +871,16 @@ void NuPlayer::finishReset() {
         mSource.clear();
     }
 
+    if ( (mSourceType == kHttpDashSource) && (mTextDecoder != NULL) && (mTextNotify != NULL))
+    {
+      sp<AMessage> codecRequest;
+      mTextNotify->findMessage("codec-request", &codecRequest);
+      codecRequest = NULL;
+      mTextNotify = NULL;
+      mTextDecoder.clear();
+      ALOGE("Text Dummy Decoder Deleted");
+    }
+
     if (mDriver != NULL) {
         sp<NuPlayerDriver> driver = mDriver.promote();
         if (driver != NULL) {
@@ -952,7 +951,9 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
         codecRequest->setInt32("what", ACodec::kWhatFillThisBuffer);
         mTextNotify->setMessage("codec-request", codecRequest);
         ALOGV("Creating Dummy Text Decoder ");
-        mTextNotify->post();
+        if (mSource != NULL) {
+           mSource->setupTextData(mTextNotify, track);
+        }
     }
 
     looper()->registerHandler(*decoder);
@@ -1121,8 +1122,11 @@ status_t NuPlayer::feedDecoderInputData(int track, const sp<AMessage> &msg) {
     if (track == kVideo || track == kAudio) {
         reply->setBuffer("buffer", accessUnit);
         reply->post();
-    } else if ( track == kText) {
+    } else if (mSourceType == kHttpDashSource && track == kText) {
         sendTextPacket(accessUnit,OK);
+        if (mSource != NULL) {
+          mSource->postNextTextSample(accessUnit,mTextNotify,track);
+        }
     }
     return OK;
 }
