@@ -268,7 +268,7 @@ private:
             int32_t aacProfile, bool isADTS);
 
     void setEVRCFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
-    void setG711Format(int32_t numChannels);
+    void setG711Format(int32_t numChannels, int32_t sampleRate);
     void setQCELPFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
 
     status_t setVideoPortFormatType(
