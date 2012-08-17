@@ -1442,6 +1442,7 @@ void NuPlayer::sendTextPacket(sp<ABuffer> accessUnit,status_t err)
     if (accessUnit->meta()->findString("subSi", &subInfo)) {
         parcel.writeInt32(TextDescriptions::KEY_SUB_ATOM);
         parcel.writeInt32(subInfoSize);
+        parcel.writeInt32(subInfoSize);
         parcel.write((const uint8_t *)subInfo.c_str(), subInfoSize);
     }
 
