@@ -6022,14 +6022,14 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
       mClient(client)
 {
 #ifdef SRS_PROCESSING
-    LOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
+    ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
     SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, true);
 #endif
 }
 
 AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
 #ifdef SRS_PROCESSING
-    LOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
+    ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
     SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, false);
 #endif
     AudioSystem::releaseOutput(mOutput);
