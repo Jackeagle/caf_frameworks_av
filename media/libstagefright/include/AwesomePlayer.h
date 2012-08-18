@@ -199,6 +199,7 @@ private:
 
     bool mWatchForAudioSeekComplete;
     bool mWatchForAudioEOS;
+    static int mTunnelAliveAP;
 
     sp<TimedEventQueue::Event> mVideoEvent;
     bool mVideoEventPending;
@@ -355,6 +356,9 @@ private:
     } mStats;
 
     bool mBufferingDone;
+
+    //Flag to check if tunnel mode audio is enabled
+    bool mIsTunnelAudio;
 
     status_t setVideoScalingMode(int32_t mode);
     status_t setVideoScalingMode_l(int32_t mode);
