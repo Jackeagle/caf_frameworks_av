@@ -1594,7 +1594,9 @@ OMXCodec::OMXCodec(
       mUseArbitraryMode(true),
       latenessUs(0),
       LC_level(0),
-      mNumBFrames(0) {
+      mNumBFrames(0),
+      mInterlaceFormatDetected(false),
+      mInterlaceFrame(0) {
 
     parseFlags();
     mPortStatus[kPortIndexInput] = ENABLED;
@@ -2086,6 +2088,13 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
+    err = mNativeWindow.get()->perform(mNativeWindow.get(),
+                             NATIVE_WINDOW_SET_BUFFERS_SIZE, def.nBufferSize);
+    if (err != 0) {
+        ALOGE("native_window_set_buffers_size failed: %s (%d)", strerror(-err),
+                -err);
+        return err;
+    }
     CODEC_LOGV("allocating %lu buffers from a native window of size %lu on "
             "output port", def.nBufferCountActual, def.nBufferSize);
 
@@ -2752,7 +2761,17 @@ void OMXCodec::onEvent(OMX_EVENTTYPE event, OMX_U32 data1, OMX_U32 data2) {
             }
             break;
         }
-
+        case OMX_EventIndexsettingChanged:
+        {
+            OMX_INTERLACETYPE format = (OMX_INTERLACETYPE)data1;
+            if (format == OMX_InterlaceInterleaveFrameTopFieldFirst ||
+                format == OMX_InterlaceInterleaveFrameBottomFieldFirst)
+            {
+                mInterlaceFormatDetected = true;
+                ALOGW("Interlace detected");
+            }
+            break;
+        }
 #if 0
         case OMX_EventBufferFlag:
         {
@@ -3511,9 +3530,14 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
 
     OMX_U32 flags = OMX_BUFFERFLAG_ENDOFFRAME;
 
+    if (mInterlaceFormatDetected) {
+        mInterlaceFrame++;
+    }
+
     if (signalEOS) {
         flags |= OMX_BUFFERFLAG_EOS;
-    } else if (mThumbnailMode) {
+    } else if ((mThumbnailMode && !mInterlaceFormatDetected)
+               || (mThumbnailMode && (mInterlaceFrame >= 2))) {
         // Because we don't get an EOS after getting the first frame, we
         // need to notify the component with OMX_BUFFERFLAG_EOS, set
         // mNoMoreOutputData to false so fillOutputBuffer gets called on
