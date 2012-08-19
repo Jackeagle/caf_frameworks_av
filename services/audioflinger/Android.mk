@@ -54,8 +54,8 @@ LOCAL_SRC_FILES += StateQueue.cpp
 LOCAL_CFLAGS += -DSTATE_QUEUE_DUMP
 
 LOCAL_C_INCLUDES := \
-    $(call include-path-for, audio-effects) \
-    $(call include-path-for, audio-utils)
+   $(call include-path-for, audio-effects) \
+   $(call include-path-for, audio-utils)
 
 # FIXME keep libmedia_native but remove libmedia after split
 LOCAL_SHARED_LIBRARIES := \
@@ -76,7 +76,7 @@ LOCAL_SHARED_LIBRARIES := \
 ifeq ($(strip $(BOARD_USES_SRS_TRUEMEDIA)),true)
 LOCAL_SHARED_LIBRARIES += libsrsprocessing
 LOCAL_CFLAGS += -DSRS_PROCESSING
-LOCAL_C_INCLUDES += vendor/qcom/proprietary/mm-audio/audio-effects/srs/TruMedia
+LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-effects
 endif
 # SRS Processing
 
