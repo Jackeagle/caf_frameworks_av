@@ -186,7 +186,6 @@ AudioResamplerSinc::AudioResamplerSinc(int bitDepth,
     if (quality == QCOM_QUALITY ) {
         mResampleCoeffLib = dlopen("libmm-audio-resampler.so", RTLD_NOW);
         ALOGV("Open libmm-audio-resampler library = %p",mResampleCoeffLib);
-        ALOGE("thokka:Open libmm-audio-resampler library = %p",mResampleCoeffLib);
         if (mResampleCoeffLib == NULL) {
             ALOGE("Could not open mm-audio-resampler library: %s", dlerror());
             return;
