@@ -72,7 +72,7 @@ struct NuPlayer::Source : public RefBase {
     }
     virtual void notifyRenderingPosition(int64_t nRenderingTS){}
 
-    virtual status_t setupTextData(const sp<AMessage> &msg, int iTrack){
+    virtual status_t setupSourceData(const sp<AMessage> &msg, int iTrack){
         return INVALID_OPERATION;
     }
     virtual status_t postNextTextSample(sp<ABuffer> accessUnit,const sp<AMessage> &msg,int iTrack) {

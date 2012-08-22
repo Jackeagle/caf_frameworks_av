@@ -68,7 +68,8 @@ NuPlayer::NuPlayer()
       mNumFramesDropped(0ll),
       mPauseIndication(false),
       mSourceType(kDefaultSource),
-      mStats(NULL) {
+      mStats(NULL),
+      mBufferingNotification(false) {
       mTrackName = new char[6];
 }
 
@@ -230,6 +231,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             CHECK(msg->findObject("source", &obj));
 
             mSource = static_cast<Source *>(obj.get());
+            if (mSourceType == kHttpDashSource) {
+               prepareSource();
+            }
             break;
         }
 
@@ -781,6 +785,46 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 msg->post(100000ll);
             }
             break;
+        case kWhatSourceNotify:
+        {
+            Mutex::Autolock autoLock(mLock);
+            ALOGV("kWhatSourceNotify");
+
+            CHECK(mSource != NULL);
+            int64_t track;
+
+            sp<AMessage> sourceRequest;
+            CHECK(msg->findMessage("source-request", &sourceRequest));
+
+            int32_t what;
+            CHECK(sourceRequest->findInt32("what", &what));
+            sourceRequest->findInt64("track", &track);
+            getTrackName((int)track,mTrackName);
+
+            if (what == kWhatBufferingStart) {
+              ALOGE("Source Notified Buffering Start for %s ",mTrackName);
+              if (mBufferingNotification == false) {
+                 mBufferingNotification = true;
+                 notifyListener(MEDIA_INFO, MEDIA_INFO_BUFFERING_START, 0);
+              }
+              else {
+                 ALOGE("Buffering Start Event Already Notified mBufferingNotification(%d)",
+                       mBufferingNotification);
+              }
+            }
+            else if(what == kWhatBufferingEnd) {
+                if (mBufferingNotification) {
+                  ALOGE("Source Notified Buffering End for %s ",mTrackName);
+                        mBufferingNotification = false;
+                  notifyListener(MEDIA_INFO, MEDIA_INFO_BUFFERING_END, 0);
+                }
+                else {
+                  ALOGE("No need to notify Buffering end as mBufferingNotification is (%d) "
+                        ,mBufferingNotification);
+                }
+            }
+            break;
+	}
 
         default:
             TRESPASS();
@@ -880,6 +924,13 @@ void NuPlayer::finishReset() {
       mTextDecoder.clear();
       ALOGE("Text Dummy Decoder Deleted");
     }
+    if (mSourceNotify != NULL)
+    {
+       sp<AMessage> sourceRequest;
+       mSourceNotify->findMessage("source-request", &sourceRequest);
+       sourceRequest = NULL;
+       mSourceNotify = NULL;
+    }
 
     if (mDriver != NULL) {
         sp<NuPlayerDriver> driver = mDriver.promote();
@@ -951,8 +1002,8 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
         codecRequest->setInt32("what", ACodec::kWhatFillThisBuffer);
         mTextNotify->setMessage("codec-request", codecRequest);
         ALOGV("Creating Dummy Text Decoder ");
-        if (mSource != NULL) {
-           mSource->setupTextData(mTextNotify, track);
+        if ((mSource != NULL) && (mSourceType == kHttpDashSource)) {
+           mSource->setupSourceData(mTextNotify, track);
         }
     }
 
@@ -1469,6 +1520,23 @@ void NuPlayer::getTrackName(int track, char* name)
     {
       memset(name,0x00,6);
       strlcpy(name, "text",5);
+    }
+    else if (track == kTrackAll)
+    {
+      memset(name,0x00,6);
+      strlcpy(name, "all",4);
+    }
+}
+
+void NuPlayer::prepareSource()
+{
+    if (mSourceType = kHttpDashSource)
+    {
+       mSourceNotify = new AMessage(kWhatSourceNotify ,id());
+       if (mSource != NULL)
+       {
+         mSource->setupSourceData(mSourceNotify,kTrackAll);
+       }
     }
 }
 

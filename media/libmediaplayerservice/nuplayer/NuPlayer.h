@@ -99,6 +99,12 @@ private:
         kWhatResume                     = 'rsme',
         kWhatPrepareAsync               = 'pras',
         kWhatIsPrepareDone              = 'prdn',
+        kWhatSourceNotify               = 'snfy',
+    };
+
+    enum {
+        kWhatBufferingStart             = 'bfst',
+        kWhatBufferingEnd               = 'bfen',
     };
 
     wp<NuPlayerDriver> mDriver;
@@ -118,11 +124,13 @@ private:
 
     bool mScanSourcesPending;
     int32_t mScanSourcesGeneration;
+    bool mBufferingNotification;
 
     enum TrackName {
         kVideo = 0,
         kAudio,
         kText,
+        kTrackAll,
     };
 
     enum FlushStatus {
@@ -163,6 +171,7 @@ private:
 
     char *mTrackName;
     sp<AMessage> mTextNotify;
+    sp<AMessage> mSourceNotify;
 
     enum NuSourceType {
         kHttpLiveSource = 0,
@@ -201,6 +210,7 @@ private:
 
     void sendTextPacket(sp<ABuffer> accessUnit, status_t err);
     void getTrackName(int track, char* name);
+    void prepareSource();
 
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
 };
