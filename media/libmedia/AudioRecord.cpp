@@ -223,6 +223,9 @@ status_t AudioRecord::set(
                   frameSizeInBytes = sizeof(int8_t);
              }
              mFirstread = true;
+        } else if(format == AUDIO_FORMAT_AMR_WB) {
+            frameSizeInBytes = channelCount * 61;
+
         }
     }
     // We use 2* size of input buffer for ping pong use of record buffer.
@@ -322,6 +325,8 @@ size_t AudioRecord::frameSize() const
             // Not actual framsize but for variable frame rate AAC encoding,
            // buffer size is treated as a frame size
              return 2048;
+        } else if(format() == AUDIO_FORMAT_AMR_WB) {
+            return channelCount() * 61;
         }
         if (audio_is_linear_pcm(mFormat)) {
             return channelCount()*audio_bytes_per_sample(mFormat);

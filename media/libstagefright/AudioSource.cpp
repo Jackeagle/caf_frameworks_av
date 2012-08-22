@@ -31,6 +31,7 @@
 #define AMR_FRAMESIZE 32
 #define QCELP_FRAMESIZE 35
 #define EVRC_FRAMESIZE 23
+#define AMR_WB_FRAMESIZE 61
 
 namespace android {
 // Treat time out as an error if we have not received any output
@@ -139,6 +140,11 @@ AudioSource::AudioSource( audio_source_t inputSource, const sp<MetaData>& meta )
         mFormat = AUDIO_FORMAT_EVRC;
         frameSize = EVRC_FRAMESIZE;
         mMaxBufferSize = EVRC_FRAMESIZE*10;
+    }
+    else if ( !strcasecmp( mime, MEDIA_MIMETYPE_AUDIO_AMR_WB ) ) {
+        mFormat = AUDIO_FORMAT_AMR_WB;
+        frameSize = AMR_WB_FRAMESIZE;
+        mMaxBufferSize = AMR_WB_FRAMESIZE*10;
     }
     else {
         CHECK(0);
@@ -485,6 +491,10 @@ int64_t AudioSource::bufferDurationUs( ssize_t n ) {
     else if (mFormat == AUDIO_FORMAT_QCELP) {
         dataDurationMs = (n/QCELP_FRAMESIZE) * 20; //ms
     }
+    else if (mFormat == AUDIO_FORMAT_AMR_WB) {
+        dataDurationMs = (n/AMR_WB_FRAMESIZE) * 20; //ms
+    }
+
     else
         CHECK(0);
 

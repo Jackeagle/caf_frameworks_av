@@ -862,6 +862,11 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
             tunneledSource = true;
             tunnelMime = MEDIA_MIMETYPE_AUDIO_EVRC;
         }
+        else if ( mAudioEncoder == AUDIO_ENCODER_AMR_WB &&
+            result.getInt(String8("AWB"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_AMR_WB;
+        }
     }
 
     if ( tunneledSource ) {
