@@ -1044,7 +1044,14 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
     // and the thread is exited once the lock is released
     sp<ThreadBase> thread;
     {
-        Mutex::Autolock _l(mLock);
+        // Avoid autolock to avoid deadlock for sound record - lpa concurrency.
+        // Rapid button press will cause next clip playback. If next clip is lpa
+        // clip, opening lpa clip triggers set parameter. The set parameter would
+        // acquire flinger lock and wait for setParams completion. The wait can only
+        // be signalled from checkForNewParameters_l() in threadloop but the record
+        // thread loop will be blocked on processConfigEvents() on audio flinger lock
+        // resulting in deadlock and record failure.
+        mLock.lock();
         thread = checkPlaybackThread_l(ioHandle);
         if (thread == NULL) {
             thread = checkRecordThread_l(ioHandle);
@@ -1052,13 +1059,17 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
             // indicate output device change to all input threads for pre processing
             AudioParameter param = AudioParameter(keyValuePairs);
             int value;
+            DefaultKeyedVector< int, sp<RecordThread> >    recordThreads = mRecordThreads;
+            mLock.unlock();
             if ((param.getInt(String8(AudioParameter::keyRouting), value) == NO_ERROR) &&
                     (value != 0)) {
-                for (size_t i = 0; i < mRecordThreads.size(); i++) {
-                    mRecordThreads.valueAt(i)->setParameters(keyValuePairs);
+                for (size_t i = 0; i < recordThreads.size(); i++) {
+                    recordThreads.valueAt(i)->setParameters(keyValuePairs);
                 }
             }
+            mLock.lock();
         }
+        mLock.unlock();
     }
     if (thread != 0) {
         return thread->setParameters(keyValuePairs);
