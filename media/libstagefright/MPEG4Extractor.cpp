@@ -2202,6 +2202,25 @@ status_t MPEG4Source::read(
                 return ERROR_IO;
             }
 
+            bool mMakeBigIndian = false;
+            const char *mime;
+
+            if (mFormat->findCString(kKeyMIMEType, &mime)
+               && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3) ||
+               !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3))) {
+                mMakeBigIndian = true;
+            }
+            if (mMakeBigIndian && *((uint8_t *)mBuffer->data())==0x0b &&
+                *((uint8_t *)mBuffer->data()+1)==0x77 ){
+                //ALOGV("making bigIndian path !mIsAVC || mWantsNALFragments");
+                size_t count;
+                for(count=0;count<size;count+=2){ // size is always even bytes in ac3/ec3 read
+                    uint8_t tmp = *((uint8_t *)mBuffer->data() + count);
+                    *((uint8_t *)mBuffer->data() + count) = *((uint8_t *)mBuffer->data()+count+1);
+                    *((uint8_t *)mBuffer->data() + count+1) = tmp;
+                }
+            }
+
             CHECK(mBuffer != NULL);
             mBuffer->set_range(0, size);
             mBuffer->meta_data()->clear();
