@@ -759,7 +759,7 @@ void AwesomePlayer::onBufferingUpdate() {
                 }
                 if (percentage > 100) {
                     percentage = 100;
-                    ALOGV("Cache at 100%, Buffering Done ");
+                    ALOGV("Cache at 100%%, Buffering Done ");
                     mBufferingDone = true;
                 }
 
@@ -1060,7 +1060,7 @@ status_t AwesomePlayer::play_l() {
                 }
 #endif
                 if(mAudioPlayer == NULL) {
-                    ALOGV("AudioPlayer created, Non-LPA mode mime %s duration %lld\n", mime, durationUs);
+                    ALOGV("AudioPlayer created, Non-LPA mode mime %s duration %lld\n", mime, mDurationUs);
                     mAudioPlayer = new AudioPlayer(mAudioSink, allowDeepBuffering, this);
                 }
                 mAudioPlayer->setSource(mAudioSource);
@@ -1605,6 +1605,7 @@ status_t AwesomePlayer::initAudioDecoder() {
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)||
+                    !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS_LBR)||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3)) {
                 ALOGI("Tunnel Mode in MPQ Audio Player");
                 mIsMPQTunnelAudio = true;
