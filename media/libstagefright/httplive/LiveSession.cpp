@@ -310,6 +310,10 @@ status_t LiveSession::fetchFile(
                 buffer->size(), buffer->data() + buffer->size(),
                 maxBytesToRead);
 
+        if (n == -EAGAIN) {
+            continue;
+        }
+
         if (n < 0) {
             return n;
         }
