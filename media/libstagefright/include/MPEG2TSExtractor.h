@@ -33,6 +33,20 @@ struct MPEG2TSSource;
 struct String8;
 struct LiveSession;
 struct TSBuffer;
+//PES stream info
+struct StreamInfo : public RefBase {
+public:
+    unsigned mStreamPID;
+    unsigned mProgramPID;
+    uint64_t mFirstPTS;
+    uint64_t mLastPTS;
+    int64_t  mDurationUs;
+    off64_t  mFirstPTSOffset;
+    off64_t  mLastPTSOffset;
+    uint32_t mIndex;
+    off64_t  mOffset;
+};
+
 
 struct MPEG2TSExtractor : public MediaExtractor {
     MPEG2TSExtractor(const sp<DataSource> &source);
@@ -58,6 +72,14 @@ struct MPEG2TSExtractor : public MediaExtractor {
 
     bool     isSeekable();
 private:
+
+    struct SourceObjects : public RefBase {
+    public:
+        sp<AnotherPacketSource> impl;
+        sp<StreamInfo> stream;
+        bool isVideo;
+    };
+
     friend struct MPEG2TSSource;
 
     mutable Mutex mLock;
@@ -66,12 +88,14 @@ private:
 
     sp<ATSParser> mParser;
 
-    Vector<sp<MPEG2TSSource> > mSourceList;
+    Vector<sp<SourceObjects> > mSourceObjectsList;
 
     off64_t mOffset;
 
     void init();
     status_t feedMore();
+    status_t findStreamDuration(const sp<StreamInfo> &stream,
+            const sp<AnotherPacketSource> &impl);
 
     bool           mSeekable;
     off64_t        mClipSize;
