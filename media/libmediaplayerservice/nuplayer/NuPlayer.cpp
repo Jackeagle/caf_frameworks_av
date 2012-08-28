@@ -1364,6 +1364,7 @@ void NuPlayer::postIsPrepareDone()
 void NuPlayer::sendTextPacket(sp<ABuffer> accessUnit,status_t err)
 {
     Parcel parcel;
+    int mFrameType = TIMED_TEXT_FLAG_FRAME;
 
     //Local setting
     parcel.writeInt32(TextDescriptions::KEY_LOCAL_SETTING);
@@ -1372,7 +1373,8 @@ void NuPlayer::sendTextPacket(sp<ABuffer> accessUnit,status_t err)
        parcel.writeInt32(TextDescriptions::KEY_TEXT_EOS);
        // write size of sample
        ALOGE("Error End Of Stream EOS");
-       notifyListener(MEDIA_TIMED_TEXT, 0, 0, &parcel);
+       mFrameType = TIMED_TEXT_FLAG_EOS;
+       notifyListener(MEDIA_TIMED_TEXT, 0, mFrameType, &parcel);
        return;
     }
    // time stamp
@@ -1392,10 +1394,12 @@ void NuPlayer::sendTextPacket(sp<ABuffer> accessUnit,status_t err)
     {
        ALOGE("Timed text codec config frame");
        parcel.writeInt32(TIMED_TEXT_FLAG_CODEC_CONFIG_FRAME);
+       mFrameType = TIMED_TEXT_FLAG_CODEC_CONFIG_FRAME;
     }
     else
     {
        parcel.writeInt32(TIMED_TEXT_FLAG_FRAME);
+       mFrameType = TIMED_TEXT_FLAG_FRAME;
     }
 
     // write size of sample
@@ -1441,7 +1445,7 @@ void NuPlayer::sendTextPacket(sp<ABuffer> accessUnit,status_t err)
         parcel.write((const uint8_t *)subInfo.c_str(), subInfoSize);
     }
 
-    notifyListener(MEDIA_TIMED_TEXT, 0, 0, &parcel);
+    notifyListener(MEDIA_TIMED_TEXT, 0, mFrameType, &parcel);
 }
 
 void NuPlayer::getTrackName(int track, char* name)
