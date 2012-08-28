@@ -252,6 +252,7 @@ AwesomePlayer::AwesomePlayer()
         mStats.mFirstFrameTime = 0;
     }
     reset();
+    mIsTunnelAudio = false;
 }
 
 AwesomePlayer::~AwesomePlayer() {
@@ -268,6 +269,15 @@ AwesomePlayer::~AwesomePlayer() {
     }
 
     reset();
+
+    // Disable Tunnel Mode Audio
+    if (mIsTunnelAudio) {
+        if(mTunnelAliveAP > 0) {
+            mTunnelAliveAP--;
+            ALOGV("mTunnelAliveAP = %d", mTunnelAliveAP);
+        }
+    }
+    mIsTunnelAudio = false;
 
     mClient.disconnect();
 }
@@ -630,16 +640,6 @@ void AwesomePlayer::reset_l() {
 
     mWatchForAudioSeekComplete = false;
     mWatchForAudioEOS = false;
-    // Disable Tunnel Mode Audio
-    if (mIsTunnelAudio) {
-      if(mTunnelAliveAP > 0) {
-           mTunnelAliveAP--;
-           ALOGE("mTunnelAliveAP = %d", mTunnelAliveAP);
-       }
-    }
-    mIsTunnelAudio = false;
-
-
 }
 
 void AwesomePlayer::notifyListener_l(int msg, int ext1, int ext2) {
@@ -988,11 +988,16 @@ status_t AwesomePlayer::play_l() {
 #ifndef NON_QCOM_TARGET
 #ifdef USE_TUNNEL_MODE
                 // Create tunnel player if tunnel mode is enabled
-                ALOGE("Trying to create tunnel player mIsTunnelAudio %d, LPAPlayer::objectsAlive %d,\
-                        (mAudioPlayer == NULL) %d",mIsTunnelAudio,LPAPlayer::objectsAlive, (mAudioPlayer == NULL));
+                ALOGW("Trying to create tunnel player mIsTunnelAudio %d, \
+                        LPAPlayer::objectsAlive %d, \
+                        TunnelPlayer::mTunnelObjectsAlive = %d,\
+                        (mAudioPlayer == NULL) %d",
+                        mIsTunnelAudio,LPAPlayer::objectsAlive,
+                        TunnelPlayer::mTunnelObjectsAlive,(mAudioPlayer == NULL));
 
                 if(mIsTunnelAudio && (mAudioPlayer == NULL) &&
-                        (LPAPlayer::objectsAlive == 0)) {
+                        (LPAPlayer::objectsAlive == 0) &&
+                        (TunnelPlayer::mTunnelObjectsAlive == 0)) {
                     ALOGD("Tunnel player created for  mime %s duration %lld\n",\
                         mime, mDurationUs);
                     bool initCheck =  false;
@@ -1574,21 +1579,23 @@ status_t AwesomePlayer::initAudioDecoder() {
            if(((strncmp("true", tunnelAVDecode, 4) == 0)||(atoi(tunnelAVDecode)))) {
                ALOGD("Enable Tunnel Mode for A-V playback");
                mIsTunnelAudio = true;
-               mTunnelAliveAP++;
            }
         }
         else {
             ALOGI("Tunnel Mode Audio Enabled");
             mIsTunnelAudio = true;
-            mTunnelAliveAP++;
         }
     }
     else
        ALOGE("Normal Audio Playback");
 #endif
 #endif
-    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) || mIsTunnelAudio) {
+    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
+             (mIsTunnelAudio && (mTunnelAliveAP == 0))) {
         ALOGD("Set Audio Track as Audio Source");
+        if(mIsTunnelAudio) {
+            mTunnelAliveAP++;
+        }
         mAudioSource = mAudioTrack;
     } else {
         int64_t durationUs;
