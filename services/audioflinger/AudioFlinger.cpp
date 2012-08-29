@@ -241,6 +241,7 @@ AudioFlinger::AudioFlinger()
 void AudioFlinger::onFirstRef()
 {
     int rc = 0;
+    mA2DPHandle = -1;
 
     Mutex::Autolock _l(mLock);
 
@@ -709,7 +710,7 @@ status_t AudioFlinger::setMasterVolume(float value)
     }
 
     float swmv = value;
-
+    mA2DPHandle = -1;
     Mutex::Autolock _l(mLock);
 
     // when hw supports master volume, don't scale in sw mixer
@@ -1211,14 +1212,14 @@ void AudioFlinger::registerClient(const sp<IAudioFlingerClient>& client)
 
     Mutex::Autolock _l(mLock);
 
-    pid_t pid = IPCThreadState::self()->getCallingPid();
-    if (mNotificationClients.indexOfKey(pid) < 0) {
+    sp<IBinder> binder = client->asBinder();
+    if (mNotificationClients.indexOfKey(binder) < 0) {
         sp<NotificationClient> notificationClient = new NotificationClient(this,
                                                                             client,
-                                                                            pid);
-        ALOGV("registerClient() client %p, pid %d", notificationClient.get(), pid);
+                                                                            binder);
+        ALOGV("registerClient() client %p, binder %d", notificationClient.get(), binder.get());
 
-        mNotificationClients.add(pid, notificationClient);
+        mNotificationClients.add(binder, notificationClient);
 
         sp<IBinder> binder = client->asBinder();
         binder->linkToDeath(notificationClient);
@@ -1233,14 +1234,36 @@ void AudioFlinger::registerClient(const sp<IAudioFlingerClient>& client)
             mRecordThreads.valueAt(i)->sendConfigEvent(AudioSystem::INPUT_OPENED);
         }
     }
+    // Send the notification to the client only once.
+    if (mA2DPHandle != -1) {
+        ALOGV("A2DP active. Notifying the registered client");
+        client->ioConfigChanged(AudioSystem::A2DP_OUTPUT_STATE, mA2DPHandle, &mA2DPHandle);
+    }
+
 }
 
-void AudioFlinger::removeNotificationClient(pid_t pid)
+
+status_t AudioFlinger::deregisterClient(const sp<IAudioFlingerClient>& client)
+{
+    ALOGV("deregisterClient() %p, tid %d, calling tid %d", client.get(), gettid(), IPCThreadState::self()->getCallingPid());
+    Mutex::Autolock _l(mLock);
+
+    sp<IBinder> binder = client->asBinder();
+    int index = mNotificationClients.indexOfKey(binder);
+    if (index >= 0) {
+        mNotificationClients.removeItemsAt(index);
+        return true;
+    }
+    return false;
+}
+
+void AudioFlinger::removeNotificationClient(sp<IBinder> binder)
 {
     Mutex::Autolock _l(mLock);
 
-    mNotificationClients.removeItem(pid);
+    mNotificationClients.removeItem(binder);
 
+    int pid = IPCThreadState::self()->getCallingPid();
     ALOGV("%d died, releasing its sessions", pid);
     size_t num = mAudioSessionRefs.size();
     bool removed = false;
@@ -6010,8 +6033,8 @@ void AudioFlinger::Client::releaseTimedTrack()
 
 AudioFlinger::NotificationClient::NotificationClient(const sp<AudioFlinger>& audioFlinger,
                                                      const sp<IAudioFlingerClient>& client,
-                                                     pid_t pid)
-    : mAudioFlinger(audioFlinger), mPid(pid), mAudioFlingerClient(client)
+                                                     sp<IBinder> binder)
+    : mAudioFlinger(audioFlinger), mBinder(binder), mAudioFlingerClient(client)
 {
 }
 
@@ -6022,7 +6045,7 @@ AudioFlinger::NotificationClient::~NotificationClient()
 void AudioFlinger::NotificationClient::binderDied(const wp<IBinder>& who)
 {
     sp<NotificationClient> keep(this);
-    mAudioFlinger->removeNotificationClient(mPid);
+    mAudioFlinger->removeNotificationClient(mBinder);
 }
 
 // ----------------------------------------------------------------------------
@@ -7297,6 +7320,14 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
             mPlaybackThreads.add(id, thread);
         }
 
+        // if the device is a A2DP, then this is an A2DP Output
+        if ( true == audio_is_a2dp_device((audio_devices_t) *pDevices) )
+        {
+            mA2DPHandle = id;
+            ALOGV("A2DP device activated. The handle is set to %d", mA2DPHandle);
+        }
+
+
         if (pSamplingRate != NULL) *pSamplingRate = config.sample_rate;
         if (pFormat != NULL) *pFormat = config.format;
         if (pChannelMask != NULL) *pChannelMask = config.channel_mask;
@@ -7420,6 +7451,12 @@ status_t AudioFlinger::closeOutput(audio_io_handle_t output)
         }
         audioConfigChanged_l(AudioSystem::OUTPUT_CLOSED, output, NULL);
         mPlaybackThreads.removeItem(output);
+        if (mA2DPHandle == output)
+        {
+            mA2DPHandle = -1;
+            ALOGV("A2DP OutputClosed Notifying Client");
+            audioConfigChanged_l(AudioSystem::A2DP_OUTPUT_STATE, mA2DPHandle, &mA2DPHandle);
+        }
     }
     thread->exit();
     // The thread entity (active unit of execution) is no longer running here,
@@ -7594,6 +7631,11 @@ status_t AudioFlinger::setStreamOutput(audio_stream_type_t stream, audio_io_hand
             MixerThread *srcThread = (MixerThread *)thread;
             srcThread->invalidateTracks(stream);
         }
+    }
+
+    if ( mA2DPHandle == output ) {
+        ALOGV("A2DP Activated and hence notifying the client");
+        audioConfigChanged_l(AudioSystem::A2DP_OUTPUT_STATE, mA2DPHandle, &output);
     }
 
     return NO_ERROR;
