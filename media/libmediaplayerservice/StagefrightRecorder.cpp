@@ -172,13 +172,15 @@ status_t StagefrightRecorder::setAudioEncoder(audio_encoder ae) {
         mSampleRate = mSampleRate ? mSampleRate : 48000;
         mAudioChannels = mAudioChannels ? mAudioChannels : 2;
         mAudioBitRate = mAudioBitRate ? mAudioBitRate : 156000;
-    }
-    else if(mAudioEncoder == AUDIO_ENCODER_LPCM) {
+    } else if(mAudioEncoder == AUDIO_ENCODER_LPCM) {
         mSampleRate = mSampleRate ? mSampleRate : 48000;
         mAudioChannels = mAudioChannels ? mAudioChannels : 2;
         mAudioBitRate = mAudioBitRate ? mAudioBitRate : 4608000;
-    }
-    else{
+    } else if(mAudioEncoder == AUDIO_ENCODER_AMR_WB) {
+        mSampleRate = 16000;
+        mAudioChannels = 1;
+        mAudioBitRate = 23850;
+    } else {
         mSampleRate = mSampleRate ? mSampleRate : 8000;
         mAudioChannels = mAudioChannels ? mAudioChannels : 1;
         mAudioBitRate = mAudioBitRate ? mAudioBitRate : 12200;
@@ -939,6 +941,9 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
     if (audioEncoder == NULL) {
         ALOGV("If encoder could not be created (as in LPCM), then use the AudioSource directly as the MediaSource.");
         audioEncoder = audioSource;
+    }
+    if (mAudioSourceNode != NULL) {
+        mAudioSourceNode.clear();
     }
     mAudioSourceNode = audioSource;
 
@@ -1829,6 +1834,10 @@ status_t StagefrightRecorder::stop() {
     if (mOutputFd >= 0) {
         ::close(mOutputFd);
         mOutputFd = -1;
+    }
+    if (mAudioSourceNode != NULL) {
+        mAudioSourceNode.clear();
+        mAudioSourceNode = NULL;
     }
 
     if (mStarted) {
