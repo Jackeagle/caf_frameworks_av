@@ -168,6 +168,7 @@ void AnotherPacketSource::queueAccessUnit(const sp<ABuffer> &buffer) {
 
     Mutex::Autolock autoLock(mLock);
     mBuffers.push_back(buffer);
+    ALOGV("@@@@:: AnotherPacketSource --> size is %d ",mBuffers.size() );
     mCondition.signal();
 }
 

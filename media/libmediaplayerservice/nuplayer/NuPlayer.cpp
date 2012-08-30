@@ -120,22 +120,30 @@ void NuPlayer::setDataSource(
     if (IsHTTPLiveURL(url)) {
         source = new HTTPLiveSource(url, headers, mUIDValid, mUID);
         mSourceType = kHttpLiveSource;
+    } else if(!strncasecmp(url, "rtp://wfd", 9)) {
+          /* Load the WFD source librery here */
+           source = LoadCreateSource(url, headers, mUIDValid, mUID, kWfdSource);
+           if (source != NULL) {
+              mSourceType = kWfdSource;
+           } else {
+             ALOGE("Error creating WFD source");
+             //return UNKNOWN_ERROR;
+           }
     } else if (!strncasecmp(url, "rtsp://", 7)) {
         source = new RTSPSource(url, headers, mUIDValid, mUID);
         mSourceType = kRtspSource;
     } else if (!strncasecmp(url, "http://", 7) &&
-	    (strlen(url) >= 4 && !strcasecmp(".mpd", &url[strlen(url) - 4]))) {
+          (strlen(url) >= 4 && !strcasecmp(".mpd", &url[strlen(url) - 4]))) {
            /* Load the DASH HTTP Live source librery here */
            ALOGV("NuPlayer setDataSource url sting %s",url);
            source = LoadCreateSource(url, headers, mUIDValid, mUID,kHttpDashSource);
            if (source != NULL) {
               mSourceType = kHttpDashSource;
-              msg->setObject("source", source);
            } else {
              ALOGE("Error creating DASH source");
              //return UNKNOWN_ERROR;
            }
-	} else {
+    } else {
         source = new GenericSource(url, headers, mUIDValid, mUID);
         mSourceType = kGenericSource;
     }
@@ -279,7 +287,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatScanSources:
         {
             if (!mPauseIndication) {
-                int32_t generation;
+                int32_t generation = 0;
                 CHECK(msg->findInt32("generation", &generation));
                 if (generation != mScanSourcesGeneration) {
                     // Drop obsolete msg.
@@ -359,6 +367,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             CHECK(codecRequest->findInt32("what", &what));
 
             if (what == ACodec::kWhatFillThisBuffer) {
+                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++ (%s) kWhatFillThisBuffer",track == kAudio?"Audio":"Video");
                 status_t err = feedDecoderInputData(
                         track, codecRequest);
 
@@ -374,6 +383,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     msg->post(4000000ll);
                 }
             } else if (what == ACodec::kWhatEOS) {
+                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatEOS");
                 int32_t err;
                 CHECK(codecRequest->findInt32("err", &err));
 
@@ -389,6 +399,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     mRenderer->queueEOS(track, err);
                 }
             } else if (what == ACodec::kWhatFlushCompleted) {
+                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatFlushCompleted");
 
                 Mutex::Autolock autoLock(mLock);
                 bool needShutdown;
@@ -421,6 +432,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 finishFlushIfPossible();
             } else if (what == ACodec::kWhatOutputFormatChanged) {
                 if (track == kAudio) {
+                    ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatOutputFormatChanged:: audio");
                     int32_t numChannels;
                     CHECK(codecRequest->findInt32("channel-count", &numChannels));
 
@@ -466,7 +478,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     mRenderer->signalAudioSinkChanged();
                 } else if (track == kVideo) {
                     // video
-
+                    ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatOutputFormatChanged:: video");
                     int32_t width, height;
                     CHECK(codecRequest->findInt32("width", &width));
                     CHECK(codecRequest->findInt32("height", &height));
@@ -491,11 +503,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             } else if (what == ACodec::kWhatShutdownCompleted) {
                 ALOGV("%s shutdown completed", mTrackName);
                 if (track == kAudio) {
+                    ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatShutdownCompleted:: audio");
                     mAudioDecoder.clear();
 
                     CHECK_EQ((int)mFlushingAudio, (int)SHUTTING_DOWN_DECODER);
                     mFlushingAudio = SHUT_DOWN;
                 } else if (track == kVideo) {
+                } else {
+                    ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatShutdownCompleted:: Video");
                     mVideoDecoder.clear();
 
                     CHECK_EQ((int)mFlushingVideo, (int)SHUTTING_DOWN_DECODER);
@@ -507,10 +522,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 ALOGE("Received error from %s decoder, aborting playback.",
                        mTrackName);
                 if(track == kAudio || track == kVideo) {
+                    ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ ACodec::kWhatError:: %s",track == kAudio ? "audio" : "video");
                     mRenderer->queueEOS(track, UNKNOWN_ERROR);
                 }
             } else if (what == ACodec::kWhatDrainThisBuffer) {
                 if(track == kAudio || track == kVideo) {
+                   ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ ACodec::kWhatRenderBuffer:: %s",track == kAudio ? "audio" : "video");
                    renderBuffer(track, codecRequest);
                 }
             } else {
@@ -531,7 +548,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 int32_t finalResult;
                 CHECK(msg->findInt32("finalResult", &finalResult));
-
+                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM RENDERER ***************** kWhatRendererNotify:: %s",audio ? "audio" : "video");
                 if (audio) {
                     mAudioEOS = true;
                 } else {
@@ -557,6 +574,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 CHECK(msg->findInt64("positionUs", &positionUs));
 
                 CHECK(msg->findInt64("videoLateByUs", &mVideoLateByUs));
+                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM RENDERER ***************** kWhatPosition:: position(%lld) VideoLateBy(%lld)",positionUs,mVideoLateByUs);
 
                 if (mDriver != NULL) {
                     sp<NuPlayerDriver> driver = mDriver.promote();
@@ -574,8 +592,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 int32_t audio;
                 CHECK(msg->findInt32("audio", &audio));
+                ALOGV("@@@@:: Nuplayer :: MESSAGE FROM RENDERER ***************** kWhatFlushComplete:: %s",audio ? "audio" : "video");
 
-                ALOGV("renderer %s flush completed.", audio ? "audio" : "video");
             }
             break;
         }
@@ -885,6 +903,7 @@ void NuPlayer::postScanSources() {
 }
 
 status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
+    ALOGV("@@@@:: instantiateDecoder Called ");
     if (*decoder != NULL) {
         return OK;
     }
@@ -902,6 +921,17 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
         if(mStats != NULL) {
             mStats->setMime(mime);
         }
+
+        //TO-DO:: Similarly set here for Decode order
+        if (mVideoIsAVC &&
+           ((mSourceType == kHttpLiveSource) || (mSourceType == kHttpDashSource) ||(mSourceType == kWfdSource))) {
+            ALOGV("Set Enable smooth streaming in meta data ");
+            meta->setInt32(kKeySmoothStreaming, 1);
+            if(mSourceType == kWfdSource) {
+                ALOGV("Set Decoder in Decode Order in meta data ");
+                meta->setInt32(kKeyEnableDecodeOrder, 1);
+            }
+        }
     }
 
     sp<AMessage> notify;
@@ -909,6 +939,8 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
         notify = new AMessage(kWhatAudioNotify ,id());
         ALOGV("Creating Audio Decoder ");
         *decoder = new Decoder(notify);
+        ALOGV("@@@@:: setting Sink/Renderer pointer to decoder");
+        (*decoder)->setSink(mAudioSink, mRenderer);
     } else if (track == kVideo) {
         notify = new AMessage(kWhatVideoNotify ,id());
         *decoder = new Decoder(notify, mNativeWindow);
@@ -1204,7 +1236,6 @@ sp<NuPlayer::Source>
    const char* STREAMING_SOURCE_LIB = "libmmipstreamaal.so";
    const char* DASH_HTTP_LIVE_CREATE_SOURCE = "CreateDashHttpLiveSource";
    const char* WFD_CREATE_SOURCE = "CreateWFDSource";
-
    void* pStreamingSourceLib = NULL;
 
    typedef NuPlayer::Source* (*SourceFactory)(const char * uri, const KeyedVector<String8, String8> *headers, bool uidValid, uid_t uid);
@@ -1213,6 +1244,7 @@ sp<NuPlayer::Source>
    pStreamingSourceLib = ::dlopen(STREAMING_SOURCE_LIB, RTLD_LAZY);
 
    if (pStreamingSourceLib == NULL) {
+       ALOGV("@@@@:: STREAMING  Source Library (libmmipstreamaal.so) Load Failed  Error : %s ",::dlerror());
        return NULL;
    }
 
@@ -1230,6 +1262,7 @@ sp<NuPlayer::Source>
    }
 
    if (StreamingSourcePtr == NULL) {
+       ALOGV("@@@@:: CreateDashHttpLiveSource symbol not found in libmmipstreamaal.so, return NULL ");
        return NULL;
    }
 
@@ -1237,6 +1270,7 @@ sp<NuPlayer::Source>
     sp<NuPlayer::Source> StreamingSource = StreamingSourcePtr(uri, headers, uidValid, uid);
 
     if(StreamingSource==NULL) {
+        ALOGV("@@@@:: StreamingSource failed to instantiate Source ");
         return NULL;
     }
 
