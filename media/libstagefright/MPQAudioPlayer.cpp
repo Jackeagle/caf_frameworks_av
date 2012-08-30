@@ -504,17 +504,17 @@ void MPQAudioPlayer::reset() {
     ALOGD("Reset called!!!!!");
     mAsyncReset = true;
 
+    // make sure Extractor thread has exited
+    requestAndWaitForExtractorThreadExit();
+    ALOGV("Extractor Thread killed");
+    // make sure the event thread also has exited
+
     if (mAudioSink.get()) {
         mAudioSink->pause();
         ALOGV("Close the PCM Stream");
         mAudioSink->stop();
     }
     mAudioSink = NULL;
-
-    // make sure Extractor thread has exited
-    requestAndWaitForExtractorThreadExit();
-    ALOGV("Extractor Thread killed");
-    // make sure the event thread also has exited
 
     if(mAudioSink.get()) {
         mAudioSink->pause();
