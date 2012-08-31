@@ -1644,6 +1644,7 @@ status_t AwesomePlayer::initAudioDecoder() {
     } else {
         int64_t durationUs;
         uint32_t flags = 0;
+#ifndef NON_QCOM_TARGET
         char lpaDecode[128];
         property_get("lpa.decode",lpaDecode,"0");
         if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
@@ -1657,6 +1658,7 @@ status_t AwesomePlayer::initAudioDecoder() {
 
             flags |= OMXCodec::kSoftwareCodecsOnly;
         }
+#endif
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
                 false, // createEncoder
