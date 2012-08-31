@@ -53,6 +53,7 @@ public:
     static const char * const keyVoipCheck;
     static const char * const keyFluenceType;
     static const char * const keySSR;
+    static const char * const keyHandleA2dpDevice;
 
     String8 toString();
 
