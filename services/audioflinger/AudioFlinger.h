@@ -1311,7 +1311,7 @@ private:
     // server side of the client's IAudioTrack
     class DirectAudioTrack : public android::BnDirectTrack,
                              public AudioEventObserver
-         {
+    {
     public:
                             DirectAudioTrack(const sp<AudioFlinger>& audioFlinger,
                                              int output, AudioSessionDescriptor *outputDesc,
@@ -1335,6 +1335,32 @@ private:
         AudioSessionDescriptor *mOutputDesc;
         int  mOutput;
         bool mIsPaused;
+        void clearPowerManager();
+        class PMDeathRecipient : public IBinder::DeathRecipient {
+            public:
+                            PMDeathRecipient(void *obj){parentClass = (DirectAudioTrack *)obj;}
+                virtual     ~PMDeathRecipient() {}
+
+                // IBinder::DeathRecipient
+                virtual     void        binderDied(const wp<IBinder>& who);
+
+            private:
+                            DirectAudioTrack *parentClass;
+                            PMDeathRecipient(const PMDeathRecipient&);
+                            PMDeathRecipient& operator = (const PMDeathRecipient&);
+
+            friend class DirectAudioTrack;
+        };
+
+        friend class PMDeathRecipient;
+
+        Mutex pmLock;
+        void        acquireWakeLock();
+        void        releaseWakeLock();
+
+        sp<IPowerManager>       mPowerManager;
+        sp<IBinder>             mWakeLockToken;
+        sp<PMDeathRecipient>    mDeathRecipient;
     };
     class TrackHandle : public android::BnAudioTrack {
     public:
