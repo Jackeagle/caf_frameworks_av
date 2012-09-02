@@ -48,6 +48,8 @@
 static const char   mName[] = "TunnelPlayer";
 #define MEM_BUFFER_SIZE 600*1024
 #define MEM_BUFFER_COUNT 4
+#define AMR_MEM_BUFFER_SIZE 2400
+#define AMR_MEM_BUFFER_COUNT 1024
 namespace android {
 int TunnelPlayer::mTunnelObjectsAlive = 0;
 
@@ -304,6 +306,14 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
     if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC)) {
         mFormat = AUDIO_FORMAT_AAC;
     }
+    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB)) {
+        mFormat = AUDIO_FORMAT_AMR_WB;
+        ALOGV("TunnelPlayer::start AUDIO_FORMAT_AMR_WB");
+    }
+    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS)) {
+        mFormat = AUDIO_FORMAT_AMR_WB_PLUS;
+        ALOGV("TunnelPlayer::start AUDIO_FORMAT_AMR_WB_PLUS");
+    }
 
     CHECK(success);
 
@@ -527,6 +537,7 @@ void *TunnelPlayer::extractorThreadWrapper(void *me) {
 void TunnelPlayer::extractorThreadEntry() {
 
     pthread_mutex_lock(&extractor_mutex);
+    uint32_t BufferSizeToUse = MEM_BUFFER_SIZE;
 
     pid_t tid  = gettid();
     androidSetThreadPriority(tid, ANDROID_PRIORITY_AUDIO);
@@ -541,7 +552,16 @@ void TunnelPlayer::extractorThreadEntry() {
     if (killExtractorThread) {
         return;
     }
-    void* local_buf = malloc(MEM_BUFFER_SIZE);
+    if(mSource != NULL) {
+        sp<MetaData> format = mSource->getFormat();
+        const char *mime;
+        bool success = format->findCString(kKeyMIMEType, &mime);
+        if( (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB)) ||
+            (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS)) ) {
+            BufferSizeToUse = AMR_MEM_BUFFER_SIZE;
+        }
+    }
+    void* local_buf = malloc(BufferSizeToUse);
     int bytesWritten = 0;
     while (!killExtractorThread) {
 
@@ -553,9 +573,9 @@ void TunnelPlayer::extractorThreadEntry() {
         }
 
         if (!mIsA2DPEnabled) {
-            ALOGV("FillBuffer: MemBuffer size %d", MEM_BUFFER_SIZE);
+            ALOGW("FillBuffer: MemBuffer size %d", BufferSizeToUse);
             ALOGV("Fillbuffer started");
-            bytesWritten = fillBuffer(local_buf, MEM_BUFFER_SIZE);
+            bytesWritten = fillBuffer(local_buf, BufferSizeToUse);
             ALOGV("FillBuffer completed bytesToWrite %d", bytesWritten);
             if(!killExtractorThread) {
                 mAudioSink->write(local_buf, bytesWritten);
