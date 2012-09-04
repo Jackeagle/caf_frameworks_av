@@ -446,18 +446,18 @@ MPEG2TSExtractor::MPEG2TSExtractor(const sp<DataSource> &source)
     CHECK(kTSPacketSize != 0);
 
     mDataSource->getSize(&mClipSize);
+
+    if (mClipSize % kTSPacketSize != 0) {
+        mClipSize = mClipSize - (mClipSize % kTSPacketSize);
+        ALOGI("Clipsize %lld is adjusted to multiple of TSPacketSize %lld", mClipSize,kTSPacketSize);
+    }
+
     if (mClipSize == 0) {
         mTSBuffer = new TSBuffer(kTSCacheSize, kTSCacheSize);
     } else {
         mTSBuffer = new TSBuffer(kTSCacheSize, mClipSize);
     }
     CHECK(mTSBuffer != NULL);
-
-    if (mClipSize % kTSPacketSize != 0) {
-        ALOGW("Clipsize is not correct %lld", mClipSize);
-        mClipSize = 0;
-        return;
-    }
 
     init();
 }
