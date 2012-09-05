@@ -42,6 +42,7 @@ struct ACodec : public AHierarchicalStateMachine {
         kWhatComponentAllocated  = 'cAll',
         kWhatComponentConfigured = 'cCon',
         kWhatBuffersAllocated    = 'allc',
+        kWhatReConfigure         = 'rCon',
     };
 
     ACodec();
@@ -253,6 +254,10 @@ private:
             status_t internalError = UNKNOWN_ERROR);
 
     sp<FlushingOutputState> mFlushingOutputState;
+
+    //Fallback to Ittiam Software Decoder
+    bool mIsIttiamDecoderRequired;
+
     DISALLOW_EVIL_CONSTRUCTORS(ACodec);
 };
 
