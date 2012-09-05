@@ -1396,32 +1396,30 @@ status_t NuPlayer::getParameter(int key, Parcel *reply)
     size_t data_16_Size;
 
     status_t err = OK;
-    if (key == 8002) {
 
-        if (mSource == NULL)
-        {
-            ALOGE("Source is NULL in getParameter\n");
-            return UNKNOWN_ERROR;
-        }
-        err = mSource->getParameter(key, &data_8, &data_8_Size);
-        if (err != OK)
-        {
-            ALOGE("source getParameter returned error: %d\n",err);
-            return err;
-        }
-
-        data_16_Size = data_8_Size * sizeof(char16_t);
-        data_16 = malloc(data_16_Size);
-        if (data_16 == NULL)
-        {
-            ALOGE("Out of memory in getParameter\n");
-            return NO_MEMORY;
-        }
-
-        utf8_to_utf16_no_null_terminator((uint8_t *)data_8, data_8_Size, (char16_t *) data_16);
-        err = reply->writeString16((char16_t *)data_16, data_8_Size);
-        free(data_16);
+    if (mSource == NULL)
+    {
+      ALOGE("Source is NULL in getParameter\n");
+      return UNKNOWN_ERROR;
     }
+    err = mSource->getParameter(key, &data_8, &data_8_Size);
+    if (err != OK)
+    {
+      ALOGE("source getParameter returned error: %d\n",err);
+      return err;
+    }
+
+    data_16_Size = data_8_Size * sizeof(char16_t);
+    data_16 = malloc(data_16_Size);
+    if (data_16 == NULL)
+    {
+      ALOGE("Out of memory in getParameter\n");
+      return NO_MEMORY;
+    }
+
+    utf8_to_utf16_no_null_terminator((uint8_t *)data_8, data_8_Size, (char16_t *) data_16);
+    err = reply->writeString16((char16_t *)data_16, data_8_Size);
+    free(data_16);
     return err;
 }
 

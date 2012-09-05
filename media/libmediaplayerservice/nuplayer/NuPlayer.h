@@ -23,6 +23,8 @@
 #include <media/stagefright/NativeWindowWrapper.h>
 #include "NuPlayerStats.h"
 #include <media/stagefright/foundation/ABuffer.h>
+#define KEY_DASH_ADAPTION_PROPERTIES 8002
+#define KEY_DASH_MPD_QUERY           8003
 
 namespace android {
 
