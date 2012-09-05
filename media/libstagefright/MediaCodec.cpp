@@ -738,6 +738,14 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                     break;
                 }
 
+                case ACodec::kWhatReConfigure:
+                {
+                    CHECK_EQ(mState, INITIALIZED);
+                    setState(INITIALIZING);
+
+                    break;
+                }
+
                 default:
                     TRESPASS();
             }

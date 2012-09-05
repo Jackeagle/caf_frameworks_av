@@ -44,6 +44,8 @@
 #define MIN_WIDTH 480;
 #define MIN_HEIGHT 320;
 
+#include <cutils/properties.h>
+
 namespace android {
 
 template<class T>
@@ -179,6 +181,8 @@ protected:
     virtual void stateEntered();
 
 private:
+    friend struct ACodec::LoadedState;
+
     void onSetup(const sp<AMessage> &msg);
     bool onAllocateComponent(const sp<AMessage> &msg);
 
@@ -371,7 +375,8 @@ ACodec::ACodec()
       mEncoderPadding(0),
       mChannelMaskPresent(false),
       mChannelMask(0),
-      mSmoothStreaming(false) {
+      mSmoothStreaming(false),
+      mIsIttiamDecoderRequired(false) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -524,6 +529,7 @@ status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
 
 status_t ACodec::allocateOutputBuffersFromNativeWindow() {
     OMX_PARAM_PORTDEFINITIONTYPE def;
+    int format;
     InitOMXParams(&def);
     def.nPortIndex = kPortIndexOutput;
 
@@ -534,11 +540,18 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
+    format = def.format.video.eColorFormat;
+
+    if(def.format.video.eColorFormat ==
+       OMX_QCOM_COLOR_FormatYVU420SemiPlanar) {
+        format = HAL_PIXEL_FORMAT_YCrCb_420_SP;
+    }
+
     err = native_window_set_buffers_geometry(
             mNativeWindow.get(),
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
-            def.format.video.eColorFormat);
+            format);
 
     if (err != 0) {
         ALOGE("native_window_set_buffers_geometry failed: %s (%d)",
@@ -3010,6 +3023,10 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     for (size_t matchIndex = 0; matchIndex < matchingCodecs.size();
             ++matchIndex) {
         componentName = matchingCodecs.itemAt(matchIndex).string();
+        if (mCodec->mIsIttiamDecoderRequired &&
+            strncmp(componentName.c_str(), "OMX.ittiam.", 11)) {
+            continue;
+        }
         quirks = matchingCodecQuirks.itemAt(matchIndex);
 
         pid_t tid = androidGetTid();
@@ -3206,8 +3223,48 @@ bool ACodec::LoadedState::onConfigureComponent(
         ALOGE("[%s] configureCodec returning error %d",
               mCodec->mComponentName.c_str(), err);
 
-        mCodec->signalError(OMX_ErrorUndefined, err);
-        return false;
+        char value[PROPERTY_VALUE_MAX];
+
+        //Fallback to ittiam decoder
+        if (property_get("ro.board.platform", value, "0")
+            && (!strncmp(value, "msm7627", sizeof("msm7627") - 1))) {
+
+            CHECK_EQ(mCodec->mOMX->freeNode(mCodec->mNode), (status_t)OK);
+            mCodec->mNativeWindow.clear();
+            mCodec->mNode = NULL;
+            mCodec->mOMX.clear();
+            mCodec->mQuirks = 0;
+            mCodec->mFlags = 0;
+            mCodec->mComponentName.clear();
+
+            mCodec->mIsIttiamDecoderRequired = true;
+
+            {
+                sp<AMessage> notify = mCodec->mNotify->dup();
+                notify->setInt32("what", ACodec::kWhatReConfigure);
+                notify->setString("componentName", mCodec->mComponentName.c_str());
+                notify->post();
+            }
+
+            mCodec->mUninitializedState->onAllocateComponent(msg);
+
+            mCodec->mIsIttiamDecoderRequired = false;
+
+            CHECK(mCodec->mNode != NULL);
+
+            AString mime;
+            CHECK(msg->findString("mime", &mime));
+
+            status_t err = mCodec->configureCodec(mime.c_str(), msg);
+
+            if (err != OK) {
+                mCodec->signalError(OMX_ErrorUndefined, err);
+                return false;
+            }
+        } else {
+            mCodec->signalError(OMX_ErrorUndefined, err);
+            return false;
+        }
     }
 
     sp<RefBase> obj;
