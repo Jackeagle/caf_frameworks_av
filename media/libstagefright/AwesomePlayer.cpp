@@ -1791,6 +1791,7 @@ void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
 void AwesomePlayer::onVideoEvent() {
     ATRACE_CALL();
     Mutex::Autolock autoLock(mLock);
+    int mAudioSourcePaused = false;
     if (!mVideoEventPending) {
         // The event has been cancelled in reset_l() but had already
         // been scheduled for execution at that time.
@@ -1843,6 +1844,7 @@ void AwesomePlayer::onVideoEvent() {
                 modifyFlags(AUDIO_RUNNING, CLEAR);
             }
             mAudioSource->pause();
+            mAudioSourcePaused = true;
         }
     }
 
@@ -1883,6 +1885,11 @@ void AwesomePlayer::onVideoEvent() {
                     ALOGV("video stream ended while seeking!");
                 }
                 finishSeekIfNecessary(-1);
+
+                if (mAudioSourcePaused) {
+                    mAudioSource->start();
+                    mAudioSourcePaused = false;
+                }
 
                 if (mAudioPlayer != NULL
                         && !(mFlags & (AUDIO_RUNNING | SEEK_PREVIEW))) {
@@ -1940,6 +1947,11 @@ void AwesomePlayer::onVideoEvent() {
 
     SeekType wasSeeking = mSeeking;
     finishSeekIfNecessary(timeUs);
+
+    if (mAudioSourcePaused) {
+        mAudioSource->start();
+        mAudioSourcePaused = false;
+    }
 
     if (mAudioPlayer != NULL && !(mFlags & (AUDIO_RUNNING | SEEK_PREVIEW))) {
         status_t err = startAudioPlayer_l();
