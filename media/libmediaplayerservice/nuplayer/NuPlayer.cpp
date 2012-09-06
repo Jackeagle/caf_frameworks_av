@@ -511,7 +511,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     CHECK_EQ((int)mFlushingAudio, (int)SHUTTING_DOWN_DECODER);
                     mFlushingAudio = SHUT_DOWN;
                 } else if (track == kVideo) {
-                } else {
                     ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatShutdownCompleted:: Video");
                     mVideoDecoder.clear();
 
