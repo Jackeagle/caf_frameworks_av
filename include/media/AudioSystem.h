@@ -144,6 +144,7 @@ public:
         INPUT_CONFIG_CHANGED,
         STREAM_CONFIG_CHANGED,
         A2DP_OUTPUT_STATE,
+        EFFECT_CONFIG_CHANGED,
         NUM_CONFIG_EVENTS
     };
 
