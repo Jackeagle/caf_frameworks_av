@@ -2061,7 +2061,7 @@ void AwesomePlayer::onVideoEvent() {
                 Mutex::Autolock autoLock(mStatsLock);
                 mStats.mConsecutiveFramesDropped = 0;
             }
-            postVideoEvent_l(10000);
+            postVideoEvent_l(kVideoEarlyMarginUs - latenessUs);
             return;
         }
     }
