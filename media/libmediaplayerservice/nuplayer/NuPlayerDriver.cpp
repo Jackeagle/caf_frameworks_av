@@ -149,7 +149,9 @@ status_t NuPlayerDriver::start() {
         default:
         {
             CHECK_EQ((int)mState, (int)PAUSED);
-
+            if (mAtEOS){
+                seekTo(0);
+            }
             mPlayer->resume();
             break;
         }
@@ -349,6 +351,9 @@ status_t NuPlayerDriver::dump(int fd, const Vector<String16> &args) const {
 void NuPlayerDriver::notifyListener(int msg, int ext1, int ext2, const Parcel *obj) {
     if (msg == MEDIA_PLAYBACK_COMPLETE || msg == MEDIA_ERROR) {
         mAtEOS = true;
+        if(msg == MEDIA_PLAYBACK_COMPLETE){
+            pause();
+        }
     }
 
     sendEvent(msg, ext1, ext2, obj);
