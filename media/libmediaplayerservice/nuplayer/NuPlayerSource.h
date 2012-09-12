@@ -83,6 +83,10 @@ struct NuPlayer::Source : public RefBase {
 
     virtual void resume(){}
 
+    virtual status_t getMediaPresence(bool &audio, bool &video, bool &text) {
+       return INVALID_OPERATION;
+    }
+
 protected:
     virtual ~Source() {}
 
