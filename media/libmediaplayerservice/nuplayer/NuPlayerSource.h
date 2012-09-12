@@ -79,6 +79,10 @@ struct NuPlayer::Source : public RefBase {
         return INVALID_OPERATION;
     }
 
+    virtual void pause(){}
+
+    virtual void resume(){}
+
 protected:
     virtual ~Source() {}
 
