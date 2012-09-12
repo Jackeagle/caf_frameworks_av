@@ -108,6 +108,7 @@ void NuPlayer::Renderer::signalTimeDiscontinuity() {
     mAnchorTimeRealUs = -1;
     mWasPaused = false;
     mSyncQueues = mHasAudio && mHasVideo;
+    ALOGI("signalTimeDiscontinuity mHasAudio %d mHasVideo %d mSyncQueues %d",mHasAudio,mHasVideo,mSyncQueues);
 }
 
 void NuPlayer::Renderer::pause() {
@@ -708,6 +709,21 @@ void NuPlayer::Renderer::registerStats(sp<NuPlayerStats> stats) {
         mStats = NULL;
     }
     mStats = stats;
+}
+
+status_t NuPlayer::Renderer::setMediaPresence(bool audio, bool bValue)
+{
+   if (audio)
+   {
+      ALOGV("mHasAudio set to %d from %d",bValue,mHasAudio);
+      mHasAudio = bValue;
+   }
+   else
+   {
+     ALOGV("mHasVideo set to %d from %d",bValue,mHasVideo);
+     mHasVideo = bValue;
+   }
+   return OK;
 }
 
 }  // namespace android
