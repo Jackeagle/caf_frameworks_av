@@ -33,6 +33,9 @@
 
 #include <private/gui/ComposerService.h>
 
+#include <gralloc_priv.h>
+#include <cutils/properties.h>
+
 namespace android {
 
 SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeight) :
@@ -56,8 +59,16 @@ SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeig
     mBufferQueue = new BufferQueue(true, MIN_UNDEQUEUED_BUFFERS);
     mBufferQueue->setDefaultBufferSize(bufferWidth, bufferHeight);
     mBufferQueue->setSynchronousMode(true);
+    char value[PROPERTY_VALUE_MAX] = {0};
+    uint32_t usage = 0;
+
+    if (property_get("ro.board.platform", value, "0")
+        && (!strncmp(value, "msm7627", sizeof("msm7627") - 1))) {
+        usage = (GRALLOC_USAGE_PRIVATE_CAMERA_HEAP |
+                 GRALLOC_USAGE_PRIVATE_UNCACHED);
+    }
     mBufferQueue->setConsumerUsageBits(GRALLOC_USAGE_HW_VIDEO_ENCODER |
-            GRALLOC_USAGE_HW_TEXTURE);
+            GRALLOC_USAGE_HW_TEXTURE | usage);
 
     sp<ISurfaceComposer> composer(ComposerService::getComposerService());
 
