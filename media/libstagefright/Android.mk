@@ -7,6 +7,10 @@ ifeq ($(BOARD_USES_ALSA_AUDIO),true)
     endif
 endif
 
+ifeq ($(call is-board-platform-in-list,msm8660),true)
+   LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+endif
+
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 LOCAL_SRC_FILES:=                         \
