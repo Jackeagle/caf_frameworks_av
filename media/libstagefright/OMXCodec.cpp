@@ -454,7 +454,7 @@ sp<MediaSource> OMXCodec::Create(
         (!strncasecmp(mime, "video/", 6)) && mSecureStart == false) {
               //send secure start event
               mSecureStart = true;
-              sendBroadCastEvent(String16("android.intent.action.SECURE_START"));
+              sendBroadCastEvent(String16("qualcomm.intent.action.SECURE_START"));
         }
 
         status_t err = omx->allocateNode(componentName, observer, &node);
@@ -466,7 +466,7 @@ sp<MediaSource> OMXCodec::Create(
                (!strncasecmp(mime, "video/", 6)) ) {
                         //send secure start done event
                         sendBroadCastEvent(String16
-                        ("android.intent.action.SECURE_START_DONE"));
+                        ("qualcomm.intent.action.SECURE_START_DONE"));
                }
 
             sp<OMXCodec> codec = new OMXCodec(
@@ -1810,14 +1810,14 @@ OMXCodec::~OMXCodec() {
        (mFlags & kUseSecureInputBuffers) &&
        (!mIsEncoder) && (!strncasecmp(mMIME, "video/", 6)) ) {
         //send secure end event
-        sendBroadCastEvent(String16("android.intent.action.SECURE_END"));
+        sendBroadCastEvent(String16("qualcomm.intent.action.SECURE_END"));
     }
     status_t err = mOMX->freeNode(mNode);
     if (!strncasecmp(mComponentName,"OMX.qcom",8) &&
        (mFlags & kUseSecureInputBuffers) &&
        (!mIsEncoder) && (!strncasecmp(mMIME, "video/", 6)) ) {
         //send secure end done event
-        sendBroadCastEvent(String16("android.intent.action.SECURE_END_DONE"));
+        sendBroadCastEvent(String16("qualcomm.intent.action.SECURE_END_DONE"));
         mSecureStart = false;
     }
 
