@@ -258,6 +258,7 @@ private:
     bool mSmoothStreaming;
 
     sp<FlushingOutputState> mFlushingOutputState;
+
     DISALLOW_EVIL_CONSTRUCTORS(ACodec);
 };
 

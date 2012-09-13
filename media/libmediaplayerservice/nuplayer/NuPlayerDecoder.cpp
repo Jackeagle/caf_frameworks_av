@@ -149,6 +149,11 @@ sp<AMessage> NuPlayer::Decoder::makeFormat(const sp<MetaData> &meta) {
     sp<AMessage> msg;
     CHECK_EQ(convertMetaDataToMessage(meta, &msg), (status_t)OK);
 
+    int32_t value;
+    if (meta->findInt32(kKeySmoothStreaming, &value)) {
+        msg->setInt32("smooth-streaming", value);
+    }
+
     mCSDIndex = 0;
     for (size_t i = 0;; ++i) {
         sp<ABuffer> csd;
