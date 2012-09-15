@@ -740,6 +740,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             CHECK(mRenderer != NULL);
             mRenderer->pause();
             mPauseIndication = true;
+            if (mSourceType == kHttpDashSource) {
+                Mutex::Autolock autoLock(mLock);
+                if (mSource != NULL)
+                {
+                   mSource->pause();
+                }
+            }
             break;
         }
 
@@ -749,6 +756,10 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             mRenderer->resume();
             mPauseIndication = false;
             if (mSourceType == kHttpDashSource) {
+               Mutex::Autolock autoLock(mLock);
+               if (mSource != NULL) {
+                   mSource->resume();
+               }
                 if (mAudioDecoder == NULL || mVideoDecoder == NULL || mTextDecoder == NULL) {
                     mScanSourcesPending = false;
                     postScanSources();
