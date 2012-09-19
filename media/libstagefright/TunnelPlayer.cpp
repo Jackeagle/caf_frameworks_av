@@ -49,8 +49,7 @@ static const char   mName[] = "TunnelPlayer";
 #define MEM_METADATA_SIZE 64
 #define MEM_BUFFER_SIZE (600*1024 - MEM_METADATA_SIZE)
 #define MEM_BUFFER_COUNT 4
-#define AMR_MEM_BUFFER_SIZE (2400 - MEM_METADATA_SIZE)
-#define AMR_MEM_BUFFER_COUNT 1024
+
 namespace android {
 int TunnelPlayer::mTunnelObjectsAlive = 0;
 
@@ -557,10 +556,6 @@ void TunnelPlayer::extractorThreadEntry() {
         sp<MetaData> format = mSource->getFormat();
         const char *mime;
         bool success = format->findCString(kKeyMIMEType, &mime);
-        if( (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB)) ||
-            (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS)) ) {
-            BufferSizeToUse = AMR_MEM_BUFFER_SIZE;
-        }
     }
     void* local_buf = malloc(BufferSizeToUse);
     int bytesWritten = 0;
@@ -580,7 +575,7 @@ void TunnelPlayer::extractorThreadEntry() {
             ALOGV("FillBuffer completed bytesToWrite %d", bytesWritten);
             if(!killExtractorThread) {
                 mAudioSink->write(local_buf, bytesWritten);
-                if(mReachedEOS)
+                if(mReachedEOS && bytesWritten)
                     mAudioSink->write(local_buf, 0);
             }
         }
