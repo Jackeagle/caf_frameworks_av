@@ -738,6 +738,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 isTrack = true;
 
                 Track *track = new Track;
+                memset(track,0,sizeof(Track));
                 track->next = NULL;
                 if (mLastTrack) {
                     mLastTrack->next = track;
@@ -1702,7 +1703,11 @@ status_t MPEG4Extractor::parseTrackHeader(
         id = U32_AT(&buffer[20]);
         duration = U64_AT(&buffer[28]);
     } else {
-        CHECK_EQ((unsigned)version, 0u);
+        //CHECK_EQ((unsigned)version, 0u);
+        if (version != 0) {
+            ALOGE("Malformed clip");
+            return ERROR_MALFORMED;
+        }
 
         ctime = U32_AT(&buffer[4]);
         mtime = U32_AT(&buffer[8]);
@@ -1977,7 +1982,7 @@ status_t MPEG4Extractor::verifyTrack(Track *track) {
         }
     }
 
-    if (!track->sampleTable->isValid()) {
+    if (track->sampleTable != NULL && !track->sampleTable->isValid()) {
         // Make sure we have all the metadata we need.
         return ERROR_MALFORMED;
     }
