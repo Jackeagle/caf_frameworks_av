@@ -2668,6 +2668,11 @@ void OMXCodec::on_message(const omx_message &msg) {
                 if (msg.u.extended_buffer_data.flags & OMX_BUFFERFLAG_SYNCFRAME) {
                     buffer->meta_data()->setInt32(kKeyIsSyncFrame, true);
                 }
+
+                if (msg.u.extended_buffer_data.flags & OMX_BUFFERFLAG_DATACORRUPT) {
+                    buffer->meta_data()->setInt64(kKeyCorrupt, true);
+                }
+
                 bool isCodecSpecific = false;
                 if (msg.u.extended_buffer_data.flags & OMX_BUFFERFLAG_CODECCONFIG) {
                     buffer->meta_data()->setInt32(kKeyIsCodecConfig, true);
