@@ -212,6 +212,7 @@ private:
 
     Mutex pmLock;
     Mutex mLock;
+    Mutex mResumeLock;
 
     bool mSeeking;
     bool mReachedEOS;
