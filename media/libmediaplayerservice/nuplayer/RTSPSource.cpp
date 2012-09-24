@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010 The Android Open Source Project
+ * Copyright (c) 2013, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -194,7 +195,13 @@ status_t NuPlayer::RTSPSource::seekTo(int64_t seekTimeUs) {
 }
 
 void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
-    if (mState != CONNECTED) {
+    if (mState == CONNECTING) {
+        sp<AMessage> msg = new AMessage(kWhatPerformSeek, mReflector->id());
+        msg->setInt32("generation", mSeekGeneration);
+        msg->setInt64("timeUs", seekTimeUs);
+        msg->post(100000ll);
+        return;
+    } else if (mState != CONNECTED) {
         return;
     }
 
