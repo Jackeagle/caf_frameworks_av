@@ -184,6 +184,8 @@ private:
     };
     NuSourceType mSourceType;
 
+    int32_t mSRid;
+
     status_t instantiateDecoder(int track, sp<Decoder> *decoder);
 
     status_t feedDecoderInputData(int track, const sp<AMessage> &msg);
