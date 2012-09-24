@@ -16,6 +16,7 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayer"
+#define SRMax 30
 #include <utils/Log.h>
 #include <dlfcn.h>  // for dlopen/dlclose
 #include "NuPlayer.h"
@@ -69,7 +70,8 @@ NuPlayer::NuPlayer()
       mPauseIndication(false),
       mSourceType(kDefaultSource),
       mStats(NULL),
-      mBufferingNotification(false) {
+      mBufferingNotification(false),
+      mSRid(0) {
       mTrackName = new char[6];
 }
 
@@ -810,8 +812,22 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             int64_t track;
 
             sp<AMessage> sourceRequest;
-            CHECK(msg->findMessage("source-request", &sourceRequest));
+            ALOGD("kWhatSourceNotify - looking for source-request");
 
+            // attempt to find message by different names
+            bool msgFound = msg->findMessage("source-request", &sourceRequest);
+            int32_t handled;
+            if (!msgFound){
+                ALOGD("kWhatSourceNotify source-request not found, trying using sourceRequestID");
+                char srName[] = "source-request00";
+                srName[strlen("source-request")] += mSRid/10;
+                srName[strlen("source-request")+sizeof(char)] += mSRid%10;
+                msgFound = msg->findMessage(srName, &sourceRequest);
+                if(msgFound)
+                    mSRid = (mSRid+1)%SRMax;
+            }
+
+            CHECK(msgFound);
             int32_t what;
             CHECK(sourceRequest->findInt32("what", &what));
             sourceRequest->findInt64("track", &track);
@@ -943,8 +959,16 @@ void NuPlayer::finishReset() {
     if (mSourceNotify != NULL)
     {
        sp<AMessage> sourceRequest;
-       mSourceNotify->findMessage("source-request", &sourceRequest);
-       sourceRequest = NULL;
+       if (mSourceNotify->findMessage("source-request", &sourceRequest)) {
+           sourceRequest = NULL;
+       } else {
+           char srName[] = "source-request00";
+           srName[strlen("source-request")] += mSRid/10;
+           srName[strlen("source-request")+sizeof(char)] += mSRid%10;
+           mSourceNotify->findMessage(srName, &sourceRequest);
+           sourceRequest = NULL;
+           mSRid = (mSRid+1)%SRMax;
+       }
        mSourceNotify = NULL;
     }
 
