@@ -276,7 +276,7 @@ status_t MPQAudioPlayer::start(bool sourceAlreadyStarted) {
     ALOGD("Opening a routing session for audio playback:\
             mSampleRate = %d mNumChannels =  %d",\
             mSampleRate, mNumChannels);
-    audio_output_flags_t flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_LPA |
+    audio_output_flags_t flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_TUNNEL |
                                                         AUDIO_OUTPUT_FLAG_DIRECT);
     err = mAudioSink->open(
         mSampleRate, mNumChannels, mChannelMask, (audio_format_t)mAudioFormat,
@@ -479,7 +479,7 @@ status_t MPQAudioPlayer::resumePlayback(int sessionId, bool bIgnorePendingSample
     status_t err = OK;
     if (!mIsAudioRouted) {
         ALOGV("Opening a session for MPQ Audio playback - Software Decoder");
-        audio_output_flags_t flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_LPA |
+        audio_output_flags_t flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_TUNNEL |
                                                             AUDIO_OUTPUT_FLAG_DIRECT);
         status_t err = mAudioSink->open(
             mSampleRate, mNumChannels, mChannelMask, (audio_format_t)mAudioFormat,
