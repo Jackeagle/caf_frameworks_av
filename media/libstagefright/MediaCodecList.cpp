@@ -24,6 +24,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/OMXCodec.h>
+#include <media/stagefright/MediaDefs.h>
 #include <utils/threads.h>
 
 #include <expat.h>
@@ -64,6 +65,12 @@ MediaCodecList::MediaCodecList()
 
         addMediaCodec(
                 false /* encoder */, "OMX.google.raw.decoder", "audio/raw");
+
+        Vector<AString> QcomAACQuirks;
+        QcomAACQuirks.push(AString("requires-allocate-on-input-ports"));
+        QcomAACQuirks.push(AString("requires-allocate-on-output-ports"));
+        addMediaCodec(false, "OMX.qcom.audio.decoder.multiaac",
+            "audio/mp4a-latm", getCodecSpecificQuirks(QcomAACQuirks));
     }
 
 #if 0
@@ -318,6 +325,35 @@ void MediaCodecList::addMediaCodec(
     if (type != NULL) {
         addType(type);
     }
+}
+
+void MediaCodecList::addMediaCodec(
+        bool encoder, const char *name, const char *type, uint32_t quirks) {
+
+    ALOGI("Overloading addMediaCodec and adding %s", name);
+    mCodecInfos.push();
+    CodecInfo *info = &mCodecInfos.editItemAt(mCodecInfos.size() - 1);
+    info->mName = name;
+    info->mIsEncoder = encoder;
+    info->mTypes = 0;
+    info->mQuirks = quirks;
+
+    if (type != NULL) {
+        addType(type);
+    }
+}
+
+uint32_t MediaCodecList::getCodecSpecificQuirks(Vector<AString> quirks)
+{
+    size_t i = 0, numQuirks = quirks.size();
+    uint32_t bit = 0, value = 0;
+    for (i = 0; i < numQuirks; i++)
+    {
+        ssize_t index = mCodecQuirks.indexOfKey(quirks.itemAt(i));
+        bit = mCodecQuirks.valueAt(index);
+        value |= 1ul << bit;
+    }
+    return value;
 }
 
 status_t MediaCodecList::addQuirk(const char **attrs) {

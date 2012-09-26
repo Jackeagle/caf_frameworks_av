@@ -380,9 +380,19 @@ sp<MediaSource> OMXCodec::Create(
 
     Vector<String8> matchingCodecs;
     Vector<uint32_t> matchingCodecQuirks;
+
+    char value[PROPERTY_VALUE_MAX];
+    int tmp = property_get("media.aaccodectype", value, NULL);
+    if (!strcmp("0", value) && tmp && !strcmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
+        ALOGE("Using AAC H/W decoder");
+        findMatchingCodecs(MEDIA_MIMETYPE_AUDIO_AAC, false,
+            "OMX.qcom.audio.decoder.multiaac", flags, &matchingCodecs, &matchingCodecQuirks);
+    }
+    else {
     findMatchingCodecs(
             mime, createEncoder, matchComponentName, flags,
             &matchingCodecs, &matchingCodecQuirks);
+    }
 
     if (matchingCodecs.isEmpty()) {
         return NULL;
