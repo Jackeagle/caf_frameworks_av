@@ -94,7 +94,9 @@ private:
 
     status_t addMediaCodecFromAttributes(bool encoder, const char **attrs);
     void addMediaCodec(bool encoder, const char *name, const char *type = NULL);
+    void addMediaCodec(bool encoder, const char *name, const char *type, uint32_t quirks);
 
+    uint32_t getCodecSpecificQuirks (Vector<AString> quirks);
     status_t addQuirk(const char **attrs);
     status_t addTypeFromAttributes(const char **attrs);
     void addType(const char *name);
