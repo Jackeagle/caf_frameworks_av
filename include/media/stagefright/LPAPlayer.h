@@ -97,6 +97,8 @@ private:
     int64_t mTimePlayed;
     int64_t mNumFramesPlayed;
     int64_t mNumFramesPlayedSysTimeUs;
+    int64_t mNumA2DPBytesPlayed;
+
     void clearPowerManager();
 
     class PMDeathRecipient : public IBinder::DeathRecipient {
@@ -123,9 +125,6 @@ private:
     sp<IPowerManager>       mPowerManager;
     sp<IBinder>             mWakeLockToken;
     sp<PMDeathRecipient>    mDeathRecipient;
-
-
-
 
     pthread_t decoderThread;
 
@@ -209,8 +208,6 @@ private:
 
     MediaBuffer *mInputBuffer;
 
-
-    Mutex pmLock;
     Mutex mLock;
     Mutex mResumeLock;
 
