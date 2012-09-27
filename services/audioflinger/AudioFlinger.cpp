@@ -668,9 +668,9 @@ void AudioFlinger::deleteEffectSession()
 
 // ToDo: Should we go ahead with this frameCount?
 #define DEAFULT_FRAME_COUNT 1200
-void AudioFlinger::applyEffectsOn(int16_t *inBuffer, int16_t *outBuffer, int size)
+void AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer, int16_t *outBuffer, int size)
 {
-    ALOGV("applyEffectsOn: inBuf %p outBuf %p size %d", inBuffer, outBuffer, size);
+    ALOGV("applyEffectsOn: inBuf %p outBuf %p size %d token %p", inBuffer, outBuffer, size, token);
     // This might be the first buffer to apply effects after effect config change
     // should not skip effects processing
     mIsEffectConfigChanged = false;
@@ -758,7 +758,7 @@ void AudioFlinger::applyEffectsOn(int16_t *inBuffer, int16_t *outBuffer, int siz
         }
     }
 #ifdef SRS_PROCESSING
-    SRS_Processing::ProcessOut(SRS_Processing::AUTO, this, outBuffer, size, mLPASampleRate, mLPANumChannels);
+    SRS_Processing::ProcessOut(SRS_Processing::AUTO, token, outBuffer, size, mLPASampleRate, mLPANumChannels);
 #endif
 }
 
@@ -6281,7 +6281,7 @@ ssize_t AudioFlinger::DirectAudioTrack::write(const void *buffer, size_t size) {
         memcpy((char *) buf.localBuf, (char *)buffer, size);
         buf.bytesToWrite = size;
         mEffectsPool.push_back(buf);
-        mAudioFlinger->applyEffectsOn((int16_t*)buf.localBuf,(int16_t*)buffer,(int)size);
+        mAudioFlinger->applyEffectsOn(static_cast<void *>(this), (int16_t*)buf.localBuf,(int16_t*)buffer,(int)size);
         mEffectLock.unlock();
     }
     return mOutputDesc->stream->write(mOutputDesc->stream, buffer, size);
@@ -6444,7 +6444,8 @@ void AudioFlinger::DirectAudioTrack::EffectsThreadEntry() {
             for ( List<BufferInfo>::iterator it = mEffectsPool.begin();
                   it != mEffectsPool.end(); it++) {
                 ALOGV("Apply effects on the buffer dspbuf %p, mEffectsPool.size() %d",it->dspBuf,mEffectsPool.size());
-                mAudioFlinger->applyEffectsOn((int16_t *)it->localBuf,
+                mAudioFlinger->applyEffectsOn(static_cast<void *>(this),
+                                              (int16_t *)it->localBuf,
                                               (int16_t *)it->dspBuf,
                                               it->bytesToWrite);
                 if (mEffectConfigChanged) {
