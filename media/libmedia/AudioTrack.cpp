@@ -305,7 +305,7 @@ status_t AudioTrack::set(
             return NO_INIT;
         }
         mAudioFlinger = audioFlinger;
-        status_t status;
+        status_t status = NO_ERROR;
         mAudioDirectOutput = output;
         mDirectTrack = audioFlinger->createDirectTrack( getpid(),
                                                         sampleRate,
@@ -317,6 +317,7 @@ status_t AudioTrack::set(
                                                         &status);
         if(status != NO_ERROR) {
             ALOGE("createDirectTrack returned with status %d", status);
+            return status;
         }
         mAudioTrack = NULL;
         mSharedBuffer = NULL;
