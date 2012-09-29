@@ -61,6 +61,7 @@ SoftwareRenderer::SoftwareRenderer(
         rotationDegrees = 0;
     }
 
+    int minUndequeuedBufs = 0;
     int halFormat;
     size_t bufWidth, bufHeight;
 
@@ -93,7 +94,14 @@ SoftwareRenderer::SoftwareRenderer(
     CHECK(mCropWidth > 0);
     CHECK(mCropHeight > 0);
     CHECK(mConverter == NULL || mConverter->isValid());
-
+    CHECK_EQ(0,
+            mNativeWindow->query(
+            mNativeWindow.get(),
+            NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS, &minUndequeuedBufs));
+    CHECK_EQ(0,
+            native_window_set_buffer_count(
+            mNativeWindow.get(),
+            minUndequeuedBufs + 1));
     CHECK_EQ(0,
             native_window_set_usage(
             mNativeWindow.get(),
