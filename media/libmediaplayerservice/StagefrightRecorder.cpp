@@ -78,7 +78,8 @@ StagefrightRecorder::StagefrightRecorder()
       mOutputFd(-1),
       mAudioSource(AUDIO_SOURCE_CNT),
       mVideoSource(VIDEO_SOURCE_LIST_END),
-      mStarted(false), mSurfaceMediaSource(NULL) {
+      mStarted(false), mSurfaceMediaSource(NULL),
+      mDisableAudio(false) {
 
     ALOGV("Constructor");
     reset();
@@ -108,6 +109,10 @@ status_t StagefrightRecorder::setAudioSource(audio_source_t as) {
         as >= AUDIO_SOURCE_CNT) {
         ALOGE("Invalid audio source: %d", as);
         return BAD_VALUE;
+    }
+
+    if (mDisableAudio) {
+        return OK;
     }
 
     if (as == AUDIO_SOURCE_DEFAULT) {
@@ -159,6 +164,10 @@ status_t StagefrightRecorder::setAudioEncoder(audio_encoder ae) {
         ae >= AUDIO_ENCODER_LIST_END) {
         ALOGE("Invalid audio encoder: %d", ae);
         return BAD_VALUE;
+    }
+
+    if (mDisableAudio) {
+        return OK;
     }
 
     if (ae == AUDIO_ENCODER_DEFAULT) {
@@ -1924,6 +1933,11 @@ status_t StagefrightRecorder::reset() {
     mLongitudex10000 = -3600000;
 
     mOutputFd = -1;
+
+    // Disable Audio Encoding
+    char value[PROPERTY_VALUE_MAX];
+    property_get("camcorder.debug.disableaudio", value, "0");
+    if(atoi(value)) mDisableAudio = true;
 
     return OK;
 }
