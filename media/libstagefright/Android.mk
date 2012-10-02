@@ -5,6 +5,9 @@ ifeq ($(BOARD_USES_ALSA_AUDIO),true)
     ifeq ($(call is-chipset-in-board-platform,msm8960),true)
         LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
     endif
+    ifeq ($(call is-chipset-in-board-platform,msm8974),true)
+        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+    endif
 endif
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
@@ -132,6 +135,9 @@ LOCAL_STATIC_LIBRARIES := \
 ifeq ($(call is-vendor-board-platform,QCOM),true)
     ifeq ($(BOARD_USES_ALSA_AUDIO),true)
         ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+            LOCAL_SRC_FILES += MPQAudioPlayer.cpp
+        endif
+        ifeq ($(call is-chipset-in-board-platform,msm8974),true)
             LOCAL_SRC_FILES += MPQAudioPlayer.cpp
         endif
         LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/libalsa-intf
