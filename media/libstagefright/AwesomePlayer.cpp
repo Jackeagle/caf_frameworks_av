@@ -1594,6 +1594,23 @@ status_t AwesomePlayer::initAudioDecoder() {
                 mDurationUs = durationUs;
             }
         }
+        if ( mDurationUs > 60000000
+             && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
+            if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
+                ALOGE("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
+                char nonOMXDecoder[128];
+                property_get("use.non-omx.mp3.decoder",nonOMXDecoder,"0");
+                if((strcmp("true",nonOMXDecoder) == 0)) {
+                    matchComponentName = (char *) "MP3Decoder";
+                } else {
+                    matchComponentName = (char *) "OMX.google.mp3.decoder";
+                }
+            }
+            flags |= OMXCodec::kSoftwareCodecsOnly;
+            LPAPlayer::mLpaInProgress = true;
+        }
+
         if ((LPAPlayer::mLpaInProgress == true) && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
             flags |= OMXCodec::kSoftwareCodecsOnly;
             LPAPlayer::mLpaInProgress = false;
