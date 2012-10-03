@@ -106,7 +106,7 @@ public:
     static const char KEY_QC_HIGH_DYNAMIC_RANGE_IMAGING[];
     static const char KEY_QC_SUPPORTED_HDR_IMAGING_MODES[];
     static const char KEY_QC_AE_BRACKET_HDR[];
-
+    static const char KEY_QC_HDR_SUPPORTED[];
 
     // DENOISE
     static const char KEY_QC_DENOISE[];
