@@ -449,7 +449,7 @@ MPEG2TSExtractor::MPEG2TSExtractor(const sp<DataSource> &source)
 
     if (mClipSize % kTSPacketSize != 0) {
         mClipSize = mClipSize - (mClipSize % kTSPacketSize);
-        ALOGI("Clipsize %lld is adjusted to multiple of TSPacketSize %lld", mClipSize,kTSPacketSize);
+        ALOGI("Clipsize %lld is adjusted to multiple of TSPacketSize %d", mClipSize,kTSPacketSize);
     }
 
     if (mClipSize == 0) {
