@@ -67,6 +67,11 @@ SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeig
         usage = (GRALLOC_USAGE_PRIVATE_CAMERA_HEAP |
                  GRALLOC_USAGE_PRIVATE_UNCACHED);
     }
+    if (property_get("ro.board.platform", value, "0")
+        && (!strncmp(value, "msm8660", sizeof("msm8660") - 1))) {
+        usage = (GRALLOC_USAGE_PRIVATE_MM_HEAP |
+                 GRALLOC_USAGE_PRIVATE_UNCACHED);
+    }
     mBufferQueue->setConsumerUsageBits(GRALLOC_USAGE_HW_VIDEO_ENCODER |
             GRALLOC_USAGE_HW_TEXTURE | usage);
 
