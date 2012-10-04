@@ -1022,6 +1022,12 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
                 meta->setInt32(kKeyEnableDecodeOrder, 1);
             }
         }
+        int32_t width = 0;
+        meta->findInt32(kKeyWidth, &width);
+        int32_t height = 0;
+        meta->findInt32(kKeyHeight, &height);
+        ALOGE("instantiate video decoder, send wxh = %dx%d",width,height);
+        notifyListener(MEDIA_SET_VIDEO_SIZE, width, height);
     }
 
     sp<AMessage> notify;
