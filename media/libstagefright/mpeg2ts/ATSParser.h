@@ -95,6 +95,9 @@ struct ATSParser : public RefBase {
 
     status_t parseTSToGetPID(const void *data, size_t size,
                              unsigned& streamPID);
+    bool checkPMT(const void *data, size_t size, unsigned PID);
+    bool checkPAT(const void *data, size_t size);
+
 
 protected:
     virtual ~ATSParser();
