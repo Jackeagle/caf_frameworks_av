@@ -279,6 +279,11 @@ static const char *FourCC2MIME(uint32_t fourcc) {
             return MEDIA_MIMETYPE_AUDIO_QCELP;
         case FOURCC('s', 'e', 'v', 'c'):
             return MEDIA_MIMETYPE_AUDIO_EVRC;
+
+        case FOURCC('a', 'c', '-', '3'):
+            return MEDIA_MIMETYPE_AUDIO_AC3;
+        case FOURCC('e', 'c', '-', '3'):
+            return MEDIA_MIMETYPE_AUDIO_EAC3;
         default:
             CHECK(!"should not be here.");
             return NULL;
@@ -1082,6 +1087,8 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
         case FOURCC('s', 'a', 'w', 'b'):
         case FOURCC('s', 'e', 'v', 'c'):
         case FOURCC('s', 'q', 'c', 'p'):
+        case FOURCC('a', 'c', '-', '3'):
+        case FOURCC('e', 'c', '-', '3'):
         {
             uint8_t buffer[8 + 20];
             if (chunk_data_size < (ssize_t)sizeof(buffer)) {
@@ -1121,10 +1128,11 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             mLastTrack->meta->setInt32(kKeyChannelCount, num_channels);
             mLastTrack->meta->setInt32(kKeySampleRate, sample_rate);
 
-            off_t stop_offset = *offset + chunk_size;
-            if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_MPEG,
-                        FourCC2MIME(chunk_type))) {
-               // ESD is not required in mp3
+            off64_t stop_offset = *offset + chunk_size;
+            if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_MPEG, FourCC2MIME(chunk_type)) ||
+                !strcasecmp(MEDIA_MIMETYPE_AUDIO_AMR_WB, FourCC2MIME(chunk_type))) {
+                // ESD is not required in mp3
+                // amr wb with damr atom corrupted can cause the clip to not play
                *offset = stop_offset;
             } else {
                *offset = data_offset + sizeof(buffer);
@@ -1382,6 +1390,15 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 }
             }
 
+            *offset += chunk_size;
+            break;
+        }
+
+        case FOURCC('d', 'a', 'c', '3'):
+        case FOURCC('d', 'e', 'c', '3'):
+        {
+            //no information need to be passed here, just log and end
+            ALOGV("dac3/dec3 pass from mpeg4 extractor");
             *offset += chunk_size;
             break;
         }
@@ -2355,6 +2372,11 @@ status_t MPEG4Source::read(
 
     if (!mIsAVC || mWantsNALFragments) {
         if (newBuffer) {
+            if (size > mBuffer->size()) {
+                mBuffer->release();
+                mBuffer = NULL;
+                return ERROR_IO;
+            }
             ssize_t num_bytes_read =
                 mDataSource->readAt(offset, (uint8_t *)mBuffer->data(), size);
 
@@ -2364,6 +2386,25 @@ status_t MPEG4Source::read(
 
                 if (mStatistics) mNumSamplesReadError++;
                 return ERROR_IO;
+            }
+
+            bool mMakeBigIndian = false;
+            const char *mime;
+
+            if (mFormat->findCString(kKeyMIMEType, &mime)
+               && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3) ||
+               !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3))) {
+                mMakeBigIndian = true;
+            }
+            if (mMakeBigIndian && *((uint8_t *)mBuffer->data())==0x0b &&
+                *((uint8_t *)mBuffer->data()+1)==0x77 ){
+                //ALOGV("making bigIndian path !mIsAVC || mWantsNALFragments");
+                size_t count;
+                for(count=0;count<size;count+=2){ // size is always even bytes in ac3/ec3 read
+                    uint8_t tmp = *((uint8_t *)mBuffer->data() + count);
+                    *((uint8_t *)mBuffer->data() + count) = *((uint8_t *)mBuffer->data()+count+1);
+                    *((uint8_t *)mBuffer->data() + count+1) = tmp;
+                }
             }
 
             CHECK(mBuffer != NULL);

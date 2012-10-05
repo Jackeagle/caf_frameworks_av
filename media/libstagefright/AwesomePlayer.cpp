@@ -197,6 +197,7 @@ AwesomePlayer::AwesomePlayer()
       mUIDValid(false),
       mTimeSource(NULL),
       mVideoRendererIsPreview(false),
+      mAudioEOD(false),
       mAudioPlayer(NULL),
       mDisplayWidth(0),
       mDisplayHeight(0),
@@ -1578,6 +1579,8 @@ status_t AwesomePlayer::initAudioDecoder() {
         ALOGD("Set Audio Track as Audio Source");
         mAudioSource = mAudioTrack;
     } else {
+        // For LPA Playback use the decoder without OMX layer
+        char *matchComponentName = NULL;
         int64_t durationUs;
         uint32_t flags = 0;
 #ifndef NON_QCOM_TARGET
@@ -1586,25 +1589,45 @@ status_t AwesomePlayer::initAudioDecoder() {
         property_get("lpa.decode",lpaDecode,"0");
         property_get("audio.decoder_override_check",audioDecoderOverrideCheck,"0");
         if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
+            Mutex::Autolock autoLock(mMiscStateLock);
             if (mDurationUs < 0 || durationUs > mDurationUs) {
                 mDurationUs = durationUs;
             }
         }
-        if ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+        if ( mDurationUs > 60000000
+             && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
              && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
-
+            if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
+                ALOGE("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
+                char nonOMXDecoder[128];
+                property_get("use.non-omx.mp3.decoder",nonOMXDecoder,"0");
+                if((strcmp("true",nonOMXDecoder) == 0)) {
+                    matchComponentName = (char *) "MP3Decoder";
+                } else {
+                    matchComponentName = (char *) "OMX.google.mp3.decoder";
+                }
+            }
             flags |= OMXCodec::kSoftwareCodecsOnly;
             LPAPlayer::mLpaInProgress = true;
         }
 
         if ((LPAPlayer::mLpaInProgress == true) && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
             flags |= OMXCodec::kSoftwareCodecsOnly;
+            LPAPlayer::mLpaInProgress = false;
+        }
+        if ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
+
+            flags |= OMXCodec::kSoftwareCodecsOnly;
+            if(mDurationUs > 60000000) {
+               LPAPlayer::mLpaInProgress = true;
+            }
         }
 #endif
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
                 false, // createEncoder
-                mAudioTrack, NULL, flags,NULL);
+                mAudioTrack, matchComponentName, flags,NULL);
     }
 
     if (mAudioSource != NULL) {
@@ -1768,6 +1791,7 @@ void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
         // If we don't have a video time, seek audio to the originally
         // requested seek time instead.
 
+        mAudioEOD = false;
         mAudioPlayer->seekTo(videoTimeUs < 0 ? mSeekTimeUs : videoTimeUs);
         mWatchForAudioSeekComplete = true;
         mWatchForAudioEOS = true;
@@ -1973,7 +1997,7 @@ void AwesomePlayer::onVideoEvent() {
     }
 
     TimeSource *ts =
-        ((mFlags & AUDIO_AT_EOS) || !(mFlags & AUDIOPLAYER_STARTED))
+        ((mFlags & AUDIO_AT_EOS) || !(mFlags & AUDIOPLAYER_STARTED) || (mAudioEOD == true))
             ? &mSystemTimeSource : mTimeSource;
 
     if (mFlags & FIRST_FRAME) {
@@ -1994,7 +2018,8 @@ void AwesomePlayer::onVideoEvent() {
 
     int64_t realTimeUs, mediaTimeUs, nowUs = 0, latenessUs = 0;
     if (!(mFlags & AUDIO_AT_EOS) && mAudioPlayer != NULL
-        && mAudioPlayer->getMediaTimeMapping(&realTimeUs, &mediaTimeUs)) {
+        && mAudioPlayer->getMediaTimeMapping(&realTimeUs, &mediaTimeUs)
+        && (mAudioEOD == false)) {
         mTimeSourceDeltaUs = realTimeUs - mediaTimeUs;
     }
 
@@ -2205,7 +2230,6 @@ void AwesomePlayer::onCheckAudioStatus() {
     if (mWatchForAudioEOS && mAudioPlayer->reachedEOS(&finalStatus)) {
         mWatchForAudioEOS = false;
         modifyFlags(AUDIO_AT_EOS, SET);
-        modifyFlags(FIRST_FRAME, SET);
         postStreamDoneEvent_l(finalStatus);
     }
 }
@@ -2557,6 +2581,8 @@ uint32_t AwesomePlayer::flags() const {
 }
 
 void AwesomePlayer::postAudioEOS(int64_t delayUs) {
+    mAudioEOD = true;
+    modifyFlags(FIRST_FRAME, SET);
     postCheckAudioStatusEvent(delayUs);
 }
 
