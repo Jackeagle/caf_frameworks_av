@@ -105,6 +105,10 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
         CHECK(mFirstBuffer == NULL);
         mFirstBufferResult = OK;
         mIsFirstBuffer = false;
+    } else if(mFirstBufferResult != OK) {
+        mReachedEOS = true;
+        mFinalStatus = mFirstBufferResult;
+        return mFirstBufferResult;
     } else {
         mIsFirstBuffer = true;
     }
@@ -557,7 +561,7 @@ int64_t AudioPlayer::getRealTimeUsLocked() const {
 
     diffUs -= mNumFramesPlayedSysTimeUs;
 
-    if(result + diffUs <= mPositionTimeRealUs)
+    if((result + diffUs <= mPositionTimeRealUs) || (!mReachedEOS))
         return result + diffUs;
     else
         return mPositionTimeRealUs;
