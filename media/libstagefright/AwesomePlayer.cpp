@@ -1700,7 +1700,10 @@ status_t AwesomePlayer::initAudioDecoder() {
             (MPQAudioPlayer::getMPQAudioObjectsAlive()));
 
     if((is_mpq)&&((strcmp("true",mpqAudioDecode) == 0)||(atoi(mpqAudioDecode))) &&
-            (MPQAudioPlayer::getMPQAudioObjectsAlive() == 0) &&
+            /* Allowing two instances of MPQAudioPlayer to Acomodate Audio from Video
+               Playback while Music Player is still holding an MPQAudioPlayer instance
+               in Paused state */
+            (MPQAudioPlayer::getMPQAudioObjectsAlive() < 2) &&
             (property_get("ro.product.device", value, "0") &&
             (!strncmp(value, "msm8960", sizeof("msm8960") - 1)))) {
 
