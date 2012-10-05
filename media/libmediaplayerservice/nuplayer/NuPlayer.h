@@ -216,6 +216,13 @@ private:
     void getTrackName(int track, char* name);
     void prepareSource();
 
+    struct QueueEntry {
+        sp<AMessage>  mMessageToBeConsumed;
+    };
+
+    List<QueueEntry> mDecoderMessageQueue;
+
+
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
 };
 

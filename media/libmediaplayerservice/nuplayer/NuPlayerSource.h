@@ -19,6 +19,7 @@
 #define NUPLAYER_SOURCE_H_
 
 #include "NuPlayer.h"
+#include <media/stagefright/MediaDebug.h>
 
 namespace android {
 
@@ -79,12 +80,18 @@ struct NuPlayer::Source : public RefBase {
         return INVALID_OPERATION;
     }
 
-    virtual void pause(){}
-
-    virtual void resume(){}
-
     virtual status_t getMediaPresence(bool &audio, bool &video, bool &text) {
        return INVALID_OPERATION;
+    }
+
+    virtual void pause() {
+        ALOGE("Pause called on Wrong DataSource.. Please check !!!");
+        CHECK(false);
+    }
+
+    virtual void resume() {
+        ALOGE("Resume called on Wrong DataSource.. Please check !!!");
+        CHECK(false);
     }
 
 protected:
