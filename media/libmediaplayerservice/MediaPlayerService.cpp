@@ -1576,7 +1576,6 @@ status_t MediaPlayerService::AudioOutput::open(
             }
         } else {
             ALOGE("no callback supplied");
-            return NO_INIT;
         }
 
         if (mRecycledTrack) {
@@ -1592,6 +1591,12 @@ status_t MediaPlayerService::AudioOutput::open(
             delete mCallbackData;
             mCallbackData = NULL;
             close();
+        }
+
+        if (audioTrack == NULL) {
+            ALOGE("audioTrack is NULL");
+            //ALOGE("audioTrack is NULL, return NO_INIT;");
+            //return NO_INIT;
         }
 
         ALOGV("setVolume");
