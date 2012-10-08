@@ -555,7 +555,8 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         usage = 0;
     }
 
-    if (mFlags & kFlagIsSecure) {
+    if (mFlags & kFlagIsSecure || mFlags & kFlagIsSecureOPOnly) {
+        ALOGE("GRALLOC_USAGE_PROTECTED");
         usage |= GRALLOC_USAGE_PROTECTED;
     }
 
@@ -3194,6 +3195,10 @@ bool ACodec::LoadedState::onConfigureComponent(
                 ALOGI("Smooth streaming is enabled ");
             }
         }
+    }
+
+    if (msg->findInt32("secure-op", &value) && (value == 1)) {
+       mCodec->mFlags |= kFlagIsSecureOPOnly;
     }
 
 
