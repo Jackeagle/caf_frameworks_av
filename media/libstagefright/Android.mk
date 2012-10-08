@@ -75,7 +75,7 @@ LOCAL_CFLAGS += -DNON_QCOM_TARGET
 endif
 
 ifeq ($(call is-vendor-board-platform,QCOM),true)
-    ifeq ($(call is-board-platform-in-list,msm8660 msm7627a msm7630),true)
+    ifeq ($(call is-board-platform-in-list,msm8660 msm7627a msm7630_surf),true)
         LOCAL_SRC_FILES += LPAPlayer.cpp
     else
         LOCAL_SRC_FILES += LPAPlayerALSA.cpp
