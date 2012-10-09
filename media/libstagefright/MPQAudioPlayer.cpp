@@ -1346,6 +1346,11 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
         mAudioFormat = AUDIO_FORMAT_MP3;
         mDecoderType = EHardwareDecoder;
     }
+    else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_I) || !strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_II)) {
+        ALOGW("Hw Decoder - MP2");
+        mAudioFormat = AUDIO_FORMAT_MP2;
+        mDecoderType = EHardwareDecoder;
+    }
     else {
 
        ALOGW("invalid format ");
