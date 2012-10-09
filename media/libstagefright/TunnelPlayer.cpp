@@ -768,8 +768,8 @@ void TunnelPlayer::requestAndWaitForExtractorThreadExit() {
 
     if (!extractorThreadAlive)
         return;
-    if(mPaused)
-         mAudioSink->flush();
+
+    mAudioSink->flush();
     killExtractorThread = true;
     pthread_cond_signal(&extractor_cv);
     pthread_join(extractorThread,NULL);
