@@ -1526,6 +1526,14 @@ void NuPlayer::sendTextPacket(sp<ABuffer> accessUnit,status_t err)
         parcel.writeInt32(duration);
     }
 
+    // start offset
+    int32_t startOffset = 0;
+    if (accessUnit->meta()->findInt32("startoffset", &startOffset)) {
+        ALOGE("sendTextPacket startOffset (%d)",startOffset);
+        parcel.writeInt32(TextDescriptions::KEY_START_OFFSET);
+        parcel.writeInt32(startOffset);
+    }
+
     // SubInfoSize
     int32_t subInfoSize = 0;
     if (accessUnit->meta()->findInt32("subSz", &subInfoSize)) {

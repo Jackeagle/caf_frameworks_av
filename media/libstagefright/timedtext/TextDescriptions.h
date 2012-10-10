@@ -64,7 +64,8 @@ private:
         KEY_HEIGHT                        = 17,
         KEY_WIDTH                         = 18,
         KEY_DURATION                      = 19,
-        KEY_SUB_ATOM                      = 20,
+        KEY_START_OFFSET                  = 20,
+        KEY_SUB_ATOM                      = 21,
 
         KEY_GLOBAL_SETTING                = 101,
         KEY_LOCAL_SETTING                 = 102,
