@@ -6483,7 +6483,7 @@ void AudioFlinger::DirectAudioTrack::acquireWakeLock()
         if (status == NO_ERROR) {
             mWakeLockToken = binder;
         }
-        ALOGV("acquireWakeLock() %s status %d", mName, status);
+        ALOGV("acquireWakeLock() %s status %d", lockName, status);
     }
 }
 
@@ -6492,7 +6492,7 @@ void AudioFlinger::DirectAudioTrack::releaseWakeLock()
    Mutex::Autolock _l(pmLock);
 
     if (mWakeLockToken != 0) {
-        ALOGV("releaseWakeLock() %s", mName);
+        ALOGV("releaseWakeLock() %s", lockName);
         if (mPowerManager != 0) {
             mPowerManager->releaseWakeLock(mWakeLockToken, 0);
         }
