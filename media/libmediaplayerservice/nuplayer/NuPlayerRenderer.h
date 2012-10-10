@@ -129,6 +129,7 @@ private:
     // for qualcomm statistics profiling
   public:
     void registerStats(sp<NuPlayerStats> stats);
+    status_t setMediaPresence(bool audio, bool bValue);
   private:
     sp<NuPlayerStats> mStats;
 
