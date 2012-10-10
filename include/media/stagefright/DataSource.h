@@ -69,6 +69,9 @@ public:
         return ERROR_UNSUPPORTED;
     }
 
+    virtual void setNonBlockingRead() {
+    }
+
     ////////////////////////////////////////////////////////////////////////////
 
     bool sniff(String8 *mimeType, float *confidence, sp<AMessage> *meta);
