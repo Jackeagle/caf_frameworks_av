@@ -389,6 +389,16 @@ private:
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
 
     status_t releaseMediaBuffersOn(OMX_U32 portIndex);
+
+    /* Dynamic Port Reconfig support */
+    typedef enum {
+        BUFFER_WITH_CLIENT = 0x1,
+        FILLED_BUFFERS_PRESENT = 0x2,
+    } DeferReason;
+
+    int32_t mDeferReason;
+
+    size_t countOutputBuffers(BufferStatus);
 };
 
 struct CodecCapabilities {
