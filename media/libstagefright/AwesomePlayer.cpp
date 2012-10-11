@@ -956,6 +956,11 @@ status_t AwesomePlayer::play_l() {
         }
     }
 
+    if(mBufferingDone) {
+        mBufferingDone = false;
+        postBufferingEvent_l();
+    }
+
     modifyFlags(PLAYING, SET);
     modifyFlags(FIRST_FRAME, SET);
 
@@ -1488,6 +1493,11 @@ status_t AwesomePlayer::seekTo(int64_t timeUs) {
 }
 
 status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
+    if(mBufferingDone) {
+        mBufferingDone = false;
+        postBufferingEvent_l();
+    }
+
     if (mFlags & CACHE_UNDERRUN) {
         modifyFlags(CACHE_UNDERRUN, CLEAR);
         play_l();
