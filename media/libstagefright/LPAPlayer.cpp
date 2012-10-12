@@ -743,8 +743,10 @@ status_t  LPAPlayer::setupAudioSink()
             return err;
         }
 
-        ALOGD("setupAudioSink:Start rEGULAR track");
-        mAudioSink->start();
+        if (!mPaused) {
+            ALOGD("setupAudioSink:Start rEGULAR track");
+            mAudioSink->start();
+        }
 
         ALOGD("setupAudioSink:rEGULAR track opened");
         mTrackType = TRACK_REGULAR;
