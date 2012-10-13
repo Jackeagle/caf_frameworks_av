@@ -33,6 +33,7 @@
 #include "include/avc_utils.h"
 
 #define SAMPLE_PER_FRAME 1152
+#define ADTS_DISABLE 0
 
 namespace android {
 
@@ -477,6 +478,8 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitAAC() {
                                                    sampling_freq_index,
                                                    channel_configuration);
 
+                if(!ADTS_DISABLE)
+                    mFormat->setInt32(kKeyIsADTS, true);
                 mFormat->setInt32(kKeyMaxInputSize, (8192 * 3));
 
                 int32_t sampleRate;
@@ -522,9 +525,9 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitAAC() {
             size_t headerSize = protection_absent ? 7 : 9;
 
             ranges.push(aac_frame_length);
-            frameOffsets.push(offset + headerSize);
-            frameSizes.push(aac_frame_length - headerSize);
-            auSize += aac_frame_length - headerSize;
+            frameOffsets.push(offset + headerSize * ADTS_DISABLE);
+            frameSizes.push(aac_frame_length - headerSize * ADTS_DISABLE);
+            auSize += aac_frame_length - headerSize * ADTS_DISABLE;
 
             offset += aac_frame_length;
         }
