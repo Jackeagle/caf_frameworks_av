@@ -1571,6 +1571,9 @@ status_t MediaPlayerService::AudioOutput::open(
                 delete newcbd;
                 return NO_INIT;
             }
+        } else {
+            ALOGE("no callback supplied");
+            return NO_INIT;
         }
 
         if (mRecycledTrack) {
@@ -1587,6 +1590,7 @@ status_t MediaPlayerService::AudioOutput::open(
             mCallbackData = NULL;
             close();
         }
+
         ALOGV("setVolume");
         mCallbackData = newcbd;
         t->setVolume(mLeftVolume, mRightVolume);
