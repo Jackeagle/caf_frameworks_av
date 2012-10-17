@@ -29,6 +29,10 @@
 
 namespace android {
 
+// Treat timeout as -EAGAIN if we have not received
+// read complete after 3 seconds.
+const static int64_t kReadDataEventTimeOutNs = 3000000000LL;
+
 ChromiumHTTPDataSource::ChromiumHTTPDataSource(uint32_t flags)
     : mFlags(flags),
       mState(DISCONNECTED),
@@ -187,6 +191,7 @@ ssize_t ChromiumHTTPDataSource::readAt(off64_t offset, void *data, size_t size) 
         }
     }
 
+    State preState = mState;
     mState = READING;
 
     int64_t startTimeUs = ALooper::GetNowUs();
@@ -194,7 +199,11 @@ ssize_t ChromiumHTTPDataSource::readAt(off64_t offset, void *data, size_t size) 
     mDelegate->initiateRead(data, size);
 
     while (mState == READING) {
-        mCondition.wait(mLock);
+        if (mCondition.waitRelative(mLock, kReadDataEventTimeOutNs) != OK) {
+            LOG_PRI(ANDROID_LOG_INFO, LOG_TAG, "Read data timeout");
+            mState = preState;
+            return -EAGAIN;
+        }
     }
 
     if (mIOResult < OK) {
