@@ -216,6 +216,9 @@ NuCachedSource2::NuCachedSource2(
     mLooper->registerHandler(mReflector);
     mLooper->start();
 
+    //Set Read to non blocking when we use NuCachedSource2
+    mSource->setNonBlockingRead();
+
     Mutex::Autolock autoLock(mLock);
     (new AMessage(kWhatFetchMore, mReflector->id()))->post();
 }

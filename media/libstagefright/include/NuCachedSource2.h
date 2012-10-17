@@ -74,7 +74,7 @@ private:
     friend struct AHandlerReflector<NuCachedSource2>;
 
     enum {
-        kPageSize                       = 65536,
+        kPageSize                       = 8192,
         kDefaultHighWaterThreshold      = 20 * 1024 * 1024,
         kDefaultLowWaterThreshold       = 4 * 1024 * 1024,
 

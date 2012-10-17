@@ -57,6 +57,8 @@ struct ChromiumHTTPDataSource : public HTTPBase {
 
     virtual status_t reconnectAtOffset(off64_t offset);
 
+    virtual void setNonBlockingRead();
+
 protected:
     virtual ~ChromiumHTTPDataSource();
 
@@ -95,6 +97,8 @@ private:
 
     sp<DecryptHandle> mDecryptHandle;
     DrmManagerClient *mDrmManagerClient;
+
+    bool mIsReadNonBlocking;
 
     void disconnect_l();
 
