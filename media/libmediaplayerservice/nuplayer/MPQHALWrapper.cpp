@@ -224,7 +224,7 @@ void NuPlayer::MPQHALWrapper::onSetup(const sp<AMessage> &msg) {
                 "source format didn't specify channel mask, using (%d) channel order", mNumChannels);
         mChannelMask = CHANNEL_MASK_USE_CHANNEL_ORDER;
     }
-    audio_output_flags_t flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_LPA |
+    audio_output_flags_t flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_TUNNEL |
                                                         AUDIO_OUTPUT_FLAG_DIRECT);
     retVal = mAudioSink->open(
         mSampleRate, mNumChannels, mChannelMask, (audio_format_t)mAudioFormat,
