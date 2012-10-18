@@ -43,6 +43,7 @@ struct ACodec : public AHierarchicalStateMachine {
         kWhatComponentAllocated  = 'cAll',
         kWhatComponentConfigured = 'cCon',
         kWhatBuffersAllocated    = 'allc',
+        kWhatReConfigure         = 'rCon',
     };
 
     ACodec();
@@ -258,6 +259,9 @@ private:
     bool mSmoothStreaming;
 
     sp<FlushingOutputState> mFlushingOutputState;
+
+    //Fallback to Ittiam Software Decoder
+    bool mIsIttiamDecoderRequired;
 
     DISALLOW_EVIL_CONSTRUCTORS(ACodec);
 };
