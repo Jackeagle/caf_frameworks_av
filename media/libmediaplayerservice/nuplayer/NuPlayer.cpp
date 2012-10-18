@@ -15,6 +15,7 @@
  */
 
 //#define LOG_NDEBUG 0
+
 #define LOG_TAG "NuPlayer"
 #define SRMax 30
 #include <utils/Log.h>
@@ -69,6 +70,7 @@ NuPlayer::NuPlayer()
       mNumFramesDropped(0ll),
       mPauseIndication(false),
       mSourceType(kDefaultSource),
+      mRenderer(NULL),
       mStats(NULL),
       mBufferingNotification(false),
       mSRid(0) {
@@ -276,16 +278,17 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             mSource->start();
 
-            mRenderer = new Renderer(
-                    mAudioSink,
-                    new AMessage(kWhatRendererNotify, id()));
+            if (mSourceType != kWfdSource) {
+                mRenderer = new Renderer(
+                        mAudioSink,
+                        new AMessage(kWhatRendererNotify, id()));
+
+                mRenderer->registerStats(mStats);
+                looper()->registerHandler(mRenderer);
+            }
 
             // for qualcomm statistics profiling
             mStats = new NuPlayerStats();
-            mRenderer->registerStats(mStats);
-
-            looper()->registerHandler(mRenderer);
-
             postScanSources();
             break;
         }
@@ -377,6 +380,15 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 if ( (track == kText) && (mTextDecoder == NULL)) {
                     break; // no need to proceed further
                 }
+
+                //if Player is in pause state, for WFD use case ,store the fill Buffer events and return back
+                if((mSourceType == kWfdSource) && (mPauseIndication)) {
+                    QueueEntry entry;
+                    entry.mMessageToBeConsumed = msg;
+                    mDecoderMessageQueue.push_back(entry);
+                    break;
+                }
+
                 status_t err = feedDecoderInputData(
                         track, codecRequest);
 
@@ -399,7 +411,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                          err);
                 }
 
-                if(track == kAudio || track == kVideo) {
+                if((mRenderer != NULL) && (track == kAudio || track == kVideo)) {
                     mRenderer->queueEOS(track, err);
                 }
             } else if (what == ACodec::kWhatFlushCompleted) {
@@ -479,7 +491,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                              (status_t)OK);
                     mAudioSink->start();
 
-                    mRenderer->signalAudioSinkChanged();
+                    if(mRenderer != NULL) {
+                        mRenderer->signalAudioSinkChanged();
+                    }
                 } else if (track == kVideo) {
                     // video
                     ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatOutputFormatChanged:: video");
@@ -524,14 +538,26 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             } else if (what == ACodec::kWhatError) {
                 ALOGE("Received error from %s decoder, aborting playback.",
                        mTrackName);
-                if(track == kAudio || track == kVideo) {
+                if((mRenderer != NULL) && (track == kAudio || track == kVideo)) {
                     ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ ACodec::kWhatError:: %s",track == kAudio ? "audio" : "video");
                     mRenderer->queueEOS(track, UNKNOWN_ERROR);
                 }
             } else if (what == ACodec::kWhatDrainThisBuffer) {
                 if(track == kAudio || track == kVideo) {
                    ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ ACodec::kWhatRenderBuffer:: %s",track == kAudio ? "audio" : "video");
-                   renderBuffer(track, codecRequest);
+                    //check here if this is WFDSource, no need to send to the Renderer
+                    //send it back to the sender for direct rendering
+
+                    if(mSourceType == kWfdSource) {
+                        ALOGE("Ignoring renderer and sending back to the caller");
+                        sp<AMessage> reply;
+                        CHECK(codecRequest->findMessage("reply", &reply));
+
+                        reply->setInt32("render", true);
+                        reply->post();
+                    }else {
+                        renderBuffer(track, codecRequest);
+                    }
                 }
             } else {
                 ALOGV("Unhandled codec notification %d.", what);
@@ -745,8 +771,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatPause:
         {
-            CHECK(mRenderer != NULL);
-            mRenderer->pause();
+            if (mSourceType == kWfdSource) {
+                CHECK(mSource != NULL);
+                mSource->pause();
+            } else{
+                CHECK(mRenderer != NULL);
+                mRenderer->pause();
+            }
+
             mPauseIndication = true;
             if (mSourceType == kHttpDashSource) {
                 Mutex::Autolock autoLock(mLock);
@@ -760,9 +792,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatResume:
         {
-            CHECK(mRenderer != NULL);
-            mRenderer->resume();
+
+            if(mSourceType != kWfdSource) {
+                CHECK(mRenderer != NULL);
+                mRenderer->resume();
+            }
+
             mPauseIndication = false;
+
             if (mSourceType == kHttpDashSource) {
                Mutex::Autolock autoLock(mLock);
                if (mSource != NULL) {
@@ -772,7 +809,19 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     mScanSourcesPending = false;
                     postScanSources();
                 }
-            } else {
+            }else if (mSourceType == kWfdSource) {
+                CHECK(mSource != NULL);
+                mSource->resume();
+                int count = 0;
+
+                //check if there are messages stored in the list, then repost them
+                while(!mDecoderMessageQueue.empty()) {
+                    (*mDecoderMessageQueue.begin()).mMessageToBeConsumed->post(); //self post
+                    mDecoderMessageQueue.erase(mDecoderMessageQueue.begin());
+                    ++count;
+                }
+                ALOGE("(%d) stored messages reposted ....",count);
+            }else {
                 if (mAudioDecoder == NULL || mVideoDecoder == NULL) {
                     mScanSourcesPending = false;
                     postScanSources();
@@ -891,7 +940,7 @@ void NuPlayer::finishFlushIfPossible() {
 
     ALOGV("both audio and video are flushed now.");
 
-    if (mTimeDiscontinuityPending) {
+    if ((mRenderer != NULL) && (mTimeDiscontinuityPending)) {
         mRenderer->signalTimeDiscontinuity();
         mTimeDiscontinuityPending = false;
     }
@@ -940,7 +989,9 @@ void NuPlayer::finishReset() {
     ++mScanSourcesGeneration;
     mScanSourcesPending = false;
 
-    mRenderer.clear();
+    if(mRenderer != NULL) {
+        mRenderer.clear();
+    }
 
     if (mSource != NULL) {
         mSource->stop();
@@ -1271,7 +1322,9 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
         skipUntilMediaTimeUs = -1;
     }
 
-    mRenderer->queueBuffer(audio, buffer, reply);
+    if(mRenderer != NULL) {
+        mRenderer->queueBuffer(audio, buffer, reply);
+    }
 }
 
 void NuPlayer::notifyListener(int msg, int ext1, int ext2, const Parcel *obj) {
@@ -1299,7 +1352,10 @@ void NuPlayer::flushDecoder(bool audio, bool needShutdown) {
     mScanSourcesPending = false;
 
     (audio ? mAudioDecoder : mVideoDecoder)->signalFlush();
-    mRenderer->flush(audio);
+
+    if(mRenderer != NULL) {
+        mRenderer->flush(audio);
+    }
 
     FlushStatus newStatus =
         needShutdown ? FLUSHING_DECODER_SHUTDOWN : FLUSHING_DECODER;
