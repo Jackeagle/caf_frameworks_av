@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+
+ * Not a Contribution, Apache license notifications and license are retained
+ * for attribution purposes only.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +18,12 @@
  * limitations under the License.
  */
 
-/*--------------------------------------------------------------------------
-Copyright (c) 2012, Code Aurora Forum. All rights reserved.
---------------------------------------------------------------------------*/
-
 //#define LOG_NDEBUG 0
 #define LOG_TAG "OMXCodec"
 #include <utils/Log.h>
 
 #include "include/AACEncoder.h"
+#include "include/AACDecoder.h"
 #include "include/MP3Decoder.h"
 
 #include "include/ESDS.h"
@@ -90,6 +90,7 @@ static sp<MediaSource> Make##name(const sp<MediaSource> &source, const sp<MetaDa
 #define FACTORY_REF(name) { #name, Make##name },
 
 FACTORY_CREATE(MP3Decoder)
+FACTORY_CREATE(AACDecoder)
 FACTORY_CREATE_ENCODER(AACEncoder)
 
 static sp<MediaSource> InstantiateSoftwareEncoder(
@@ -122,6 +123,7 @@ static sp<MediaSource> InstantiateSoftwareDecoder(
 
     static const FactoryInfo kFactoryInfo[] = {
         FACTORY_REF(MP3Decoder)
+        FACTORY_REF(AACDecoder)
     };
     for (size_t i = 0;
          i < sizeof(kFactoryInfo) / sizeof(kFactoryInfo[0]); ++i) {
