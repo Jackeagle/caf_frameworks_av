@@ -112,6 +112,7 @@ private:
 
     enum {
         kFlagIsSecure   = 1,
+        kFlagIsSecureOPOnly = 2
     };
 
     struct BufferInfo {
