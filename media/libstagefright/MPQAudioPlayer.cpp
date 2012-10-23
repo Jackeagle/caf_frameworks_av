@@ -731,7 +731,7 @@ size_t MPQAudioPlayer::postEOS(
             me->mObserver->postAudioEOS(0);
         }
     }
-    return 1;
+    return 0;
 }
 
 void MPQAudioPlayer::bufferAlloc(int32_t nSize) {
