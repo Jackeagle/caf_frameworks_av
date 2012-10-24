@@ -619,6 +619,7 @@ sp<IDirectTrack> AudioFlinger::createDirectTrack(
     }
     mLock.unlock();
     directTrack = new DirectAudioTrack(this, output, desc, client, desc->flag);
+    desc->trackRefPtr = dynamic_cast<void *>(directTrack);
     mLock.lock();
     if (directTrack != 0) {
         track = dynamic_cast<IDirectTrack *>(directTrack);
@@ -660,10 +661,6 @@ void AudioFlinger::deleteEffectSession()
         mLPAEffectChain.clear();
         mLPAEffectChain = NULL;
     }
-#ifdef SRS_PROCESSING
-    ALOGD("SRS_Processing - deleteSession - OutNotify_Init: %p TID %d\n", this, gettid());
-    SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, false);
-#endif
 }
 
 // ToDo: Should we go ahead with this frameCount?
@@ -758,7 +755,7 @@ void AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer, int16_t *outBu
         }
     }
 #ifdef SRS_PROCESSING
-    SRS_Processing::ProcessOut(SRS_Processing::AUTO, token, outBuffer, size, mLPASampleRate, mLPANumChannels);
+    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(token, AUDIO_FORMAT_PCM_16_BIT, outBuffer, size, mLPASampleRate, mLPANumChannels);
 #endif
 }
 
@@ -1108,20 +1105,13 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
         return PERMISSION_DENIED;
     }
 
-#ifdef SRS_PROCESSING
-    AudioParameter param = AudioParameter(keyValuePairs);
-    String8 key = String8(AudioParameter::keyRouting);
-    int device;
-    if (param.getInt(key, device) == NO_ERROR) {
-        ALOGV("setParameters:: routing change to device %d", device);
-        SRS_Processing::ProcessOutRoute(SRS_Processing::AUTO, this, device);
-    }
-#endif
     // ioHandle == 0 means the parameters are global to the audio hardware interface
     if (ioHandle == 0) {
         Mutex::Autolock _l(mLock);
 #ifdef SRS_PROCESSING
         POSTPRO_PATCH_ICS_PARAMS_SET(keyValuePairs);
+        if (!mDirectAudioTracks.isEmpty())
+            audioConfigChanged_l(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
 #endif
         status_t final_result = NO_ERROR;
         {
@@ -1174,6 +1164,16 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
         if (desc != NULL) {
             ALOGV("setParameters for mAudioTracks size %d desc %p",mDirectAudioTracks.size(),desc);
             desc->stream->common.set_parameters(&desc->stream->common, keyValuePairs.string());
+#ifdef SRS_PROCESSING
+            AudioParameter param = AudioParameter(keyValuePairs);
+            String8 key = String8(AudioParameter::keyRouting);
+            int device;
+            if (param.getInt(key, device) == NO_ERROR) {
+                ALOGV("setParameters:: routing change to device %d", device);
+                desc->device = (audio_devices_t)device;
+                POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(desc->trackRefPtr, param, device);
+            }
+#endif
             return NO_ERROR;
         }
     }
@@ -6207,7 +6207,8 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
 {
 #ifdef SRS_PROCESSING
     ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
-    SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, true);
+    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_INIT(this, gettid());
+    SRS_Processing::ProcessOutRoute(SRS_Processing::AUTO, this, outputDesc->device);
 #endif
     mDeathRecipient = new PMDeathRecipient(this);
     acquireWakeLock();
@@ -6224,7 +6225,7 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
 AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
 #ifdef SRS_PROCESSING
     ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
-    SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, false);
+    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_EXIT(this, gettid());
 #endif
     releaseWakeLock();
 
@@ -7626,6 +7627,7 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
             //desc->mStreamType = streamType;
             desc->mVolumeLeft = 1.0;
             desc->mVolumeRight = 1.0;
+            desc->device = *pDevices;
             mDirectAudioTracks.add(id, desc);
         } else if ((flags & AUDIO_OUTPUT_FLAG_DIRECT) ||
             (config.format != AUDIO_FORMAT_PCM_16_BIT) ||
@@ -7744,6 +7746,7 @@ status_t AudioFlinger::closeOutput(audio_io_handle_t output)
         desc->mActive = false;
         desc->stream->common.standby(&desc->stream->common);
         desc->hwDev->close_output_stream(desc->hwDev, desc->stream);
+        desc->trackRefPtr = NULL;
         mDirectAudioTracks.removeItem(output);
         audioConfigChanged_l(AudioSystem::OUTPUT_CLOSED, output, NULL);
         delete desc;
