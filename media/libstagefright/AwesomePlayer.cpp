@@ -1661,12 +1661,15 @@ status_t AwesomePlayer::initAudioDecoder() {
         }
         mAudioSource = mAudioTrack;
     } else {
+        // For LPA Playback use the decoder without OMX layer
+        char *matchComponentName = NULL;
         int64_t durationUs;
         uint32_t flags = 0;
 #ifndef NON_QCOM_TARGET
         char lpaDecode[128];
         property_get("lpa.decode",lpaDecode,"0");
         if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
+            Mutex::Autolock autoLock(mMiscStateLock);
             if (mDurationUs < 0 || durationUs > mDurationUs) {
                 mDurationUs = durationUs;
             }
@@ -1674,14 +1677,20 @@ status_t AwesomePlayer::initAudioDecoder() {
         if ( mDurationUs > 60000000
              && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
              && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
-
+            if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
+                char nonOMXDecoder[128];
+                property_get("use.non-omx.mp3.decoder",nonOMXDecoder,"0");
+                if((strcmp("true",nonOMXDecoder) == 0)) {
+                    matchComponentName = (char *) "MP3Decoder";
+                }
+            }
             flags |= OMXCodec::kSoftwareCodecsOnly;
         }
 #endif
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
                 false, // createEncoder
-                mAudioTrack, NULL, flags,NULL);
+                mAudioTrack, matchComponentName, flags,NULL);
     }
 
     if (mAudioSource != NULL) {
