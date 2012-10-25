@@ -30,8 +30,8 @@
 namespace android {
 
 // Treat timeout as -EAGAIN if we have not received
-// read complete after 3 seconds.
-const static int64_t kReadDataEventTimeOutNs = 3000000000LL;
+// read complete after 1.5 seconds.
+const static int64_t kReadDataEventTimeOutNs = 1500000000LL;
 
 ChromiumHTTPDataSource::ChromiumHTTPDataSource(uint32_t flags)
     : mFlags(flags),
@@ -41,7 +41,8 @@ ChromiumHTTPDataSource::ChromiumHTTPDataSource(uint32_t flags)
       mIOResult(OK),
       mContentSize(-1),
       mDecryptHandle(NULL),
-      mDrmManagerClient(NULL) {
+      mDrmManagerClient(NULL),
+      mIsReadNonBlocking(false) {
     mDelegate->setOwner(this);
 }
 
@@ -197,12 +198,17 @@ ssize_t ChromiumHTTPDataSource::readAt(off64_t offset, void *data, size_t size) 
     int64_t startTimeUs = ALooper::GetNowUs();
 
     mDelegate->initiateRead(data, size);
-
-    while (mState == READING) {
-        if (mCondition.waitRelative(mLock, kReadDataEventTimeOutNs) != OK) {
-            LOG_PRI(ANDROID_LOG_INFO, LOG_TAG, "Read data timeout");
-            mState = preState;
-            return -EAGAIN;
+    if(mIsReadNonBlocking) {
+        while (mState == READING) {
+            if (mCondition.waitRelative(mLock,kReadDataEventTimeOutNs) != OK) {
+                LOG_PRI(ANDROID_LOG_VERBOSE, LOG_TAG, "Read data timeout");
+                mState = preState;
+                return -EAGAIN;
+            }
+        }
+    } else {
+        while (mState == READING) {
+            mCondition.wait(mLock);
         }
     }
 
@@ -342,6 +348,13 @@ status_t ChromiumHTTPDataSource::reconnectAtOffset(off64_t offset) {
     }
 
     return err;
+}
+
+/* This function needs to be called only once and before the first readAt call*/
+void ChromiumHTTPDataSource::setNonBlockingRead() {
+    if(!mIsReadNonBlocking) {
+        mIsReadNonBlocking = true;
+    }
 }
 
 }  // namespace android
