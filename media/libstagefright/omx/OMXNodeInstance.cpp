@@ -607,7 +607,7 @@ status_t OMXNodeInstance::freeBuffer(
     if (err != OMX_ErrorNone) {
         ALOGW("OMX_FreeBuffer failed w/ err %x, do not remove from active buffer list", err);
     } else {
-        ALOGE("OMX_FreeBuffer for buffer header %p successful", header);
+        ALOGI("OMX_FreeBuffer for buffer header %p successful", header);
         removeActiveBuffer(portIndex, buffer);
 
         delete buffer_meta;
