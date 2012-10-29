@@ -223,6 +223,12 @@ status_t convertMetaDataToMessage(
             msg->setInt32("channel-mask", channelMask);
         }
 
+        int32_t useSWDecforAudio;
+        if(meta->findInt32(kKeyUseSWDec, &useSWDecforAudio)) {
+            ALOGV("Use Software Decoder for Audio");
+            msg->setInt32("use-swdec", useSWDecforAudio);
+        }
+
         int32_t delay = 0;
         if (meta->findInt32(kKeyEncoderDelay, &delay)) {
             msg->setInt32("encoder-delay", delay);
@@ -236,6 +242,7 @@ status_t convertMetaDataToMessage(
         if (meta->findInt32(kKeyIsADTS, &isADTS)) {
             msg->setInt32("is-adts", true);
         }
+
     }
 
     int32_t maxInputSize;

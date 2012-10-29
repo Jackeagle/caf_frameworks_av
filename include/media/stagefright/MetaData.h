@@ -189,6 +189,9 @@ enum {
     //Extractor sets this
     kKeyUseArbitraryMode  = 'ArbM',  //bool (int32_t)
     kKeyHFR               = 'hfr ',  // int32_t
+
+    //Use Software Decoder
+    kKeyUseSWDec          = 'SwDc'  //bool (int32_t)
 };
 
 enum {
