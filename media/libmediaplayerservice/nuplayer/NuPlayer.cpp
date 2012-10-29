@@ -44,6 +44,7 @@
 #include <media/stagefright/MetaData.h>
 #include <TextDescriptions.h>
 #include <gui/ISurfaceTexture.h>
+#include <cutils/properties.h>
 
 #include "avc_utils.h"
 
@@ -1112,6 +1113,7 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
 
     looper()->registerHandler(*decoder);
 
+    char value[PROPERTY_VALUE_MAX] = {0};
     if (mSourceType == kHttpLiveSource || mSourceType == kHttpDashSource){
         //Set flushing state to none
         Mutex::Autolock autoLock(mLock);
@@ -1121,6 +1123,11 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
             mFlushingVideo = NONE;
 
         }
+    } else if (track == kAudio && mSourceType == kRtspSource &&
+               property_get("ro.board.platform", value, "0") &&
+               (!strncmp(value, "msm7627a", sizeof("msm7627a") - 1) ||
+                !strncmp(value, "msm8625", sizeof("msm8625") - 1))) {
+        meta->setInt32(kKeyUseSWDec, true);
     }
 
     if( track == kAudio || track == kVideo) {
