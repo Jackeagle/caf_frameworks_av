@@ -312,6 +312,21 @@ status_t DrmManagerClientImpl::decrypt(
     return status;
 }
 
+status_t DrmManagerClientImpl::decrypt(
+        int uniqueId, sp<DecryptHandle> &decryptHandle,
+        int decryptUnitId, const DrmIonBuffer* encBuffer,
+        DrmIonBuffer** decBuffer, DrmBuffer* IV) {
+    status_t status = DRM_ERROR_UNKNOWN;
+    if ((NULL != decryptHandle.get()) && (NULL != encBuffer)
+        && (NULL != decBuffer) && (NULL != *decBuffer)) {
+        status = getDrmManagerService()->decrypt(
+                uniqueId, decryptHandle.get(), decryptUnitId,
+                encBuffer, decBuffer, IV);
+    }
+    return status;
+}
+
+
 status_t DrmManagerClientImpl::finalizeDecryptUnit(
             int uniqueId, sp<DecryptHandle> &decryptHandle, int decryptUnitId) {
     status_t status = DRM_ERROR_UNKNOWN;

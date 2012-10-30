@@ -152,6 +152,13 @@ status_t DrmManagerClient::decrypt(
             mUniqueId, decryptHandle, decryptUnitId, encBuffer, decBuffer, IV);
 }
 
+status_t DrmManagerClient::decrypt(
+            sp<DecryptHandle> &decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV) {
+    return mDrmManagerClientImpl->decrypt(
+            mUniqueId, decryptHandle, decryptUnitId, encBuffer, decBuffer, IV);
+}
+
 status_t DrmManagerClient::finalizeDecryptUnit(
             sp<DecryptHandle> &decryptHandle, int decryptUnitId) {
     return mDrmManagerClientImpl->finalizeDecryptUnit(mUniqueId,

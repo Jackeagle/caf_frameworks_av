@@ -159,6 +159,12 @@ status_t DrmEngineBase::decrypt(
     return onDecrypt(uniqueId, decryptHandle, decryptUnitId, encBuffer, decBuffer, IV);
 }
 
+status_t DrmEngineBase::decrypt(
+    int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+    const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV) {
+    return onDecrypt(uniqueId, decryptHandle, decryptUnitId, encBuffer, decBuffer, IV);
+}
+
 status_t DrmEngineBase::finalizeDecryptUnit(
     int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId) {
     return onFinalizeDecryptUnit(uniqueId, decryptHandle, decryptUnitId);
