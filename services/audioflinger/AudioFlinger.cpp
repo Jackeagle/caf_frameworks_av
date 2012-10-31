@@ -6228,10 +6228,10 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
     POSTPRO_PATCH_ICS_OUTPROC_DIRECT_EXIT(this, gettid());
 #endif
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
-        deallocateBufPool();
         requestAndWaitForEffectsThreadExit();
         mAudioFlinger->deregisterClient(mAudioFlingerClient);
         mAudioFlinger->deleteEffectSession();
+        deallocateBufPool();
     }
     releaseWakeLock();
 
