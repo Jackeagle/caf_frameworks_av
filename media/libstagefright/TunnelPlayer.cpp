@@ -386,15 +386,17 @@ void TunnelPlayer::pause(bool playPendingSamples) {
     if (mPaused) {
         return;
     }
+    Mutex::Autolock autoLock(mLock);
     ALOGV("pause: playPendingSamples %d", playPendingSamples);
     mPaused = true;
-    A2DPState state;
+    int64_t playedTime = 0;
     if(!mPauseEventPending) {
         ALOGV("Posting an event for Pause timeout");
         mQueue.postEventWithDelay(mPauseEvent, TUNNEL_PAUSE_TIMEOUT_USEC);
         mPauseEventPending = true;
     }
-    mPauseTime = mSeekTimeUs + getTimeStamp(A2DP_DISABLED);
+    getPlayedTimeFromDSP_l(&playedTime);
+    mPauseTime = mSeekTimeUs + playedTime;
     if (mAudioSink.get() != NULL) {
         ALOGV("AudioSink pause");
         mAudioSink->pause();
@@ -693,43 +695,32 @@ size_t TunnelPlayer::fillBuffer(void *data, size_t size) {
 
 int64_t TunnelPlayer::getRealTimeUs() {
     Mutex::Autolock autoLock(mLock);
-    return getRealTimeUsLocked();
+    getOffsetRealTime_l(&mPositionTimeRealUs);
+    //update media time too
+    mPositionTimeMediaUs = mPositionTimeRealUs;
+    return mPositionTimeRealUs;
 }
 
-
-int64_t TunnelPlayer::getRealTimeUsLocked(){
-    //Used for AV sync: irrelevant API for Tunnel.
-    return 0;
+void TunnelPlayer::getPlayedTimeFromDSP_l(int64_t* timeStamp ) {
+    mAudioSink->getTimeStamp((uint64_t*)timeStamp);
+    ALOGV("timestamp returned from DSP %lld ", (*timeStamp));
+    return;
 }
-
-int64_t TunnelPlayer::getTimeStamp(A2DPState state) {
-    uint64_t timestamp = 0;
-    switch (state) {
-    case A2DP_ENABLED:
-    case A2DP_DISCONNECT:
-        ALOGV("Get timestamp for A2DP");
-        break;
-    case A2DP_DISABLED:
-    case A2DP_CONNECT: {
-        mAudioSink->getTimeStamp(&timestamp);
-        break;
+//offset with pause and seek time
+void TunnelPlayer::getOffsetRealTime_l(int64_t* offsetTime) {
+    if (mPaused) {
+        *offsetTime = mPauseTime;
+        ALOGV("getMediaTimeUs() mPaused %d mSeekTimeUs %lld mPauseTime %lld", mPaused, mSeekTimeUs, mPauseTime );
+    } else {
+        getPlayedTimeFromDSP_l(offsetTime);
+        ALOGV("getMediaTimeUs() mPaused %d mSeekTimeUs %lld mPauseTime %lld, timeStamp %lld", mPaused, mSeekTimeUs, mPauseTime, *offsetTime);
+        *offsetTime = mSeekTimeUs + *offsetTime;
     }
-    default:
-        break;
-    }
-    ALOGV("timestamp %lld ", timestamp);
-    return timestamp;
 }
 
 int64_t TunnelPlayer::getMediaTimeUs() {
-    Mutex::Autolock autoLock(mLock);
-    ALOGV("getMediaTimeUs() mPaused %d mSeekTimeUs %lld mPauseTime %lld", mPaused, mSeekTimeUs, mPauseTime);
-    if (mPaused) {
-        return mPauseTime;
-    } else {
-        A2DPState state = mIsA2DPEnabled ? A2DP_ENABLED : A2DP_DISABLED;
-        return (mSeekTimeUs + getTimeStamp(state));
-    }
+    //essentially there is only one time, the real time
+    return getRealTimeUs();
 }
 
 bool TunnelPlayer::getMediaTimeMapping(
@@ -754,6 +745,7 @@ void TunnelPlayer::requestAndWaitForExtractorThreadExit() {
 }
 
 void TunnelPlayer::onPauseTimeOut() {
+    int64_t playedTime = 0;
     ALOGV("onPauseTimeOut");
     if (!mPauseEventPending) {
         return;
@@ -763,9 +755,11 @@ void TunnelPlayer::onPauseTimeOut() {
         // 1.) Set seek flags
         mReachedEOS = false;
         mReachedOutputEOS = false;
-        mSeekTimeUs += getTimeStamp(A2DP_DISABLED);
         mInternalSeeking = true;
-
+        mLock.lock();
+        getPlayedTimeFromDSP_l(&playedTime);
+        mLock.unlock();
+        mSeekTimeUs += playedTime;
         // 2.) Close routing Session
         mAudioSink->close();
         mIsAudioRouted = false;
