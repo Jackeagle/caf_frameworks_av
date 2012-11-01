@@ -1951,6 +1951,8 @@ mutable Mutex               mLock;      // mutex for process, commands and handl
         audio_hw_device_t   *hwDev;
         audio_stream_out_t  *stream;
         audio_output_flags_t flag;
+        void *trackRefPtr;
+        audio_devices_t device;
         AudioSessionDescriptor(audio_hw_device_t *dev, audio_stream_out_t *out, audio_output_flags_t outflag) :
             hwDev(dev), stream(out), flag(outflag)  {}
     };
