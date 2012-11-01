@@ -97,14 +97,7 @@ sp<MediaExtractor> MediaExtractor::Create(
     if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
             || !strcasecmp(mime, "audio/mp4")) {
         ret = new MPEG4Extractor(source);
-        char tunnelDecode[128];
-        ALOGV("MediaExtractor::Create checking tunnel.decode");
-        property_get("tunnel.decode",tunnelDecode,"0");
-        if( (strcmp("true",tunnelDecode) == 0) || (atoi(tunnelDecode)) ) {
-            bCheckExtendedExtractor = true;
-            ALOGV("MediaExtractor::Create detected tunnel.decode as true...");
-        }
-
+        bCheckExtendedExtractor = true;
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
         ret = new MP3Extractor(source, meta);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AMR_NB)
