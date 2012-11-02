@@ -826,8 +826,7 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             const char *fileFormat;
             success = meta->findCString(kKeyFileFormat, &fileFormat);
             if (!strcmp(mComponentName, "OMX.qcom.video.decoder.vc1") ||
-                    (success && !strncmp(fileFormat, "video/avi", 9) &&
-                    !strcmp(mComponentName, "OMX.qcom.video.decoder.mpeg4"))) {
+                    (success && !strncmp(fileFormat, "video/avi", 9))) {
                 CODEC_LOGI("Enabling timestamp reordering");
                 QOMX_INDEXTIMESTAMPREORDER reorder;
                 InitOMXParams(&reorder);
