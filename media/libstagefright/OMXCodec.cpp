@@ -59,6 +59,10 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include <binder/IMemory.h>
 #include <binder/Parcel.h>
 
+#ifdef SUPPORT_3D
+#include <qdMetaData.h>
+#endif
+
 namespace android {
 
 const uint32_t START_BROADCAST_TRANSACTION = IBinder::FIRST_CALL_TRANSACTION + 13;
@@ -1602,6 +1606,21 @@ status_t OMXCodec::setVideoOutputFormat(
         return err;
     }
 
+    //Enable decoder to report if there is any SEI data
+    //(supported only by H264)
+    if (compressionFormat == OMX_VIDEO_CodingAVC)
+    {
+        QOMX_ENABLETYPE enable_sei_reporting;
+        enable_sei_reporting.bEnable = OMX_TRUE;
+
+        err = mOMX->setParameter(
+                mNode, (OMX_INDEXTYPE)OMX_QcomIndexParamFrameInfoExtraData,
+                &enable_sei_reporting, (size_t)sizeof(enable_sei_reporting));
+
+        if (err != OK)
+            CODEC_LOGV("Not supported parameter OMX_QcomIndexParamFrameInfoExtraData");
+    }
+
 #if 1
     {
         OMX_VIDEO_PARAM_PORTFORMATTYPE format;
@@ -1736,7 +1755,8 @@ OMXCodec::OMXCodec(
       mNumBFrames(0),
       mInterlaceFormatDetected(false),
       mInterlaceFrame(0),
-      mDeferReason(0) {
+      mDeferReason(0),
+      m3DVideoDetected(false) {
 
     parseFlags();
     mPortStatus[kPortIndexInput] = ENABLED;
@@ -1987,6 +2007,7 @@ status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
         BufferInfo info;
         info.mData = NULL;
         info.mSize = def.nBufferSize;
+        info.is3DFormatSet = false;
 
         IOMX::buffer_id buffer;
         if (portIndex == kPortIndexInput
@@ -2284,6 +2305,7 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         info.mMem = NULL;
         info.mMediaBuffer = new MediaBuffer(graphicBuffer);
         info.mMediaBuffer->setObserver(this);
+        info.is3DFormatSet = false;
 
         IOMX::buffer_id bufferId;
         err = mOMX->useGraphicBuffer(mNode, kPortIndexOutput, graphicBuffer,
@@ -2687,6 +2709,15 @@ void OMXCodec::on_message(const omx_message &msg) {
                 MediaBuffer *buffer = info->mMediaBuffer;
                 bool isGraphicBuffer = buffer->graphicBuffer() != NULL;
 
+                if (!strncasecmp(mMIME, "video/", 6) && mOMXLivesLocally
+                        && msg.u.extended_buffer_data.range_length > 0
+                        && isGraphicBuffer) {
+
+                    CODEC_LOGV("Calling processSEIData");
+                    if (!mThumbnailMode)
+                        processSEIData(info);
+                }
+
                 if (!isGraphicBuffer
                     && msg.u.extended_buffer_data.range_offset
                         + msg.u.extended_buffer_data.range_length
@@ -3019,6 +3050,12 @@ void OMXCodec::onCmdComplete(OMX_COMMANDTYPE cmd, OMX_U32 data) {
 
                 sp<MetaData> oldOutputFormat = mOutputFormat;
                 initOutputFormat(mSource->getFormat());
+
+                int32_t format3D = 0;
+                if (oldOutputFormat->findInt32(kKey3D, &format3D)) {
+                    CODEC_LOGV("old output format had 3d flag, set it again");
+                    mOutputFormat->setInt32(kKey3D, format3D);
+                }
 
                 // Don't notify clients if the output port settings change
                 // wasn't of importance to them, i.e. it may be that just the
@@ -5233,6 +5270,13 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
         if (inputFormat->findInt32(kKeyTimeScale, &timeScale)) {
             mOutputFormat->setInt32(kKeyTimeScale, timeScale);
         }
+    } else {
+        int32_t format3D;
+        //It's unlikely that we get another 3D SEI, so remember flags
+        //associated with old 3D SEI
+        if (inputFormat->findInt32(kKey3D, &format3D)) {
+            mOutputFormat->setInt32(kKey3D, format3D);
+        }
     }
 
     OMX_PARAM_PORTDEFINITIONTYPE def;
@@ -5887,4 +5931,62 @@ size_t OMXCodec::countOutputBuffers(BufferStatus status) {
     return count;
 }
 
-}  // namespace android
+status_t OMXCodec::processSEIData(BufferInfo * info) {
+    if (!m3DVideoDetected)
+    {
+        CODEC_LOGI("In processSEIData");
+
+        //We don't want to continue checking every buffer, so we mark as 3D detected
+        //regardless. We only take action by xoring the 3d flag when cancel_flag is set
+        m3DVideoDetected = true;
+
+        OMX_QCOM_FRAME_PACK_ARRANGEMENT arrangementInfo;
+        arrangementInfo.cancel_flag = 1; //Need to initialize to 1, because the core doesn't touch this
+                                         //struct if video is not H264
+        status_t err = mOMX->getConfig(mNode, (OMX_INDEXTYPE)OMX_QcomIndexConfigVideoFramePackingArrangement, &arrangementInfo, (size_t)sizeof(arrangementInfo));
+
+        if (err != OK) {
+            CODEC_LOGV("Not supported config OMX_QcomIndexConfigVideoFramePackingArrangement");
+            return OK;
+        }
+        // on Resume this will be 1
+        if (arrangementInfo.cancel_flag != 1)
+        {
+            bool flip =
+                (arrangementInfo.content_interpretation_type == QOMX_VIDEO_CONTENT_RL_VIEW); //LR should be treated as RL
+            int format3D = 0;
+
+            if (arrangementInfo.type == QOMX_VIDEO_FRAME_PACKING_SIDE_BY_SIDE) { //side-by-side
+                if (flip) {
+                    format3D = HAL_3D_OUT_SIDE_BY_SIDE | HAL_3D_IN_SIDE_BY_SIDE_R_L;
+                } else {
+                    format3D = HAL_3D_OUT_SIDE_BY_SIDE | HAL_3D_IN_SIDE_BY_SIDE_L_R;
+                }
+            } else if (arrangementInfo.type == QOMX_VIDEO_FRAME_PACKING_TOP_BOTTOM) { //top-bottom
+                format3D = HAL_3D_OUT_TOP_BOTTOM | HAL_3D_IN_TOP_BOTTOM;
+            } else {
+                ALOGW("This is supposedly a 3d video but the frame arrangement "
+                     " [%d] is not supported", (int)arrangementInfo.type);
+            }
+            if (format3D != 0) {
+                ALOGW("Is a 3D video");
+            }
+
+            //save the 3D format for suspend resume case
+            mOutputFormat->setInt32(kKey3D, format3D);
+        }
+    }
+
+    if (!info->is3DFormatSet) {
+        int format3D = 0;
+        if ((mOutputFormat->findInt32(kKey3D, &format3D)) && format3D) {
+#ifdef SUPPORT_3D
+            setMetaData((private_handle_t*)info->mMediaBuffer->graphicBuffer()->getNativeBuffer()->handle, PP_PARAM_S3D_VIDEO, (void*)&format3D);
+#endif
+        }
+        info->is3DFormatSet = true;
+    }
+    return OK;
+}
+
+} // namespace android

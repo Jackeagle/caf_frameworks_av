@@ -149,6 +149,9 @@ ifeq ($(call is-vendor-board-platform,QCOM),true)
         LOCAL_C_INCLUDES += $(TOP)/kernel/include/sound
         LOCAL_SHARED_LIBRARIES += libalsa-intf
     endif
+    LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/display/libqdutils
+    LOCAL_SHARED_LIBRARIES += libqdMetaData
+    LOCAL_CFLAGS += -DSUPPORT_3D
 endif
 
 ifneq ($(TARGET_BUILD_PDK), true)

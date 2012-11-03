@@ -153,6 +153,9 @@ enum media_parameter_keys {
     // Playback rate expressed in permille (1000 is normal speed), saved as int32_t, with negative
     // values used for rewinding or reverse playback.
     KEY_PARAMETER_PLAYBACK_RATE_PERMILLE = 1300,                // set only
+
+    // key to return/set 3d attributes for suspend/resume cycle.
+    KEY_PARAMETER_3D_ATTRIBUTE = 8001,                   // get/set
 };
 
 // Keep INVOKE_ID_* in sync with MediaPlayer.java.

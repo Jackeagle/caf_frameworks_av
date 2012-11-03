@@ -182,6 +182,7 @@ private:
         size_t mSize;
         void *mData;
         MediaBuffer *mMediaBuffer;
+        bool is3DFormatSet;
     };
 
     struct CodecSpecificData {
@@ -252,6 +253,16 @@ private:
     bool mNumBFrames;
     bool mInterlaceFormatDetected;
     int32_t mInterlaceFrame;
+
+    /* Dynamic Port Reconfig support */
+    typedef enum {
+        BUFFER_WITH_CLIENT = 0x1,
+        FILLED_BUFFERS_PRESENT = 0x2,
+    } DeferReason;
+
+    int32_t mDeferReason;
+
+    bool m3DVideoDetected;
 
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
@@ -383,20 +394,14 @@ private:
 
     status_t flushBuffersOnError(void);
 
+    status_t processSEIData(BufferInfo *info);
+
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
     status_t setWMAFormat(const sp<MetaData> &inputFormat);
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
 
     status_t releaseMediaBuffersOn(OMX_U32 portIndex);
-
-    /* Dynamic Port Reconfig support */
-    typedef enum {
-        BUFFER_WITH_CLIENT = 0x1,
-        FILLED_BUFFERS_PRESENT = 0x2,
-    } DeferReason;
-
-    int32_t mDeferReason;
 
     size_t countOutputBuffers(BufferStatus);
 };
