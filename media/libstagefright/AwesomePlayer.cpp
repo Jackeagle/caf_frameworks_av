@@ -1988,8 +1988,8 @@ void AwesomePlayer::onVideoEvent() {
                 mAudioPlayer->pause();
 
                 modifyFlags(AUDIO_RUNNING, CLEAR);
-                mAudioSource->pause();
-                mAudioSourcePaused = true;
+                if (mAudioSource->pause() != ERROR_UNSUPPORTED)
+                    mAudioSourcePaused = true;
             }
         }
     }
