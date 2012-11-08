@@ -3181,7 +3181,7 @@ bool ACodec::LoadedState::onConfigureComponent(
        !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str())) {
 
         char value_ss[PROPERTY_VALUE_MAX];
-        if (property_get("hls.disable.smooth.streaming", value_ss, NULL) &&
+        if (property_get("persist.no.smooth.streaming", value_ss, NULL) &&
            (!strcasecmp(value_ss, "true") || !strcmp(value_ss, "1"))) {
 
             ALOGW("Dont enable Smooth streaming, disable property is set");
