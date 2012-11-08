@@ -2792,7 +2792,7 @@ static bool BetterSniffMPEG4(
     }
 
     *mimeType = MEDIA_MIMETYPE_CONTAINER_MPEG4;
-    *confidence = 0.4f;
+    *confidence = 0.6f;
 
     if (moovAtomEndOffset >= 0) {
         *meta = new AMessage;
