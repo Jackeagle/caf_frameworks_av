@@ -2297,6 +2297,35 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
             break;
         }
 
+        private_handle_t *handle = (private_handle_t *)buf->handle;
+        if(!handle) {
+                ALOGE("Native Buffer handle is NULL");
+                break;
+        }
+
+        if ((int)def.nBufferSize < handle->size)
+        {
+            CODEC_LOGV("The size of buffer is bigger than expected, notify component. Expected size : %d, size we got: %d\n", (int)def.nBufferSize, handle->size);
+            InitOMXParams(&def);
+            def.nPortIndex = kPortIndexOutput;
+            err = mOMX->getParameter(
+                mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
+            if (err != OK) {
+                CODEC_LOGE("Get paramater failed while setting new size\n");
+                return err;
+            }
+            def.nBufferSize = handle->size;
+            err = mOMX->setParameter(
+                mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
+            if (err != OK) {
+                CODEC_LOGE("Set parameter failed while setting new size\n");
+                return err;
+            }
+        } else if ((int)def.nBufferSize > handle->size) { //otherwise it might cause memory corruption issues. It may fail because of alignment or extradata.
+            CODEC_LOGE("The size of buffer is less than expected, expected size : %d, size we got: %d\n", (int)def.nBufferSize, handle->size);
+            CHECK(0);
+        }
+
         sp<GraphicBuffer> graphicBuffer(new GraphicBuffer(buf, false));
         BufferInfo info;
         info.mData = NULL;
