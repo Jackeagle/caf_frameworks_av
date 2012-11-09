@@ -51,6 +51,11 @@ public:
     void flush() {
         mOffset = 0;
         mSize = 0;
+        mIsActualClipSizeUnknown = false;
+    }
+
+    void setClipSizeAsUnknown() {
+        mIsActualClipSizeUnknown = true;
     }
 
     TSBuffer(size_t capacity, off64_t clipSize)
@@ -58,7 +63,8 @@ public:
             mCapacity(capacity),
             mOffset(0),
             mSize(0),
-            mClipSize(clipSize) {}
+            mClipSize(clipSize),
+            mIsActualClipSizeUnknown(false){}
 
     ~TSBuffer() {
         if (mData != NULL) {
@@ -71,12 +77,14 @@ public:
     size_t   mOffset;   //CUrrent offset, dats is read from this offset
     size_t   mSize;     //size of data read from datasource
     off64_t  mClipSize; //Actual clip size, to check for end of stream case
+    bool mIsActualClipSizeUnknown; //To handle cases where we
+                                   //set ClipSize as PageCacheSize
 };
 
 status_t TSBuffer::getTSPacket(sp<DataSource> dataSource, uint8_t **data, off64_t dataSrcOffset) {
     if (mSize - mOffset < kTSPacketSize) {
         size_t size = mCapacity;
-        if (dataSrcOffset + size > mClipSize) {
+        if (dataSrcOffset + size > mClipSize && !mIsActualClipSizeUnknown) {
             size = mClipSize - dataSrcOffset;
         }
         if (size < kTSPacketSize) {
@@ -152,6 +160,7 @@ MPEG2TSSource::MPEG2TSSource(
     //Allocate TS cache buffer
     if (mExtractor->mClipSize == 0) {
         mTSBuffer = new TSBuffer(kTSCacheSize, kTSCacheSize);
+        mTSBuffer->setClipSizeAsUnknown();
     } else {
         mTSBuffer = new TSBuffer(kTSCacheSize, mExtractor->mClipSize);
     }
@@ -448,6 +457,8 @@ MPEG2TSExtractor::MPEG2TSExtractor(const sp<DataSource> &source)
     mDataSource->getSize(&mClipSize);
     if (mClipSize == 0) {
         mTSBuffer = new TSBuffer(kTSCacheSize, kTSCacheSize);
+        mTSBuffer->setClipSizeAsUnknown();
+
     } else {
         mTSBuffer = new TSBuffer(kTSCacheSize, mClipSize);
     }
