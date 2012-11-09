@@ -158,6 +158,10 @@ sp<AMessage> NuPlayer::Decoder::makeFormat(const sp<MetaData> &meta) {
         msg->setInt32("secure-op", 1);
     }
 
+    if (meta->findInt32(kKeyEnableDecodeOrder, &value)) {
+        msg->setInt32("decodeOrderEnable", value);
+    }
+
     mCSDIndex = 0;
     for (size_t i = 0;; ++i) {
         sp<ABuffer> csd;
