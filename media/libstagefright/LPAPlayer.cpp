@@ -818,6 +818,11 @@ status_t  LPAPlayer::setupAudioSink()
             return err;
         }
 
+        if (!mPaused) {
+            ALOGD("setupAudioSink:Start rEGULAR track");
+            mAudioSink->start();
+        }
+
         mTrackType = TRACK_DIRECT;
         ALOGD("setupAudioSink:dIRECT track opened");
     }
