@@ -139,7 +139,6 @@ class MediaPlayerService : public BnMediaPlayerService
         static bool             mIsOnEmulator;
         static int              mMinBufferCount;  // 12 for emulator; otherwise 4
         audio_output_flags_t    mFlags;
-
         // CallbackData is what is passed to the AudioTrack as the "user" data.
         // We need to be able to target this to a different Output on the fly,
         // so we can't use the Output itself for this.
@@ -253,6 +252,7 @@ public:
     virtual status_t            dump(int fd, const Vector<String16>& args);
 
             void                removeClient(wp<Client> client);
+            void               mpqHandle(void* handle){mHandle = handle;}
 
     // For battery usage tracking purpose
     struct BatteryUsageInfo {
@@ -355,7 +355,6 @@ private:
         virtual status_t        dump(int fd, const Vector<String16>& args) const;
 
                 int             getAudioSessionId() { return mAudioSessionId; }
-
     private:
         friend class MediaPlayerService;
                                 Client( const sp<MediaPlayerService>& service,
@@ -429,6 +428,7 @@ private:
                 int32_t                     mNextConnId;
                 sp<IOMX>                    mOMX;
                 sp<ICrypto>                 mCrypto;
+                void *                      mHandle;
 };
 
 // ----------------------------------------------------------------------------

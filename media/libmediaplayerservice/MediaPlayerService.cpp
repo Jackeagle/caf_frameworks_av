@@ -235,11 +235,14 @@ MediaPlayerService::MediaPlayerService()
     }
     // speaker is on by default
     mBatteryAudio.deviceOn[SPEAKER] = 1;
+    mHandle = NULL;
 }
 
 MediaPlayerService::~MediaPlayerService()
 {
     ALOGV("MediaPlayerService destroyed");
+    if(mHandle)
+     dlclose(mHandle);
 }
 
 sp<IMediaRecorder> MediaPlayerService::createMediaRecorder(pid_t pid)
@@ -682,7 +685,7 @@ player_type MediaPlayerService::Client::getPlayerType(
 static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
         notify_callback_f notifyFunc)
 {
-    void* handle;
+    void *handle;
     CreateMPQ_PlayerClientFunc funcHandle;
     sp<MediaPlayerBase> p;
     switch (playerType) {
@@ -713,7 +716,8 @@ static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
         case MPQ_PLAYER:
             ALOGE(" create MPQ PLAYER");
             handle = dlopen("libmpqplayerclient.so", RTLD_NOW);
-            funcHandle = (CreateMPQ_PlayerClientFunc)dlsym(handle, "_ZN16MPQ_PlayerClient22CreateMPQ_PlayerClientEv");
+           ((MediaPlayerService*)cookie)->mpqHandle(handle);
+            funcHandle = (CreateMPQ_PlayerClientFunc)dlsym(handle , "_ZN16MPQ_PlayerClient22CreateMPQ_PlayerClientEv");
             p = (MediaPlayerBase*)funcHandle();
             break;
         default:
