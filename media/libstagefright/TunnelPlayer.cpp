@@ -389,35 +389,15 @@ void TunnelPlayer::pause(bool playPendingSamples) {
     ALOGV("pause: playPendingSamples %d", playPendingSamples);
     mPaused = true;
     A2DPState state;
-    if (playPendingSamples) {
-        if (!mIsA2DPEnabled) {
-           /* if (!mPauseEventPending) {
-                ALOGV("Posting an event for Pause timeout");
-                mQueue.postEventWithDelay(mPauseEvent, LPA_PAUSE_TIMEOUT_USEC);
-                mPauseEventPending = true;
-            }*/
-            mPauseTime = mSeekTimeUs + getTimeStamp(A2DP_DISABLED);
-        }
-        else {
-            mPauseTime = mSeekTimeUs + getTimeStamp(A2DP_ENABLED);
-        }
-        if (mAudioSink.get() != NULL)
-            mAudioSink->pause();
-    } else {
-        if (!mIsA2DPEnabled) {
-            /*if(!mPauseEventPending) {
-                ALOGV("Posting an event for Pause timeout");
-                mQueue.postEventWithDelay(mPauseEvent, LPA_PAUSE_TIMEOUT_USEC);
-                mPauseEventPending = true;
-            }*/
-            mPauseTime = mSeekTimeUs + getTimeStamp(A2DP_DISABLED);
-        } else {
-            mPauseTime = mSeekTimeUs + getTimeStamp(A2DP_ENABLED);
-        }
-        if (mAudioSink.get() != NULL) {
-            ALOGV("AudioSink pause");
-            mAudioSink->pause();
-        }
+    if(!mPauseEventPending) {
+        ALOGV("Posting an event for Pause timeout");
+        mQueue.postEventWithDelay(mPauseEvent, TUNNEL_PAUSE_TIMEOUT_USEC);
+        mPauseEventPending = true;
+    }
+    mPauseTime = mSeekTimeUs + getTimeStamp(A2DP_DISABLED);
+    if (mAudioSink.get() != NULL) {
+        ALOGV("AudioSink pause");
+        mAudioSink->pause();
     }
 }
 
@@ -620,6 +600,9 @@ size_t TunnelPlayer::fillBuffer(void *data, size_t size) {
         MediaSource::ReadOptions options;
         {
             Mutex::Autolock autoLock(mLock);
+            if(mSeeking) {
+                mInternalSeeking = false;
+            }
 
             if (mSeeking || mInternalSeeking) {
                 if (mIsFirstBuffer) {
@@ -781,6 +764,7 @@ void TunnelPlayer::onPauseTimeOut() {
         mReachedEOS = false;
         mReachedOutputEOS = false;
         mSeekTimeUs += getTimeStamp(A2DP_DISABLED);
+        mInternalSeeking = true;
 
         // 2.) Close routing Session
         mAudioSink->close();
