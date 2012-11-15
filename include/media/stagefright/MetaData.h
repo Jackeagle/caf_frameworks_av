@@ -198,6 +198,7 @@ enum {
 
     // 3D Video Flag
     kKey3D                = '3Dvf',  // bool (int32_t)
+    kKeyInterlaced        = 'Inlc'  // bool (int32_t)
 };
 
 enum {

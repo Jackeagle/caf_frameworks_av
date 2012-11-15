@@ -99,8 +99,8 @@ LOCAL_C_INCLUDES:= \
 	$(TOP)/hardware/qcom/media/mm-core/inc \
 	$(TOP)/system/core/include \
 	$(TOP)/frameworks/av/media/libmediaplayerservice \
-	$(TOP)/frameworks/native/include/binder
-
+	$(TOP)/frameworks/native/include/binder \
+	$(TOP)/frameworks/av/media/libstagefright/include
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -131,6 +131,7 @@ LOCAL_STATIC_LIBRARIES := \
         libstagefright_aacenc \
         libstagefright_matroska \
         libstagefright_timedtext \
+        libstagefright_postproc \
         libvpx \
         libstagefright_mpeg2ts \
         libstagefright_httplive \
