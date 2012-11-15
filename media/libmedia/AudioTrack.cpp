@@ -17,7 +17,7 @@
 */
 
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "AudioTrack"
 #include <stdint.h>
 #include <sys/types.h>
@@ -1169,6 +1169,7 @@ void AudioTrack::releaseBuffer(Buffer* audioBuffer)
 
 ssize_t AudioTrack::write(const void* buffer, size_t userSize)
 {
+    ALOGE("%s in Track write systemTime(): %lld", __func__, systemTime());
     if (mDirectTrack != NULL) {
         if (!mActive) {
             mActive = true;
@@ -1208,7 +1209,9 @@ ssize_t AudioTrack::write(const void* buffer, size_t userSize)
     do {
         audioBuffer.frameCount = userSize/frameSz;
 
+        ALOGE("%s in track before obtainBuffer systemTime(): %lld", __func__, systemTime());
         status_t err = obtainBuffer(&audioBuffer, -1);
+        ALOGE("%s in track after obtainBuffer systemTime(): %lld", __func__, systemTime());
         if (err < 0) {
             // out of buffers, return #bytes written
             if (err == status_t(NO_MORE_BUFFERS))
@@ -1230,7 +1233,9 @@ ssize_t AudioTrack::write(const void* buffer, size_t userSize)
         userSize -= toWrite;
         written += toWrite;
 
+        ALOGE("%s in track before release buffer systemTime(): %lld", __func__, systemTime());
         releaseBuffer(&audioBuffer);
+        ALOGE("%s in track after release buffer systemTime(): %lld", __func__, systemTime());
     } while (userSize >= frameSz);
 
     return written;
