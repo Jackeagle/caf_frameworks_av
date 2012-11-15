@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "SoundPool"
 #include <utils/Log.h>
 
@@ -571,11 +571,9 @@ void SoundChannel::play(const sp<Sample>& sample, int nextChannelID, float leftV
         int afFrameCount;
         int afSampleRate;
         audio_stream_type_t streamType = mSoundPool->streamType();
-        ALOGE("%s streamType: %d", __func__, streamType);
         if (AudioSystem::getOutputFrameCount(&afFrameCount, streamType) != NO_ERROR) {
             afFrameCount = kDefaultFrameCount;
         }
-        ALOGE("%s afFrameCount: %d, kDefaultFrameCount: %d", __func__, afFrameCount, kDefaultFrameCount);
         if (AudioSystem::getOutputSamplingRate(&afSampleRate, streamType) != NO_ERROR) {
             afSampleRate = kDefaultSampleRate;
         }
@@ -584,21 +582,18 @@ void SoundChannel::play(const sp<Sample>& sample, int nextChannelID, float leftV
         uint32_t totalFrames = (kDefaultBufferCount * afFrameCount * sampleRate) / afSampleRate;
         uint32_t bufferFrames = (totalFrames + (kDefaultBufferCount - 1)) / kDefaultBufferCount;
         uint32_t frameCount = 0;
-	ALOGE("%s kDefaultBufferCount: %d, afFrameCount: %d, sampleRate: %d, afSampleRate: %d",
-			__func__, kDefaultBufferCount, afFrameCount, sampleRate, afSampleRate);
+
         if (loop) {
             frameCount = sample->size()/numChannels/
                 ((sample->format() == AUDIO_FORMAT_PCM_16_BIT) ? sizeof(int16_t) : sizeof(uint8_t));
         }
 
-	ALOGE("%s frameCount: %d, totalFrames: %d", __func__, frameCount, totalFrames);
 #ifndef USE_SHARED_MEM_BUFFER
         // Ensure minimum audio buffer size in case of short looped sample
         if(frameCount < totalFrames) {
             frameCount = totalFrames;
         }
 #endif
-	ALOGE("%s frameCount: %d, totalFrames: %d", __func__, frameCount, totalFrames);
 
         // mToggle toggles each time a track is started on a given channel.
         // The toggle is concatenated with the SoundChannel address and passed to AudioTrack

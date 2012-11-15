@@ -17,7 +17,7 @@
 */
 
 #define LOG_TAG "IAudioFlinger"
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #include <utils/Log.h>
 
 #include <stdint.h>
