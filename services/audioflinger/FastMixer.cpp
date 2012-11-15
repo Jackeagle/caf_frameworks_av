@@ -15,7 +15,7 @@
  */
 
 #define LOG_TAG "FastMixer"
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 
 #include <sys/atomics.h>
 #include <time.h>
@@ -41,7 +41,6 @@ namespace android {
 // Fast mixer thread
 bool FastMixer::threadLoop()
 {
-    ALOGE("threadLoop");
     static const FastMixerState initial;
     const FastMixerState *previous = &initial, *current = &initial;
     FastMixerState preIdle; // copy of state before we went into idle
@@ -87,8 +86,6 @@ bool FastMixer::threadLoop()
     NBAIO_Sink* teeSink = NULL; // if non-NULL, then duplicate write() to this non-blocking sink
 
     for (;;) {
-        ALOGE("threadLoop running");
-        ALOGE("%s, begin iteration FastMixer threadLoop()- systemTime: %f", __func__, systemTime()/1000.0);
 
         // either nanosleep, sched_yield, or busy wait
         if (sleepNs >= 0) {
@@ -111,7 +108,6 @@ bool FastMixer::threadLoop()
             next = current;
         }
 
-        ALOGE("%s, before new dump area- systemTime: %f", __func__, systemTime()/1000.0);
         FastMixerState::Command command = next->mCommand;
         if (next != current) {
 
@@ -140,14 +136,12 @@ bool FastMixer::threadLoop()
             }
             current = next;
         }
-        ALOGE("%s, after new dump area- systemTime: %f", __func__, systemTime()/1000.0);
 #if !LOG_NDEBUG
         next = NULL;    // not referenced again
 #endif
 
         dumpState->mCommand = command;
 
-        ALOGE("%s, before fast mixer state handling- systemTime: %f", __func__, systemTime()/1000.0);
         switch (command) {
         case FastMixerState::INITIAL:
         case FastMixerState::HOT_IDLE:
@@ -189,10 +183,8 @@ bool FastMixer::threadLoop()
         default:
             LOG_FATAL("bad command %d", command);
         }
-        ALOGE("%s, after fast mixer state handling- systemTime: %f", __func__, systemTime()/1000.0);
 
         // there is a non-idle state available to us; did the state change?
-        ALOGE("%s, before mixer - systemTime: %f", __func__, systemTime()/1000.0);
         size_t frameCount = current->mFrameCount;
         if (current != previous) {
 
@@ -354,10 +346,8 @@ bool FastMixer::threadLoop()
             previous = current;
 #endif
         }
-        ALOGE("%s, after mixer - systemTime: %f", __func__, systemTime()/1000.0);
 
         // do work using current state here
-        ALOGE("%s, before mixer process- systemTime: %f", __func__, systemTime()/1000.0);
         if ((command & FastMixerState::MIX) && (mixer != NULL) && isWarm) {
             ALOG_ASSERT(mixBuffer != NULL);
             // for each track, update volume and check for underrun
@@ -415,7 +405,6 @@ bool FastMixer::threadLoop()
         } else if (mixBufferState == MIXED) {
             mixBufferState = UNDEFINED;
         }
-        ALOGE("%s, after mixer process- systemTime: %f", __func__, systemTime()/1000.0);
         bool attemptedWrite = false;
         //bool didFullWrite = false;    // dumpsys could display a count of partial writes
         if ((command & FastMixerState::WRITE) && (outputSink != NULL) && (mixBuffer != NULL)) {
@@ -424,7 +413,6 @@ bool FastMixer::threadLoop()
                 mixBufferState = ZEROED;
             }
             if (teeSink != NULL) {
-                ALOGE("%s, in fast mixer Thread tee write()- systemTime: %f, %p, count -%d", __func__, systemTime()/1000.0, mixBuffer, frameCount);
                 (void) teeSink->write(mixBuffer, frameCount);
             }
             // FIXME write() is non-blocking and lock-free for a properly implemented NBAIO sink,
@@ -433,9 +421,7 @@ bool FastMixer::threadLoop()
 #if defined(ATRACE_TAG) && (ATRACE_TAG != ATRACE_TAG_NEVER)
             Tracer::traceBegin(ATRACE_TAG, "write");
 #endif
-                ALOGE("%s, before fast mixer Thread output write()- systemTime: %f, %p, count -%d", __func__, systemTime()/1000.0, mixBuffer, frameCount);
             ssize_t framesWritten = outputSink->write(mixBuffer, frameCount);
-                ALOGE("%s, after fast mixer Thread output write()- systemTime: %f, %p, count -%d", __func__, systemTime()/1000.0, mixBuffer, frameCount);
 #if defined(ATRACE_TAG) && (ATRACE_TAG != ATRACE_TAG_NEVER)
             Tracer::traceEnd(ATRACE_TAG);
 #endif
@@ -592,7 +578,6 @@ bool FastMixer::threadLoop()
         }
 
 
-        ALOGE("%s, end iteration FastMixer threadLoop()- systemTime: %f", __func__, systemTime()/1000.0);
     }   // for (;;)
 
     // never return 'true'; Thread::_threadLoop() locks mutex which can result in priority inversion
