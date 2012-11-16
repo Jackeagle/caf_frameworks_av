@@ -227,7 +227,8 @@ public:
                                 Parcel* reply,
                                 uint32_t flags);
 
-    void applyEffectsOn(int16_t *buffer1,
+    void applyEffectsOn(void *token,
+                        int16_t *buffer1,
                         int16_t *buffer2,
                         int size);
 
