@@ -855,6 +855,7 @@ status_t StagefrightRecorder::start() {
 
 sp<MediaSource> StagefrightRecorder::createAudioSource() {
     bool tunneledSource = false;
+    char tunnelRec[128];
     const char *tunnelMime;
     {
         AudioParameter param;
@@ -880,7 +881,10 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
         }
         else if ( mAudioEncoder == AUDIO_ENCODER_AMR_WB &&
             result.getInt(String8("AWB"),value) == NO_ERROR ) {
-            tunneledSource = true;
+            property_get("use.amrwb.tunnel.encode", tunnelRec, "0");
+            if ( strcmp("true", tunnelRec) == 0 ) {
+                tunneledSource = true;
+            }
             tunnelMime = MEDIA_MIMETYPE_AUDIO_AMR_WB;
         }
     }
