@@ -49,6 +49,7 @@ bool ColorConverter::isValid() const {
         case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
         case OMX_COLOR_FormatYUV420SemiPlanar:
         case OMX_TI_COLOR_FormatYUV420PackedSemiPlanar:
+        case OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar32m:
         case OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka:
             return true;
 
@@ -123,6 +124,54 @@ status_t ColorConverter::convert(
 
         case OMX_TI_COLOR_FormatYUV420PackedSemiPlanar:
             err = convertTIYUV420PackedSemiPlanar(src, dst);
+            break;
+        case OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar32m:
+            {
+                void * lib = dlopen("libmm-color-convertor.so", RTLD_NOW);
+
+                if (!lib) {
+                    ALOGE("dlopen for libmm-color-convertor failed with errno %d", errno);
+                    return ERROR_UNSUPPORTED;
+                }
+
+                typedef int (*convertFn)(ColorConvertParams src, ColorConvertParams dst, uint8_t *adjustedClip);
+
+                convertFn convertNV12Planar32m = (convertFn)dlsym(lib, "_ZN7android7convertENS_18ColorConvertParamsES0_Ph");
+                if (!convertNV12Planar32m) {
+                    dlclose(lib);
+                    ALOGE("dlsym on libmm-color-convertor failed with errno %d", errno);
+                    return ERROR_UNSUPPORTED;
+                }
+                struct ColorConvertParams srcTemp;
+                srcTemp.width = srcWidth;
+                srcTemp.height = srcHeight;
+                srcTemp.cropWidth = src.cropWidth();
+                srcTemp.cropHeight = src.cropHeight();
+                srcTemp.cropLeft = src.mCropLeft;
+                srcTemp.cropRight = src.mCropRight;
+                srcTemp.cropTop = src.mCropTop;
+                srcTemp.cropBottom = src.mCropBottom;
+                srcTemp.data = src.mBits;
+                srcTemp.colorFormat = YCbCr420SP32M;
+                srcTemp.flags = 0;
+
+                struct ColorConvertParams dstTemp;
+                dstTemp.width = dstWidth;
+                dstTemp.height = dstHeight;
+                dstTemp.cropWidth = dst.cropWidth();
+                dstTemp.cropHeight = dst.cropHeight();
+                dstTemp.cropLeft = dst.mCropLeft;
+                dstTemp.cropRight = dst.mCropRight;
+                dstTemp.cropTop = dst.mCropTop;
+                dstTemp.cropBottom = dst.mCropBottom;
+                dstTemp.data = dst.mBits;
+                dstTemp.colorFormat = RGB565;
+                dstTemp.flags = 0;
+
+                uint8_t * adjustedClip = initClip();
+                err = convertNV12Planar32m(srcTemp, dstTemp, adjustedClip);
+                dlclose(lib);
+        }
             break;
 
         case OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka:
@@ -406,7 +455,7 @@ status_t ColorConverter::convertQCOMYUV420SemiPlanar(
         src_y += src.mWidth;
 
         if (y & 1) {
-            src_u += src.mWidth;
+                src_u += src.mWidth;
         }
 
         dst_ptr += dst.mWidth;
