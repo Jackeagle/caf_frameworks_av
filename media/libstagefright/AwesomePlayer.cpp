@@ -1585,7 +1585,8 @@ status_t AwesomePlayer::initAudioDecoder() {
             //Add WMA / DTS
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3) ||
-                    !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC) ||
+                    ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC))
+                    &&((dlopen ("libms11.so", RTLD_NOW))!=NULL))||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3)) {
