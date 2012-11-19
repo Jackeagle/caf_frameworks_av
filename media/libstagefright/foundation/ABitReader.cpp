@@ -49,6 +49,10 @@ uint32_t ABitReader::getBits(size_t n) {
     uint32_t result = 0;
     while (n > 0) {
         if (mNumBitsLeft == 0) {
+            if(mSize <= 0u) {
+                ALOGE("Looks like something has gone wrong .. exit gracefully");
+                return result;
+            }
             fillReservoir();
         }
 
