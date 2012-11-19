@@ -648,10 +648,7 @@ void MPQAudioPlayer::extractorThreadEntry() {
             ALOGV("write - pcm  ++");
             if(mAudioSink.get() != NULL && bytesToWrite) {
                 ssize_t bytesWritten = 0;
-                if(mAudioFormat == AUDIO_FORMAT_AC3 ||
-                            mAudioFormat == AUDIO_FORMAT_AAC ||
-                            mAudioFormat == AUDIO_FORMAT_AAC_ADIF ||
-                            mAudioFormat == AUDIO_FORMAT_EAC3) {
+                if (mDecoderType == EMS11Decoder) {
                     bytesWritten = mAudioSink->write(mLocalBuf, bytesToWrite);
                 }
                 else {
@@ -1291,13 +1288,9 @@ status_t MPQAudioPlayer::configurePCM() {
 status_t MPQAudioPlayer::getDecoderAndFormat() {
 
     status_t err = OK;
-    if (   !strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_RAW) ||
-           !strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_QCELP) ||
-           !strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_EVRC) ||
-           !strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_AMR_NB) ||
-           !strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_AMR_WB) ||
-           !strcasecmp(mMimeType.string(),  MEDIA_MIMETYPE_AUDIO_VORBIS) ||
-           !strcasecmp(mMimeType.string(),  MEDIA_MIMETYPE_AUDIO_FLAC)) {
+    /* For all the Codecs where Software decoder is enabled then the Mime type from the source is returned as
+       AUDIO_RAW as PCM data is fed to MPQAudioPlayer */
+    if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_RAW)){
         ALOGW("Sw Decoder");
         mAudioFormat = AUDIO_FORMAT_PCM_16_BIT;
         mDecoderType = ESoftwareDecoder;
