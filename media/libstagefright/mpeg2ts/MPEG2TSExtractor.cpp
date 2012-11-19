@@ -220,7 +220,10 @@ status_t MPEG2TSSource::read(
     if (seekAble && options && options->getSeekTo(&seekTimeUs, &seekMode)) {
         bool seekErr = false;
         err = seekPrepare(seekTimeUs, &seekErr);
-        if(err != OK && seekErr) {
+
+        if(err == DEAD_OBJECT) {
+            return err;
+        }else if(err != OK && seekErr) {
             //reset to last known IFrame location
             //call seekPrepare again;
 
