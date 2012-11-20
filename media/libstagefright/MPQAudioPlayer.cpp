@@ -1179,6 +1179,7 @@ int64_t MPQAudioPlayer::getMediaTimeUs() {
 
 bool MPQAudioPlayer::getMediaTimeMapping(
                                    int64_t *realtime_us, int64_t *mediatime_us) {
+    getRealTimeUs();
     Mutex::Autolock autoLock(mLock);
 
     mPositionTimeMediaUs = (mSeekTimeUs + getAudioTimeStampUs());
