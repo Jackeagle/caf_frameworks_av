@@ -966,15 +966,14 @@ void NuPlayer::finishReset() {
     if (mSourceNotify != NULL)
     {
        sp<AMessage> sourceRequest;
-       if (mSourceNotify->findMessage("source-request", &sourceRequest)) {
-           sourceRequest = NULL;
-       } else {
+       mSourceNotify->findMessage("source-request", &sourceRequest);
+       sourceRequest = NULL;
+       for (int id = 0; id < SRMax; id++){
            char srName[] = "source-request00";
-           srName[strlen("source-request")] += mSRid/10;
-           srName[strlen("source-request")+sizeof(char)] += mSRid%10;
+           srName[strlen("source-request")] += id/10;
+           srName[strlen("source-request")+sizeof(char)] += id%10;
            mSourceNotify->findMessage(srName, &sourceRequest);
            sourceRequest = NULL;
-           mSRid = (mSRid+1)%SRMax;
        }
        mSourceNotify = NULL;
     }
