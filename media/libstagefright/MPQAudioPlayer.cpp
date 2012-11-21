@@ -1185,7 +1185,10 @@ void MPQAudioPlayer::requestAndWaitForExtractorThreadExit() {
     }
     ALOGD("mKillExtractorThread true");
     mKillExtractorThread = true;
-    mExtractorCv.signal();
+    while (mExtractorThreadAlive) {
+        mExtractorCv.signal();
+        usleep(500);
+    }
     pthread_join(mExtractorThread,NULL);
     ALOGD("Extractor thread killed");
 }
