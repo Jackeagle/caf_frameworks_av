@@ -668,10 +668,6 @@ void MPQAudioPlayer::extractorThreadEntry() {
                 ALOGV("Posting EOS event..zero byte buffer ");
                 //TODO : make it POST EOS to amke sense for  Software
                 if(!mPostedEOS) {
-                    if( mDecoderType == EMS11Decoder) {
-                        memset(mLocalBuf, 0x0, AAC_AC3_BUFFER_SIZE);
-                        mAudioSink->write(mLocalBuf, 0);
-                    }
                     mPostedEOS = true;
                     mObserver->postAudioEOS( mPostEOSDelayUs);
                 }
@@ -681,8 +677,6 @@ void MPQAudioPlayer::extractorThreadEntry() {
         else if (mDecoderType == EHardwareDecoder) {
             mExtractorMutex.lock();
             if (mReachedExtractorEOS || mIsPaused || mAsyncReset ) {
-                if (mReachedExtractorEOS)
-                    mAudioSink->write(mLocalBuf, 0);
                 ALOGV("extractorThreadEntry: mIsPaused %d\
                         mReachedExtractorEOS %d mAsyncReset %d ",\
                         mIsPaused, mReachedExtractorEOS, mAsyncReset);
