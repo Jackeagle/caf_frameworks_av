@@ -785,6 +785,11 @@ status_t  LPAPlayer::setupAudioSink()
             ALOGE("setupAudioSink:Audio sink open failed.");
         }
 
+        if (!mPaused) {
+            ALOGD("setupAudioSink:Start rEGULAR track");
+            mAudioSink->start();
+        }
+
         mTrackType = TRACK_DIRECT;
         ALOGD("setupAudioSink:dIRECT track opened");
     }
