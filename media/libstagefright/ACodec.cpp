@@ -2988,6 +2988,8 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
 
     sp<IOMX> omx = client.interface();
 
+    int32_t useSWDecforAudio;
+
     Vector<String8> matchingCodecs;
     Vector<uint32_t> matchingCodecQuirks;
 
@@ -3010,13 +3012,24 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
             encoder = false;
         }
 
-        OMXCodec::findMatchingCodecs(
-                mime.c_str(),
-                encoder, // createEncoder
-                NULL,  // matchComponentName
-                0,     // flags
-                &matchingCodecs,
-                &matchingCodecQuirks);
+        if(!strncasecmp("audio/", mime.c_str(), 6) &&
+           msg->findInt32("use-swdec",&useSWDecforAudio)){
+            OMXCodec::findMatchingCodecs(
+                    mime.c_str(),
+                    encoder, // createEncoder
+                    NULL,  // matchComponentName
+                    OMXCodec::kSoftwareCodecsOnly,     // UseSoftwardeCodecsOnly
+                    &matchingCodecs,
+                    &matchingCodecQuirks);
+        } else {
+            OMXCodec::findMatchingCodecs(
+                    mime.c_str(),
+                    encoder, // createEncoder
+                    NULL,  // matchComponentName
+                    0,     // flags
+                    &matchingCodecs,
+                    &matchingCodecQuirks);
+        }
     }
 
     sp<CodecObserver> observer = new CodecObserver;
