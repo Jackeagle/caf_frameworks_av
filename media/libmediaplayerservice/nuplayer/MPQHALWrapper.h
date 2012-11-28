@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2010 The Android Open Source Project
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012, The Linux Foundation. All rights reserveds reserved
  *
  * Not a Contribution, Apache license notifications and license are retained
  * for attribution purposes only.
+ *
+ * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +25,7 @@
 #define MPQ_HAL_WRAPPER_H_
 
 #include <media/stagefright/foundation/AHandler.h>
-#include "NuPlayerRenderer.h"
+#include "WFDRenderer.h"
 #include "NuPlayer.h"
 
 #include <media/IAudioFlinger.h>
