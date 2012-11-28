@@ -78,6 +78,9 @@ private:
     struct HTTPLiveSource;
     struct NuPlayerStreamListener;
     struct Renderer;
+#ifdef QCOM_WFD_SINK
+    struct WFDRenderer;
+#endif //QCOM_WFD_SINK
     struct RTSPSource;
     struct Source;
     struct StreamingSource;

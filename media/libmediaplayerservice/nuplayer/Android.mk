@@ -1,6 +1,12 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+# ---------------------------------------------------------------------------------
+#            Common definitons
+# ---------------------------------------------------------------------------------
+
+libnuplayer-wfd-def := -DQCOM_WFD_SINK
+
 LOCAL_SRC_FILES:=                       \
         GenericSource.cpp               \
         HTTPLiveSource.cpp              \
@@ -12,8 +18,10 @@ LOCAL_SRC_FILES:=                       \
         RTSPSource.cpp                  \
         StreamingSource.cpp             \
         NuPlayerStats.cpp               \
-        MPQHALWrapper.cpp
+        MPQHALWrapper.cpp               \
+        WFDRenderer.cpp
 
+LOCAL_CFLAGS := $(libnuplayer-wfd-def)
 LOCAL_C_INCLUDES := \
 	$(TOP)/frameworks/av/media/libstagefright/httplive            \
 	$(TOP)/frameworks/av/media/libstagefright/include             \

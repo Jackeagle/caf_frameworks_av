@@ -21,7 +21,9 @@
 #include <utils/Log.h>
 #include <dlfcn.h>  // for dlopen/dlclose
 #include "NuPlayer.h"
-
+#ifdef QCOM_WFD_SINK
+#include "WFDRenderer.h"
+#endif //QCOM_WFD_SINK
 #include "HTTPLiveSource.h"
 #include "NuPlayerDecoder.h"
 #include "NuPlayerDriver.h"
@@ -278,15 +280,23 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             mNumFramesDropped = 0;
 
             mSource->start();
-
-            if (mSourceType != kWfdSource) {
+#ifdef QCOM_WFD_SINK
+            if (mSourceType == kWfdSource) {
+                ALOGV("creating WFDRenderer in NU player");
+                mRenderer = new WFDRenderer(
+                        mAudioSink,
+                        new AMessage(kWhatRendererNotify, id()));
+            }
+            else {
+#endif /* QCOM_WFD_SINK */
                 mRenderer = new Renderer(
                         mAudioSink,
                         new AMessage(kWhatRendererNotify, id()));
-
+#ifdef QCOM_WFD_SINK
+            }
+#endif /* QCOM_WFD_SINK */
                 mRenderer->registerStats(mStats);
                 looper()->registerHandler(mRenderer);
-            }
 
             // for qualcomm statistics profiling
             mStats = new NuPlayerStats();
@@ -546,20 +556,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             } else if (what == ACodec::kWhatDrainThisBuffer) {
                 if(track == kAudio || track == kVideo) {
                    ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ ACodec::kWhatRenderBuffer:: %s",track == kAudio ? "audio" : "video");
-                    //check here if this is WFDSource, no need to send to the Renderer
-                    //send it back to the sender for direct rendering
-
-                    if(mSourceType == kWfdSource) {
-                        ALOGE("Ignoring renderer and sending back to the caller");
-                        sp<AMessage> reply;
-                        CHECK(codecRequest->findMessage("reply", &reply));
-
-                        reply->setInt32("render", true);
-                        reply->post();
-                    }else {
                         renderBuffer(track, codecRequest);
                     }
-                }
             } else {
                 ALOGV("Unhandled codec notification %d.", what);
             }
@@ -772,13 +770,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatPause:
         {
+#ifdef QCOM_WFD_SINK
             if (mSourceType == kWfdSource) {
                 CHECK(mSource != NULL);
                 mSource->pause();
-            } else{
+            }
+#endif //QCOM_WFD_SINK
                 CHECK(mRenderer != NULL);
                 mRenderer->pause();
-            }
 
             mPauseIndication = true;
             if (mSourceType == kHttpDashSource) {
@@ -793,11 +792,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatResume:
         {
-
-            if(mSourceType != kWfdSource) {
                 CHECK(mRenderer != NULL);
                 mRenderer->resume();
-            }
 
             mPauseIndication = false;
 

@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2010 The Android Open Source Project
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012, The Linux Foundation. All rights reserveds reserved
  *
  * Not a Contribution, Apache license notifications and license are retained
  * for attribution purposes only.
+ *
+ * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -340,9 +341,12 @@ void NuPlayer::MPQHALWrapper::onInputBufferFilled(const sp<AMessage> &msg) {
     notify->setMessage("reply", reply);
     notify->post();
 #endif
-
-    //Write the buffer to the HAL layer
-    writeDataToAudioRenderer(buffer);
+    /* giving frame to renderer to give to Audiosink */
+    sp<AMessage> reply;
+    bool audio = true;
+    if(mRenderer != NULL) {
+    mRenderer->queueBuffer(audio, buffer, reply);
+}
 }
 
 #if 0

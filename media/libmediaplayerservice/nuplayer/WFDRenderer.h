@@ -1,4 +1,9 @@
 /*
+ * Copyright (c) 2012, The Linux Foundation. All rights reserveds reserved
+ *
+ * Not a Contribution, Apache license notifications and license are retained
+ * for attribution purposes only.
+ *
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,25 +19,36 @@
  * limitations under the License.
  */
 
-#ifndef NUPLAYER_RENDERER_H_
 
-#define NUPLAYER_RENDERER_H_
+#ifndef WFD_RENDERER_H_
+#define WFD_RENDERER_H_
 
-#include "NuPlayer.h"
+#include "NuPlayerRenderer.h"
 
 namespace android {
 
+#define WFD_RENDERER_TIME_BEFORE_WAKE_UP 2000
+/* Right now Audio sync is not giving proper latency,
+ * once that is fixed we can get rid of this
+*/
+#define WFD_RENDERER_AUDIO_LATENCY 2000
+/* Right now setting AV Sync window to 250 msec, ideal value is <40 msec
+   there is a huge video startup delay compared to audio, based on rigirous testing
+   we can fine tune this number
+*/
+#define WFD_RENDERER_AVSYNC_WINDOW 250000
+
 struct ABuffer;
 
-struct NuPlayer::Renderer : public AHandler {
-    Renderer(const sp<MediaPlayerBase::AudioSink> &sink,
+struct NuPlayer::WFDRenderer : public NuPlayer::Renderer {
+    WFDRenderer(const sp<MediaPlayerBase::AudioSink> &sink,
              const sp<AMessage> &notify);
 
     void queueBuffer(
             bool audio,
             const sp<ABuffer> &buffer,
             const sp<AMessage> &notifyConsumed);
-#ifdef QCOM_WFD_SINK
+
     virtual void queueEOS(bool audio, status_t finalResult);
 
     virtual void flush(bool audio);
@@ -43,19 +59,7 @@ struct NuPlayer::Renderer : public AHandler {
 
     virtual void pause();
     virtual void resume();
-#else
 
-    void queueEOS(bool audio, status_t finalResult);
-
-    void flush(bool audio);
-
-    void signalTimeDiscontinuity();
-
-    void signalAudioSinkChanged();
-
-    void pause();
-    void resume();
-#endif /* QCOM_WFD_SINK */
     enum {
         kWhatEOS                = 'eos ',
         kWhatFlushComplete      = 'fluC',
@@ -63,7 +67,7 @@ struct NuPlayer::Renderer : public AHandler {
     };
 
 protected:
-    virtual ~Renderer();
+    virtual ~WFDRenderer();
 
     virtual void onMessageReceived(const sp<AMessage> &msg);
 
@@ -112,48 +116,49 @@ private:
 
     bool mPaused;
     bool mWasPaused; // if paused then store the info
+    bool mWFDAudioTimeMaster;
 
     int64_t mLastPositionUpdateUs;
     int64_t mVideoLateByUs;
+    int64_t mAudioLateByUs;
 
-    bool onDrainAudioQueue();
-    void postDrainAudioQueue(int64_t delayUs = 0);
+    int64_t mMediaClockUs;
+    bool mMediaTimeRead;
 
-    void onDrainVideoQueue();
-    void postDrainVideoQueue();
-#ifdef QCOM_WFD_SINK
+    int64_t mPauseDurationUs;
+    int64_t mPauseMediaClockUs;
+
+    bool wfdOnDrainAudioQueue();
+    void wfdPostDrainAudioQueue(int64_t delayUs = 0);
+
+    void wfdOnDrainVideoQueue();
+    void wfdPostDrainVideoQueue();
+
     virtual void onQueueBuffer(const sp<AMessage> &msg);
-#else
-    void onQueueBuffer(const sp<AMessage> &msg);
-#endif /* QCOM_WFD_SINK */
-    void onQueueEOS(const sp<AMessage> &msg);
-    void onFlush(const sp<AMessage> &msg);
-    void onAudioSinkChanged();
-    void onPause();
-    void onResume();
+    void wfdOnQueueEOS(const sp<AMessage> &msg);
+    void wfdOnFlush(const sp<AMessage> &msg);
+    void wfdOnAudioSinkChanged();
+    void wfdOnPause();
+    void wfdOnResume();
 
-    void notifyEOS(bool audio, status_t finalResult);
-    void notifyFlushComplete(bool audio);
-    void notifyPosition();
-    void notifyVideoLateBy(int64_t lateByUs);
+    void wfdNotifyEOS(bool audio, status_t finalResult);
+    void wfdNotifyFlushComplete(bool audio);
+    void wfdNotifyPosition();
+    void wfdNotifyVideoLateBy(int64_t lateByUs);
 
-    void flushQueue(List<QueueEntry> *queue);
-    bool dropBufferWhileFlushing(bool audio, const sp<AMessage> &msg);
-    void syncQueuesDone();
+    void wfdFlushQueue(List<QueueEntry> *queue);
+    bool wfdDropBufferWhileFlushing(bool audio, const sp<AMessage> &msg);
+    void wfdSyncQueuesDone();
+    int64_t wfdGetMediaTime(bool audio);
 
     // for qualcomm statistics profiling
   public:
-#ifdef QCOM_WFD_SINK
     virtual void registerStats(sp<NuPlayerStats> stats);
     virtual status_t setMediaPresence(bool audio, bool bValue);
-#else
-    void registerStats(sp<NuPlayerStats> stats);
-    status_t setMediaPresence(bool audio, bool bValue);
-#endif /* QCOM_WFD_SINK */
   private:
     sp<NuPlayerStats> mStats;
 
-    DISALLOW_EVIL_CONSTRUCTORS(Renderer);
+    DISALLOW_EVIL_CONSTRUCTORS(WFDRenderer);
 };
 
 }  // namespace android
