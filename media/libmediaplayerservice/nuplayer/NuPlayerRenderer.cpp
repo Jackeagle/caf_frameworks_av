@@ -386,10 +386,6 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
         return;
     }
 
-    if(mStats != NULL) {
-        mStats->logFps();
-    }
-
     int64_t mediaTimeUs;
     CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
 
@@ -409,6 +405,8 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
         ALOGV("rendering video at media time %.2f secs", mediaTimeUs / 1E6);
         if(mStats != NULL) {
             mStats->recordOnTime(realTimeUs,nowUs,mVideoLateByUs);
+            mStats->incrementTotalRenderingFrames();
+            mStats->logFps();
         }
     }
 

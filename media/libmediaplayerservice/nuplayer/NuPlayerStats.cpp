@@ -94,6 +94,11 @@ void NuPlayerStats::incrementTotalFrames() {
     mTotalFrames++;
 }
 
+void NuPlayerStats::incrementTotalRenderingFrames() {
+    Mutex::Autolock autoLock(mStatsLock);
+    mTotalRenderingFrames++;
+}
+
 void NuPlayerStats::incrementDroppedFrames() {
     Mutex::Autolock autoLock(mStatsLock);
     mNumVideoFramesDropped++;
@@ -105,7 +110,7 @@ void NuPlayerStats::logStatistics() {
         ALOGW("=====================================================");
         ALOGW("Mime Type: %s",mMIME);
         ALOGW("Number of frames dropped: %lld",mNumVideoFramesDropped);
-        ALOGW("Number of frames rendered: %llu",mTotalFrames);
+        ALOGW("Number of frames rendered: %llu",mTotalRenderingFrames);
         ALOGW("=====================================================");
     }
 }
@@ -165,7 +170,7 @@ void NuPlayerStats::logSyncLoss() {
 void NuPlayerStats::logFps() {
     if (mStatistics) {
         Mutex::Autolock autoLock(mStatsLock);
-        if(mTotalFrames < 2){
+        if(mTotalRenderingFrames < 2){
            mLastFrameUs = getTimeOfDayUs();
            mFirstFrameTime = getTimeOfDayUs();
         }
@@ -174,15 +179,15 @@ void NuPlayerStats::logFps() {
         int64_t now = getTimeOfDayUs();
         int64_t diff = now - mLastFrameUs;
         if (diff > 250000 && !mVeryFirstFrame) {
-             double fps =((mTotalFrames - mLastFrame) * 1E6)/diff;
+             double fps =((mTotalRenderingFrames - mLastFrame) * 1E6)/diff;
              if (mStatisticsFrames == 0) {
-                 fps =((mTotalFrames - mLastFrame - 1) * 1E6)/diff;
+                 fps =((mTotalRenderingFrames - mLastFrame - 1) * 1E6)/diff;
              }
              ALOGW("Frames per second: %.4f, Duration of measurement: %lld", fps,diff);
              mFPSSumUs += fps;
              ++mStatisticsFrames;
              mLastFrameUs = now;
-             mLastFrame = mTotalFrames;
+             mLastFrame = mTotalRenderingFrames;
          }
 
         if(mSeekPerformed) {
@@ -204,7 +209,7 @@ void NuPlayerStats::logFpsSummary() {
             Mutex::Autolock autoLock(mStatsLock);
             ALOGW("=========================================================");
             ALOGW("Average Frames Per Second: %.4f", mFPSSumUs/((double)mStatisticsFrames));
-            ALOGW("Total Frames / Total Time: %.4f", ((double)(mTotalFrames-1)*1E6)/((double)mTotalTime));
+            ALOGW("Total Frames (rendered) / Total Time: %.4f", ((double)(mTotalRenderingFrames-1)*1E6)/((double)mTotalTime));
             ALOGW("========================================================");
         }
     }
