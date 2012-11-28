@@ -46,6 +46,7 @@ class NuPlayerStats : public RefBase {
     void logFps();
     void logFpsSummary();
     static int64_t getTimeOfDayUs();
+    void incrementTotalRenderingFrames();
 
   private:
     void logFirstFrame();
@@ -74,6 +75,7 @@ class NuPlayerStats : public RefBase {
     bool mSeekPerformed;
     int64_t mTotalTime;
     int64_t mFirstFrameTime;
+    uint64_t mTotalRenderingFrames;
 };
 
 } // namespace android
