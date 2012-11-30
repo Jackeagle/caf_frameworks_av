@@ -77,6 +77,8 @@ static int64_t kVideoEarlyMarginUs = -10000LL;   //50 ms
 static int64_t kVideoLateMarginUs = 100000LL;  //100 ms
 static int64_t kVideoTooLateMarginUs = 500000LL;
 int AwesomePlayer::mTunnelAliveAP = 0;
+bool AwesomePlayer::mAudPlayAlive = false;
+char audioDecoderOverrideCheck[128];
 
 struct AwesomeEvent : public TimedEventQueue::Event {
     AwesomeEvent(
@@ -513,6 +515,19 @@ void AwesomePlayer::reset() {
     reset_l();
 }
 
+static bool IsHardwareCodec(const char *componentName) {
+    if (!strncmp("OMX.qcom.audio", componentName, 14)) {
+        if(((!strncmp(componentName, "OMX.qcom.audio.decoder.evrc", 27))
+           && (strstr(componentName, "evrchw") == NULL)) ||
+           ((!strncmp(componentName, "OMX.qcom.audio.decoder.Qcelp13", 30))
+           && (strstr(componentName, "Qcelp13Hw") == NULL))){
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 void AwesomePlayer::reset_l() {
     mActiveAudioTrackIndex = -1;
     mDisplayWidth = 0;
@@ -614,6 +629,13 @@ void AwesomePlayer::reset_l() {
 
     mBitrate = -1;
     mLastVideoTimeUs = -1;
+
+    for (size_t i = 0; i < mStats.mTracks.size(); ++i) {
+        const TrackStat *stat = &mStats.mTracks.itemAt(i);
+        if(IsHardwareCodec(stat->mDecoderName.string()) && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
+            mAudPlayAlive = false;
+        }
+    }
 
     {
         Mutex::Autolock autoLock(mStatsLock);
@@ -1008,15 +1030,19 @@ status_t AwesomePlayer::play_l() {
                 if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) && tunnelObjectsAlive==0 )
                 {
                     ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::objectsAlive);
-                    if ( mDurationUs > 60000000
-                         && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
-                         && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL) {
-                        ALOGE("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
-                        bool initCheck =  false;
-                        mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
-                        if(!initCheck) {
-                             delete mAudioPlayer;
-                             mAudioPlayer = NULL;
+                    if(mAudPlayAlive && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
+                        ALOGV("Avoid lpa creation as audplay task is busy");
+                    } else {
+                        if ( mDurationUs > 60000000
+                             && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+                             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL) {
+                            ALOGE("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
+                            bool initCheck =  false;
+                            mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
+                            if(!initCheck) {
+                                delete mAudioPlayer;
+                                mAudioPlayer = NULL;
+                            }
                         }
                     }
                 }
@@ -1581,7 +1607,6 @@ status_t AwesomePlayer::initAudioDecoder() {
         uint32_t flags = 0;
 #ifndef NON_QCOM_TARGET
         char lpaDecode[128];
-        char audioDecoderOverrideCheck[128];
         property_get("lpa.decode",lpaDecode,"0");
         property_get("audio.decoder_override_check",audioDecoderOverrideCheck,"0");
         if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
@@ -1658,6 +1683,9 @@ status_t AwesomePlayer::initAudioDecoder() {
         }
 
         stat->mDecoderName = component;
+        if(IsHardwareCodec(stat->mDecoderName.string()) && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
+            mAudPlayAlive = true;
+        }
     }
 
     return mAudioSource != NULL ? OK : UNKNOWN_ERROR;
