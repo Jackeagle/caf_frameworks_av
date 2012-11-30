@@ -202,6 +202,7 @@ private:
     bool mWatchForAudioSeekComplete;
     bool mWatchForAudioEOS;
     static int mTunnelAliveAP;
+    static bool mAudPlayAlive;
 
     sp<TimedEventQueue::Event> mVideoEvent;
     bool mVideoEventPending;
