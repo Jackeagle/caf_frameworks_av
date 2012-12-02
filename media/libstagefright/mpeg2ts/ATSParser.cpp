@@ -63,6 +63,8 @@ struct ATSParser::Program : public RefBase {
     sp<MediaSource> getSource(SourceType type);
 
     int64_t convertPTSToTimestamp(uint64_t PTS);
+    bool checkPMT(ABitReader *br);
+
 
     bool PTSTimeDeltaEstablished() const {
         return mFirstPTSValid;
@@ -1392,4 +1394,174 @@ status_t ATSParser::parseTSToGetPID(const void *data, size_t size,
 
 }
 
-}  // namespace android
+bool ATSParser::checkPMT(const void *data, size_t size, unsigned PID)
+{
+    ABitReader br2((const uint8_t *)data, size);
+    ABitReader *br = &br2;
+
+    br->skipBits(9);
+    unsigned payload_unit_start_indicator = br->getBits(1);
+    br->skipBits(16);
+
+    unsigned adaptation_field_control = br->getBits(2);
+    unsigned continuity_counter = br->getBits(4);
+
+    if (adaptation_field_control == 2 || adaptation_field_control == 3) {
+        parseAdaptationField(br);
+    }
+
+    if (adaptation_field_control == 1 || adaptation_field_control == 3) {
+        if (payload_unit_start_indicator) {
+            unsigned skip = br->getBits(8);
+            br->skipBits(skip * 8);
+        }
+        for (size_t index = 0; index < mPrograms.size(); ++index)
+        {
+            const sp<Program> &program = mPrograms.itemAt(index);
+            if ( PID == program->programMapPID())
+                return program->checkPMT(br);
+        }
+    }
+    return false;
+}
+
+bool ATSParser::Program::checkPMT(ABitReader *br)
+{
+    br->skipBits(12);
+    unsigned section_length = br->getBits(12);
+    CHECK_EQ(section_length & 0xc00, 0u);
+    CHECK_LE(section_length, 1021u);
+
+    br->skipBits(60);
+    unsigned program_info_length = br->getBits(12);
+    CHECK_EQ(program_info_length & 0xc00, 0u);
+
+    br->skipBits(program_info_length * 8);  // skip descriptors
+
+    Vector<StreamInfo> infos;
+
+    // infoBytesRemaining is the number of bytes that make up the
+    // variable length section of ES_infos. It does not include the
+    // final CRC.
+    size_t infoBytesRemaining = section_length - 9 - program_info_length - 4;
+
+    while (infoBytesRemaining > 0) {
+        CHECK_GE(infoBytesRemaining, 5u);
+        unsigned streamType = br->getBits(8);
+        br->skipBits(3);
+        unsigned elementaryPID = br->getBits(13);
+        br->skipBits(4);
+        unsigned ES_info_length = br->getBits(12);
+        CHECK_EQ(ES_info_length & 0xc00, 0u);
+        CHECK_GE(infoBytesRemaining - 5, ES_info_length);
+        unsigned info_bytes_remaining = ES_info_length;
+
+        while (info_bytes_remaining >= 2) {
+            br->skipBits(8);
+            unsigned descLength = br->getBits(8);
+            CHECK_GE(info_bytes_remaining, 2 + descLength);
+            br->skipBits(descLength * 8);
+            info_bytes_remaining -= descLength + 2;
+        }
+        CHECK_EQ(info_bytes_remaining, 0u);
+
+        StreamInfo info;
+        info.mType = streamType;
+        info.mPID = elementaryPID;
+
+        infos.push(info);
+
+        infoBytesRemaining -= 5 + ES_info_length;
+    }
+
+    CHECK_EQ(infoBytesRemaining, 0u);
+    br->skipBits(32);
+
+    bool PIDsChanged = false;
+    for (size_t i = 0; i < infos.size(); ++i) {
+        StreamInfo &info = infos.editItemAt(i);
+
+        ssize_t index = mStreams.indexOfKey(info.mPID);
+
+        if (index >= 0 && mStreams.editValueAt(index)->type() != info.mType) {
+            ALOGI("uh oh. stream PIDs have changed.");
+            PIDsChanged = true;
+            break;
+        }
+
+        for (size_t j = 0; j < mStreams.size(); j++){
+            sp<Stream> stream = mStreams.editValueAt(j);
+            if (infos.itemAt(i).mType == stream->type() && infos.itemAt(i).mPID != stream->pid()) {
+                ALOGE("stream PIDs have changed.");
+                PIDsChanged = true;
+                break;
+            }
+        }
+    }
+
+    if (PIDsChanged) {
+        return false;
+    }
+    return true;
+}
+
+bool ATSParser::checkPAT(const void *data, size_t size)
+{
+    ABitReader br2((const uint8_t *)data, size);
+    ABitReader *br = &br2;
+
+    br->skipBits(9);
+    unsigned payload_unit_start_indicator = br->getBits(1);
+    br->skipBits(16);
+
+    unsigned adaptation_field_control = br->getBits(2);
+    unsigned continuity_counter = br->getBits(4);
+
+    if (adaptation_field_control == 2 || adaptation_field_control == 3) {
+        parseAdaptationField(br);
+    }
+
+    if (adaptation_field_control == 1 || adaptation_field_control == 3) {
+
+        if (payload_unit_start_indicator){
+            unsigned skip = br->getBits(8);
+            br->skipBits(skip * 8);
+        }
+        br->skipBits(12);
+        unsigned section_length = br->getBits(12);
+        CHECK_EQ(section_length & 0xc00, 0u);
+        br->skipBits(40);
+
+        size_t numProgramBytes = (section_length - 5 /* header */ - 4 /* crc */);
+        CHECK_EQ((numProgramBytes % 4), 0u);
+
+        for (size_t i = 0; i < numProgramBytes / 4; ++i) {
+            unsigned program_number = br->getBits(16);
+            br->skipBits(3);
+
+            if (program_number == 0) {
+                MY_LOGV("    network_PID = 0x%04x", br->getBits(13));
+            }else {
+                unsigned programMapPID = br->getBits(13);
+                bool found = false;
+                for (size_t index = 0; index < mPrograms.size(); ++index) {
+                    const sp<Program> &program = mPrograms.itemAt(index);
+                    if (program->number() == program_number){
+                        found = true;
+                        if( programMapPID != program->programMapPID())
+                            return false;
+                        break;
+                    }
+                }
+                 if(!found){
+                     ALOGE("PMT IDs have changed.");
+                     return false;
+                 }
+            }
+        }
+      return true;
+    }
+    return false;
+}
+}
+  // namespace android

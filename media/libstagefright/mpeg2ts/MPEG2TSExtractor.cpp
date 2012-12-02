@@ -371,8 +371,21 @@ status_t MPEG2TSSource::feedMoreForStream() {
             break;
         }
         //TODO handle program/stream PID change
-        /*if (PID == 0 || PID == mStream->mProgramPID) {
-        }*/
+        if (PID == 0 || PID == mStream->mProgramPID) {
+            //PID = 0 indicate PAT Packet.Check new PAT with previous.
+            if(PID == 0 && !mExtractor->mParser->checkPAT(packet, kTSPacketSize))
+            {
+              ALOGE("PAT Changed ... at these clips are not supported");
+               return DEAD_OBJECT;
+            }
+
+            //compare streamPID
+            if(PID == mStream->mProgramPID && !mExtractor->mParser->checkPMT(packet, kTSPacketSize,PID))
+            {
+               ALOGE("StreamPID Changed ... at these clips are not supported");
+                return DEAD_OBJECT;
+            }
+        }
 
         offset += kTSPacketSize;
     }
