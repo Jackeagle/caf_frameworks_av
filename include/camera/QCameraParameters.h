@@ -136,6 +136,12 @@ public:
     static const char EFFECT_EMBOSS[];
     static const char EFFECT_SKETCH[];
     static const char EFFECT_NEON[];
+    static const char EFFECT_FADED[];
+    static const char EFFECT_VINTAGECOOL[];
+    static const char EFFECT_VINTAGEWARM[];
+    static const char EFFECT_ACCENT_BLUE[];
+    static const char EFFECT_ACCENT_GREEN[];
+    static const char EFFECT_ACCENT_ORANGE[];
 
     // Values for Touch AF/AEC
     static const char TOUCH_AF_AEC_OFF[] ;
