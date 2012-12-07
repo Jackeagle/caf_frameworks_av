@@ -1043,10 +1043,11 @@ status_t AwesomePlayer::play_l() {
                     if(mAudPlayAlive && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
                         ALOGV("Avoid lpa creation as audplay task is busy");
                     } else {
+                        int streamType = mAudioSink->getAudioStreamType();
                         if ( mDurationUs > 60000000
                              && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
-                             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL) {
-                            ALOGE("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
+                             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && streamType == AUDIO_STREAM_MUSIC) {
+                            ALOGE("LPAPlayer created, LPA MODE detected mime %s duration %lld AudioStream %d", mime, mDurationUs,streamType);
                             bool initCheck =  false;
                             mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
                             if(!initCheck) {
