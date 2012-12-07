@@ -101,6 +101,7 @@ class MediaPlayerService : public BnMediaPlayerService
         virtual void            pause();
         virtual void            close();
                 void            setAudioStreamType(audio_stream_type_t streamType) { mStreamType = streamType; }
+        virtual int             getAudioStreamType() { return mStreamType; }
                 void            setVolume(float left, float right);
         virtual status_t        setPlaybackRatePermille(int32_t ratePermille);
                 status_t        setAuxEffectSendLevel(float level);
@@ -204,6 +205,7 @@ class MediaPlayerService : public BnMediaPlayerService
         virtual void            pause() {}
         virtual void            close() {}
                 void            setAudioStreamType(audio_stream_type_t streamType) {}
+        virtual int             getAudioStreamType() { return 0; }
                 void            setVolume(float left, float right) {}
         virtual status_t        setPlaybackRatePermille(int32_t ratePermille) { return INVALID_OPERATION; }
                 audio_format_t  format() const { return mFormat; }
