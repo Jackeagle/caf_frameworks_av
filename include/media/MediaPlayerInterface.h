@@ -116,6 +116,7 @@ public:
         virtual bool        needsTrailingPadding() { return true; }
         virtual ssize_t     sampleRate() const {return 0;};
         virtual status_t    getTimeStamp(uint64_t *tstamp) {return 0;};
+        virtual int         getAudioStreamType() {return 0;};
     };
 
                         MediaPlayerBase() : mCookie(0), mNotify(0) {}
