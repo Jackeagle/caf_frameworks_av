@@ -77,7 +77,7 @@ status_t PostProc2Dto3D::setBufferInfo(const sp<MetaData> &meta)
     mWidth = width;
     mHeight = height;
 
-    mDstFormat = HAL_PIXEL_FORMAT_YCbCr_444_SP;
+    mDstFormat = HAL_PIXEL_FORMAT_YCbCr_444_I;
     mNumBuffers = NUMBER_3D_BUFFERS;
 
     mStride = ALIGN(width, ALIGN16);
