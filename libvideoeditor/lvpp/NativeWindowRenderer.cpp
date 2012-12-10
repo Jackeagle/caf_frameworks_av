@@ -408,6 +408,12 @@ void NativeWindowRenderer::queueExternalBuffer(ANativeWindow* anw,
     int strideUV = ALIGN(width / 2, 16);
     int buffer_size = height * stride + (strideUV * height);
     CHECK_EQ(0, anw->perform(anw, NATIVE_WINDOW_SET_BUFFERS_SIZE, buffer_size));
+    android_native_rect_t crop;
+    crop.left = 0;
+    crop.top = 0;
+    crop.right = width - 1;
+    crop.bottom = height - 1;
+    CHECK_EQ(0, native_window_set_crop(anw, &crop));
     ANativeWindowBuffer* anb;
     anw->dequeueBuffer(anw, &anb);
     CHECK(anb != NULL);
