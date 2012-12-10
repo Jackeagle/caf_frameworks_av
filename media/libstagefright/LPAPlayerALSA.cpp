@@ -768,6 +768,7 @@ void LPAPlayer::onPauseTimeOut() {
         mReachedEOS = false;
         mReachedOutputEOS = false;
         mSeekTimeUs += getTimeStamp(A2DP_DISABLED);
+        mInternalSeeking = true;
 
         // 2.) Close routing Session
         mAudioSink->close();
