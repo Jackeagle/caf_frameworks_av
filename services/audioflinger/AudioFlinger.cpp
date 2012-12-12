@@ -1,7 +1,9 @@
 /*
 **
 ** Copyright 2007, The Android Open Source Project
-** Copyright (c) 2012 Code Aurora Forum. All rights reserved.
+** Copyright (c) 2012 The Linux Foundation. All rights reserved.
+** Not a Contribution, Apache license notifications and license are retained
+** for attribution purposes only.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -93,8 +95,7 @@
 #endif
 
 #ifdef SRS_PROCESSING
-#include "srs_processing.h"
-#include "postpro_patch_ics.h"
+#include "postpro_patch_jb.h"
 #endif
 
 // ----------------------------------------------------------------------------
@@ -755,7 +756,7 @@ void AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer, int16_t *outBu
         }
     }
 #ifdef SRS_PROCESSING
-    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(token, AUDIO_FORMAT_PCM_16_BIT, outBuffer, size, mLPASampleRate, mLPANumChannels);
+    POSTPRO_PATCH_JB_OUTPROC_PLAY_SAMPLES(token, AUDIO_FORMAT_PCM_16_BIT, outBuffer, size, mLPASampleRate, mLPANumChannels);
 #endif
 }
 
@@ -1108,12 +1109,12 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
     // ioHandle == 0 means the parameters are global to the audio hardware interface
     if (ioHandle == 0) {
         Mutex::Autolock _l(mLock);
+        status_t final_result = NO_ERROR;
 #ifdef SRS_PROCESSING
-        POSTPRO_PATCH_ICS_PARAMS_SET(keyValuePairs);
+        POSTPRO_PATCH_JB_PARAMS_SET(keyValuePairs);
         if (!mDirectAudioTracks.isEmpty())
             audioConfigChanged_l(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
 #endif
-        status_t final_result = NO_ERROR;
         {
             AutoMutex lock(mHardwareLock);
             mHardwareStatus = AUDIO_HW_SET_PARAMETER;
@@ -1171,7 +1172,7 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
             if (param.getInt(key, device) == NO_ERROR) {
                 ALOGV("setParameters:: routing change to device %d", device);
                 desc->device = (audio_devices_t)device;
-                POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(desc->trackRefPtr, param, device);
+                POSTPRO_PATCH_JB_OUTPROC_PLAY_ROUTE(desc->trackRefPtr, param, device);
             }
 #endif
             return NO_ERROR;
@@ -1226,7 +1227,7 @@ String8 AudioFlinger::getParameters(audio_io_handle_t ioHandle, const String8& k
         String8 out_s8;
 
 #ifdef SRS_PROCESSING
-        POSTPRO_PATCH_ICS_PARAMS_GET(keys, out_s8);
+        POSTPRO_PATCH_JB_PARAMS_GET(keys, out_s8);
 #endif
         for (size_t i = 0; i < mAudioHwDevs.size(); i++) {
             char *s;
@@ -2860,13 +2861,6 @@ bool AudioFlinger::PlaybackThread::threadLoop()
 if (mType == MIXER) {
     longStandbyExit = false;
 }
-#ifdef SRS_PROCESSING
-if (mType == MIXER) {
-        POSTPRO_PATCH_ICS_OUTPROC_MIX_INIT(this, gettid());
-    } else if (mType == DUPLICATING) {
-        POSTPRO_PATCH_ICS_OUTPROC_DUPE_INIT(this, gettid());
-    }
-#endif
 
     // DUPLICATING
     // FIXME could this be made local to while loop?
@@ -2883,6 +2877,10 @@ if (mType == MIXER) {
     const String8 myName(String8::format("thread %p type %d TID %d", this, mType, gettid()));
 
     acquireWakeLock();
+
+#ifdef SRS_PROCESSING
+    POSTPRO_PATCH_JB_OUTPROC_PLAY_INIT(this, myName);
+#endif
 
     while (!exitPending())
     {
@@ -2977,15 +2975,6 @@ if (mType == MIXER) {
         // sleepTime == 0 means we must write to audio hardware
         if (sleepTime == 0) {
 
-#ifdef SRS_PROCESSING
-        if (mType == MIXER) {
-             POSTPRO_PATCH_ICS_OUTPROC_MIX_SAMPLES(this, mFormat, mMixBuffer,
-                mixBufferSize, mSampleRate, mChannelCount);
-        } else if (mType == DUPLICATING) {
-            POSTPRO_PATCH_ICS_OUTPROC_DUPE_SAMPLES(this, mFormat, mMixBuffer,
-                mixBufferSize, mSampleRate, mChannelCount);
-        }
-#endif
             threadLoop_write();
 
 if (mType == MIXER) {
@@ -3045,13 +3034,8 @@ if (mType == DUPLICATING) {
 }
 
 #ifdef SRS_PROCESSING
-        if (mType == MIXER) {
-            POSTPRO_PATCH_ICS_OUTPROC_MIX_EXIT(this, gettid());
-        } else if (mType == DUPLICATING) {
-            POSTPRO_PATCH_ICS_OUTPROC_DUPE_EXIT(this, gettid());
-        }
+    POSTPRO_PATCH_JB_OUTPROC_PLAY_EXIT(this, myName);
 #endif
-
 
     releaseWakeLock();
 
@@ -3102,7 +3086,9 @@ void AudioFlinger::PlaybackThread::threadLoop_write()
     mLastWriteTime = systemTime();
     mInWrite = true;
     int bytesWritten;
-
+#ifdef SRS_PROCESSING
+    POSTPRO_PATCH_JB_OUTPROC_PLAY_SAMPLES(this, mFormat, mMixBuffer, mixBufferSize, mSampleRate, mChannelCount);
+#endif
     // If an NBAIO sink is present, use it to write the normal mixer's submix
     if (mNormalSink != 0) {
 #define mBitShift 2 // FIXME
@@ -3805,7 +3791,7 @@ bool AudioFlinger::MixerThread::checkForNewParameters_l()
         AudioParameter param = AudioParameter(keyValuePair);
         int value;
 #ifdef SRS_PROCESSING
-        POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(this, param, value);
+        POSTPRO_PATCH_JB_OUTPROC_PLAY_ROUTE(this, param, value);
 #endif
         if (param.getInt(String8(AudioParameter::keySamplingRate), value) == NO_ERROR) {
             reconfig = true;
@@ -4366,6 +4352,9 @@ void AudioFlinger::DuplicatingThread::threadLoop_sleepTime()
 
 void AudioFlinger::DuplicatingThread::threadLoop_write()
 {
+#ifdef SRS_PROCESSING
+    POSTPRO_PATCH_JB_OUTPROC_DUPE_SAMPLES(this, mFormat, mMixBuffer, mixBufferSize, mSampleRate, mChannelCount);
+#endif
     for (size_t i = 0; i < outputTracks.size(); i++) {
         outputTracks[i]->write(mMixBuffer, writeFrames);
     }
@@ -6217,7 +6206,7 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
 {
 #ifdef SRS_PROCESSING
     ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
-    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_INIT(this, gettid());
+    POSTPRO_PATCH_JB_OUTPROC_PLAY_INIT(this, gettid());
     SRS_Processing::ProcessOutRoute(SRS_Processing::AUTO, this, outputDesc->device);
 #endif
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
@@ -6228,6 +6217,8 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
 
         allocateBufPool();
     }
+    mSampleRate = mOutputDesc->stream->common.get_sample_rate(&mOutputDesc->stream->common);
+    mChannelCount = mOutputDesc->stream->common.get_channels(&mOutputDesc->stream->common);
     mDeathRecipient = new PMDeathRecipient(this);
     acquireWakeLock();
 }
@@ -6235,7 +6226,7 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
 AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
 #ifdef SRS_PROCESSING
     ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
-    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_EXIT(this, gettid());
+    POSTPRO_PATCH_JB_OUTPROC_PLAY_EXIT(this, gettid());
 #endif
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
         deallocateBufPool();
@@ -6295,6 +6286,11 @@ ssize_t AudioFlinger::DirectAudioTrack::write(const void *buffer, size_t size) {
         mEffectsPool.push_back(buf);
         mAudioFlinger->applyEffectsOn(static_cast<void *>(this), (int16_t*)buf.localBuf,(int16_t*)buffer,(int)size);
         mEffectLock.unlock();
+    } else if ( mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_JB_OUTPROC_PLAY_SAMPLES(static_cast<void *>(this), AUDIO_FORMAT_PCM_16_BIT,
+                                              (int16_t*)buffer, size, mSampleRate, mChannelCount);
+#endif
     }
     return mOutputDesc->stream->write(mOutputDesc->stream, buffer, size);
 }
@@ -6798,7 +6794,9 @@ bool AudioFlinger::RecordThread::threadLoop()
     nsecs_t lastWarning = 0;
 
     acquireWakeLock();
-
+#ifdef SRS_PROCESSING
+    POSTPRO_PATCH_JB_INPROC_INIT(this, gettid(), mFormat);
+#endif
     // start recording
     while (!exitPending()) {
 
@@ -6918,6 +6916,9 @@ bool AudioFlinger::RecordThread::threadLoop()
                                 mBytesRead = mInput->stream->read(mInput->stream, mRsmpInBuffer, mInputBytes);
                                 mRsmpInIndex = 0;
                             }
+#ifdef SRS_PROCESSING
+                            POSTPRO_PATCH_JB_INPROC_SAMPLES(this, mFormat, mRsmpInBuffer, mBytesRead, mSampleRate, mChannelCount);
+#endif
                             if (mBytesRead < 0) {
                                 ALOGE("Error reading audio input");
                                 if (mActiveTrack->mState == TrackBase::ACTIVE) {
@@ -7005,7 +7006,9 @@ bool AudioFlinger::RecordThread::threadLoop()
     mActiveTrack.clear();
 
     mStartStopCond.broadcast();
-
+#ifdef SRS_PROCESSING
+    POSTPRO_PATCH_JB_INPROC_EXIT(this, gettid(), mFormat);
+#endif
     releaseWakeLock();
 
     ALOGV("RecordThread %p exiting", this);
@@ -7254,6 +7257,9 @@ status_t AudioFlinger::RecordThread::getNextBuffer(AudioBufferProvider::Buffer* 
     int channelCount;
     if (framesReady == 0) {
         mBytesRead = mInput->stream->read(mInput->stream, mRsmpInBuffer, mInputBytes);
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_JB_INPROC_SAMPLES(this, mFormat, mRsmpInBuffer, mBytesRead, mSampleRate, mChannelCount);
+#endif
         if (mBytesRead < 0) {
             ALOGE("RecordThread::getNextBuffer() Error reading audio input");
             if (mActiveTrack->mState == TrackBase::ACTIVE) {
@@ -7303,7 +7309,9 @@ bool AudioFlinger::RecordThread::checkForNewParameters_l()
         audio_format_t reqFormat = mFormat;
         int reqSamplingRate = mReqSampleRate;
         int reqChannelCount = mReqChannelCount;
-
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_JB_INPROC_ROUTE(this, param, value);
+#endif
         if (param.getInt(String8(AudioParameter::keySamplingRate), value) == NO_ERROR) {
             reqSamplingRate = value;
             reconfig = true;
@@ -7678,7 +7686,6 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
         if ((mPrimaryHardwareDev == NULL) && (flags & AUDIO_OUTPUT_FLAG_PRIMARY)) {
             ALOGI("Using module %d has the primary audio interface", module);
             mPrimaryHardwareDev = outHwDev;
-
 #ifdef SRS_PROCESSING
             SRS_Processing::RawDataSet(NULL, "qdsp hook", &mPrimaryHardwareDev,
                 sizeof(&mPrimaryHardwareDev));
