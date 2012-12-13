@@ -536,11 +536,19 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         format = HAL_PIXEL_FORMAT_YCrCb_420_SP;
     }
 
-    err = native_window_set_buffers_geometry(
-            mNativeWindow.get(),
-            def.format.video.nFrameWidth,
-            def.format.video.nFrameHeight,
-            format);
+    if(!strncmp("OMX.ittiam.video.decoder", mComponentName.c_str(), 24)) {
+        err = native_window_set_buffers_geometry(
+                mNativeWindow.get(),
+                def.format.video.nStride,
+                def.format.video.nSliceHeight,
+                format);
+    } else {
+        err = native_window_set_buffers_geometry(
+                mNativeWindow.get(),
+                def.format.video.nFrameWidth,
+                def.format.video.nFrameHeight,
+                format);
+    }
 
     if (err != 0) {
         ALOGE("native_window_set_buffers_geometry failed: %s (%d)",
