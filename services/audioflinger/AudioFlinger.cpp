@@ -6227,12 +6227,6 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
     ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
     POSTPRO_PATCH_ICS_OUTPROC_DIRECT_EXIT(this, gettid());
 #endif
-    releaseWakeLock();
-
-    if (mPowerManager != 0) {
-        sp<IBinder> binder = mPowerManager->asBinder();
-        binder->unlinkToDeath(mDeathRecipient);
-    }
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
         deallocateBufPool();
         requestAndWaitForEffectsThreadExit();
@@ -6240,6 +6234,12 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
         mAudioFlinger->deleteEffectSession();
     }
     AudioSystem::releaseOutput(mOutput);
+    releaseWakeLock();
+
+    if (mPowerManager != 0) {
+        sp<IBinder> binder = mPowerManager->asBinder();
+        binder->unlinkToDeath(mDeathRecipient);
+    }
 }
 
 status_t AudioFlinger::DirectAudioTrack::start() {
