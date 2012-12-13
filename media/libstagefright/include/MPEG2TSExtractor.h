@@ -71,6 +71,7 @@ struct MPEG2TSExtractor : public MediaExtractor {
                                                unsigned streamPID, uint64_t& PTS);
 
     bool     isSeekable();
+    void     signalSeekDiscontinuity(sp<StreamInfo> &stream);
 private:
 
     struct SourceObjects : public RefBase {
