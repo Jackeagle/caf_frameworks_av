@@ -6227,10 +6227,10 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
     SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, false);
 #endif
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
-        deallocateBufPool();
         requestAndWaitForEffectsThreadExit();
         mAudioFlinger->deregisterClient(mAudioFlingerClient);
         mAudioFlinger->deleteEffectSession();
+        deallocateBufPool();
     }
     releaseWakeLock();
 
