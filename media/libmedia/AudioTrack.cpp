@@ -1170,9 +1170,6 @@ void AudioTrack::releaseBuffer(Buffer* audioBuffer)
 ssize_t AudioTrack::write(const void* buffer, size_t userSize)
 {
     if (mDirectTrack != NULL) {
-        if (!mActive) {
-            mActive = true;
-        }
         mDirectTrack->write(buffer,userSize);
         return userSize;
     }
