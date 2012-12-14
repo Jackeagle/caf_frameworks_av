@@ -733,8 +733,6 @@ void LPAPlayer::requestAndWaitForDecoderThreadExit() {
 
     if (!decoderThreadAlive)
         return;
-    if (mPaused)
-        mAudioSink->flush();
     killDecoderThread = true;
 
     /* Flush the audio sink to unblock the decoder thread
