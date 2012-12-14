@@ -26,11 +26,13 @@
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MetaData.h>
 #include "VideoEditorTools.h"
+#include <gralloc_priv.h>
+
 
 //#define PREVIEW_DEBUG 1
 #define CHECK_EGL_ERROR CHECK(EGL_SUCCESS == eglGetError())
 #define CHECK_GL_ERROR CHECK(GLenum(GL_NO_ERROR) == glGetError())
-
+#define ALIGN( num, to) (((num) + (to-1)) & (~(to-1)))
 //
 // Vertex and fragment programs
 //
@@ -399,13 +401,28 @@ void NativeWindowRenderer::queueExternalBuffer(ANativeWindow* anw,
             HAL_PIXEL_FORMAT_YV12);
     native_window_set_usage(anw, GRALLOC_USAGE_SW_WRITE_OFTEN);
 
-    native_window_set_buffer_count(anw, 3);
-
+    int count = 0;
+    CHECK_EQ(0, anw->query(anw, NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS, &count));
+    CHECK_EQ(0, native_window_set_buffer_count(anw, count + 1));
+    int stride = ALIGN(width, 16);
+    int strideUV = ALIGN(width / 2, 16);
+    int buffer_size = height * stride + (strideUV * height);
+    CHECK_EQ(0, anw->perform(anw, NATIVE_WINDOW_SET_BUFFERS_SIZE, buffer_size));
     ANativeWindowBuffer* anb;
     anw->dequeueBuffer(anw, &anb);
     CHECK(anb != NULL);
 
     sp<GraphicBuffer> buf(new GraphicBuffer(anb, false));
+
+    private_handle_t * hnd = (private_handle_t *)(anb->handle);
+
+    if (hnd->size < buffer_size) {
+        ALOGE("insufficient size dequeued from gralloc hnd->size = %d, writeSize = %d",
+              hnd->size, buffer_size);
+        anw->cancelBuffer(anw, buf->getNativeBuffer());
+        return;
+    }
+
     CHECK(NO_ERROR == anw->lockBuffer(anw, buf->getNativeBuffer()));
 
     // Copy the buffer

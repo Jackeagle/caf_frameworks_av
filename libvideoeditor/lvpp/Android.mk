@@ -80,7 +80,8 @@ LOCAL_C_INCLUDES += \
     $(TOP)/frameworks/av/services/audioflinger \
     $(TOP)/frameworks/native/include/media/editor \
     $(TOP)/frameworks/native/include/media/openmax \
-    $(TOP)/frameworks/native/services/audioflinger
+    $(TOP)/frameworks/native/services/audioflinger \
+    $(TOP)/hardware/qcom/display/libgralloc
 
 
 LOCAL_SHARED_LIBRARIES += libdl
