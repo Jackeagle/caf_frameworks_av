@@ -459,8 +459,11 @@ void TunnelPlayer::reset() {
     requestAndWaitForExtractorThreadExit();
 
     // Close the audiosink after all the threads exited to make sure
-    mAudioSink->stop();
-    mAudioSink->close();
+    if (mIsAudioRouted) {
+        mAudioSink->stop();
+        mAudioSink->close();
+        mIsAudioRouted = false;
+    }
     //TODO: Release Wake lock
 
     // Make sure to release any buffer we hold onto so that the
@@ -737,8 +740,9 @@ void TunnelPlayer::requestAndWaitForExtractorThreadExit() {
 
     if (!extractorThreadAlive)
         return;
-
-    mAudioSink->flush();
+    if (mIsAudioRouted) {
+        mAudioSink->flush();
+    }
     killExtractorThread = true;
     pthread_cond_signal(&extractor_cv);
     pthread_join(extractorThread,NULL);
