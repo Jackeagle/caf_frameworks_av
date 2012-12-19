@@ -353,6 +353,7 @@ void LPAPlayer::pause(bool playPendingSamples) {
 
 void LPAPlayer::resume() {
     ALOGV("resume: mPaused %d",mPaused);
+    Mutex::Autolock autoLock(mResumeLock);
     if ( mPaused) {
         CHECK(mStarted);
         if (!mIsA2DPEnabled) {
@@ -757,6 +758,7 @@ void LPAPlayer::requestAndWaitForA2DPNotificationThreadExit() {
 
 void LPAPlayer::onPauseTimeOut() {
     ALOGV("onPauseTimeOut");
+    Mutex::Autolock autoLock(mResumeLock);
     if (!mPauseEventPending) {
         return;
     }
