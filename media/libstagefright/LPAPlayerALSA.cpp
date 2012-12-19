@@ -820,6 +820,8 @@ void LPAPlayer::onPauseTimeOut() {
         ALOGV("newseek time = %lld ", mSeekTimeUs);
 
         // 2.) Close routing Session
+        mAudioSink->flush();
+        mAudioSink->stop();
         mAudioSink->close();
         mIsAudioRouted = false;
     }
