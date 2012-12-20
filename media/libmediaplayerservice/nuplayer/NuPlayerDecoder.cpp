@@ -158,6 +158,10 @@ sp<AMessage> NuPlayer::Decoder::makeFormat(const sp<MetaData> &meta) {
         msg->setInt32("secure-op", 1);
     }
 
+    if (meta->findInt32(kKeyRequiresSecureBuffers, &value)) {
+        msg->setInt32("requires-secure-buffers", 1);
+    }
+
     if (meta->findInt32(kKeyEnableDecodeOrder, &value)) {
         msg->setInt32("decodeOrderEnable", value);
     }
