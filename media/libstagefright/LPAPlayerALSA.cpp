@@ -322,10 +322,10 @@ status_t LPAPlayer::seekTo(int64_t time_us) {
 
     mSeeking = true;
     mSeekTimeUs = time_us;
+    mPauseTime = mSeekTimeUs;
     ALOGV("In seekTo(), mSeekTimeUs %lld",mSeekTimeUs);
     mAudioSink->flush();
     pthread_cond_signal(&decoder_cv);
-    //TODO: Update the mPauseTime
     return OK;
 }
 
@@ -633,6 +633,7 @@ size_t LPAPlayer::fillBuffer(void *data, size_t size) {
                     mIsFirstBuffer = false;
                 }
 
+                ALOGV("fillBuffer: Seeking to %lld", mSeekTimeUs);
                 options.setSeekTo(mSeekTimeUs);
 
                 if (mInputBuffer != NULL) {
@@ -805,8 +806,19 @@ void LPAPlayer::onPauseTimeOut() {
         // 1.) Set seek flags
         mReachedEOS = false;
         mReachedOutputEOS = false;
-        mSeekTimeUs += getTimeStamp(A2DP_DISABLED);
-        mInternalSeeking = true;
+
+        if(mSeeking == false){
+            mSeekTimeUs += getTimeStamp(A2DP_DISABLED);
+            mInternalSeeking = true;
+        } else {
+                //do not update seek time if user has already seeked
+                // to a new position
+                // also seek has to be posted back to player,
+                // so do not set mInternalSeeking flag
+                ALOGV("do not update seek time %lld ", mSeekTimeUs);
+        }
+
+        ALOGV("newseek time = %lld ", mSeekTimeUs);
 
         // 2.) Close routing Session
         mAudioSink->close();
