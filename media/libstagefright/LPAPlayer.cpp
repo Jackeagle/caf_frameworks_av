@@ -91,6 +91,7 @@ mTrackType(TRACK_NONE){
     numChannels =0;
     mPaused = false;
     mIsA2DPEnabled = false;
+    mIsUSBEnabled = false;
     mAudioFlinger = NULL;
     AudioFlingerClient = NULL;
     /* Initialize Suspend/Resume related variables */
@@ -162,11 +163,35 @@ void LPAPlayer::AudioFlingerLPAdecodeClient::binderDied(const wp<IBinder>& who) 
 void LPAPlayer::AudioFlingerLPAdecodeClient::ioConfigChanged(int event, audio_io_handle_t ioHandle, const void *param2) {
     ALOGV("ioConfigChanged() event %d", event);
 
-    if (event != AudioSystem::A2DP_OUTPUT_STATE) {
+    if ((event != AudioSystem::A2DP_OUTPUT_STATE) && (event != AudioSystem::USB_OUTPUT_STATE)) {
         return;
     }
 
     switch ( event ) {
+    case AudioSystem::USB_OUTPUT_STATE:
+        {
+            ALOGV("ioConfigChanged() USB_OUTPUT_STATE iohandle is %d with IsUSBEnabled %d", ioHandle, pBaseClass->mIsUSBEnabled);
+            if ( -1 == ioHandle ) {
+                if ( pBaseClass->mIsUSBEnabled ) {
+                    pBaseClass->mIsUSBEnabled = false;
+                    if (pBaseClass->mStarted) {
+                        pBaseClass->handleUSBSwitch();
+                    }
+                    ALOGV("ioConfigChanged:: USB Disabled");
+                }
+            } else {
+                if ( !pBaseClass->mIsUSBEnabled ) {
+
+                    pBaseClass->mIsUSBEnabled = true;
+                    if (pBaseClass->mStarted) {
+                        pBaseClass->handleUSBSwitch();
+                    }
+
+                    ALOGV("ioConfigChanged:: USB Enabled");
+                }
+            }
+        }
+        break;
     case AudioSystem::A2DP_OUTPUT_STATE:
         {
             ALOGV("ioConfigChanged() A2DP_OUTPUT_STATE iohandle is %d with A2DPEnabled in %d", ioHandle, pBaseClass->mIsA2DPEnabled);
@@ -194,6 +219,10 @@ void LPAPlayer::AudioFlingerLPAdecodeClient::ioConfigChanged(int event, audio_io
     }
     ALOGV("ioConfigChanged Out");
 
+}
+
+void LPAPlayer::handleUSBSwitch() {
+    pthread_cond_signal(&decoder_cv);
 }
 
 void LPAPlayer::handleA2DPSwitch() {
@@ -321,7 +350,7 @@ void LPAPlayer::pause(bool playPendingSamples) {
     ALOGV("pause: playPendingSamples %d", playPendingSamples);
     mPaused = true;
     if (playPendingSamples) {
-        if (!mIsA2DPEnabled) {
+        if (!mIsA2DPEnabled && !mIsUSBEnabled) {
             if (!mPauseEventPending) {
                 ALOGV("Posting an event for Pause timeout");
                 mQueue.postEventWithDelay(mPauseEvent, LPA_PAUSE_TIMEOUT_USEC);
@@ -336,7 +365,7 @@ void LPAPlayer::pause(bool playPendingSamples) {
 
         }
     } else {
-        if (!mIsA2DPEnabled) {
+        if (!mIsA2DPEnabled && !mIsUSBEnabled) {
             if(!mPauseEventPending) {
                 ALOGV("Posting an event for Pause timeout");
                 mQueue.postEventWithDelay(mPauseEvent, LPA_PAUSE_TIMEOUT_USEC);
@@ -359,7 +388,7 @@ void LPAPlayer::resume() {
     ALOGV("resume: mPaused %d",mPaused);
     if ( mPaused) {
         CHECK(mStarted);
-        if (!mIsA2DPEnabled) {
+        if (!mIsA2DPEnabled && !mIsUSBEnabled) {
             if(mPauseEventPending) {
                 ALOGV("Resume(): Cancelling the puaseTimeout event");
                 mPauseEventPending = false;
@@ -486,7 +515,7 @@ void LPAPlayer::decoderThreadEntry() {
             mTimeStarted = nanoseconds_to_microseconds(systemTime(SYSTEM_TIME_MONOTONIC));
         }
 
-        if (mReachedEOS || mPaused || !mIsAudioRouted || mIsA2DPEnabled) {
+        if (mReachedEOS || mPaused || !mIsAudioRouted || mIsA2DPEnabled || mIsUSBEnabled) {
             ALOGD("DecoderThread taking mutex mReachedEOS %d mPaused %d mIsAudioRouted %d mIsA2DPEnabled %d"
                        , mReachedEOS, mPaused, mIsAudioRouted, mIsA2DPEnabled);
             pthread_mutex_lock(&decoder_mutex);
@@ -496,7 +525,7 @@ void LPAPlayer::decoderThreadEntry() {
             continue;
         }
 
-        if (!mIsA2DPEnabled) {
+        if (!mIsA2DPEnabled && !mIsUSBEnabled) {
             ALOGV("FillBuffer: MemBuffer size %d", MEM_BUFFER_SIZE);
             ALOGV("Fillbuffer started");
             //TODO: Add memset
@@ -719,12 +748,10 @@ status_t  LPAPlayer::setupAudioSink()
 {
     status_t err = NO_ERROR;
 
-    ALOGD("setupAudioSink with A2DP(%d) tracktype(%d)", mIsA2DPEnabled, mTrackType);
+    ALOGD("setupAudioSink with A2DP(%d) USB(%d) tracktype(%d)", mIsA2DPEnabled, mIsUSBEnabled, mTrackType);
     pthread_mutex_lock(&audio_sink_setup_mutex);
 
-    if(true == mIsA2DPEnabled) {
-        ALOGE("setupAudioSink:dIRECT track --> rEGULAR track");
-
+    if(true == mIsUSBEnabled) {
         if(mTrackType == TRACK_REGULAR) {
             ALOGD("setupAudioSink:rEGULAR Track already opened");
             pthread_mutex_unlock(&audio_sink_setup_mutex);
@@ -754,6 +781,42 @@ status_t  LPAPlayer::setupAudioSink()
 
         ALOGD("setupAudioSink:Start rEGULAR track");
         mAudioSink->start();
+
+        ALOGD("setupAudioSink:rEGULAR track opened");
+        mTrackType = TRACK_REGULAR;
+
+    } else if(true == mIsA2DPEnabled) {
+        if(mTrackType == TRACK_REGULAR) {
+            ALOGD("setupAudioSink:rEGULAR Track already opened");
+            pthread_mutex_unlock(&audio_sink_setup_mutex);
+            return err;
+        }
+
+        if(mTrackType == TRACK_DIRECT) {
+            ALOGE("setupAudioSink:dIRECT track --> rEGULAR track");
+            ALOGD("setupAudioSink:Close dIRECT track");
+            mAudioSink->stop();
+            mAudioSink->close();
+        }
+
+        ALOGD("setupAudioSink:Open rEGULAR track");
+
+        err = mAudioSink->open(
+            mSampleRate, numChannels, mChannelMask, AUDIO_FORMAT_PCM_16_BIT,
+            DEFAULT_AUDIOSINK_BUFFERCOUNT,
+            &LPAPlayer::AudioCallback,
+            this,
+            (audio_output_flags_t)0);
+        if (err != NO_ERROR){
+            ALOGD("setupAudioSink:Audio sink open failed.");
+            pthread_mutex_unlock(&audio_sink_setup_mutex);
+            return err;
+        }
+
+        if (!mPaused) {
+            ALOGD("setupAudioSink:Start rEGULAR track");
+            mAudioSink->start();
+        }
 
         ALOGD("setupAudioSink:rEGULAR track opened");
         mTrackType = TRACK_REGULAR;

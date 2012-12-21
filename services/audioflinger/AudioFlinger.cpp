@@ -242,6 +242,7 @@ void AudioFlinger::onFirstRef()
 {
     int rc = 0;
     mA2DPHandle = -1;
+    mUSBHandle = -1;
 
     Mutex::Autolock _l(mLock);
 
@@ -847,6 +848,7 @@ status_t AudioFlinger::setMasterVolume(float value)
 
     float swmv = value;
     mA2DPHandle = -1;
+    mUSBHandle = -1;
     Mutex::Autolock _l(mLock);
 
     // when hw supports master volume, don't scale in sw mixer
@@ -1374,6 +1376,10 @@ void AudioFlinger::registerClient(const sp<IAudioFlingerClient>& client)
     if (mA2DPHandle != -1) {
         ALOGV("A2DP active. Notifying the registered client");
         client->ioConfigChanged(AudioSystem::A2DP_OUTPUT_STATE, mA2DPHandle, &mA2DPHandle);
+    }
+    if (mUSBHandle != -1) {
+        ALOGV("USB active. Notifying the registered client");
+        client->ioConfigChanged(AudioSystem::USB_OUTPUT_STATE, mUSBHandle, &mUSBHandle);
     }
 
 }
@@ -7646,6 +7652,11 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
             mA2DPHandle = id;
             ALOGV("A2DP device activated. The handle is set to %d", mA2DPHandle);
         }
+        if ( true == audio_is_usb_device((audio_devices_t) *pDevices) )
+        {
+            mUSBHandle = id;
+            ALOGV("USB device activated. The handle is set to %d", mUSBHandle);
+        }
 
 
         if (pSamplingRate != NULL) *pSamplingRate = config.sample_rate;
@@ -7776,6 +7787,12 @@ status_t AudioFlinger::closeOutput(audio_io_handle_t output)
             mA2DPHandle = -1;
             ALOGV("A2DP OutputClosed Notifying Client");
             audioConfigChanged_l(AudioSystem::A2DP_OUTPUT_STATE, mA2DPHandle, &mA2DPHandle);
+        }
+        if (mUSBHandle == output)
+        {
+            mUSBHandle = -1;
+            ALOGV("USB OutputClosed Notifying Client");
+            audioConfigChanged_l(AudioSystem::USB_OUTPUT_STATE, mUSBHandle, &mUSBHandle);
         }
     }
     thread->exit();
@@ -7956,6 +7973,10 @@ status_t AudioFlinger::setStreamOutput(audio_stream_type_t stream, audio_io_hand
     if ( mA2DPHandle == output ) {
         ALOGV("A2DP Activated and hence notifying the client");
         audioConfigChanged_l(AudioSystem::A2DP_OUTPUT_STATE, mA2DPHandle, &output);
+    }
+    if ( mUSBHandle == output ) {
+        ALOGV("USB Activated and hence notifying the client");
+        audioConfigChanged_l(AudioSystem::USB_OUTPUT_STATE, mUSBHandle, &output);
     }
 
     return NO_ERROR;
