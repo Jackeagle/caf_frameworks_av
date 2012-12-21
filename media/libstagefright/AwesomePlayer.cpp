@@ -1626,8 +1626,13 @@ status_t AwesomePlayer::initAudioDecoder() {
 
     sp<MetaData> meta = mAudioTrack->getFormat();
 
+    int32_t isADTS = false;
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
+    meta->findInt32(kKeyIsADTS, &isADTS);
+    if(isADTS == true){
+        ALOGV("Widevine content\n");
+    }
 #ifndef NON_QCOM_TARGET
 #ifdef USE_TUNNEL_MODE
     char value[PROPERTY_VALUE_MAX];
@@ -1674,7 +1679,8 @@ status_t AwesomePlayer::initAudioDecoder() {
     }
     else if(((strcmp("true",tunnelDecode) == 0)||(atoi(tunnelDecode))) &&
             (TunnelPlayer::mTunnelObjectsAlive == 0) &&
-            mTunnelAliveAP == 0 &&
+            //widevine will fallback to software decoder
+            mTunnelAliveAP == 0 && !isADTS &&
             ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) ||
             #ifndef USE_SW_AMRWB
             (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AMR_WB))       ||
