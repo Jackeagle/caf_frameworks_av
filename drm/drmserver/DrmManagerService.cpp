@@ -256,6 +256,12 @@ status_t DrmManagerService::decrypt(
     return mDrmManager->decrypt(uniqueId, decryptHandle, decryptUnitId, encBuffer, decBuffer, IV);
 }
 
+status_t DrmManagerService::decrypt(
+            int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV) {
+    return mDrmManager->decrypt(uniqueId, decryptHandle, decryptUnitId, encBuffer, decBuffer, IV);
+}
+
 status_t DrmManagerService::finalizeDecryptUnit(
             int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId) {
     ALOGV("Entering finalizeDecryptUnit");
