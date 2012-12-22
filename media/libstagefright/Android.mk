@@ -7,6 +7,7 @@ ifeq ($(BOARD_USES_ALSA_AUDIO),true)
     endif
     ifeq ($(call is-chipset-in-board-platform,msm8974),true)
         LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+        LOCAL_CFLAGS += -DUSE_SW_AMRWB
     endif
 endif
 

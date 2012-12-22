@@ -1676,8 +1676,10 @@ status_t AwesomePlayer::initAudioDecoder() {
             (TunnelPlayer::mTunnelObjectsAlive == 0) &&
             mTunnelAliveAP == 0 &&
             ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) ||
+            #ifndef USE_SW_AMRWB
             (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AMR_WB))       ||
             (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS))  ||
+            #endif
             (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC)))) {
 
         if(mVideoSource != NULL) {
