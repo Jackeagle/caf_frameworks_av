@@ -189,6 +189,8 @@ private:
     };
     NuSourceType mSourceType;
 
+    bool mIsSecureInputBuffers;
+
     int32_t mSRid;
 
     status_t instantiateDecoder(int track, sp<Decoder> *decoder);

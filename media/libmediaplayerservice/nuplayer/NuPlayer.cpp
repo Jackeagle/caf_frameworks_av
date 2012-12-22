@@ -74,6 +74,7 @@ NuPlayer::NuPlayer()
       mPauseIndication(false),
       mSourceType(kDefaultSource),
       mRenderer(NULL),
+      mIsSecureInputBuffers(false),
       mStats(NULL),
       mBufferingNotification(false),
       mSRid(0) {
@@ -1076,6 +1077,13 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
                 meta->setInt32(kKeyEnableDecodeOrder, 1);
             }
         }
+
+        int32_t isDRMSecBuf = 0;
+        meta->findInt32(kKeyRequiresSecureBuffers, &isDRMSecBuf);
+        if(isDRMSecBuf) {
+            mIsSecureInputBuffers = true;
+        }
+
         int32_t width = 0;
         meta->findInt32(kKeyWidth, &width);
         int32_t height = 0;
@@ -1166,7 +1174,22 @@ status_t NuPlayer::feedDecoderInputData(int track, const sp<AMessage> &msg) {
 
     bool dropAccessUnit;
     do {
-        status_t err = mSource->dequeueAccessUnit(track, &accessUnit);
+
+        status_t err = UNKNOWN_ERROR;
+
+        if (mIsSecureInputBuffers && track == kVideo) {
+            msg->findBuffer("buffer", &accessUnit);
+
+            if (accessUnit == NULL) {
+                ALOGE("Nuplayer NULL buffer in message");
+                return err;
+            } else {
+                ALOGV("Nuplayer buffer in message %d %d",
+                accessUnit->data(), accessUnit->capacity());
+            }
+        }
+
+        err = mSource->dequeueAccessUnit(track, &accessUnit);
 
         if (err == -EWOULDBLOCK) {
             return err;
@@ -1257,6 +1280,7 @@ status_t NuPlayer::feedDecoderInputData(int track, const sp<AMessage> &msg) {
 
             if (mVideoLateByUs > 100000ll
                     && mVideoIsAVC
+                    && !mIsSecureInputBuffers
                     && !IsAVCReferenceFrame(accessUnit)) {
                 dropAccessUnit = true;
                 ++mNumFramesDropped;
