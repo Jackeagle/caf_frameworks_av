@@ -913,7 +913,16 @@ size_t LPAPlayer::AudioCallback(void *cookie, void *buffer, size_t size) {
         ALOGE("Underrun");
         return 0;
      } else {
-        size_done = fillBuffer(buffer, size);
+        void* local_buf = malloc(size);
+        if( mNumInputChannels == 1) {
+             size_done = fillBuffer(local_buf, size/2);
+             convertMonoToStereo((int16_t*)local_buf, size_done);
+             size_done = size_done * 2;
+        } else {
+             size_done = fillBuffer(local_buf, size);
+        }
+        memcpy((char *)buffer, (char *)local_buf, size_done);
+        free(local_buf);
         ALOGD("RegularTrack:fillbuffersize %d %d", size_done, size);
         if(mReachedEOS) {
             me->mReachedOutputEOS = true;
