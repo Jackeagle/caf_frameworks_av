@@ -93,6 +93,7 @@ mTrackType(TRACK_NONE){
     mTimePlayed = 0;
     mPaused = false;
     mIsA2DPEnabled = false;
+    mIsUSBEnabled = false;
     mAudioFlinger = NULL;
     AudioFlingerClient = NULL;
     /* Initialize Suspend/Resume related variables */
