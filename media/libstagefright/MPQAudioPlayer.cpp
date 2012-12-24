@@ -92,7 +92,6 @@ mPostedEOS(false),
 mReachedExtractorEOS(false),
 mFinalStatus(OK),
 mIsPaused(false),
-mPlayPendingSamples(false),
 mSourcePaused(false),
 mAudioSinkOpen(false),
 mIsAudioRouted(false),
@@ -356,18 +355,14 @@ status_t MPQAudioPlayer::seekPlayback() {
 void MPQAudioPlayer::pause(bool playPendingSamples) {
 
     Mutex::Autolock autolock(mLock);
-    status_t err = OK;
     CHECK(mStarted);
 
     ALOGD("Pause: playPendingSamples %d", playPendingSamples);
-    mPlayPendingSamples = playPendingSamples;
     mIsPaused = true;
-    bool bIgnorePendingSamples = false;
     switch(mDecoderType) {
 
         case ESoftwareDecoder:
             if(mAudioSink->getSessionId()) {
-                err = pausePlayback(bIgnorePendingSamples);
                 CHECK(mSource != NULL);
                 if ((mSource->pause()) == OK)
                     mSourcePaused = true;
@@ -375,48 +370,31 @@ void MPQAudioPlayer::pause(bool playPendingSamples) {
         break;
 
         case EMS11Decoder:
-            err = pausePlayback(bIgnorePendingSamples);
         break;
 
         case EHardwareDecoder:
             mTimeout  = -1;
-            bIgnorePendingSamples = true;
-            err = pausePlayback(bIgnorePendingSamples);
+            playPendingSamples = false;
         break;
 
         default:
-            ALOGE("Invalid Decoder Type - postEOS ");
-            err =  BAD_VALUE;
+            ALOGE("Invalid Decoder Type -");
         break;
     }
-
-    if(err != OK) {
-        ALOGE("pause returnded err = %d",err);
-        mFinalStatus = BAD_VALUE;
-        if(mObserver) {
-            mObserver->postAudioEOS();
-        }
+    if(mAudioSink.get() == NULL && mObserver) {
+        mObserver->postAudioEOS();
+        return;
     }
-}
-
-status_t MPQAudioPlayer::pausePlayback(bool bIgnorePendingSamples) {
-
-    status_t err = OK;
-    if (mPlayPendingSamples && !bIgnorePendingSamples) {
-        //Should be stop ideally
-        //No pausing the driver. Allow the playback
+    mTimePaused = mSeekTimeUs + getAudioTimeStampUs();
+    if (playPendingSamples) {
+        mAudioSink->stop();
+        mIsAudioRouted = false;
         mNumFramesPlayed = 0;
     }
     else {
         mAudioSink->pause();
-        if(err != OK) {
-            ALOGE("Pause returned error =%d",err);
-            return err;
-        }
-
     }
-    mTimePaused = mSeekTimeUs + getAudioTimeStampUs();
-    return err;
+    return;
 }
 
 
@@ -432,50 +410,20 @@ void MPQAudioPlayer::resume() {
     if (!mIsPaused)
         return;
 
-    bool bIgnorePendingSamples = false;
-    switch(mDecoderType) {
-
-        case ESoftwareDecoder:
-            if(mAudioSink->getSessionId()) {
-                err = resumePlayback(MPQ_AUDIO_SESSION_ID, bIgnorePendingSamples);
-                if(mSourcePaused)
-                    mSource->start();
-            }
-        break;
-
-        case EMS11Decoder:
-            err = resumePlayback(MPQ_AUDIO_SESSION_ID, bIgnorePendingSamples);
-        break;
-
-        case EHardwareDecoder:
-            bIgnorePendingSamples = true;
-            err = resumePlayback(TUNNEL_SESSION_ID, bIgnorePendingSamples);
-        break;
-
-        default:
-            ALOGE("Invalid Decoder Type - postEOS ");
-            err =  BAD_VALUE;
-        break;
-    }
-
-    if(err != OK) {
-        ALOGE("resume returnded err = %d",err);
-        mFinalStatus = BAD_VALUE;
-        if(mObserver) {
-            mObserver->postAudioEOS();
+    if(mDecoderType == ESoftwareDecoder) {
+        if(mAudioSink->getSessionId()) {
+             if(mSourcePaused) {
+                 mSource->start();
+                 mSourcePaused = false;
+             }
         }
-        return;
     }
 
-    mIsPaused = false;
-    mExtractorCv.signal();
-
-}
-
-status_t MPQAudioPlayer::resumePlayback(int sessionId, bool bIgnorePendingSamples) {
-
-    status_t err = OK;
     if (!mIsAudioRouted) {
+        if (mAudioSink.get() != NULL) {
+            ALOGV("Closing Previous Session - Software Decoder");
+            mAudioSink->close();
+        }
         ALOGV("Opening a session for MPQ Audio playback - Software Decoder");
         audio_output_flags_t flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_TUNNEL |
                                                             AUDIO_OUTPUT_FLAG_DIRECT);
@@ -486,17 +434,23 @@ status_t MPQAudioPlayer::resumePlayback(int sessionId, bool bIgnorePendingSample
             this,
             (mA2DPEnabled ?  AUDIO_OUTPUT_FLAG_NONE : flags ));
         if(err != OK) {
-            ALOGE("openSession - resume = %d",err);
+            ALOGE("Error openingSession in resume = %d",err);
             mAudioSink.clear();
-            return err;
+            mFinalStatus = BAD_VALUE;
+            if(mObserver) {
+                mObserver->postAudioEOS();
+            }
+            return;
         }
         acquireWakeLock();
         mIsAudioRouted = true;
     }
 
-	mAudioSink->start();
+    mAudioSink->start();
 
-    return err;
+    mIsPaused = false;
+    mExtractorCv.signal();
+
 }
 
 void MPQAudioPlayer::reset() {
@@ -562,7 +516,6 @@ void MPQAudioPlayer::reset() {
 
     mIsPaused = false;
     mPauseEventPending = false;
-    mPlayPendingSamples = false;
 
     mTimePaused  = 0;
     mDurationUs = 0;
