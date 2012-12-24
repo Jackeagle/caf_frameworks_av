@@ -441,6 +441,7 @@ void LPAPlayer::reset() {
     mPositionTimeMediaUs = -1;
     mPositionTimeRealUs = -1;
     mSeeking = false;
+    mInternalSeeking = false;
     mReachedEOS = false;
     mReachedOutputEOS = false;
     mFinalStatus = OK;
@@ -713,6 +714,7 @@ void LPAPlayer::onPauseTimeOut() {
         // 1.) Set seek flags
         mReachedEOS = false;
         mReachedOutputEOS = false;
+        mInternalSeeking = true;
         mSeekTimeUs = mTimePlayed;
 
         // 2.) Close routing Session
