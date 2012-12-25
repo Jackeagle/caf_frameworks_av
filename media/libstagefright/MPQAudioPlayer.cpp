@@ -776,6 +776,9 @@ size_t MPQAudioPlayer::fillBufferfromSoftwareDecoder(void *data, size_t size) {
 
                 mIsFirstBuffer = false;
             } else {
+                Mutex::Autolock autoLock(mLock);
+                if(mSourcePaused)
+                   break;
                 err = mSource->read(&mInputBuffer, &options);
             }
 
