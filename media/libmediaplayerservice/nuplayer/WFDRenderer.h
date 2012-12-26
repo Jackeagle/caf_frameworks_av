@@ -106,6 +106,9 @@ private:
     int64_t mAnchorTimeMediaUs;
     int64_t mAnchorTimeRealUs;
 
+    int64_t mRefAudioMediaTimeUs;
+    int64_t mRefVideoMediaTime;
+
     Mutex mFlushLock;  // protects the following 2 member vars.
     bool mFlushingAudio;
     bool mFlushingVideo;

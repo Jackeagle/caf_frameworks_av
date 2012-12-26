@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "WFDRenderer"
 #include <utils/Log.h>
 
@@ -44,6 +44,8 @@ NuPlayer::WFDRenderer::WFDRenderer(
       mAudioQueueGeneration(0),
       mVideoQueueGeneration(0),
       mAnchorTimeMediaUs(-1),
+      mRefAudioMediaTimeUs(-1),
+      mRefVideoMediaTime(-1),
       mAnchorTimeRealUs(-1),
       mFlushingAudio(false),
       mFlushingVideo(false),
@@ -254,13 +256,15 @@ void NuPlayer::WFDRenderer::wfdPostDrainAudioQueue(int64_t delayUs) {
              mWasPaused = false;
         }
 
-        mAnchorTimeMediaUs = mediaTimeUs;
+        if (mRefAudioMediaTimeUs <0)
+            mRefAudioMediaTimeUs = mediaTimeUs;
+        mAnchorTimeMediaUs = mediaTimeUs - mRefAudioMediaTimeUs;
         mAnchorTimeRealUs = wfdGetMediaTime(true);
 
         int64_t realTimeUs = mediaTimeUs - WFD_RENDERER_AUDIO_LATENCY;
         //Audio latency, we need to fine tune this number  //(mAudioSink->latency());
 
-        delayUs = realTimeUs - wfdGetMediaTime(true);
+        delayUs = mAnchorTimeMediaUs - wfdGetMediaTime(true);
         ALOGV("@@@@:: wfdPostDrainAudioQueue delayUs -  %lld us realTimeUs  %lld us   wfdGetMediaTime  %lld us ",
             delayUs, realTimeUs, wfdGetMediaTime(true));
         //need to evaluate this
@@ -336,11 +340,11 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
                /* Right now mAudioSink is not giving proper latency,
                * once that is fixed we can get rid of this
                */
-              int64_t realTimeUs = mediaTimeUs - WFD_RENDERER_AUDIO_LATENCY;//(mAudioSink->latency());
+              int64_t realTimeUs = (mediaTimeUs -mRefAudioMediaTimeUs) - WFD_RENDERER_AUDIO_LATENCY;//(mAudioSink->latency());
 
               int64_t nowUs = wfdGetMediaTime(true);
               mAudioLateByUs = nowUs - realTimeUs;
-              tooLate = (mVideoLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
+              tooLate = (mAudioLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
               ALOGV("@@@@:: wfdOnDrainAudioQueue mediaTimeUs  %lld us nowUs  %lld us  realTimeUs %lld us   mAudioLateByUs  %lld us ", mediaTimeUs, nowUs, realTimeUs, mAudioLateByUs);
 
               if (tooLate) {
@@ -350,7 +354,7 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
                  mStats->recordLate(realTimeUs,nowUs,mAudioLateByUs,realTimeUs);
               }
               else {
-                ALOGV("rendering video at media time %.2f secs", mediaTimeUs / 1E6);
+                ALOGV("rendering Audio  at media time %.2f secs", mediaTimeUs / 1E6);
                 if(mStats != NULL) {
                    mStats->recordOnTime(realTimeUs,nowUs,mAudioLateByUs);
                 }
@@ -373,7 +377,7 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
                        (ssize_t)copy);
             }
             else {
-                ALOGV("@@@@:: Dropping audio buffer frame is too late by % lld us", mVideoLateByUs);
+                ALOGV("@@@@:: Dropping audio buffer frame is too late by % lld us", mAudioLateByUs);
             }
 
             entry->mOffset += copy;
@@ -435,9 +439,12 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
                mWasPaused = false;
             }
 
-            int64_t realTimeUs =
-                (mediaTimeUs - mAnchorTimeMediaUs) + mAnchorTimeRealUs;
-            delayUs = mediaTimeUs - (wfdGetMediaTime(false));
+            if (mRefVideoMediaTime <0) {
+                mRefVideoMediaTime = mediaTimeUs;
+            }
+
+            int64_t realTimeUs = mediaTimeUs - mRefVideoMediaTime;
+            delayUs = realTimeUs - (wfdGetMediaTime(false));
             ALOGV("@@@@:: wfdPostDrainVideoQueue delay  %lld us  mediaTimeUs %lld us   wfdGetMediaTime()  %lld us ", delayUs, mediaTimeUs, wfdGetMediaTime(false));
         }
     }
@@ -480,7 +487,7 @@ void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
         realTimeUs = mediaTimeUs - mAnchorTimeMediaUs + mAnchorTimeRealUs;
     }
     else {
-        realTimeUs = mediaTimeUs;
+        realTimeUs = mediaTimeUs - mRefVideoMediaTime;
     }
     int64_t nowUs = wfdGetMediaTime(false);
     mVideoLateByUs = nowUs - realTimeUs;
@@ -748,10 +755,11 @@ void NuPlayer::WFDRenderer::wfdOnPause() {
     mDrainVideoQueuePending = false;
     ++mVideoQueueGeneration;
 
+/*
     if (mHasAudio) {
         mAudioSink->pause();
     }
-
+*/
     ALOGV("now paused audio queue has %d entries, video has %d entries",
           mAudioQueue.size(), mVideoQueue.size());
 
@@ -777,9 +785,14 @@ void NuPlayer::WFDRenderer::wfdOnResume() {
         return;
     }
 
+    mRefVideoMediaTime = -1;
+    mRefAudioMediaTimeUs = -1;
+    mMediaTimeRead = false;
+/*
     if (mHasAudio) {
         mAudioSink->start();
     }
+*/
 
     mPaused = false;
 
