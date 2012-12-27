@@ -234,7 +234,8 @@ AudioFlinger::AudioFlinger()
       mMasterMute(false),
       mNextUniqueId(1),
       mMode(AUDIO_MODE_INVALID),
-      mBtNrecIsOff(false)
+      mBtNrecIsOff(false),
+      mAllChainsLocked(false)
 {
 }
 
@@ -8658,9 +8659,13 @@ void AudioFlinger::ThreadBase::lockEffectChains_l(
         Vector< sp<AudioFlinger::EffectChain> >& effectChains)
 {
     effectChains = mEffectChains;
+    mAudioFlinger->mAllChainsLocked = true;
     for (size_t i = 0; i < mEffectChains.size(); i++) {
-        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
+        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain) {
             mEffectChains[i]->lock();
+        } else {
+            mAudioFlinger-> mAllChainsLocked = false;
+        }
     }
 }
 
@@ -8668,7 +8673,7 @@ void AudioFlinger::ThreadBase::unlockEffectChains(
         const Vector< sp<AudioFlinger::EffectChain> >& effectChains)
 {
     for (size_t i = 0; i < effectChains.size(); i++) {
-        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
+        if (mAudioFlinger-> mAllChainsLocked || mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
             effectChains[i]->unlock();
     }
 }
