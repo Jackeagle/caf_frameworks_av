@@ -281,6 +281,10 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             mNumFramesDropped = 0;
 
             mSource->start();
+
+            // for qualcomm statistics profiling
+            mStats = new NuPlayerStats();
+
 #ifdef QCOM_WFD_SINK
             if (mSourceType == kWfdSource) {
                 ALOGV("creating WFDRenderer in NU player");
@@ -299,8 +303,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 mRenderer->registerStats(mStats);
                 looper()->registerHandler(mRenderer);
 
-            // for qualcomm statistics profiling
-            mStats = new NuPlayerStats();
             postScanSources();
             break;
         }
