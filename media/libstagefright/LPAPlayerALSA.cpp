@@ -353,6 +353,7 @@ void LPAPlayer::pause(bool playPendingSamples) {
 
 void LPAPlayer::resume() {
     ALOGV("resume: mPaused %d",mPaused);
+    Mutex::Autolock autoLock(mResumeLock);
     if ( mPaused) {
         CHECK(mStarted);
         if (!mIsA2DPEnabled) {
@@ -737,8 +738,9 @@ void LPAPlayer::requestAndWaitForDecoderThreadExit() {
 
     /* Flush the audio sink to unblock the decoder thread
        if any write to audio HAL is blocked */
-    if (!mReachedOutputEOS)
+    if (!mReachedOutputEOS && mIsAudioRouted) {
         mAudioSink->flush();
+    }
 
     pthread_cond_signal(&decoder_cv);
     pthread_join(decoderThread,NULL);
@@ -757,6 +759,7 @@ void LPAPlayer::requestAndWaitForA2DPNotificationThreadExit() {
 
 void LPAPlayer::onPauseTimeOut() {
     ALOGV("onPauseTimeOut");
+    Mutex::Autolock autoLock(mResumeLock);
     if (!mPauseEventPending) {
         return;
     }
