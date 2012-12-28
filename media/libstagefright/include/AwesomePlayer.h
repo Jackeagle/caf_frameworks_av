@@ -359,6 +359,7 @@ private:
     } mStats;
 
     bool mBufferingDone;
+    bool mIsLPASession;
 
     //Flag to check if tunnel mode audio is enabled
     bool mIsTunnelAudio;
