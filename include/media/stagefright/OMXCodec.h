@@ -67,9 +67,7 @@ struct OMXCodec : public MediaSource,
         kUseSecureInputBuffers = 256,
         kEnableThumbnailMode = 512,
 
-        kEnableGrallocUsagePrivateCPBuffer = 16384,
-
-        kUseMinBufferCount = 32768,
+        kUseMinBufferCount = 16384,
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
