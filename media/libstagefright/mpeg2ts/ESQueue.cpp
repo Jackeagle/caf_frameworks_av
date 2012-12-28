@@ -49,7 +49,7 @@ ElementaryStreamQueue::ElementaryStreamQueue(Mode mode)
     char value[PROPERTY_VALUE_MAX] = {0};
     if (property_get("ro.product.device", value, "0"))
     {
-        if (!strncmp(value, "msm7627a", sizeof("msm7627a") - 1))
+        if (!strncmp(value, "msm7627a", sizeof("msm7627a") - 1) || !strncmp(value, "msm8625", sizeof("msm8625") - 1))
         {
             mIsHWAACDec = true;
             ALOGW("HW AAC Decoder used");
