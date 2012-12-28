@@ -353,6 +353,7 @@ void LPAPlayer::pause(bool playPendingSamples) {
 
 void LPAPlayer::resume() {
     ALOGV("resume: mPaused %d",mPaused);
+    Mutex::Autolock autoLock(mResumeLock);
     if ( mPaused) {
         CHECK(mStarted);
         if (!mIsA2DPEnabled) {
@@ -605,6 +606,9 @@ size_t LPAPlayer::fillBuffer(void *data, size_t size) {
                     mInputBuffer = NULL;
                 }
 
+                size_remaining = size;
+                size_done = 0;
+
                 mSeeking = false;
                 if (mObserver && !mInternalSeeking) {
                     ALOGV("fillBuffer: Posting audio seek complete event");
@@ -734,7 +738,9 @@ void LPAPlayer::requestAndWaitForDecoderThreadExit() {
 
     /* Flush the audio sink to unblock the decoder thread
        if any write to audio HAL is blocked */
-    mAudioSink->flush();
+    if (!mReachedOutputEOS && mIsAudioRouted) {
+        mAudioSink->flush();
+    }
 
     pthread_cond_signal(&decoder_cv);
     pthread_join(decoderThread,NULL);
@@ -753,6 +759,7 @@ void LPAPlayer::requestAndWaitForA2DPNotificationThreadExit() {
 
 void LPAPlayer::onPauseTimeOut() {
     ALOGV("onPauseTimeOut");
+    Mutex::Autolock autoLock(mResumeLock);
     if (!mPauseEventPending) {
         return;
     }
@@ -762,6 +769,7 @@ void LPAPlayer::onPauseTimeOut() {
         mReachedEOS = false;
         mReachedOutputEOS = false;
         mSeekTimeUs += getTimeStamp(A2DP_DISABLED);
+        mInternalSeeking = true;
 
         // 2.) Close routing Session
         mAudioSink->close();
