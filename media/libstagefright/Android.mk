@@ -29,7 +29,6 @@ LOCAL_SRC_FILES:=                         \
         FragmentedMP4Extractor.cpp        \
         HTTPBase.cpp                      \
         JPEGSource.cpp                    \
-        LPAPlayerALSA.cpp                 \
         MP3Extractor.cpp                  \
         MPEG2TSWriter.cpp                 \
         MPEG4Extractor.cpp                \
@@ -69,6 +68,21 @@ LOCAL_SRC_FILES:=                         \
         mp4/FragmentedMP4Parser.cpp       \
         mp4/TrackFragment.cpp             \
         ExtendedExtractor.cpp             \
+
+
+
+ifneq ($(call is-vendor-board-platform,QCOM),true)
+LOCAL_CFLAGS += -DNON_QCOM_TARGET
+endif
+
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+    ifeq ($(call is-board-platform-in-list,msm8660 msm7627a msm7630_surf),true)
+        LOCAL_SRC_FILES += LPAPlayer.cpp
+    else
+        LOCAL_SRC_FILES += LPAPlayerALSA.cpp
+    endif
+endif
+
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \

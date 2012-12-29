@@ -2200,6 +2200,7 @@ mutable Mutex               mLock;      // mutex for process, commands and handl
                 audio_mode_t                        mMode;
                 bool                                mBtNrecIsOff;
                 DefaultKeyedVector<audio_io_handle_t, AudioSessionDescriptor *> mDirectAudioTracks;
+                int                                 mA2DPHandle; // Handle to notify A2DP connection status
                 // protected by mLock
                 volatile bool                       mIsEffectConfigChanged;
                 Vector<AudioSessionRef*> mAudioSessionRefs;
