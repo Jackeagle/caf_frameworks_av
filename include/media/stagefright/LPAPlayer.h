@@ -211,6 +211,7 @@ private:
     int32_t mNumInputChannels;
 
     Mutex mLock;
+    Mutex mResumeLock;
 
     bool mSeeking;
     bool mReachedEOS;
