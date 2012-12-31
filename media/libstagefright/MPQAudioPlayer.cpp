@@ -1,6 +1,8 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved
+ * Not a Contribution, Apache license notifications and license are retained
+ * for attribution purposes only.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1113,10 +1115,21 @@ int64_t MPQAudioPlayer::getMediaTimeUs() {
 
 bool MPQAudioPlayer::getMediaTimeMapping(
                                    int64_t *realtime_us, int64_t *mediatime_us) {
-    getRealTimeUs();
+
     Mutex::Autolock autoLock(mLock);
 
     mPositionTimeMediaUs = (mSeekTimeUs + getAudioTimeStampUs());
+    switch(mDecoderType) {
+        case EHardwareDecoder:
+            mPositionTimeRealUs = mSeekTimeUs + mPositionTimeMediaUs;
+            break;
+        case EMS11Decoder:
+        case ESoftwareDecoder:
+            mPositionTimeRealUs =  -mLatencyUs + mSeekTimeUs + mPositionTimeMediaUs;
+            break;
+        default:
+            mPositionTimeRealUs = 0;
+    }
 
     *realtime_us = mPositionTimeRealUs;
     *mediatime_us = mPositionTimeMediaUs;
