@@ -170,7 +170,7 @@ static const enum {
     //  and another HAL implementation corrupts memory, possibly in the sample rate converter.
     //  We could either fix the HAL implementations, or provide a wrapper that breaks
     //  up large writes into smaller ones, and the wrapper would need to deal with scheduler.
-} kUseFastMixer = FastMixer_Static;
+} kUseFastMixer = FastMixer_Never;
 
 static uint32_t gScreenState; // incremented by 2 when screen state changes, bit 0 == 1 means "off"
                               // AudioFlinger::setParameters() updates, other threads read w/o lock
