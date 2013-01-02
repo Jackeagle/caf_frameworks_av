@@ -528,7 +528,7 @@ void SampleTable::buildSampleEntriesTable() {
 
                 mSampleTimeEntries[sampleIndex].mSampleIndex = sampleIndex;
 
-                uint32_t compTimeDelta =
+                int32_t compTimeDelta = (int32_t)
                     mCompositionDeltaLookup->getCompositionTimeOffset(
                             sampleIndex);
 
