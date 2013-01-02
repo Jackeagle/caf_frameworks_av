@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2010 - 2012, The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2011-2013 The Linux Foundation. All rights reserved.
+
  * Not a Contribution, Apache license notifications and license are retained
  * for attribution purposes only.
  *
@@ -3450,6 +3450,7 @@ void OMXCodec::setRawAudioFormat(
     OMX_PARAM_PORTDEFINITIONTYPE def;
     InitOMXParams(&def);
     def.nPortIndex = portIndex;
+    def.format.audio.cMIMEType = NULL;
     status_t err = mOMX->getParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
     CHECK_EQ(err, (status_t)OK);
