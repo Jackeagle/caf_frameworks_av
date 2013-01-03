@@ -209,7 +209,8 @@ AwesomePlayer::AwesomePlayer()
       mDecryptHandle(NULL),
       mLastVideoTimeUs(-1),
       mTextDriver(NULL),
-      mBufferingDone(false) {
+      mBufferingDone(false),
+      mIsLPASession(false) {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -593,6 +594,14 @@ void AwesomePlayer::reset_l() {
     mAudioSource.clear();
 
     mTimeSource = NULL;
+
+#ifndef NON_QCOM_TARGET
+    if(LPAPlayer::objectsAlive == 0 && mIsLPASession == true)
+    {
+        LPAPlayer::mLpaInProgress = false;
+        mIsLPASession = false;
+    }
+#endif
     delete mAudioPlayer;
 
     mAudioPlayer = NULL;
@@ -1641,6 +1650,7 @@ status_t AwesomePlayer::initAudioDecoder() {
             flags |= OMXCodec::kSoftwareCodecsOnly;
             if(mDurationUs > 60000000) {
                LPAPlayer::mLpaInProgress = true;
+               mIsLPASession = true;
             }
         }
 #endif
