@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "StagefrightRecorder"
 #include <utils/Log.h>
 
@@ -105,7 +105,8 @@ status_t StagefrightRecorder::setAudioSource(audio_source_t as) {
         ALOGE("Invalid audio source: %d", as);
         return BAD_VALUE;
     }
-
+    ALOGE("disable audio for camcorder recording. Need to revert this once audio recording is up");
+    return OK;
     if (as == AUDIO_SOURCE_DEFAULT) {
         mAudioSource = AUDIO_SOURCE_MIC;
     } else {
@@ -156,7 +157,8 @@ status_t StagefrightRecorder::setAudioEncoder(audio_encoder ae) {
         ALOGE("Invalid audio encoder: %d", ae);
         return BAD_VALUE;
     }
-
+    ALOGE("disable audio for camcorder recording. Need to revert this once audio recording is up");
+    return OK;
     if (ae == AUDIO_ENCODER_DEFAULT) {
         mAudioEncoder = AUDIO_ENCODER_AMR_NB;
     } else {
