@@ -196,7 +196,6 @@ status_t AudioRecord::set(
         return BAD_VALUE;
     }
 
-    mFirstread = false;
     // Change for Codec type
     int frameSizeInBytes = 0;
     if(inputSource == AUDIO_SOURCE_VOICE_COMMUNICATION) {
@@ -206,7 +205,6 @@ status_t AudioRecord::set(
         } else {
              frameSizeInBytes = channelCount *sizeof(int16_t);
         }
-        mFirstread = true;
     } else {
         if (format ==AUDIO_FORMAT_AMR_NB) {
              frameSizeInBytes = channelCount * 32; // Full rate framesize
@@ -222,7 +220,6 @@ status_t AudioRecord::set(
              } else {
                   frameSizeInBytes = sizeof(int8_t);
              }
-             mFirstread = true;
         } else if(format == AUDIO_FORMAT_AMR_WB) {
             frameSizeInBytes = channelCount * 61;
 
@@ -273,7 +270,6 @@ status_t AudioRecord::set(
     mUpdatePeriod = 0;
     mFlags = flags;
     mInput = input;
-    mFirstread = false;
     AudioSystem::acquireAudioSessionId(mSessionId);
 
     return NO_ERROR;
@@ -737,11 +733,6 @@ ssize_t AudioRecord::read(void* buffer, size_t userSize)
         read += bytesRead;
 
         releaseBuffer(&audioBuffer);
-        if(!mFirstread)
-        {
-           mFirstread = true;
-           break;
-        }
     } while (userSize);
 
     return read;
@@ -814,11 +805,6 @@ bool AudioRecord::processAudioBuffer(const sp<ClientRecordThread>& thread)
         frames -= audioBuffer.frameCount;
 
         releaseBuffer(&audioBuffer);
-        if(!mFirstread)
-        {
-           mFirstread = true;
-           break;
-        }
 
     } while (frames);
 
