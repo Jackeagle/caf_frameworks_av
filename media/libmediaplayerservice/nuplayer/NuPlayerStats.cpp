@@ -56,12 +56,13 @@ NuPlayerStats::NuPlayerStats() {
         mSeekPerformed = false;
         mTotalTime = 0;
         mFirstFrameTime = 0;
+        mTotalRenderingFrames = 0;
     }
 }
 
 NuPlayerStats::~NuPlayerStats() {
     if(mMIME) {
-        delete mMIME;
+        delete[] mMIME;
     }
 }
 
@@ -69,8 +70,8 @@ void NuPlayerStats::setMime(const char* mime) {
     Mutex::Autolock autoLock(mStatsLock);
     if(mime != NULL) {
         int mimeLen = strlen(mime);
-	if(mMIME) {
-            delete mMIME;
+        if(mMIME) {
+            delete[] mMIME;
         }
 
         mMIME = new char[mimeLen+1];
