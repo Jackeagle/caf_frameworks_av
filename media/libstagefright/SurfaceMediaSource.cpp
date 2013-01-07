@@ -62,15 +62,19 @@ SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeig
     char value[PROPERTY_VALUE_MAX] = {0};
     uint32_t usage = 0;
 
-    if (property_get("ro.board.platform", value, "0")
-        && (!strncmp(value, "msm7627", sizeof("msm7627") - 1))) {
-        usage = (GRALLOC_USAGE_PRIVATE_CAMERA_HEAP |
-                 GRALLOC_USAGE_PRIVATE_UNCACHED);
-    }
-    if (property_get("ro.board.platform", value, "0")
-        && (!strncmp(value, "msm8660", sizeof("msm8660") - 1))) {
-        usage = (GRALLOC_USAGE_PRIVATE_MM_HEAP |
-                 GRALLOC_USAGE_PRIVATE_UNCACHED);
+    if (property_get("ro.board.platform", value, "0"))
+    {
+        if(!strncmp(value, "msm7627", sizeof("msm7627") - 1)) {
+            usage = (GRALLOC_USAGE_PRIVATE_CAMERA_HEAP |
+                     GRALLOC_USAGE_PRIVATE_UNCACHED);
+        }
+        else if((!strncmp(value, "msm8660", sizeof("msm8660") - 1)) ||
+                (!strncmp(value, "msm8960", sizeof("msm8960") - 1)) ||
+                (!strncmp(value, "msm7630", sizeof("msm7630") - 1)))
+        {
+            usage = (GRALLOC_USAGE_PRIVATE_MM_HEAP |
+                     GRALLOC_USAGE_PRIVATE_UNCACHED);
+        }
     }
     mBufferQueue->setConsumerUsageBits(GRALLOC_USAGE_HW_VIDEO_ENCODER |
             GRALLOC_USAGE_HW_TEXTURE | usage);
