@@ -394,7 +394,6 @@ private:
     record_flags            mFlags;
     uint32_t                mChannelMask;
     audio_io_handle_t       mInput;
-    bool                    mFirstread;
     int                     mSessionId;
     int                     mPreviousPriority;          // before start()
     SchedPolicy             mPreviousSchedulingGroup;
