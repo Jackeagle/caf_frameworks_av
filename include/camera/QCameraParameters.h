@@ -82,6 +82,7 @@ public:
     static const char KEY_QC_LENSSHADE[] ;
     static const char KEY_QC_SUPPORTED_LENSSHADE_MODES[] ;
 
+    static const char KEY_QC_AUTO_CONTRAST[];
     static const char KEY_QC_AUTO_EXPOSURE[];
     static const char KEY_QC_SUPPORTED_AUTO_EXPOSURE[];
 
