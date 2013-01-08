@@ -390,6 +390,9 @@ private:
     sp<PostProcNativeWindow> mPostProcNativeWindow;
     PostProcController * mPostProcController;
     bool mIsLocalPlayback;
+
+    //Flag to check if Secure Playback.
+    bool mSecurePlayback;
 };
 
 }  // namespace android
