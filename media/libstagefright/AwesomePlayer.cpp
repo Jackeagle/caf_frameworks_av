@@ -1902,9 +1902,9 @@ void AwesomePlayer::onVideoEvent() {
                 mAudioPlayer->pause();
 
                 modifyFlags(AUDIO_RUNNING, CLEAR);
+                mAudioSource->pause();
+                mAudioSourcePaused = true;
             }
-            mAudioSource->pause();
-            mAudioSourcePaused = true;
         }
     }
 
