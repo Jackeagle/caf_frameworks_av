@@ -23,6 +23,7 @@
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -395,8 +396,15 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
     int64_t realTimeUs = mediaTimeUs - mAnchorTimeMediaUs + mAnchorTimeRealUs;
     int64_t nowUs = ALooper::GetNowUs();
     mVideoLateByUs = nowUs - realTimeUs;
+    bool tooLate = false;
 
-    bool tooLate = (mVideoLateByUs > 40000);
+    char value[PROPERTY_VALUE_MAX] = {0};
+    if (property_get("ro.board.platform", value, "0") &&
+            (!strncmp(value, "msm7627a", sizeof("msm7627a") - 1) ||
+              !strncmp(value, "msm8625", sizeof("msm8625") - 1)))
+                    tooLate = (mVideoLateByUs > 100000);
+    else
+        tooLate = (mVideoLateByUs > 40000);
 
     if (tooLate) {
         ALOGV("video late by %lld us (%.2f secs)",
