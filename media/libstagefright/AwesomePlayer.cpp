@@ -44,9 +44,11 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/timedtext/TimedTextDriver.h>
 #include <media/stagefright/AudioPlayer.h>
+#ifndef NON_QCOM_TARGET
 #include <media/stagefright/LPAPlayer.h>
 #ifdef USE_TUNNEL_MODE
 #include <media/stagefright/TunnelPlayer.h>
+#endif
 #endif
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/FileSource.h>
@@ -921,6 +923,7 @@ status_t AwesomePlayer::play_l() {
                 } else {
                     allowDeepBuffering = false;
                 }
+#ifndef NON_QCOM_TARGET
 #ifdef USE_TUNNEL_MODE
                 // Create tunnel player if tunnel mode is enabled
                 ALOGW("Trying to create tunnel player mIsTunnelAudio %d, \
@@ -971,6 +974,7 @@ status_t AwesomePlayer::play_l() {
                         }
                     }
                 }
+#endif
                 if(mAudioPlayer == NULL) {
                     ALOGV("AudioPlayer created, Non-LPA mode mime %s duration %lld\n", mime, mDurationUs);
                     mAudioPlayer = new AudioPlayer(mAudioSink, allowDeepBuffering, this);
@@ -1467,6 +1471,7 @@ status_t AwesomePlayer::initAudioDecoder() {
 
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
+#ifndef NON_QCOM_TARGET
 #ifdef USE_TUNNEL_MODE
     char value[PROPERTY_VALUE_MAX];
     char tunnelDecode[128];
@@ -1497,6 +1502,7 @@ status_t AwesomePlayer::initAudioDecoder() {
     else
        ALOGD("Normal Audio Playback");
 #endif
+#endif
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
              (mIsTunnelAudio && (mTunnelAliveAP == 0))) {
         ALOGD("Set Audio Track as Audio Source");
@@ -1509,6 +1515,7 @@ status_t AwesomePlayer::initAudioDecoder() {
         char *matchComponentName = NULL;
         int64_t durationUs;
         uint32_t flags = 0;
+#ifndef NON_QCOM_TARGET
         char lpaDecode[128];
         property_get("lpa.decode",lpaDecode,"0");
         if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
@@ -1538,6 +1545,7 @@ status_t AwesomePlayer::initAudioDecoder() {
             }
             flags |= OMXCodec::kSoftwareCodecsOnly;
         }
+#endif
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
                 false, // createEncoder
