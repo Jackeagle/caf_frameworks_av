@@ -16,7 +16,7 @@
  */
 
 #define LOG_NDDEBUG 0
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "LPAPlayerALSA"
 
 #include <utils/Log.h>
@@ -47,6 +47,9 @@
 #include <powermanager/PowerManager.h>
 
 static const char   mName[] = "LPAPlayer";
+
+#define MEM_METADATA_SIZE 64
+#define LPA_BUFFER_TIME 1500000
 
 #define MEM_BUFFER_SIZE 262144
 #define MEM_BUFFER_COUNT 4
@@ -302,6 +305,21 @@ status_t LPAPlayer::seekTo(int64_t time_us) {
         mReachedEOS = false;
         mReachedOutputEOS = false;
     }
+
+    if(time_us > mSeekTimeUs){
+        if((time_us - mSeekTimeUs) < LPA_BUFFER_TIME){
+            ALOGV("In seekTo(), ignoring time_us %lld mSeekTimeUs %lld", time_us, mSeekTimeUs);
+            mObserver->postAudioSeekComplete();
+            return OK;
+        }
+    } else {
+        if((mSeekTimeUs - time_us) < LPA_BUFFER_TIME){
+            ALOGV("In seekTo(), ignoring time_us %lld mSeekTimeUs %lld", time_us, mSeekTimeUs);
+            mObserver->postAudioSeekComplete();
+            return OK;
+        }
+    }
+
     mSeeking = true;
     mSeekTimeUs = time_us;
     mPauseTime = mSeekTimeUs;
@@ -486,13 +504,16 @@ void LPAPlayer::decoderThreadEntry() {
     if (killDecoderThread) {
         return;
     }
-    void* local_buf = malloc(MEM_BUFFER_SIZE);
+    void* local_buf = malloc(MEM_BUFFER_SIZE + MEM_METADATA_SIZE);
+	int *lptr = ((int*)local_buf);
     int bytesWritten = 0;
     while (!killDecoderThread) {
 
         if (mReachedEOS || mPaused || !mIsAudioRouted) {
             pthread_mutex_lock(&decoder_mutex);
+            ALOGV("decoderThreadEntry wait!!");
             pthread_cond_wait(&decoder_cv, &decoder_mutex);
+            ALOGV("decoderThreadEntry wait free!!");
             pthread_mutex_unlock(&decoder_mutex);
             continue;
         }
@@ -505,7 +526,15 @@ void LPAPlayer::decoderThreadEntry() {
             ALOGV("FillBuffer completed bytesToWrite %d", bytesWritten);
 
             if(!killDecoderThread) {
-                mAudioSink->write(local_buf, bytesWritten);
+                mLock.lock();
+                if(mSeeking == false){
+                    mLock.unlock();
+                    ALOGV("Fillbuffer before write %d and seek flag %d", mSeeking, lptr[MEM_BUFFER_SIZE/sizeof(int)]);
+                    mAudioSink->write(local_buf, bytesWritten);
+                    } else {
+                    mLock.unlock();
+                    ALOGV("Fillbuffer ignored since we are seeking %d and flag is %d", mSeeking, lptr[MEM_BUFFER_SIZE/sizeof(int)]);
+                }
             }
         }
     }
@@ -581,6 +610,11 @@ size_t LPAPlayer::fillBuffer(void *data, size_t size) {
 
     size_t size_done = 0;
     size_t size_remaining = size;
+    int *ldataptr = (int*) data;
+    //clear the flag since we dont know whether we are seeking or not, yet
+    ldataptr[(MEM_BUFFER_SIZE/sizeof(int))] = 0;
+    ALOGV("fillBuffer: Clearing seek flag in fill buffer");
+
     while (size_remaining > 0) {
         MediaSource::ReadOptions options;
 
@@ -609,6 +643,7 @@ size_t LPAPlayer::fillBuffer(void *data, size_t size) {
 
                 size_remaining = size;
                 size_done = 0;
+                memset(data, 0, (size /sizeof(char)));
 
                 mSeeking = false;
                 if (mObserver && !mInternalSeeking) {
@@ -616,6 +651,9 @@ size_t LPAPlayer::fillBuffer(void *data, size_t size) {
                     postSeekComplete = true;
                 }
                 mInternalSeeking = false;
+				ALOGV("fillBuffer: Setting seek flag in fill buffer");
+                //set the flag since we know that this buffer is the new positions buffer
+                ldataptr[(MEM_BUFFER_SIZE/sizeof(int))] = 1;
             }
         }
 
