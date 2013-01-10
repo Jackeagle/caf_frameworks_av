@@ -558,7 +558,7 @@ status_t OMXCodec::parseAVCCodecSpecificData(
         mSPSParsed = true;
         CODEC_LOGV("SPS parsed");
         if (info.mInterlaced) {
-            //mInterlaceFormatDetected = true; //Enable when Interlace is supported
+            mInterlaceFormatDetected = true; //Enable when Interlace is supported
             mUseArbitraryMode = true;
             CODEC_LOGI("Interlace format detected");
         } else {
@@ -568,7 +568,7 @@ status_t OMXCodec::parseAVCCodecSpecificData(
     else {
       CODEC_LOGI("ParseSPS could not find if content is interlaced");
       mSPSParsed = false;
-      //mInterlaceFormatDetected = false; //Enable when Interlace is supported
+      mInterlaceFormatDetected = false; //Enable when Interlace is supported
     }
     ptr += 6;
     size -= 6;
