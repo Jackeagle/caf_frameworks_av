@@ -6216,6 +6216,13 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
         mAudioFlinger->registerClient(mAudioFlingerClient);
 
         allocateBufPool();
+#ifdef SRS_PROCESSING
+    } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+        ALOGV("Create effects thread for TUNNEL");
+        createEffectThread();
+        mAudioFlingerClient = new AudioFlingerDirectTrackClient(this);
+        mAudioFlinger->registerClient(mAudioFlingerClient);
+#endif
     }
     mSampleRate = mOutputDesc->stream->common.get_sample_rate(&mOutputDesc->stream->common);
     mChannelCount = mOutputDesc->stream->common.get_channels(&mOutputDesc->stream->common);
@@ -6233,6 +6240,13 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
         requestAndWaitForEffectsThreadExit();
         mAudioFlinger->deregisterClient(mAudioFlingerClient);
         mAudioFlinger->deleteEffectSession();
+#ifdef SRS_PROCESSING
+    } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+        ALOGE("ppp deleting effects thread for TUNNEL");
+        requestAndWaitForEffectsThreadExit();
+        mAudioFlinger->deregisterClient(mAudioFlingerClient);
+        mAudioFlinger->deleteEffectSession();
+#endif
     }
     releaseWakeLock();
 
@@ -6395,16 +6409,28 @@ void AudioFlinger::DirectAudioTrack::EffectsThreadEntry() {
 
         if (mEffectConfigChanged) {
             mEffectConfigChanged = false;
-            for ( List<BufferInfo>::iterator it = mEffectsPool.begin();
-                  it != mEffectsPool.end(); it++) {
-                ALOGV("Apply effects on the buffer dspbuf %p, mEffectsPool.size() %d",it->dspBuf,mEffectsPool.size());
-                mAudioFlinger->applyEffectsOn(static_cast<void *>(this),
-                                              (int16_t *)it->localBuf,
-                                              (int16_t *)it->dspBuf,
-                                              it->bytesToWrite);
-                if (mEffectConfigChanged) {
-                    break;
+            if ( mFlag & AUDIO_OUTPUT_FLAG_LPA) {
+                for ( List<BufferInfo>::iterator it = mEffectsPool.begin();
+                      it != mEffectsPool.end(); it++) {
+                    ALOGV("Apply effects on the buffer dspbuf %p, mEffectsPool.size() %d",it->dspBuf,mEffectsPool.size());
+                    mAudioFlinger->applyEffectsOn(static_cast<void *>(this),
+                                                  (int16_t *)it->localBuf,
+                                                  (int16_t *)it->dspBuf,
+                                                  it->bytesToWrite);
+                    if (mEffectConfigChanged) {
+                        break;
+                    }
                 }
+#ifdef SRS_PROCESSING
+            } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+                ALOGV("Apply SRS effects for TUNNEL");
+                // dmmy buffer to ensure srs processing takes place.
+                char buffer[2];
+                // The API mandates Sample rate and channel mode. Hence,
+                // defaulted the sample rate channel mode to 48000 and 2 respectively.
+                POSTPRO_PATCH_JB_OUTPROC_PLAY_SAMPLES(static_cast<void *>(this), AUDIO_FORMAT_PCM_16_BIT,
+                                              (int16_t*)buffer, 2, 48000, 2);
+#endif
             }
 
         }
