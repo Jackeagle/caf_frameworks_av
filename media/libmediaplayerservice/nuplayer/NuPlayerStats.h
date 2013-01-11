@@ -35,6 +35,7 @@ class NuPlayerStats : public RefBase {
     void setMime(const char* mime);
     void setVeryFirstFrame(bool vff);
     void notifySeek();
+    void notifyBufferingEvent();
     void incrementTotalFrames();
     void incrementDroppedFrames();
     void logStatistics();
@@ -73,6 +74,7 @@ class NuPlayerStats : public RefBase {
     int64_t mStatisticsFrames;
     bool mVeryFirstFrame;
     bool mSeekPerformed;
+    bool mBufferingEvent;
     int64_t mTotalTime;
     int64_t mFirstFrameTime;
     uint64_t mTotalRenderingFrames;
