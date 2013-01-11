@@ -818,6 +818,7 @@ int PostProc::allocateIonBuffer(size_t size, int *handle)
     alloc_data.align = ALIGN8K;
     alloc_data.heap_mask = (ION_HEAP(ION_CP_MM_HEAP_ID) | ION_HEAP(ION_IOMMU_HEAP_ID));
     alloc_data.flags = 0;
+    alloc_data.flags |= ION_FLAG_CACHED;
     rc = ioctl(mIonFd, ION_IOC_ALLOC, &alloc_data);
     if (rc) {
         POSTPROC_DERIVED_LOGE("Failed to allocate ion memory\n");
