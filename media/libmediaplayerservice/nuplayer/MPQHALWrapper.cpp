@@ -233,6 +233,14 @@ void NuPlayer::MPQHALWrapper::onSetup(const sp<AMessage> &msg) {
         &MPQHALWrapper::postEOS,
         this,
         (mA2DPEnabled ?  AUDIO_OUTPUT_FLAG_NONE : flags ));
+
+    if (retVal != OK) {
+        mAudioSink.clear();
+        ALOGE("Opening a routing session failed");
+        return;
+    }
+    mAudioSink->start();
+
     mInputBufferSize = mAudioSink->frameCount();
 
     ALOGE("@@@@:: posting FORMAT Change Indication to Player, Format RAW, Channel(%d) mSampleRate(%d)",
