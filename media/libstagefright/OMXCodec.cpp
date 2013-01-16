@@ -4842,6 +4842,7 @@ void OMXCodec::signalBufferReturned(MediaBuffer *buffer) {
 
         if (!mFilledBuffers.empty()) return;
 
+        mDeferReason &= ~FILLED_BUFFERS_PRESENT;
         mOutputPortSettingsChangedPending = false;
         onPortSettingsChanged(kPortIndexOutput);
         return;
