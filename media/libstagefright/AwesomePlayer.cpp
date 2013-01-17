@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- *
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution, Apache license notifications and license are retained
+ * for attribution purposes only.
+
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -14,9 +17,6 @@
  * limitations under the License.
  */
 
-/*--------------------------------------------------------------------------
-Copyright (c) 2012, Code Aurora Forum. All rights reserved.
---------------------------------------------------------------------------*/
 #undef DEBUG_HDCP
 
 //#define LOG_NDEBUG 0
@@ -1637,6 +1637,12 @@ status_t AwesomePlayer::initAudioDecoder() {
        ALOGE("Normal Audio Playback");
 #endif
 #endif
+
+    if (isStreamingHTTP()) {
+      ALOGV("Streaming, force disable tunnel mode playback");
+      mIsTunnelAudio = false;
+    }
+
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
              (mIsTunnelAudio && (mTunnelAliveAP == 0)) || mIsMPQTunnelAudio) {
         ALOGD("Set Audio Track as Audio Source");
