@@ -785,9 +785,9 @@ void NuPlayer::WFDRenderer::wfdOnResume() {
         return;
     }
 
-    mRefVideoMediaTime = -1;
-    mRefAudioMediaTimeUs = -1;
-    mMediaTimeRead = false;
+//    mRefVideoMediaTime = -1;
+//    mRefAudioMediaTimeUs = -1;
+//    mMediaTimeRead = false;
 /*
     if (mHasAudio) {
         mAudioSink->start();
@@ -796,11 +796,11 @@ void NuPlayer::WFDRenderer::wfdOnResume() {
 
     mPaused = false;
 
-    if(mPauseMediaClockUs > 0){
+/*    if(mPauseMediaClockUs > 0){
         mPauseDurationUs += wfdGetMediaTime(true) - mPauseMediaClockUs;
         //Resetting the mPauseMediaClockUs
         mPauseMediaClockUs = 0;
-    }
+    }*/
 
     if (!mAudioQueue.empty()) {
         wfdPostDrainAudioQueue();
