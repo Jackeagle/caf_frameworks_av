@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (c) 2013 The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -375,6 +376,7 @@ private:
     uint32_t                mLatency;
     audio_channel_mask_t    mChannelMask;
     audio_io_handle_t       mInput;                     // returned by AudioSystem::getInput()
+    bool                    mFirstread;
     int                     mSessionId;
 
     // may be changed if IAudioRecord object is re-created

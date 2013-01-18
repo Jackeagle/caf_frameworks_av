@@ -1,7 +1,7 @@
 /*
 **
 ** Copyright 2007, The Android Open Source Project
-** Copyright (c) 2012, The Linux Foundation. All rights reserved.
+** Copyright (c) 2012-2013 The Linux Foundation. All rights reserved.
 ** Not a Contribution, Apache license notifications and license are retained
 ** for attribution purposes only.
 **
@@ -1700,6 +1700,7 @@ private:
                 // when < 0, maximum frames to drop before starting capture even if sync event is
                 // not received
                 ssize_t                             mFramestoDrop;
+                int16_t                             mInputSource;
     };
 
     // server side of the client's IAudioRecord

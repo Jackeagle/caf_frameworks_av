@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2010 - 2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010 - 2013, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "StagefrightRecorder"
 #include <utils/Log.h>
-
+#include <media/AudioParameter.h>
 #include "StagefrightRecorder.h"
 
 #include <binder/IPCThreadState.h>
@@ -45,6 +45,7 @@
 #include <camera/ICamera.h>
 #include <camera/CameraParameters.h>
 #include <gui/Surface.h>
+#include <utils/String8.h>
 
 #include <utils/Errors.h>
 #include <sys/types.h>
@@ -823,6 +824,45 @@ status_t StagefrightRecorder::start() {
 }
 
 sp<MediaSource> StagefrightRecorder::createAudioSource() {
+    bool tunneledSource = false;
+    const char *tunnelMime;
+    {
+        AudioParameter param;
+        String8 key("tunneled-input-formats");
+        param.add( key, String8("get") );
+        String8 valueStr = AudioSystem::getParameters( 0, param.toString());
+        AudioParameter result(valueStr);
+        int value;
+        if ( mAudioEncoder == AUDIO_ENCODER_AMR_NB &&
+            result.getInt(String8("AMR"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_AMR_NB;
+        }
+        else if ( mAudioEncoder == AUDIO_ENCODER_QCELP &&
+            result.getInt(String8("QCELP"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_QCELP;
+        }
+        else if ( mAudioEncoder == AUDIO_ENCODER_EVRC &&
+            result.getInt(String8("EVRC"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_EVRC;
+        }
+    }
+
+    if ( tunneledSource ) {
+        sp<AudioSource> audioSource = NULL;
+        sp<MetaData> meta = new MetaData;
+        meta->setInt32(kKeyChannelCount, mAudioChannels);
+        meta->setInt32(kKeySampleRate, mSampleRate);
+        meta->setInt32(kKeyBitRate, mAudioBitRate);
+        if (mAudioTimeScale > 0) {
+            meta->setInt32(kKeyTimeScale, mAudioTimeScale);
+        }
+        meta->setCString( kKeyMIMEType, tunnelMime );
+        audioSource = new AudioSource( mAudioSource, meta);
+        return audioSource->initCheck( ) == OK ? audioSource : NULL;
+    }
     sp<AudioSource> audioSource =
         new AudioSource(
                 mAudioSource,
