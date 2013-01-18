@@ -366,7 +366,9 @@ void LPAPlayer::pause(bool playPendingSamples) {
             }
         }
     }
-    mTimePlayed += (nanoseconds_to_microseconds(systemTime(SYSTEM_TIME_MONOTONIC)) - mTimeStarted);
+    if(mTimeStarted != 0) {
+        mTimePlayed += (nanoseconds_to_microseconds(systemTime(SYSTEM_TIME_MONOTONIC)) - mTimeStarted);
+    }
 }
 
 void LPAPlayer::resume() {
