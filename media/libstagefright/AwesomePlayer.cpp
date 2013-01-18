@@ -1,5 +1,9 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+
+ * Not a Contribution, Apache license notifications and license are retained
+ * for attribution purposes only.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +18,6 @@
  * limitations under the License.
  */
 
-/*--------------------------------------------------------------------------
-Copyright (c) 2012, Code Aurora Forum. All rights reserved.
---------------------------------------------------------------------------*/
 #undef DEBUG_HDCP
 
 //#define LOG_NDEBUG 0
@@ -1627,14 +1628,24 @@ status_t AwesomePlayer::initAudioDecoder() {
         if ( mDurationUs > 60000000
              && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
              && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
+            char nonOMXDecoder[128];
+            int32_t isFormatAdif = 0;
+            meta->findInt32(kkeyAacFormatAdif, &isFormatAdif);
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
                 ALOGE("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
-                char nonOMXDecoder[128];
                 property_get("use.non-omx.mp3.decoder",nonOMXDecoder,"0");
                 if((strcmp("true",nonOMXDecoder) == 0)) {
                     matchComponentName = (char *) "MP3Decoder";
                 } else {
                     matchComponentName = (char *) "OMX.google.mp3.decoder";
+                }
+            } else if((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) && !isFormatAdif) {
+                ALOGE("matchComponentName is set to AACDecoder %lld, mime %s",mDurationUs,mime);
+                property_get("use.non-omx.aac.decoder",nonOMXDecoder,"0");
+                if((strcmp("true",nonOMXDecoder) == 0)) {
+                    matchComponentName = (char *) "AACDecoder";
+                } else {
+                    matchComponentName = (char *) "OMX.google.aac.decoder";
                 }
             }
             flags |= OMXCodec::kSoftwareCodecsOnly;
