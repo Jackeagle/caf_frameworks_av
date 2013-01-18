@@ -1648,13 +1648,12 @@ status_t AwesomePlayer::initAudioDecoder() {
                     matchComponentName = (char *) "OMX.google.aac.decoder";
                 }
             }
-            flags |= OMXCodec::kSoftwareCodecsOnly;
-            LPAPlayer::mLpaInProgress = true;
         }
 
         if ((LPAPlayer::mLpaInProgress == true) && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
             flags |= OMXCodec::kSoftwareCodecsOnly;
-            LPAPlayer::mLpaInProgress = false;
+            if (LPAPlayer::objectsAlive == 0)
+                 LPAPlayer::mLpaInProgress = false;
         }
         if ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
              && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
