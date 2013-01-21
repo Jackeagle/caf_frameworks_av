@@ -66,7 +66,7 @@ private:
 
         // This is the initial mute duration to suppress
         // the video recording signal tone
-        kAutoRampStartUs = 700000,
+        kAutoRampStartUs = 0,
     };
 
     Mutex mLock;
