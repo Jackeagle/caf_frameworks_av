@@ -391,14 +391,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     break; // no need to proceed further
                 }
 
-                //if Player is in pause state, for WFD use case ,store the fill Buffer events and return back
-                if((mSourceType == kWfdSource) && (mPauseIndication)) {
-                    QueueEntry entry;
-                    entry.mMessageToBeConsumed = msg;
-                    mDecoderMessageQueue.push_back(entry);
-                    break;
-                }
-
                 status_t err = feedDecoderInputData(
                         track, codecRequest);
 
@@ -769,16 +761,17 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatPause:
         {
+            CHECK(mRenderer != NULL);
+            mRenderer->pause();
+            mPauseIndication = true;
+
 #ifdef QCOM_WFD_SINK
             if (mSourceType == kWfdSource) {
                 CHECK(mSource != NULL);
                 mSource->pause();
             }
 #endif //QCOM_WFD_SINK
-                CHECK(mRenderer != NULL);
-                mRenderer->pause();
 
-            mPauseIndication = true;
             if (mSourceType == kHttpDashSource) {
                 Mutex::Autolock autoLock(mLock);
                 if (mSource != NULL)
@@ -808,15 +801,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }else if (mSourceType == kWfdSource) {
                 CHECK(mSource != NULL);
                 mSource->resume();
-                int count = 0;
-
-                //check if there are messages stored in the list, then repost them
-                while(!mDecoderMessageQueue.empty()) {
-                    (*mDecoderMessageQueue.begin()).mMessageToBeConsumed->post(); //self post
-                    mDecoderMessageQueue.erase(mDecoderMessageQueue.begin());
-                    ++count;
-                }
-                ALOGE("(%d) stored messages reposted ....",count);
             }else {
                 if (mAudioDecoder == NULL || mVideoDecoder == NULL) {
                     mScanSourcesPending = false;
