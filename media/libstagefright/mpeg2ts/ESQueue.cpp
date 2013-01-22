@@ -422,7 +422,9 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitAAC() {
             if (number_of_raw_data_blocks_in_frame != 0)
             {
                 // To be implemented.
-                TRESPASS();
+                //TRESPASS();
+                ALOGE("Looks like something has gone wrong .. exit gracefully");
+                return NULL;
             }
 
             if (offset + aac_frame_length > mBuffer->size())
