@@ -190,8 +190,8 @@ status_t MPEG2TSSource::seekPrepare( int64_t seekTimeUs,bool* seekError) {
      ALOGV("Found seek offset at %lld", seekOffset);
      mTSBuffer->flush();
 
-     //Flush all PES data in parser
-     mExtractor->seekTo(seekTimeUs);
+     //Flush all PES data in parser of the associated stream
+     mExtractor->signalSeekDiscontinuity(mStream);
 
      //Seek to I frame for video
      if (mIsVideo) {
@@ -604,6 +604,17 @@ void MPEG2TSExtractor::setLiveSession(const sp<LiveSession> &liveSession) {
     if (liveSession != NULL) {
         liveSession->isSeekable();
     }
+}
+
+void MPEG2TSExtractor::signalSeekDiscontinuity(sp<StreamInfo> &stream) {
+    Mutex::Autolock autoLock(mLock);
+
+    if (!mSeekable) {
+        ALOGE("Cannot seek for this clip");
+        return;
+    }
+    //Flush all PES data in parser for the associated stream
+    mParser->signalSeekDiscontinuity(stream->mProgramPID, stream->mStreamPID);
 }
 
 void MPEG2TSExtractor::seekTo(int64_t seekTimeUs) {
