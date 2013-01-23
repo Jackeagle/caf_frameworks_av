@@ -2,7 +2,6 @@
 **
 ** Copyright 2007, The Android Open Source Project
 ** Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
-**
 ** Not a Contribution, Apache license notifications and license are retained
 ** for attribution purposes only.
 **
@@ -109,6 +108,7 @@
 #endif
 
 #define DIRECT_TRACK_EOS 1
+#define DIRECT_TRACK_HW_FAIL 6
 static const char lockName[] = "DirectTrack";
 namespace android {
 
@@ -1134,9 +1134,25 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
             }
             mHardwareStatus = AUDIO_HW_IDLE;
         }
-        // disable AEC and NS if the device is a BT SCO headset supporting those pre processings
+
         AudioParameter param = AudioParameter(keyValuePairs);
-        String8 value;
+        String8 value, key;
+        int i = 0;
+
+        key = String8(AudioParameter::keyADSPStatus);
+        if (param.get(key, value) == NO_ERROR) {
+            ALOGV("Set keyADSPStatus:%s", value.string());
+            if (value == "ONLINE" || value == "OFFLINE") {
+               if (!mDirectAudioTracks.isEmpty()) {
+                   for (i=0; i < mDirectAudioTracks.size(); i++) {
+                       mDirectAudioTracks.valueAt(i)->stream->common.set_parameters(
+                          &mDirectAudioTracks.valueAt(i)->stream->common, keyValuePairs.string());
+                   }
+               }
+           }
+        }
+
+        // disable AEC and NS if the device is a BT SCO headset supporting those pre processings
         if (param.get(String8(AUDIO_PARAMETER_KEY_BT_NREC), value) == NO_ERROR) {
             bool btNrecIsOff = (value == AUDIO_PARAMETER_VALUE_OFF);
             if (mBtNrecIsOff != btNrecIsOff) {
@@ -1358,7 +1374,7 @@ void AudioFlinger::registerClient(const sp<IAudioFlingerClient>& client)
         sp<NotificationClient> notificationClient = new NotificationClient(this,
                                                                             client,
                                                                             binder);
-        ALOGV("registerClient() client %p, binder %d", notificationClient.get(), binder.get);
+        ALOGV("registerClient() client %p, binder %d", notificationClient.get(), binder.get());
 
         mNotificationClients.add(binder, notificationClient);
 
@@ -6170,6 +6186,13 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
         mAudioFlinger->registerClient(mAudioFlingerClient);
 
         allocateBufPool();
+#ifdef SRS_PROCESSING
+    } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+        ALOGV("create effects thread for TUNNEL");
+        createEffectThread();
+        mAudioFlingerClient = new AudioFlingerDirectTrackClient(this);
+        mAudioFlinger->registerClient(mAudioFlingerClient);
+#endif
     }
     mDeathRecipient = new PMDeathRecipient(this);
     acquireWakeLock();
@@ -6185,13 +6208,20 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
         mAudioFlinger->deregisterClient(mAudioFlingerClient);
         mAudioFlinger->deleteEffectSession();
         deallocateBufPool();
+#ifdef SRS_PROCESSING
+    } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+        requestAndWaitForEffectsThreadExit();
+        mAudioFlinger->deregisterClient(mAudioFlingerClient);
+        mAudioFlinger->deleteEffectSession();
+#endif
     }
+    AudioSystem::releaseOutput(mOutput);
     releaseWakeLock();
+
     if (mPowerManager != 0) {
         sp<IBinder> binder = mPowerManager->asBinder();
         binder->unlinkToDeath(mDeathRecipient);
     }
-    AudioSystem::releaseOutput(mOutput);
 }
 
 status_t AudioFlinger::DirectAudioTrack::start() {
@@ -6265,8 +6295,13 @@ int64_t AudioFlinger::DirectAudioTrack::getTimeStamp() {
 }
 
 void AudioFlinger::DirectAudioTrack::postEOS(int64_t delayUs) {
-    ALOGV("Notify Audio Track of EOS event");
-    mClient->notify(DIRECT_TRACK_EOS);
+    if (delayUs == 0 ) {
+       ALOGV("Notify Audio Track of EOS event");
+       mClient->notify(DIRECT_TRACK_EOS);
+    } else {
+       ALOGV("Notify Audio Track of hardware failure event");
+       mClient->notify(DIRECT_TRACK_HW_FAIL);
+    }
 }
 
 void AudioFlinger::DirectAudioTrack::allocateBufPool() {
@@ -6342,18 +6377,31 @@ void AudioFlinger::DirectAudioTrack::EffectsThreadEntry() {
 
         if (mEffectConfigChanged) {
             mEffectConfigChanged = false;
-            for ( List<BufferInfo>::iterator it = mEffectsPool.begin();
-                  it != mEffectsPool.end(); it++) {
-                ALOGV("Apply effects on the buffer dspbuf %p, mEffectsPool.size() %d",it->dspBuf,mEffectsPool.size());
-                mAudioFlinger->applyEffectsOn(static_cast<void *>(this),
-                                              (int16_t *)it->localBuf,
-                                              (int16_t *)it->dspBuf,
-                                              it->bytesToWrite);
-                if (mEffectConfigChanged) {
-                    break;
+            if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
+                for ( List<BufferInfo>::iterator it = mEffectsPool.begin();
+                      it != mEffectsPool.end(); it++) {
+                    ALOGV("Apply effects on the buffer dspbuf %p, mEffectsPool.size() %d",
+                             it->dspBuf,mEffectsPool.size());
+                    mAudioFlinger->applyEffectsOn(static_cast<void *>(this),
+                                                  (int16_t *)it->localBuf,
+                                                  (int16_t *)it->dspBuf,
+                                                  it->bytesToWrite);
+                    if (mEffectConfigChanged) {
+                        break;
+                    }
                 }
+#ifdef SRS_PROCESSING
+            } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+                ALOGV("applying effects for TUNNEL");
+                char buffer[2];
+                    //dummy buffer to ensure the SRS processing takes place
+                    // The API mandates Sample rate and channel mode. Hence
+                    // defaulted the sample rate channel mode to 48000 and 2 respectively
+                POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(static_cast<void *>(this),
+                                                         AUDIO_FORMAT_PCM_16_BIT,
+                                                        (int16_t*)buffer, 2, 48000, 2);
+#endif
             }
-
         }
         mEffectLock.unlock();
     }
