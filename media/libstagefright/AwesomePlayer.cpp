@@ -261,6 +261,7 @@ AwesomePlayer::AwesomePlayer()
     }
     reset();
     mIsTunnelAudio = false;
+    mSecurePlayback = false;
 }
 
 AwesomePlayer::~AwesomePlayer() {
@@ -660,6 +661,7 @@ void AwesomePlayer::reset_l() {
     // Disable Tunnel MPQ Audio
     mIsMPQAudio = false;
     mIsMPQTunnelAudio = false;
+    mSecurePlayback = false;
 }
 
 void AwesomePlayer::notifyListener_l(int msg, int ext1, int ext2) {
@@ -1648,7 +1650,7 @@ status_t AwesomePlayer::initAudioDecoder() {
             mime, (TunnelPlayer::mTunnelObjectsAlive), mTunnelAliveAP);
     if((is_mpq)&&((strcmp("true",mpqAudioDecode) == 0)||(atoi(mpqAudioDecode))) &&
             /* Allowing two instances of MPQAudioPlayer to Acomodate Audio from Video
-               Playback while Music Player is still holding an MPQAudioPlayer instance 
+               Playback while Music Player is still holding an MPQAudioPlayer instance
                in Paused state */
             (property_get("ro.product.device", value, "0") &&
             (!strncmp(value, "msm8960", sizeof("msm8960") - 1)))) {
@@ -1833,6 +1835,15 @@ status_t AwesomePlayer::initVideoDecoder(uint32_t flags) {
             NULL, flags, USE_SURFACE_ALLOC ? mNativeWindow : NULL);
 
     mVideoSource = decoder;
+
+    int32_t requiresSecureBuffers;
+
+    mVideoTrack ->getFormat()->findInt32(
+                     kKeyRequiresSecureBuffers,
+                     &requiresSecureBuffers);
+
+    mSecurePlayback = (bool)requiresSecureBuffers;
+
     if (isPostProcEnabled()) {
         const char * decoderComponentName = NULL;
         if (decoder != NULL) {
@@ -3230,7 +3241,7 @@ bool AwesomePlayer::isPostProcEnabled()
 {
     char value[PROPERTY_VALUE_MAX];
     bool postProcOn = false;
-    if (mIsLocalPlayback) {
+    if (mIsLocalPlayback  && !mSecurePlayback) {
         if (property_get(kPostProcOn, value, 0) > 0 && atoi(value) > 0) {
             postProcOn = true;
         }
