@@ -150,6 +150,7 @@ public:
         STREAM_CONFIG_CHANGED,
         A2DP_OUTPUT_STATE,
         EFFECT_CONFIG_CHANGED,
+        USB_OUTPUT_STATE,
         NUM_CONFIG_EVENTS
     };
 
