@@ -80,6 +80,10 @@ NuPlayer::~NuPlayer() {
         mStats->logFpsSummary();
         mStats = NULL;
     }
+    if (mTrackName != NULL) {
+        delete[] mTrackName;
+        mTrackName = NULL;
+    }
 }
 
 void NuPlayer::setUID(uid_t uid) {
