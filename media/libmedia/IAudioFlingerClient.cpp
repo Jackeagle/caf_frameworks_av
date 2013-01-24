@@ -52,7 +52,8 @@ public:
                 ALOGV("ioConfigChanged stream %d", stream);
                 data.writeInt32(stream);
             } else if (event != AudioSystem::OUTPUT_CLOSED && event != AudioSystem::INPUT_CLOSED &&
-                    event != AudioSystem::A2DP_OUTPUT_STATE && event != AudioSystem::EFFECT_CONFIG_CHANGED) {
+                    event != AudioSystem::A2DP_OUTPUT_STATE && event != AudioSystem::EFFECT_CONFIG_CHANGED &&
+                    event != AudioSystem::USB_OUTPUT_STATE) {
                 const AudioSystem::OutputDescriptor *desc = (const AudioSystem::OutputDescriptor *)param2;
                 data.writeInt32(desc->samplingRate);
                 data.writeInt32(desc->format);
