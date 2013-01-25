@@ -54,6 +54,7 @@ NuPlayerStats::NuPlayerStats() {
         mFPSSumUs = 0;
         mVeryFirstFrame = true;
         mSeekPerformed = false;
+        mBufferingEvent = false;
         mTotalTime = 0;
         mFirstFrameTime = 0;
         mTotalRenderingFrames = 0;
@@ -88,6 +89,11 @@ void NuPlayerStats::notifySeek() {
     Mutex::Autolock autoLock(mStatsLock);
     mFirstFrameLatencyStartUs = getTimeOfDayUs();
     mSeekPerformed = true;
+}
+
+void NuPlayerStats::notifyBufferingEvent() {
+    Mutex::Autolock autoLock(mStatsLock);
+    mBufferingEvent = true;
 }
 
 void NuPlayerStats::incrementTotalFrames() {
@@ -171,15 +177,16 @@ void NuPlayerStats::logSyncLoss() {
 void NuPlayerStats::logFps() {
     if (mStatistics) {
         Mutex::Autolock autoLock(mStatsLock);
+
+        int64_t now = getTimeOfDayUs();
         if(mTotalRenderingFrames < 2){
-           mLastFrameUs = getTimeOfDayUs();
-           mFirstFrameTime = getTimeOfDayUs();
+           mLastFrameUs = now;
+           mFirstFrameTime = now;
         }
 
-        mTotalTime = getTimeOfDayUs() - mFirstFrameTime;
-        int64_t now = getTimeOfDayUs();
+        mTotalTime = now - mFirstFrameTime;
         int64_t diff = now - mLastFrameUs;
-        if (diff > 250000 && !mVeryFirstFrame) {
+        if (diff > 250000 && !mVeryFirstFrame && !mBufferingEvent) {
              double fps =((mTotalRenderingFrames - mLastFrame) * 1E6)/diff;
              if (mStatisticsFrames == 0) {
                  fps =((mTotalRenderingFrames - mLastFrame - 1) * 1E6)/diff;
@@ -197,8 +204,12 @@ void NuPlayerStats::logFps() {
         } else if(mVeryFirstFrame) {
             logFirstFrame();
             ALOGW("setting first frame time");
-            mLastFrameUs = getTimeOfDayUs();
+            mLastFrameUs = now;
+        } else if(mBufferingEvent) {
+            mLastFrameUs = now;
+            mLastFrame = mTotalRenderingFrames;
         }
+        mBufferingEvent = false;
     }
 }
 
