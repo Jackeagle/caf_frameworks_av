@@ -297,7 +297,7 @@ status_t SampleIterator::findSampleTime(
         }
 
         mTTSSampleIndex += mTTSCount;
-        mTTSSampleTime += mTTSCount * mTTSDuration;
+        mTTSSampleTime = (uint32_t)(mTTSSampleTime + mTTSCount * mTTSDuration);
 
         mTTSCount = mTable->mTimeToSample[2 * mTimeToSampleIndex];
         mTTSDuration = mTable->mTimeToSample[2 * mTimeToSampleIndex + 1];
