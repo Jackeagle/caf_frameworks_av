@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2006, The Android Open Source Project
+** Copyright (c) 2013 The Linux Foundation. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -697,6 +698,11 @@ void MediaPlayer::notify(int msg, int ext1, int ext2, const Parcel *obj)
         // ext1: Media framework error code.
         // ext2: Implementation dependant error code.
         ALOGE("error (%d, %d)", ext1, ext2);
+        if ( ext1 == MEDIA_ERROR_SERVER_DIED ) {
+            ALOGE("Mediaserver died in %d state",mCurrentState);
+            mAudioSessionId = AudioSystem::newAudioSessionId();
+            AudioSystem::acquireAudioSessionId(mAudioSessionId);
+        }
         mCurrentState = MEDIA_PLAYER_STATE_ERROR;
         if (mPrepareSync)
         {
