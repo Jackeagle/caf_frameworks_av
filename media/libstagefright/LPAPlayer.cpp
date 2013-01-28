@@ -645,6 +645,9 @@ size_t LPAPlayer::fillBuffer(void *data, size_t size) {
                     mInputBuffer = NULL;
                 }
 
+                size_done = 0;
+                size_remaining = size;
+
                 mSeeking = false;
                 if (mObserver && !mInternalSeeking) {
                     ALOGV("fillBuffer: Posting audio seek complete event");
