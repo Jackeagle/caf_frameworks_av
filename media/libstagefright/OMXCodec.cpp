@@ -146,7 +146,17 @@ static bool IsSoftwareCodec(const char *componentName) {
     }
 
     if (!strncmp("OMX.", componentName, 4)) {
-        return false;
+        // Allow software decoders other than Google's when requested
+        // to play qcelp/evrc clips
+        if(((!strncmp(componentName, "OMX.qcom.audio.decoder.evrc", 27))
+           && (strstr(componentName, "evrchw") == NULL)) ||
+           ((!strncmp(componentName, "OMX.qcom.audio.decoder.Qcelp13", 30))
+           && (strstr(componentName, "Qcelp13Hw") == NULL))){
+            return true;
+        }
+        else {
+            return false;
+        }
     }
 
     return true;
