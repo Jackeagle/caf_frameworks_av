@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -498,11 +499,11 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
     {
         Mutex::Autolock autoLock(mLock);
         mNumFramesPlayed += size_done / mFrameSize;
-        mNumFramesPlayedSysTimeUs = ALooper::GetNowUs();
 
         if (mReachedEOS) {
             mPinnedTimeUs = mNumFramesPlayedSysTimeUs;
         } else {
+            mNumFramesPlayedSysTimeUs = ALooper::GetNowUs();
             mPinnedTimeUs = -1ll;
         }
     }
@@ -533,14 +534,21 @@ int64_t AudioPlayer::getRealTimeUsLocked() const {
     // compensate using system time.
     int64_t diffUs;
     if (mPinnedTimeUs >= 0ll) {
-        diffUs = mPinnedTimeUs;
+        if(mReachedEOS)
+            diffUs = ALooper::GetNowUs();
+        else
+            diffUs = mPinnedTimeUs;
+
     } else {
         diffUs = ALooper::GetNowUs();
     }
 
     diffUs -= mNumFramesPlayedSysTimeUs;
 
-    return result + diffUs;
+    if((result + diffUs <= mPositionTimeRealUs) || (!mReachedEOS))
+        return result + diffUs;
+    else
+        return mPositionTimeRealUs;
 }
 
 int64_t AudioPlayer::getMediaTimeUs() {
