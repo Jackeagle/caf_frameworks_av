@@ -243,6 +243,7 @@ void AudioFlinger::onFirstRef()
 {
     int rc = 0;
     mA2DPHandle = -1;
+    mUSBHandle = -1;
 
     Mutex::Autolock _l(mLock);
 
@@ -845,6 +846,7 @@ status_t AudioFlinger::setMasterVolume(float value)
 
     float swmv = value;
     mA2DPHandle = -1;
+    mUSBHandle = -1;
     Mutex::Autolock _l(mLock);
 
     // when hw supports master volume, don't scale in sw mixer
@@ -7981,6 +7983,10 @@ status_t AudioFlinger::setStreamOutput(audio_stream_type_t stream, audio_io_hand
     if ( mA2DPHandle == output ) {
         ALOGV("A2DP Activated and hence notifying the client");
         audioConfigChanged_l(AudioSystem::A2DP_OUTPUT_STATE, mA2DPHandle, &output);
+    }
+    if ( mUSBHandle == output ) {
+        ALOGV("USB Activated and hence notifying the client");
+        audioConfigChanged_l(AudioSystem::USB_OUTPUT_STATE, mUSBHandle, &output);
     }
 
     return NO_ERROR;
