@@ -1543,10 +1543,12 @@ status_t AwesomePlayer::initAudioDecoder() {
              && (nchannels && (nchannels <= 2)) ) {
             char nonOMXDecoder[128];
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
-                ALOGD("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
+                ALOGE("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
                 property_get("use.non-omx.mp3.decoder",nonOMXDecoder,"0");
                 if((strcmp("true",nonOMXDecoder) == 0)) {
                     matchComponentName = (char *) "MP3Decoder";
+                } else {
+                    matchComponentName = (char *) "OMX.google.mp3.decoder";
                 }
             } else if((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC))) {
                 ALOGD("matchComponentName is set to AACDecoder %lld, mime %s",mDurationUs,mime);
@@ -1558,6 +1560,7 @@ status_t AwesomePlayer::initAudioDecoder() {
                 }
             }
             flags |= OMXCodec::kSoftwareCodecsOnly;
+            LPAPlayer::mLpaInProgress = true;
         }
 #endif
         mAudioSource = OMXCodec::Create(
