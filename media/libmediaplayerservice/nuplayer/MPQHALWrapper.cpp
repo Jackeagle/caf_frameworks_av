@@ -288,6 +288,8 @@ void NuPlayer::MPQHALWrapper::postFillThisBuffer() {
 
 void NuPlayer::MPQHALWrapper::onShutDown(const sp<AMessage> &msg) {
     // Then send the response back once done
+	mAudioSink->stop();
+//	mAudioSink.clear();
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kWhatShutdownCompleted);
     notify->post();
@@ -295,6 +297,8 @@ void NuPlayer::MPQHALWrapper::onShutDown(const sp<AMessage> &msg) {
 
 void NuPlayer::MPQHALWrapper::onFlush(const sp<AMessage> &msg) {
     // Then send the response back once done
+//	mAudioSink->pause();
+    mAudioSink->flush();
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kWhatFlushCompleted);
     notify->post();
@@ -307,8 +311,6 @@ void NuPlayer::MPQHALWrapper::onOutputBufferDrained(const sp<AMessage> &msg) {
 
 void NuPlayer::MPQHALWrapper::onInputBufferFilled(const sp<AMessage> &msg) {
     ALOGE("@@@@:: onInputBufferFilled");
-    // request for next buffer before processing the current buffer
-    postFillThisBuffer();
 
     //sp<RefBase> obj;
     sp<ABuffer> buffer;
@@ -323,6 +325,8 @@ void NuPlayer::MPQHALWrapper::onInputBufferFilled(const sp<AMessage> &msg) {
     } else {
        ALOGE("there is a buffer");
     }
+    // request for next buffer before processing the current buffer
+    postFillThisBuffer();
     //Extract the buffer from Message
     //if (!msg->findObject("buffer", &obj)) {
     //    CHECK(msg->findInt32("err", &err));
@@ -350,7 +354,10 @@ void NuPlayer::MPQHALWrapper::onInputBufferFilled(const sp<AMessage> &msg) {
     notify->post();
 #endif
     /* giving frame to renderer to give to Audiosink */
-    sp<AMessage> reply;
+//    sp<AMessage> reply;
+
+    sp<AMessage> reply = new AMessage(kWhatOutputBufferDrained, id());
+
     bool audio = true;
     if(mRenderer != NULL) {
     mRenderer->queueBuffer(audio, buffer, reply);
