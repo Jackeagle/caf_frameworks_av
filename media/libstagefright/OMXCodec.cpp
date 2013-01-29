@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012-2013 Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
  */
 
 /*--------------------------------------------------------------------------
-Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+Copyright (c) 2012-2013, Linux Foundation. All rights reserved.
 --------------------------------------------------------------------------*/
 
 //#define LOG_NDEBUG 0
@@ -572,7 +572,7 @@ status_t OMXCodec::parseAVCCodecSpecificData(
         mSPSParsed = true;
         CODEC_LOGV("SPS parsed");
         if (info.mInterlaced) {
-            //mInterlaceFormatDetected = true; //Enable when Interlace is supported
+            mInterlaceFormatDetected = true; //Enable when Interlace is supported
             mUseArbitraryMode = true;
             CODEC_LOGI("Interlace format detected");
         } else {
@@ -582,7 +582,7 @@ status_t OMXCodec::parseAVCCodecSpecificData(
     else {
       CODEC_LOGI("ParseSPS could not find if content is interlaced");
       mSPSParsed = false;
-      //mInterlaceFormatDetected = false; //Enable when Interlace is supported
+      mInterlaceFormatDetected = false; //Enable when Interlace is supported
     }
     ptr += 6;
     size -= 6;
@@ -2175,6 +2175,11 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
             def.format.video.nSliceHeight,
             def.format.video.eColorFormat);
     format = def.format.video.eColorFormat;
+
+    if (mInterlaceFormatDetected) {
+        mOutputFormat->setInt32(kKeyInterlaced, HAL_PIXEL_FORMAT_INTERLACE);
+    }
+
     if(def.format.video.eColorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar)
       format = HAL_PIXEL_FORMAT_YCrCb_420_SP;
 
