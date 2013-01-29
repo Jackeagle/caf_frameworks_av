@@ -767,6 +767,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
 #ifdef QCOM_WFD_SINK
             if (mSourceType == kWfdSource) {
+                Mutex::Autolock autoLock(mLock);
                 CHECK(mSource != NULL);
                 mSource->pause();
             }
@@ -799,6 +800,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     postScanSources();
                 }
             }else if (mSourceType == kWfdSource) {
+                Mutex::Autolock autoLock(mLock);
                 CHECK(mSource != NULL);
                 mSource->resume();
             }else {
