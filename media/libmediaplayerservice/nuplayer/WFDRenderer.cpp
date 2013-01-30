@@ -756,10 +756,10 @@ void NuPlayer::WFDRenderer::wfdOnPause() {
     ++mVideoQueueGeneration;
 
 
-    if (mHasAudio) {
+/*    if (mHasAudio) {
         mAudioSink->pause();
     }
-
+*/
     ALOGV("now paused audio queue has %d entries, video has %d entries",
           mAudioQueue.size(), mVideoQueue.size());
 
