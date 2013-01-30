@@ -630,6 +630,14 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
+    err = mNativeWindow.get()->perform(mNativeWindow.get(),
+                             NATIVE_WINDOW_SET_BUFFERS_SIZE, def.nBufferSize);
+    if (err != 0) {
+        ALOGE("native_window_set_buffers_size failed: %s (%d)", strerror(-err),
+                -err);
+        return err;
+    }
+
     ALOGV("[%s] Allocating %lu buffers from a native window of size %lu on "
          "output port",
          mComponentName.c_str(), def.nBufferCountActual, def.nBufferSize);
@@ -3181,7 +3189,7 @@ bool ACodec::LoadedState::onConfigureComponent(
        !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str())) {
 
         char value_ss[PROPERTY_VALUE_MAX];
-        if (property_get("hls.disable.smooth.streaming", value_ss, NULL) &&
+        if (property_get("persist.no.smooth.streaming", value_ss, NULL) &&
            (!strcasecmp(value_ss, "true") || !strcmp(value_ss, "1"))) {
 
             ALOGW("Dont enable Smooth streaming, disable property is set");
