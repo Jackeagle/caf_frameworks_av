@@ -1158,6 +1158,9 @@ status_t AwesomePlayer::startAudioPlayer_l(bool sendErrorNotification) {
 
         if (err != OK) {
             if (sendErrorNotification) {
+                if(err == ERROR_END_OF_STREAM) {
+                    notifyListener_l(MEDIA_PLAYBACK_COMPLETE);
+                }
                 notifyListener_l(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, err);
             }
 
