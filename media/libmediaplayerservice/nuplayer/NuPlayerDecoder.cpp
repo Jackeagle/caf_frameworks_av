@@ -75,7 +75,13 @@ void NuPlayer::Decoder::configure(const sp<MetaData> &meta) {
         const char *mime;
         CHECK(meta->findCString(kKeyMIMEType, &mime));
         if((mIsTargetMPQ == true)&&
-           (!strcasecmp(MEDIA_MIMETYPE_AUDIO_RAW, mime) || !strcasecmp(MEDIA_MIMETYPE_AUDIO_AC3, mime))) {
+          (!strcasecmp(MEDIA_MIMETYPE_AUDIO_RAW, mime) || !strcasecmp(MEDIA_MIMETYPE_AUDIO_AC3, mime)
+#ifdef QCOM_WFD_SINK
+          // on MPQ for WFD sink, AAC decoder also needs to be routed to
+          // MPQHALWrapper and not  ACodec.
+          ||!strcasecmp(MEDIA_MIMETYPE_AUDIO_AAC, mime)
+#endif //QCOM_WFD_SINK
+          )) {
             mCreateMPQAudioHALwrapper = true;
         }else {
             ALOGV("@@@@:: Create ACodec");
