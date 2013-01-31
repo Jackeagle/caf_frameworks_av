@@ -427,6 +427,17 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
         if (mAnchorTimeMediaUs < 0) {
             delayUs = 0;
 
+           if (!mMediaTimeRead)
+            {
+            if (mRefVideoMediaTime <0) {
+                mRefVideoMediaTime = mediaTimeUs;
+                }
+            }
+           else
+            {
+              mRefVideoMediaTime = mRefAudioMediaTimeUs;
+            }
+
             if (!mHasAudio) {
                 mAnchorTimeMediaUs = mediaTimeUs;
                 mAnchorTimeRealUs = wfdGetMediaTime(false);
@@ -438,14 +449,24 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
                mAnchorTimeRealUs = wfdGetMediaTime(false);
                mWasPaused = false;
             }
-
             if (mRefVideoMediaTime <0) {
                 mRefVideoMediaTime = mediaTimeUs;
             }
 
+          if (!mMediaTimeRead)
+            {
+            if (mRefVideoMediaTime <0) {
+                mRefVideoMediaTime = mediaTimeUs;
+            }
+            }
+           else
+            {
+              mRefVideoMediaTime = mRefAudioMediaTimeUs;
+            }
+
             int64_t realTimeUs = mediaTimeUs - mRefVideoMediaTime;
             delayUs = realTimeUs - (wfdGetMediaTime(false));
-            ALOGV("@@@@:: wfdPostDrainVideoQueue delay  %lld us  mediaTimeUs %lld us   wfdGetMediaTime()  %lld us ", delayUs, mediaTimeUs, wfdGetMediaTime(false));
+            ALOGV("@@@@:: wfdPostDrainVideoQueue delay  %lld us  mediaTimeUs %lld us   wfdGetMediaTime()  %lld us   mRefVideoMediaTime   %lld us   ", delayUs, mediaTimeUs, wfdGetMediaTime(false),mRefVideoMediaTime);
         }
     }
     if(delayUs < 0) {
@@ -493,7 +514,9 @@ void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
     mVideoLateByUs = nowUs - realTimeUs;
 
     bool tooLate = (mVideoLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
-    ALOGV("@@@@:: wfdOnDrainVideoQueue mediaTimeUs %lld us realTimeUs %lld us nowUs  %lld us  mVideoLateByUs  %lld us ", mediaTimeUs, realTimeUs, nowUs, mVideoLateByUs);
+    ALOGV("@@@@:: wfdOnDrainVideoQueue mediaTimeUs %lld us \
+           realTimeUs %lld us nowUs  %lld us  mVideoLateByUs  %lld us",\
+           mediaTimeUs, realTimeUs, nowUs, mVideoLateByUs);
 
     if (tooLate) {
         ALOGV("video late by %lld us (%.2f secs)",
