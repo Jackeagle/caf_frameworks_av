@@ -802,7 +802,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 break;
             }
             if (mSource->isPrepareDone()) {
-                notifyListener(MEDIA_PREPARED, 0, 0);
                 int64_t durationUs;
                 if (mDriver != NULL && mSource->getDuration(&durationUs) == OK) {
                     sp<NuPlayerDriver> driver = mDriver.promote();
@@ -810,6 +809,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                         driver->notifyDuration(durationUs);
                     }
                 }
+                notifyListener(MEDIA_PREPARED, 0, 0);
             } else {
                 msg->post(100000ll);
             }
