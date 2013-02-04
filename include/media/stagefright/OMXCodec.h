@@ -381,11 +381,13 @@ private:
             const void *data, size_t size,
             unsigned *profile, unsigned *level);
 
+    status_t flushBuffersOnError(void);
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
     status_t setWMAFormat(const sp<MetaData> &inputFormat);
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
 
+    status_t releaseMediaBuffersOn(OMX_U32 portIndex);
     /* Dynamic Port Reconfig support */
     typedef enum {
         BUFFER_WITH_CLIENT = 0x1,
