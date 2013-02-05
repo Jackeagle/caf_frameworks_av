@@ -87,7 +87,8 @@ status_t AudioTrack::getMinFrameCount(
 // ---------------------------------------------------------------------------
 
 AudioTrack::AudioTrack()
-    : mStatus(NO_INIT),
+    : mCblk(NULL),
+      mStatus(NO_INIT),
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
@@ -107,7 +108,8 @@ AudioTrack::AudioTrack(
         void* user,
         int notificationFrames,
         int sessionId)
-    : mStatus(NO_INIT),
+    : mCblk(NULL),
+      mStatus(NO_INIT),
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
@@ -131,7 +133,8 @@ AudioTrack::AudioTrack(
         void* user,
         int notificationFrames,
         int sessionId)
-    : mStatus(NO_INIT),
+    : mCblk(NULL),
+      mStatus(NO_INIT),
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL), mPreviousSchedulingGroup(SP_DEFAULT),
       mAudioFlinger(NULL),
@@ -153,7 +156,8 @@ AudioTrack::AudioTrack(
         void* user,
         int notificationFrames,
         int sessionId)
-    : mStatus(NO_INIT),
+  :   mCblk(NULL),
+      mStatus(NO_INIT),
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
@@ -1542,7 +1546,8 @@ status_t AudioTrack::dump(int fd, const Vector<String16>& args) const
     result.append(" AudioTrack::dump\n");
     snprintf(buffer, 255, "  stream type(%d), left - right volume(%f, %f)\n", mStreamType, mVolume[0], mVolume[1]);
     result.append(buffer);
-    snprintf(buffer, 255, "  format(%d), channel count(%d), frame count(%d)\n", mFormat, mChannelCount, mCblk->frameCount);
+    snprintf(buffer, 255, "  format(%d), channel count(%d), frame count(%d)\n", mFormat, mChannelCount,
+             (mCblk == 0) ? 0 : mCblk->frameCount);
     result.append(buffer);
     snprintf(buffer, 255, "  sample rate(%d), status(%d), muted(%d)\n", (mCblk == 0) ? 0 : mCblk->sampleRate, mStatus, mMuted);
     result.append(buffer);
