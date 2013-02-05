@@ -240,6 +240,7 @@ void AudioPlayer::resume() {
     } else {
         mAudioTrack->start();
     }
+    mPinnedTimeUs = -1ll;
 }
 
 void AudioPlayer::reset() {
