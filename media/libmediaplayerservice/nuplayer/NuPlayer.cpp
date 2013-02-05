@@ -1106,7 +1106,12 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
     }
 
     if( track == kAudio || track == kVideo) {
-        (*decoder)->configure(meta);
+       //let the decoder know if it is a wfd
+       //sink session.
+       if(mSourceType == kWfdSource)
+          (*decoder)->configure(meta, true);
+       else
+          (*decoder)->configure(meta); //other cases as before
     }
 
     int64_t durationUs;
