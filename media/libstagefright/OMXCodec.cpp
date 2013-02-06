@@ -4450,8 +4450,10 @@ status_t OMXCodec::start(MetaData *meta) {
             return mState == ERROR ? UNKNOWN_ERROR : OK;
         } else {   // SW Codec
             mPaused = false;
-            setState(EXECUTING);
-            drainInputBuffers();
+            if (mState != FLUSHING) {
+                setState(EXECUTING);
+                drainInputBuffers();
+            }
             return OK;
         }
     }
