@@ -234,7 +234,8 @@ AudioFlinger::AudioFlinger()
       mMasterMute(false),
       mNextUniqueId(1),
       mMode(AUDIO_MODE_INVALID),
-      mBtNrecIsOff(false)
+      mBtNrecIsOff(false),
+      mAllChainsLocked(false)
 {
 }
 
@@ -1164,17 +1165,20 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
         if (desc != NULL) {
             ALOGV("setParameters for mAudioTracks size %d desc %p",mDirectAudioTracks.size(),desc);
             desc->stream->common.set_parameters(&desc->stream->common, keyValuePairs.string());
-#ifdef SRS_PROCESSING
             AudioParameter param = AudioParameter(keyValuePairs);
             String8 key = String8(AudioParameter::keyRouting);
             int device;
             if (param.getInt(key, device) == NO_ERROR) {
+#ifdef SRS_PROCESSING
                 ALOGV("setParameters:: routing change to device %d", device);
                 desc->device = (audio_devices_t)device;
                 POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(desc->trackRefPtr, param, device);
-            }
 #endif
-            return NO_ERROR;
+                if(mLPAEffectChain != NULL){
+                    mLPAEffectChain->setDevice_l(device);
+                    audioConfigChanged_l(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
+                }
+            }
         }
     }
 
@@ -2857,9 +2861,6 @@ bool AudioFlinger::PlaybackThread::threadLoop()
 
     // MIXER
     nsecs_t lastWarning = 0;
-if (mType == MIXER) {
-    longStandbyExit = false;
-}
 #ifdef SRS_PROCESSING
 if (mType == MIXER) {
         POSTPRO_PATCH_ICS_OUTPROC_MIX_INIT(this, gettid());
@@ -3001,11 +3002,6 @@ if (mType == MIXER) {
                     ALOGW("write blocked for %llu msecs, %d delayed writes, thread %p",
                             ns2ms(delta), mNumDelayedWrites, this);
                     lastWarning = now;
-                }
-                // FIXME this is broken: longStandbyExit should be handled out of the if() and with
-                // a different threshold. Or completely removed for what it is worth anyway...
-                if (mStandby) {
-                    longStandbyExit = true;
                 }
             }
 }
@@ -3223,11 +3219,10 @@ void AudioFlinger::MixerThread::threadLoop_sleepTime()
         } else {
             sleepTime = idleSleepTime;
         }
-    } else if (mBytesWritten != 0 ||
-               (mMixerStatus == MIXER_TRACKS_ENABLED && longStandbyExit)) {
+    } else if (mBytesWritten != 0 || (mMixerStatus == MIXER_TRACKS_ENABLED)) {
         memset (mMixBuffer, 0, mixBufferSize);
         sleepTime = 0;
-        ALOGV_IF((mBytesWritten == 0 && (mMixerStatus == MIXER_TRACKS_ENABLED && longStandbyExit)), "anticipated start");
+        ALOGV_IF((mBytesWritten == 0 && (mMixerStatus == MIXER_TRACKS_ENABLED)), "anticipated start");
     }
     // TODO add standby time extension fct of effect tail
 }
@@ -6349,6 +6344,7 @@ void AudioFlinger::DirectAudioTrack::allocateBufPool() {
         memset(local_buf, 0, nSize);
         // Store this information for internal mapping / maintanence
         BufferInfo buf(local_buf, dsp_buf, nSize);
+        buf.bytesToWrite = 0;
         mBufPool.push_back(buf);
         mEffectsPool.push_back(buf);
 
@@ -8669,9 +8665,13 @@ void AudioFlinger::ThreadBase::lockEffectChains_l(
         Vector< sp<AudioFlinger::EffectChain> >& effectChains)
 {
     effectChains = mEffectChains;
+    mAudioFlinger->mAllChainsLocked = true;
     for (size_t i = 0; i < mEffectChains.size(); i++) {
-        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
+        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain) {
             mEffectChains[i]->lock();
+        } else {
+            mAudioFlinger-> mAllChainsLocked = false;
+        }
     }
 }
 
@@ -8679,7 +8679,7 @@ void AudioFlinger::ThreadBase::unlockEffectChains(
         const Vector< sp<AudioFlinger::EffectChain> >& effectChains)
 {
     for (size_t i = 0; i < effectChains.size(); i++) {
-        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
+        if (mAudioFlinger-> mAllChainsLocked || mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
             effectChains[i]->unlock();
     }
 }
