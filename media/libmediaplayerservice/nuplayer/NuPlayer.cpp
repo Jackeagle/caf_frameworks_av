@@ -1239,6 +1239,15 @@ status_t NuPlayer::feedDecoderInputData(int track, const sp<AMessage> &msg) {
                 mStats->incrementTotalFrames();
             }
 
+            if (mSourceType == kWfdSource) {
+                int32_t nBytesLost =0;
+                accessUnit->meta()->findInt32("bytesLost",&nBytesLost);
+                if (nBytesLost) {
+                    notifyListener(MEDIA_INFO, MEDIA_INFO_NETWORK_BANDWIDTH, nBytesLost);
+                    ALOGE("MEDIA_INFO_NETWORK_BANDWIDTH nBytesLost (%d)",nBytesLost);
+                }
+            }
+
             if (mVideoLateByUs > 100000ll
                     && mVideoIsAVC
                     && !IsAVCReferenceFrame(accessUnit)) {
