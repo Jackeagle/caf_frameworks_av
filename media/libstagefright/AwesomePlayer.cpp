@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- *
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution, Apache license notifications and license are retained
+ * for attribution purposes only.
+
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -14,9 +17,6 @@
  * limitations under the License.
  */
 
-/*--------------------------------------------------------------------------
-Copyright (c) 2012, Code Aurora Forum. All rights reserved.
---------------------------------------------------------------------------*/
 #undef DEBUG_HDCP
 
 //#define LOG_NDEBUG 0
@@ -198,6 +198,7 @@ AwesomePlayer::AwesomePlayer()
       mUIDValid(false),
       mTimeSource(NULL),
       mVideoRendererIsPreview(false),
+      mAudioEOD(false),
       mAudioPlayer(NULL),
       mDisplayWidth(0),
       mDisplayHeight(0),
@@ -1647,6 +1648,12 @@ status_t AwesomePlayer::initAudioDecoder() {
        ALOGE("Normal Audio Playback");
 #endif
 #endif
+
+    if (isStreamingHTTP()) {
+      ALOGV("Streaming, force disable tunnel mode playback");
+      mIsTunnelAudio = false;
+    }
+
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
              (mIsTunnelAudio && (mTunnelAliveAP == 0)) || mIsMPQTunnelAudio) {
         ALOGD("Set Audio Track as Audio Source");
@@ -1848,6 +1855,7 @@ void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
         // If we don't have a video time, seek audio to the originally
         // requested seek time instead.
 
+        mAudioEOD = false;
         mAudioPlayer->seekTo(videoTimeUs < 0 ? mSeekTimeUs : videoTimeUs);
         mWatchForAudioSeekComplete = true;
         mWatchForAudioEOS = true;
@@ -2053,7 +2061,7 @@ void AwesomePlayer::onVideoEvent() {
     }
 
     TimeSource *ts =
-        ((mFlags & AUDIO_AT_EOS) || !(mFlags & AUDIOPLAYER_STARTED))
+        ((mFlags & AUDIO_AT_EOS) || !(mFlags & AUDIOPLAYER_STARTED) || (mAudioEOD == true))
             ? &mSystemTimeSource : mTimeSource;
 
     if (mFlags & FIRST_FRAME) {
@@ -2074,7 +2082,8 @@ void AwesomePlayer::onVideoEvent() {
 
     int64_t realTimeUs, mediaTimeUs, nowUs = 0, latenessUs = 0;
     if (!(mFlags & AUDIO_AT_EOS) && mAudioPlayer != NULL
-        && mAudioPlayer->getMediaTimeMapping(&realTimeUs, &mediaTimeUs)) {
+        && mAudioPlayer->getMediaTimeMapping(&realTimeUs, &mediaTimeUs)
+        && (mAudioEOD == false)) {
         mTimeSourceDeltaUs = realTimeUs - mediaTimeUs;
     }
 
@@ -2285,7 +2294,6 @@ void AwesomePlayer::onCheckAudioStatus() {
     if (mWatchForAudioEOS && mAudioPlayer->reachedEOS(&finalStatus)) {
         mWatchForAudioEOS = false;
         modifyFlags(AUDIO_AT_EOS, SET);
-        modifyFlags(FIRST_FRAME, SET);
         postStreamDoneEvent_l(finalStatus);
     }
 }
@@ -2637,6 +2645,8 @@ uint32_t AwesomePlayer::flags() const {
 }
 
 void AwesomePlayer::postAudioEOS(int64_t delayUs) {
+    mAudioEOD = true;
+    modifyFlags(FIRST_FRAME, SET);
     postCheckAudioStatusEvent(delayUs);
 }
 

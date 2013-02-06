@@ -58,6 +58,8 @@ struct ATSParser::Program : public RefBase {
     void signalDiscontinuity(
             DiscontinuityType type, const sp<AMessage> &extra);
 
+    void signalSeekDiscontinuity(int nStream);
+
     void signalEOS(status_t finalResult);
 
     sp<MediaSource> getSource(SourceType type);
@@ -204,6 +206,14 @@ bool ATSParser::Program::parsePID(
             payload_unit_start_indicator, br);
 
     return true;
+}
+
+void ATSParser::Program::signalSeekDiscontinuity(int nStream) {
+    for (size_t i = 0; i < mStreams.size(); ++i) {
+        sp<Stream> stream = mStreams.editValueAt(i);
+        if (stream->pid() == nStream)
+            stream->signalDiscontinuity(ATSParser::DISCONTINUITY_TS_PLAYER_SEEK, NULL);
+    }
 }
 
 void ATSParser::Program::signalDiscontinuity(
@@ -942,6 +952,14 @@ void ATSParser::signalDiscontinuity(
         DiscontinuityType type, const sp<AMessage> &extra) {
     for (size_t i = 0; i < mPrograms.size(); ++i) {
         mPrograms.editItemAt(i)->signalDiscontinuity(type, extra);
+    }
+}
+
+void ATSParser::signalSeekDiscontinuity(int nProgram, int nStream) {
+    for (size_t i = 0; i < mPrograms.size(); ++i) {
+        sp<Program> program = mPrograms.editItemAt(i);
+        if (program->programMapPID() == nProgram)
+            program->signalSeekDiscontinuity(nStream);
     }
 }
 

@@ -1124,7 +1124,6 @@ public:
 
         // FIXME move these declarations into the specific sub-class that needs them
         // MIXER only
-        bool                            longStandbyExit;
         uint32_t                        sleepTimeShift;
 
         // same as AudioFlinger::mStandbyTimeInNsecs except for DIRECT which uses a shorter value
