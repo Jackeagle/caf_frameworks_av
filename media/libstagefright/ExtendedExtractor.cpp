@@ -111,7 +111,7 @@ sp<MediaExtractor> ExtendedExtractor::CreateExtractor(const sp<DataSource> &sour
     return extractor;
 }
 
-void ExtendedExtractor::RegisterSniffers() {
+void ExtendedExtractor::RegisterSniffers(Sniffer *sniffer) {
     void *mmParserLib = MmParserLib();
     if (mmParserLib == NULL) {
         return;
@@ -137,7 +137,7 @@ void ExtendedExtractor::RegisterSniffers() {
     bool flag= true;
     //Register the remote sniffers with the DataSource.
     for(int i=0; i<snifferCount; i++) {
-          DataSource::RegisterSniffer(snifferArray[i],flag);
+          sniffer->RegisterSniffer(snifferArray[i],flag);
           flag = false;
     }
 }
