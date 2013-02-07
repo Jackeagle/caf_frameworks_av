@@ -574,7 +574,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 if ((mAudioEOS || mAudioDecoder == NULL)
                         && (mVideoEOS || mVideoDecoder == NULL)) {
-                    notifyListener(MEDIA_PLAYBACK_COMPLETE, 0, 0);
+                     if ((mSourceType == kHttpDashSource) &&
+                         (finalResult == ERROR_END_OF_STREAM)) {
+                       notifyListener(MEDIA_PLAYBACK_COMPLETE, 0, 0);
+                     } else if (mSourceType != kHttpDashSource) {
+                       notifyListener(MEDIA_PLAYBACK_COMPLETE, 0, 0);
+                     }
                 }
             } else if (what == Renderer::kWhatPosition) {
                 int64_t positionUs;
