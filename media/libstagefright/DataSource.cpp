@@ -71,104 +71,20 @@ status_t DataSource::getSize(off64_t *size) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Mutex DataSource::gSnifferMutex;
-List<DataSource::SnifferFunc> DataSource::gSniffers;
-List<DataSource::SnifferFunc>::iterator DataSource::extendedSnifferPosition;
-
 bool DataSource::sniff(
         String8 *mimeType, float *confidence, sp<AMessage> *meta) {
 
-    *mimeType = "";
-    *confidence = 0.0f;
-    meta->clear();
-    Mutex::Autolock autoLock(gSnifferMutex);
-    for (List<SnifferFunc>::iterator it = gSniffers.begin();
-         it != gSniffers.end(); ++it) {
-
-        //Dont call the first sniffer from extended extarctor
-        if(it == extendedSnifferPosition)
-            continue;
-
-        String8 newMimeType;
-        float newConfidence = 0.0;
-        sp<AMessage> newMeta;
-        if ((*it)(this, &newMimeType, &newConfidence, &newMeta)) {
-            if (newConfidence > *confidence) {
-                *mimeType = newMimeType;
-                *confidence = newConfidence;
-                *meta = newMeta;
-                if(*confidence >= 0.6f) {
-
-                    ALOGV("Ignore other Sniffers - confidence = %f , mimeType = %s",*confidence,mimeType->string());
-
-                    char value[PROPERTY_VALUE_MAX];
-                    if( (!strcasecmp((*mimeType).string(), MEDIA_MIMETYPE_CONTAINER_MPEG4)) &&
-                        (property_get("mmp.enable.3g2", value, NULL)) &&
-                        (!strcasecmp(value, "true") || !strcmp(value, "1"))) {
-
-                        //Incase of mimeType MPEG4 call the extended parser sniffer to check
-                        //if this is fragmented or not.
-                        ALOGV("calling Extended Sniff if mimeType = %s ",(*mimeType).string());
-                        String8 tmpMimeType;
-                        float tmpConfidence = 0.0 ;
-                        sp<AMessage> tmpMeta;
-                        (*extendedSnifferPosition)(this, &tmpMimeType, &tmpConfidence, &tmpMeta);
-                        if (tmpConfidence > *confidence) {
-                            *mimeType = tmpMimeType;
-                            *confidence = tmpConfidence;
-                            *meta = tmpMeta;
-                            ALOGV("Confidence of Extended sniffer greater than previous sniffer ");
-                        }
-                    }
-
-                    break;
-                }
-            }
-        }
-    }
-
-    return *confidence > 0.0;
+    return  mSniffer->sniff(this, mimeType, confidence, meta);
 }
 
 // static
 void DataSource::RegisterSniffer(SnifferFunc func, bool isExtendedExtractor) {
-    Mutex::Autolock autoLock(gSnifferMutex);
-
-    for (List<SnifferFunc>::iterator it = gSniffers.begin();
-         it != gSniffers.end(); ++it) {
-        if (*it == func) {
-            return;
-        }
-    }
-
-    gSniffers.push_back(func);
-
-    if(isExtendedExtractor) {
-        extendedSnifferPosition = gSniffers.end();
-        extendedSnifferPosition--;
-    }
+    return;
 }
 
 // static
 void DataSource::RegisterDefaultSniffers() {
-    RegisterSniffer(SniffMPEG4);
-    RegisterSniffer(SniffMatroska);
-    RegisterSniffer(SniffOgg);
-    RegisterSniffer(SniffWAV);
-    RegisterSniffer(SniffFLAC);
-    RegisterSniffer(SniffAMR);
-    RegisterSniffer(SniffMPEG2TS);
-    RegisterSniffer(SniffMP3);
-    RegisterSniffer(SniffAAC);
-    RegisterSniffer(SniffMPEG2PS);
-    RegisterSniffer(SniffWVM);
-    ExtendedExtractor::RegisterSniffers();
-
-    char value[PROPERTY_VALUE_MAX];
-    if (property_get("drm.service.enabled", value, NULL)
-            && (!strcmp(value, "1") || !strcasecmp(value, "true"))) {
-        RegisterSniffer(SniffDRM);
-    }
+    return;
 }
 
 // static
@@ -232,6 +148,109 @@ sp<DataSource> DataSource::CreateFromURI(
 
 String8 DataSource::getMIMEType() const {
     return String8("application/octet-stream");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Sniffer::Sniffer() {
+    RegisterDefaultSniffers();
+}
+
+bool Sniffer::sniff(
+        DataSource *source,String8 *mimeType, float *confidence, sp<AMessage> *meta) {
+
+    *mimeType = "";
+    *confidence = 0.0f;
+    meta->clear();
+    Mutex::Autolock autoLock(mSnifferMutex);
+
+    for (List<SnifferFunc>::iterator it = mSniffers.begin();
+         it != mSniffers.end(); ++it) {
+
+        //Dont call the first sniffer from extended extarctor
+        if(it == extendedSnifferPosition)
+            continue;
+
+        String8 newMimeType;
+        float newConfidence = 0.0;
+        sp<AMessage> newMeta;
+        if ((*it)(source, &newMimeType, &newConfidence, &newMeta)) {
+            if (newConfidence > *confidence) {
+                *mimeType = newMimeType;
+                *confidence = newConfidence;
+                *meta = newMeta;
+                if(*confidence >= 0.6f) {
+
+                    ALOGV("Ignore other Sniffers - confidence = %f , mimeType = %s",*confidence,mimeType->string());
+
+                    char value[PROPERTY_VALUE_MAX];
+                    if( (!strcasecmp((*mimeType).string(), MEDIA_MIMETYPE_CONTAINER_MPEG4)) &&
+                        (property_get("mmp.enable.3g2", value, NULL)) &&
+                        (!strcasecmp(value, "true") || !strcmp(value, "1"))) {
+
+                        //Incase of mimeType MPEG4 call the extended parser sniffer to check
+                        //if this is fragmented or not.
+                        ALOGV("calling Extended Sniff if mimeType = %s ",(*mimeType).string());
+                        String8 tmpMimeType;
+                        float tmpConfidence = 0.0 ;
+                        sp<AMessage> tmpMeta;
+                        (*extendedSnifferPosition)(source, &tmpMimeType, &tmpConfidence, &tmpMeta);
+                        if (tmpConfidence > *confidence) {
+                            *mimeType = tmpMimeType;
+                            *confidence = tmpConfidence;
+                            *meta = tmpMeta;
+                            ALOGV("Confidence of Extended sniffer greater than previous sniffer ");
+                        }
+                    }
+
+                    break;
+                }
+            }
+        }
+    }
+
+    return *confidence > 0.0;
+}
+
+// static
+void Sniffer::RegisterSniffer(SnifferFunc func, bool isExtendedExtractor) {
+    Mutex::Autolock autoLock(mSnifferMutex);
+
+    for (List<SnifferFunc>::iterator it = mSniffers.begin();
+         it != mSniffers.end(); ++it) {
+        if (*it == func) {
+            return;
+        }
+    }
+
+    mSniffers.push_back(func);
+
+    if(isExtendedExtractor) {
+        extendedSnifferPosition = mSniffers.end();
+        extendedSnifferPosition--;
+    }
+}
+
+// static
+void Sniffer::RegisterDefaultSniffers() {
+    RegisterSniffer(SniffMPEG4);
+    RegisterSniffer(SniffMatroska);
+    RegisterSniffer(SniffOgg);
+    RegisterSniffer(SniffWAV);
+    RegisterSniffer(SniffFLAC);
+    RegisterSniffer(SniffAMR);
+    RegisterSniffer(SniffMPEG2TS);
+    RegisterSniffer(SniffMP3);
+    RegisterSniffer(SniffAAC);
+    RegisterSniffer(SniffMPEG2PS);
+    RegisterSniffer(SniffWVM);
+    ExtendedExtractor::RegisterSniffers(this);
+
+    char value[PROPERTY_VALUE_MAX];
+    if (property_get("drm.service.enabled", value, NULL)
+            && (!strcmp(value, "1") || !strcasecmp(value, "true"))) {
+        RegisterSniffer(SniffDRM);
+    }
 }
 
 }  // namespace android

@@ -40,7 +40,7 @@ class ExtendedExtractor
 {
 public:
     static sp<MediaExtractor> CreateExtractor(const sp<DataSource> &source, const char *mime);
-    static void RegisterSniffers();
+    static void RegisterSniffers(Sniffer *sniffer);
 };
 
 }  // namespace android
