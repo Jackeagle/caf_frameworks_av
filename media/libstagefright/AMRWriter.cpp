@@ -275,7 +275,7 @@ status_t AMRWriter::threadFunc() {
     close(mFd);
     mFd = -1;
     mReachedEOS = true;
-    if ((err == ERROR_END_OF_STREAM)||(err = -ETIMEDOUT)) {
+    if ((err == ERROR_END_OF_STREAM)||(err == -ETIMEDOUT)) {
         return OK;
     }
     return err;
