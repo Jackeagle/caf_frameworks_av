@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (C) 2011 Code Aurora Forum
+ * Copyright (C) 2011 The Linux Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
  */
 
 /*--------------------------------------------------------------------------
-Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+Copyright (c) 2012, The Linux Foundation. All rights reserved.
 --------------------------------------------------------------------------*/
 
 //#define LOG_NDEBUG 0
