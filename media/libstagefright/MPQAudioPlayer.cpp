@@ -200,7 +200,9 @@ MPQAudioPlayer::~MPQAudioPlayer() {
         mQueue.stop();
     }
 
-    reset();
+    if(mStarted)
+        reset();
+
     if(mMPQAudioObjectsAlive > 0)
         mMPQAudioObjectsAlive--;
 
@@ -261,12 +263,6 @@ status_t MPQAudioPlayer::start(bool sourceAlreadyStarted) {
         return err;
     }
 
-    //Create event, extractor and initialize all the
-    //mutexes and coditional variables
-    ALOGV("Creat threads ++");
-    createThreads();
-    ALOGV("All Threads Created.");
-
     sp<MetaData> format = mSource->getFormat();
     if(!format->findInt32(kKeyChannelMask, &mChannelMask)) {
         // log only when there's a risk of ambiguity of channel mask selection
@@ -286,7 +282,12 @@ status_t MPQAudioPlayer::start(bool sourceAlreadyStarted) {
         &MPQAudioPlayer::postEOS,
         this,
         (mA2DPEnabled ?  AUDIO_OUTPUT_FLAG_NONE : flags ));
+
+    if (err == OK)
+        err = configurePCM();
+
     if (err != OK) {
+
         if (mFirstBuffer != NULL) {
             mFirstBuffer->release();
             mFirstBuffer = NULL;
@@ -295,16 +296,19 @@ status_t MPQAudioPlayer::start(bool sourceAlreadyStarted) {
             mSource->stop();
         }
         mAudioSink.clear();
-        ALOGE("Opening a routing session failed");
+
+        ALOGE("Error opening AudioSink");
+
         return err;
     }
     acquireWakeLock();
     mIsAudioRouted = true;
-    err = configurePCM();
-    if (err) {
-        ALOGE("Error Configuring PCM");
-        return err;
-    }
+    //Create event, extractor and initialize all the
+    //mutexes and coditional variables
+    ALOGV("Creat threads ++");
+    createThreads();
+    ALOGV("All Threads Created.");
+
     mAudioSink->start();
     ALOGD(" MPQ Audio Driver Started");
     mExtractorMutex.lock();
@@ -464,6 +468,7 @@ void MPQAudioPlayer::resume() {
 
 void MPQAudioPlayer::reset() {
 
+    CHECK(mStarted);
     ALOGD("Reset called!!!!!");
     mAsyncReset = true;
 
@@ -659,7 +664,6 @@ void MPQAudioPlayer::extractorThreadEntry() {
     }
     mExtractorThreadAlive = false;
     ALOGD("Extractor Thread is dying");
-
 }
 //static
 size_t MPQAudioPlayer::postEOS(
