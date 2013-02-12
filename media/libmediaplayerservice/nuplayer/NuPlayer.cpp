@@ -942,6 +942,10 @@ void NuPlayer::finishFlushIfPossible() {
         if ( (mSourceType == kHttpDashSource) &&
              (mTextDecoder != NULL) )
         {
+          if (mSource != NULL) {
+           ALOGV("finishFlushIfPossible calling mSource->stop");
+           mSource->stop();
+          }
           sp<AMessage> codecRequest;
           mTextNotify->findMessage("codec-request", &codecRequest);
           codecRequest = NULL;
@@ -962,6 +966,7 @@ void NuPlayer::finishReset() {
     mRenderer.clear();
 
     if (mSource != NULL) {
+        ALOGV("finishReset calling mSource->stop");
         mSource->stop();
         mSource.clear();
     }
