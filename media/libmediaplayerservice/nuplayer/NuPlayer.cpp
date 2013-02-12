@@ -354,7 +354,17 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                           msg->post(100000ll);
                           mScanSourcesPending = true;
                     }
-                } else {
+                }
+#ifdef QCOM_WFD_SINK
+                else if(mSourceType == kWfdSource){
+                    if ((mAudioDecoder == NULL && mAudioSink != NULL) ||
+                        (mVideoDecoder == NULL && mNativeWindow != NULL)) {
+                           msg->post(5000ll);
+                           mScanSourcesPending = true;
+                    }
+                }
+#endif//QCOM_WFD_SINK
+                else {
                     if ((mAudioDecoder == NULL && mAudioSink != NULL) ||
                         (mVideoDecoder == NULL && mNativeWindow != NULL)) {
                            msg->post(100000ll);
@@ -395,8 +405,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                         track, codecRequest);
 
                 if (err == -EWOULDBLOCK) {
-                    if (mSource->feedMoreTSData() == OK) {
-                           msg->post(10000ll);
+                    if (mSourceType == kWfdSource) {
+                        if (mSource->feedMoreTSData() == OK) {
+                               msg->post(2000ll);
+                        }
+                    } else {
+                        if (mSource->feedMoreTSData() == OK) {
+                               msg->post(10000ll);
+                        }
                     }
                 }
 
@@ -1270,6 +1286,16 @@ status_t NuPlayer::feedDecoderInputData(int track, const sp<AMessage> &msg) {
          mediaTimeUs / 1E6);
 #endif
     if (track == kVideo || track == kAudio) {
+        if (mSourceType == kWfdSource) {
+            int64_t baseTimeUs = 0;
+            if(accessUnit->meta()->findInt64("baseTimeUs", &baseTimeUs))
+            {
+                ALOGE("Nu player Set basetime");
+                if (mRenderer != NULL) {
+                    ((WFDRenderer*)(mRenderer.get()))->setBaseMediaTime(baseTimeUs);
+                }
+            }
+        }
         reply->setBuffer("buffer", accessUnit);
         reply->post();
     } else if (mSourceType == kHttpDashSource && track == kText) {

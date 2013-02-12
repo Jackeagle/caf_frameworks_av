@@ -273,7 +273,12 @@ void NuPlayer::WFDRenderer::wfdPostDrainAudioQueue(int64_t delayUs) {
         }
      }
      /* Setting delay 2 Msec ahead */
-     msg->post(delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
+     if(delayUs > WFD_RENDERER_TIME_BEFORE_WAKE_UP){
+         msg->post(delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
+     } else {
+         msg->post(0);
+     }
+     ALOGV("WFDRenderer: Audio Delay = %d", delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
   }
 }
 
@@ -473,7 +478,12 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
         delayUs = 0;
     }
     /* Setting delay 2 Msec ahead */
-    msg->post(delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
+    if(delayUs > WFD_RENDERER_TIME_BEFORE_WAKE_UP){
+         msg->post(delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
+    } else {
+         msg->post(0);
+    }
+    ALOGE("$$$$$ WFDRenderer: Video Delay = %d", delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
     mDrainVideoQueuePending = true;
 }
 
@@ -871,6 +881,15 @@ int64_t NuPlayer::WFDRenderer::wfdGetMediaTime(bool audio)
      }
    }
    return mediaTimeClockUs;
+}
+
+void NuPlayer::WFDRenderer::setBaseMediaTime(int64_t ts)
+{
+ALOGE("$$$$$ WFDRenderer: Setting basetime %lld", ts);
+   if(mMediaTimeRead == false) {
+     mMediaClockUs = ts;
+     mMediaTimeRead = true;
+   }
 }
 
 }  // namespace android
