@@ -60,6 +60,8 @@ struct NuPlayer::WFDRenderer : public NuPlayer::Renderer {
     virtual void pause();
     virtual void resume();
 
+    void setBaseMediaTime(int64_t ts);
+
     enum {
         kWhatEOS                = 'eos ',
         kWhatFlushComplete      = 'fluC',
