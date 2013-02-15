@@ -827,6 +827,10 @@ void NuPlayer::WFDRenderer::wfdOnResume() {
     }
 */
 
+    wfdFlushQueue(&mAudioQueue);
+    wfdFlushQueue(&mVideoQueue);
+    mAudioSink->flush();
+
     mPaused = false;
 
 /*    if(mPauseMediaClockUs > 0){
