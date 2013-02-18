@@ -30,6 +30,7 @@
 #include <gui/Surface.h>
 #include <utils/String8.h>
 #include <cutils/properties.h>
+#include <OMX_QCOMExtns.h>
 
 namespace android {
 
@@ -107,6 +108,11 @@ static int32_t getColorFormat(const char* colorFormat) {
        return OMX_COLOR_Format16bitRGB565;
     }
 
+    if (!strcmp(colorFormat, CameraParameters::PIXEL_FORMAT_YUV420SP_ADRENO)) {
+       return QOMX_COLOR_FormatYVU420PackedSemiPlanar32m4ka;
+    }
+
+
     if (!strcmp(colorFormat, "OMX_TI_COLOR_FormatYUV420PackedSemiPlanar")) {
        return OMX_TI_COLOR_FormatYUV420PackedSemiPlanar;
     }
@@ -114,7 +120,7 @@ static int32_t getColorFormat(const char* colorFormat) {
     ALOGE("Uknown color format (%s), please add it to "
          "CameraSource::getColorFormat", colorFormat);
 
-    CHECK(!"Unknown color format");
+   CHECK(!"Unknown color format");
 }
 
 CameraSource *CameraSource::Create() {

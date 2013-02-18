@@ -598,6 +598,7 @@ public:
     // and KEY_VIDEO_FRAME_FORMAT
     static const char PIXEL_FORMAT_YUV422SP[];
     static const char PIXEL_FORMAT_YUV420SP[]; // NV21
+    static const char PIXEL_FORMAT_YUV420SP_ADRENO[]; //Adreno format
     static const char PIXEL_FORMAT_YUV422I[]; // YUY2
     static const char PIXEL_FORMAT_YUV420P[]; // YV12
     static const char PIXEL_FORMAT_RGB565[];
