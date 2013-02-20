@@ -4466,6 +4466,44 @@ status_t OMXCodec::stop() {
                 status_t err = mOMX->getState(mNode, &state);
                 CHECK_EQ(err, (status_t)OK);
 
+                /* OMX IL spec page 98
+                    The call should be performed under the following conditions:
+                    . While the component is in the OMX_StateIdle state and the IL client has
+                      already sent a request for the state transition to OMX_StateLoaded
+                      (e.g., during the stopping of the component)
+                    . On a disabled port when the component is in the OMX_StateExecuting,
+                      the OMX_StatePause, or the OMX_StateIdle state.
+                */
+
+                bool canFree = false;
+                if ((!strncmp(mComponentName, "OMX.qcom.audio.decoder.", 23))) {
+                    if (state == OMX_StateInvalid) {
+                        canFree = true;
+                    }
+                    else if ((state == OMX_StateIdle) && mState == IDLE_TO_LOADED) {
+                        canFree = true;
+                    }
+                    else if ((state == OMX_StateExecuting || state == OMX_StatePause ||
+                              state == OMX_StateIdle) &&
+                             (mPortStatus[kPortIndexOutput] == DISABLED ||
+                              mPortStatus[kPortIndexOutput] == DISABLING)) {
+                        canFree = true;
+                    }
+                    else
+                        canFree = false;
+                }
+
+                if (canFree) {
+                    err = freeBuffersOnPort(kPortIndexOutput, true);
+                    CHECK_EQ(err, (status_t)OK);
+                    err = freeBuffersOnPort(kPortIndexInput, true);
+                    CHECK_EQ(err, (status_t)OK);
+                }
+                else {
+                    ALOGW("%s IL component does not match conditions for free, skip freeing for later",
+                         mComponentName);
+                }
+
                 if (state != OMX_StateExecuting) {
                     break;
                 }
