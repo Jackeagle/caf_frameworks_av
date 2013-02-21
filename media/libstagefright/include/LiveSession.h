@@ -128,7 +128,7 @@ private:
 
     status_t fetchFile(
             const char *url, sp<ABuffer> *out,
-            int64_t range_offset = 0, int64_t range_length = -1, bool isMedia = true);
+            bool isMedia = true, int64_t range_offset = 0, int64_t range_length = -1);
 
     sp<M3UParser> fetchPlaylist(const char *url, bool *unchanged);
     size_t getBandwidthIndex();
