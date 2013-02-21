@@ -107,24 +107,11 @@ status_t TSBuffer::getTSPacket(sp<DataSource> dataSource, uint8_t **data, off64_
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 struct MPEG2TSSource : public MediaSource {
 
-    //PES stream info
-    struct StreamInfo : public RefBase {
-    public:
-        unsigned mStreamPID;
-        unsigned mProgramPID;
-        uint64_t mFirstPTS;
-        uint64_t mLastPTS;
-        int64_t  mDurationUs;
-        off64_t  mFirstPTSOffset;
-        off64_t  mLastPTSOffset;
-        uint32_t mIndex;
-        off64_t  mOffset;
-    };
-
     MPEG2TSSource(
             const sp<MPEG2TSExtractor> &extractor,
             const sp<AnotherPacketSource> &impl,
             const sp<DataSource> &dataSource,
+            const sp<StreamInfo> &stream,
             bool  isVideo);
 
     virtual status_t start(MetaData *params = NULL);
@@ -134,13 +121,11 @@ struct MPEG2TSSource : public MediaSource {
     virtual status_t read(
             MediaBuffer **buffer, const ReadOptions *options = NULL);
 
-    status_t findStreamDuration();
 private:
     sp<MPEG2TSExtractor>      mExtractor;
     sp<AnotherPacketSource>   mImpl;
-    sp<MetaData>              mFormat;
-    sp<StreamInfo>            mStream;
     sp<DataSource>            mDataSource;
+    sp<StreamInfo>            mStream;
     bool                      mIsVideo;
     sp<TSBuffer>              mTSBuffer;
     int64_t                   mLastKnownSyncFrameTime;
@@ -158,26 +143,19 @@ MPEG2TSSource::MPEG2TSSource(
         const sp<MPEG2TSExtractor> &extractor,
         const sp<AnotherPacketSource> &impl,
         const sp<DataSource> &dataSource,
+        const sp<StreamInfo> &stream,
         bool  isVideo )
     : mExtractor(extractor),
       mImpl(impl),
       mDataSource(dataSource),
+      mStream(stream),
       mIsVideo(isVideo),
       mLastKnownSyncFrameTime(-1) {
-
-    // Create stream info
-    mStream = new StreamInfo;
 
     CHECK(mImpl != NULL);
     CHECK(mDataSource != NULL);
     CHECK(mExtractor != NULL);
     CHECK(mStream != NULL);
-
-    impl->getStreamInfo(mStream->mStreamPID, mStream->mProgramPID, mStream->mFirstPTS);
-    ALOGV("Stream PID %d, program PID %d", mStream->mStreamPID, mStream->mProgramPID);
-    mStream->mOffset = mExtractor->mOffset;
-    mStream->mFirstPTSOffset = mStream->mOffset;
-    mFormat = mImpl->getFormat();
 
     //Allocate TS cache buffer
     if (mExtractor->mClipSize == 0) {
@@ -200,8 +178,7 @@ status_t MPEG2TSSource::stop() {
 }
 
 sp<MetaData> MPEG2TSSource::getFormat() {
-    mFormat = mImpl->getFormat();
-    return mFormat;
+    return mImpl->getFormat();
 }
 
 
@@ -294,66 +271,6 @@ status_t MPEG2TSSource::read(
     }
 
     return err;
-}
-
-status_t MPEG2TSSource::findStreamDuration(){
-     Mutex::Autolock autoLock(mLock);
-
-     if (mExtractor->mClipSize == 0){
-         return INVALID_OPERATION;
-     }
-
-     off64_t offset = 0;
-     status_t status = OK;
-     bool foundPTS = false;
-     uint8_t packet[kTSPacketSize];
-     ssize_t retVal = 0;
-     uint64_t PTS = 0;
-
-     ALOGV("First PTS found %lld, for stream %d, at %lld", mStream->mFirstPTS, mStream->mStreamPID, mStream->mFirstPTSOffset);
-
-     //find last PTS
-     offset = mExtractor->mClipSize - kTSPacketSize;
-     while (offset > 0) {
-         retVal = mDataSource->readAt(offset, packet, kTSPacketSize);
-         if (retVal < 0) {
-            ALOGE("Error while reading data from datasource");
-            return status_t(retVal);
-         }
-         if (retVal < (ssize_t)kTSPacketSize) {
-             ALOGV("Reached end of stream while searchin for last PTS");
-             return ERROR_END_OF_STREAM;
-         }
-
-         status = mExtractor->parseTSToGetPTS(packet, kTSPacketSize,
-                                           mStream->mStreamPID, PTS);
-         if (status == DEAD_OBJECT) {
-             ALOGE("findStreamDuration:: Hit an invalid TS packet .. bailing out gracefully");
-             return status;
-         }
-
-         if (status == OK) {
-             mStream->mLastPTS = PTS;
-             mStream->mLastPTSOffset = offset;
-             ALOGV("Last PTS found %lld, for stream %d, at %lld", mStream->mLastPTS, mStream->mStreamPID, offset);
-             break;
-         }
-         offset -= kTSPacketSize;
-     }
-     if (status != OK) {
-         ALOGE("Could not find last PTS %d", status);
-         return status;
-     }
-     mStream->mDurationUs = ((mStream->mLastPTS - mStream->mFirstPTS) * 100 )/9;
-     CHECK(mStream->mDurationUs != 0);
-
-     ALOGV("Stream duration %lld", mStream->mDurationUs);
-
-     if (mFormat != NULL) {
-         mFormat->setInt64(kKeyDuration, mStream->mDurationUs);
-     }
-
-     return status;
 }
 
 status_t MPEG2TSSource::feedMoreForStream() {
@@ -557,25 +474,26 @@ MPEG2TSExtractor::MPEG2TSExtractor(const sp<DataSource> &source)
 }
 
 MPEG2TSExtractor::~MPEG2TSExtractor() {
-    mSourceList.clear();
+    mSourceObjectsList.clear();
 }
 
 size_t MPEG2TSExtractor::countTracks() {
-    return mSourceList.size();
+    return mSourceObjectsList.size();
 }
 
 sp<MediaSource> MPEG2TSExtractor::getTrack(size_t index) {
-    if (index >= mSourceList.size()) {
+    if (index >= mSourceObjectsList.size()) {
         return NULL;
     }
 
-    return mSourceList.editItemAt(index);
+    sp<SourceObjects> objects = mSourceObjectsList.editItemAt(index);
+    return new MPEG2TSSource(this, objects->impl, mDataSource, objects->stream, objects->isVideo);
 }
 
 sp<MetaData> MPEG2TSExtractor::getTrackMetaData(
         size_t index, uint32_t flags) {
-    return index < mSourceList.size()
-        ? mSourceList.editItemAt(index)->getFormat() : NULL;
+    return index < mSourceObjectsList.size()
+        ? mSourceObjectsList.editItemAt(index)->impl->getFormat() : NULL;
 }
 
 sp<MetaData> MPEG2TSExtractor::getMetaData() {
@@ -589,8 +507,7 @@ void MPEG2TSExtractor::init() {
     bool haveAudio = false;
     bool haveVideo = false;
     int numPacketsParsed = 0;
-    sp<MPEG2TSSource> audioSource = NULL;
-    sp<MPEG2TSSource> videoSource = NULL;
+    bool audioSeekable = true, videoSeekable = true;
 
     while (feedMore() == OK) {
         ATSParser::SourceType type;
@@ -604,12 +521,16 @@ void MPEG2TSExtractor::init() {
 
             if (impl != NULL) {
                 haveVideo = true;
-                videoSource = new MPEG2TSSource(this, impl, mDataSource, true);
-                if (videoSource == NULL) {
-                    ALOGE("Unable to create video TS source");
-                } else {
-                    mSourceList.push(videoSource);
-                }
+                sp<StreamInfo> stream = new StreamInfo;
+                impl->getStreamInfo(stream->mStreamPID, stream->mProgramPID, stream->mFirstPTS);
+                ALOGV("Stream PID %d, program PID %d", stream->mStreamPID, stream->mProgramPID);
+                stream->mFirstPTSOffset = stream->mOffset = mOffset;
+                videoSeekable  = (findStreamDuration(stream, impl) == OK);
+                sp<SourceObjects> objects = new SourceObjects;
+                objects->impl = impl;
+                objects->stream = stream;
+                objects->isVideo = true;
+                mSourceObjectsList.push(objects);
             }
         }
 
@@ -627,16 +548,20 @@ void MPEG2TSExtractor::init() {
                //if this audio/mpeg* then drop the audio
                //we are intrested in only audio/mpeg (size ==10) if audio is mpeg format (mp3)
                if ((!strncasecmp("audio/mpeg", mime, 10)) && (strlen(mime) > 10)) {
-                    ALOGE("Audio is %s - Droping this",mime);
-                } else{
-                    ALOGI("Audio is %s - keeping this",mime);
-                    audioSource = new MPEG2TSSource(this, impl, mDataSource, false);
-                    if (audioSource != NULL) {
-                        mSourceList.push(audioSource);
-                    } else {
-                        ALOGE("Unable to create audio TS source");
-                    }
-                }
+                    ALOGE("Audio is %s - Droping this", mime);
+               } else {
+                   ALOGI("Audio is %s - keeping this", mime);
+                   sp<StreamInfo> stream = new StreamInfo;
+                   impl->getStreamInfo(stream->mStreamPID, stream->mProgramPID, stream->mFirstPTS);
+                   ALOGV("Stream PID %d, program PID %d", stream->mStreamPID, stream->mProgramPID);
+                   stream->mFirstPTSOffset = stream->mOffset = mOffset;
+                   audioSeekable = (findStreamDuration(stream, impl) == OK);
+                   sp<SourceObjects> objects = new SourceObjects;
+                   objects->impl = impl;
+                   objects->stream = stream;
+                   objects->isVideo = false;
+                   mSourceObjectsList.push(objects);
+               }
             }
         }
 
@@ -654,24 +579,11 @@ void MPEG2TSExtractor::init() {
         return;
     }
 
-    bool mAudioSeekable = true ,mvideoSeekable = true;
-
-    if (audioSource != NULL) {
-        if (audioSource->findStreamDuration() != OK) {
-            mAudioSeekable = false;
-        }
-    }
-    if (videoSource != NULL) {
-        if (videoSource->findStreamDuration() != OK){
-            mvideoSeekable = false;
-        }
-    }
-
     char value[PROPERTY_VALUE_MAX];
     if(property_get("TSParser.disable.seek", value, NULL) &&
             (!strcasecmp(value, "true") || !strcmp(value, "1"))) {
         mSeekable = false;
-    } else if(mAudioSeekable && mvideoSeekable) {
+    } else if(audioSeekable && videoSeekable) {
         mSeekable = true;
     }
 
@@ -751,6 +663,61 @@ status_t MPEG2TSExtractor::feedTSPacket(const void *data, size_t size) {
     Mutex::Autolock autoLock(mLock);
 
     return mParser->feedTSPacket(data,size);
+}
+
+status_t MPEG2TSExtractor::findStreamDuration(const sp<StreamInfo> &stream, const sp<AnotherPacketSource> &impl){
+
+     if (mClipSize == 0){
+         return INVALID_OPERATION;
+     }
+
+     off64_t offset = 0;
+     status_t status = OK;
+     bool foundPTS = false;
+     uint8_t packet[kTSPacketSize];
+     ssize_t retVal = 0;
+     uint64_t PTS = 0;
+
+     ALOGV("First PTS found %lld, for stream %d, at %lld", stream->mFirstPTS, stream->mStreamPID, stream->mFirstPTSOffset);
+
+     //find last PTS
+     offset = mClipSize - kTSPacketSize;
+     while (offset > 0) {
+         retVal = mDataSource->readAt(offset, packet, kTSPacketSize);
+         if (retVal < 0) {
+            ALOGE("Error while reading data from datasource");
+            return status_t(retVal);
+         }
+         if (retVal < (ssize_t)kTSPacketSize) {
+             ALOGV("Reached end of stream while searchin for last PTS");
+             return ERROR_END_OF_STREAM;
+         }
+
+         status = parseTSToGetPTS(packet, kTSPacketSize,
+                                           stream->mStreamPID, PTS);
+         if (status == DEAD_OBJECT) {
+             ALOGE("findStreamDuration:: Hit an invalid TS packet .. bailing out gracefully");
+             return status;
+         }
+
+         if (status == OK) {
+             stream->mLastPTS = PTS;
+             stream->mLastPTSOffset = offset;
+             ALOGV("Last PTS found %lld, for stream %d, at %lld", stream->mLastPTS, stream->mStreamPID, offset);
+             break;
+         }
+         offset -= kTSPacketSize;
+     }
+     if (status != OK) {
+         ALOGE("Could not find last PTS %d", status);
+         return status;
+     }
+     stream->mDurationUs = ((stream->mLastPTS - stream->mFirstPTS) * 100 )/9;
+     CHECK(stream->mDurationUs != 0);
+
+     ALOGV("Stream duration %lld", stream->mDurationUs);
+     impl->getFormat()->setInt64(kKeyDuration, stream->mDurationUs);
+     return status;
 }
 
 
