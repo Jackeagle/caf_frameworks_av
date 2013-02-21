@@ -229,7 +229,7 @@ void LiveSession::onDisconnect() {
 
 status_t LiveSession::fetchFile(
         const char *url, sp<ABuffer> *out,
-        int64_t range_offset, int64_t range_length, bool isMedia) {
+        bool isMedia, int64_t range_offset, int64_t range_length) {
     *out = NULL;
     ALOGW("fetchFile %s", url);
 
@@ -804,7 +804,7 @@ rinse_repeat:
     }
 
     sp<ABuffer> buffer;
-    status_t err = fetchFile(uri.c_str(), &buffer, range_offset, range_length, true);
+    status_t err = fetchFile(uri.c_str(), &buffer, true, range_offset, range_length);
     if(err == INFO_BANDWIDTH_DROP) {
       ALOGV("fetchFile() exited due to a large bandwidth drop.");
       mPrevBandwidthIndex = mBandwidthIndex;
