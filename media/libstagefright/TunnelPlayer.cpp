@@ -60,7 +60,6 @@ static const char   mName[] = "TunnelPlayer";
  */
 #define MEM_BUFFER_SIZE (240*1024 - MEM_METADATA_SIZE)
 #define MEM_BUFFER_COUNT 4
-#define TUNNEL_BUFFER_TIME 1500000
 
 namespace android {
 int TunnelPlayer::mTunnelObjectsAlive = 0;
@@ -388,35 +387,12 @@ status_t TunnelPlayer::seekTo(int64_t time_us) {
 
     Mutex::Autolock _l(mLock); //to sync w/ onpausetimeout
 
-    //This can happen if the client calls seek
-    //without ever calling getPosition
-    if (mPositionTimeRealUs == -1) {
-        getOffsetRealTime_l(&mPositionTimeRealUs);
-    }
-
-    if (mPositionTimeRealUs > 0) {
-      //check for return conditions only if seektime
-      // is set
-      bool postSeekComplete = false;
-
-      if (time_us > mPositionTimeRealUs){
-           if ((time_us - mPositionTimeRealUs) < TUNNEL_BUFFER_TIME){
-             ALOGV("In seekTo(), ignoring time_us %lld mSeekTimeUs %lld", time_us, mSeekTimeUs);
-             postSeekComplete = true;
-           }
-      } else {
-           if ((mPositionTimeRealUs - time_us) < TUNNEL_BUFFER_TIME){
-               ALOGV("In seekTo(), ignoring time_us %lld mSeekTimeUs %lld", time_us, mSeekTimeUs);
-               postSeekComplete = true;
-           }
-      }
-
-      if (postSeekComplete) {
-          mLock.unlock(); //unlock and post
-          mObserver->postAudioSeekComplete();
-          mLock.lock();
-          return OK;
-      }
+    if (seekTooClose(time_us)) {
+      ALOGV("seek time is too close to current playback position");
+      mLock.unlock(); //unlock and post
+      mObserver->postAudioSeekComplete();
+      mLock.lock();
+      return OK;
     }
 
     mSeeking = true;
@@ -1007,5 +983,29 @@ status_t TunnelPlayer::stopAudioSink() {
     return NO_ERROR;
 }
 
+
+/*
+ * Returns true if the seek position is too close to the
+ * current playback position.
+ * Caller must acquire mLock
+ */
+bool TunnelPlayer::seekTooClose(int64_t time_us) {
+    int64_t t1 = -1;
+    /* The time as per DSP just before flush is issued */
+    getOffsetRealTime_l(&mPositionTimeRealUs);
+
+    t1 = mPositionTimeRealUs;
+    /*
+     * empirical
+     * -----------
+     * This constant signifies how much data (in Us) has been rendered by the
+     * DSP in the interval between the moment flush is issued on AudioSink to
+     * after ioctl(PAUSE) returns in Audio HAL. (flush triggers an implicit
+     * pause in audio HAL)
+     *
+     */
+    const int64_t deltaUs = 60000LL; /* 60-70ms on msm8974 */
+    return (time_us > t1) && ((time_us - t1) <= deltaUs);
+}
 
 } //namespace android
