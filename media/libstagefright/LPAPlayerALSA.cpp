@@ -330,7 +330,6 @@ status_t LPAPlayer::seekTo(int64_t time_us) {
     mSeekTimeUs = time_us;
     ALOGV("In seekTo(), mSeekTimeUs %lld",mSeekTimeUs);
     mAudioSink->flush();
-    pthread_cond_signal(&decoder_cv);
     //TODO: Update the mPauseTime
     return OK;
 }
@@ -510,8 +509,10 @@ void LPAPlayer::decoderThreadEntry() {
         return;
     }
     void* local_buf = malloc(MEM_BUFFER_SIZE + MEM_METADATA_SIZE);
-	int *lptr = ((int*)local_buf);
+    int *lptr = ((int*)local_buf);
     int bytesWritten = 0;
+    bool lSeeking = false;
+    bool lPaused = false;
     while (!killDecoderThread) {
 
         if (mReachedEOS || mPaused || !mIsAudioRouted) {
@@ -538,13 +539,30 @@ void LPAPlayer::decoderThreadEntry() {
 
             if(!killDecoderThread) {
                 mLock.lock();
-                if(mSeeking == false){
-                    mLock.unlock();
-                    ALOGV("Fillbuffer before write %d and seek flag %d", mSeeking, lptr[MEM_BUFFER_SIZE/sizeof(int)]);
-                    mAudioSink->write(local_buf, bytesWritten);
-                    } else {
-                    mLock.unlock();
-                    ALOGV("Fillbuffer ignored since we are seeking %d and flag is %d", mSeeking, lptr[MEM_BUFFER_SIZE/sizeof(int)]);
+                lPaused = mPaused;
+                mLock.unlock();
+
+                if(lPaused == true) {
+                    //write only if player is not in paused state. Sleep on lock
+                    // resume is called
+                    ALOGV("Going to sleep in decodethreadiwrite since sink is paused");
+                    pthread_mutex_lock(&decoder_mutex);
+                    pthread_cond_wait(&decoder_cv, &decoder_mutex);
+                    ALOGV("Going to unlock n decodethreadwrite since sink resumed mPaused %d, mIsAudioRouted %d, mReachedEOS %d", mPaused, mIsAudioRouted, mReachedEOS);
+                    pthread_mutex_unlock(&decoder_mutex);
+                }
+
+                mLock.lock();
+                lSeeking = mSeeking||mInternalSeeking;
+                mLock.unlock();
+
+                if(lSeeking == false){
+                    //if we are seeking, ignore write
+                        ALOGV("Fillbuffer before write %d and seek flag %d", mSeeking, lptr[MEM_BUFFER_SIZE/sizeof(int)]);
+                        mAudioSink->write(local_buf, bytesWritten);
+                } else {
+                        ALOGV("Fillbuffer ignored since we are seeking %d and mInternalSeeking %d \
+                            and flag is %d", mSeeking, mInternalSeeking, lptr[MEM_BUFFER_SIZE/sizeof(int)]);
                 }
             }
         }
@@ -833,6 +851,8 @@ void LPAPlayer::onPauseTimeOut() {
         mInternalSeeking = true;
 
         // 2.) Close routing Session
+        mAudioSink->flush();
+        mAudioSink->stop();
         mAudioSink->close();
         mIsAudioRouted = false;
     }
