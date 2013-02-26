@@ -4684,6 +4684,9 @@ status_t OMXCodec::read(
 
         while (mSeekTimeUs >= 0) {
             if ((err = waitForBufferFilled_l()) != OK) {
+                if(mState == FLUSHING) {
+                    setState(ERROR);
+                }
                 return err;
             }
         }
@@ -4734,6 +4737,9 @@ status_t OMXCodec::read(
     while (mState != ERROR && !mNoMoreOutputData && mFilledBuffers.empty() &&
            !mOutputPortSettingsChangedPending) {
         if ((err = waitForBufferFilled_l()) != OK) {
+            if(seeking && mState == FLUSHING) {
+                setState(ERROR);
+            }
             return err;
         }
     }
