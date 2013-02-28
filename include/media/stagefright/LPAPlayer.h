@@ -201,6 +201,9 @@ private:
     void handleA2DPSwitch();
     void onPauseTimeOut();
 
+    int64_t getMediaTimeUs_l();
+    bool seekTooClose(int64_t);
+
     sp<AudioFlingerLPAdecodeClient> AudioFlingerClient;
     friend class AudioFlingerLPAdecodeClient;
     Mutex AudioFlingerLock;
