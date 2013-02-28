@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2009, 2013 The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +48,15 @@ static const int64_t kMax64BitFileSize = 0x00ffffffffLL; //fat32 max size limite
 static const uint8_t kNalUnitTypeSeqParamSet = 0x07;
 static const uint8_t kNalUnitTypePicParamSet = 0x08;
 static const int64_t kInitialDelayTimeUs     = 700000LL;
+
+//AMR-NB silence frame size
+#define AMR_NB_SILENCE_FRAME_SIZE 32
+
+//AMR-NB silence frame with homing frame data
+static const uint8_t  AMR_NB_SILENCE_FRAME[] = {
+    0x3C,0x54,0x08,0x96,0xdb,0xad,0xaa,0x00,0x60,0x00,0x00,0x1b,0x00,0x7f,0x58,0x83,
+    0x66,0x40,0x79,0x04,0x90,0x85,0x15,0x10,0x4f,0xb0,0xf6,0x03,0x24,0xea,0xc7,0x00
+};
 
 class MPEG4Writer::Track {
 public:
@@ -1927,6 +1937,17 @@ status_t MPEG4Writer::Track::threadEntry() {
         MediaBuffer *copy = new MediaBuffer(buffer->range_length());
         memcpy(copy->data(), (uint8_t *)buffer->data() + buffer->range_offset(),
                 buffer->range_length());
+
+        const char *mime;
+        bool success = mMeta->findCString(kKeyMIMEType, &mime);
+        CHECK(success);
+        if(mDone == true && (!strcasecmp(MEDIA_MIMETYPE_AUDIO_AMR_NB, mime))) {
+            for (uint8_t i = 0; i < buffer->range_length()/AMR_NB_SILENCE_FRAME_SIZE; i++) {
+                memcpy(((char *)copy->data() + (i * AMR_NB_SILENCE_FRAME_SIZE)),
+                       AMR_NB_SILENCE_FRAME, AMR_NB_SILENCE_FRAME_SIZE);
+            }
+        }
+
         copy->set_range(0, buffer->range_length());
         meta_data = new MetaData(*buffer->meta_data().get());
         buffer->release();
