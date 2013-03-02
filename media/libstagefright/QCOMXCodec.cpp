@@ -607,7 +607,7 @@ status_t QCOMXCodec::enableSmoothStreaming(
     return OK;
 }
 
-void QCOMXCodec::checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta)
+bool QCOMXCodec::checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta)
 {
     uint16_t spsSize = (((uint16_t)ptr[6]) << 8) + (uint16_t)(ptr[7]);
     int32_t width = 0, height = 0, isInterlaced = 1;
@@ -621,7 +621,7 @@ void QCOMXCodec::checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta)
     if (isInterlaced) {
         meta->setInt32(kKeyUseArbitraryMode, 1);
     }
-    return;
+    return (isInterlaced == 1);
 }
 
 }

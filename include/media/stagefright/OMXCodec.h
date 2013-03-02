@@ -239,6 +239,9 @@ private:
     // a video encoder.
     List<int64_t> mDecodingTimeList;
 
+    bool mInterlaceFormatDetected;
+    int32_t mInterlaceFrame;
+
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
              bool isEncoder, const char *mime, const char *componentName,
