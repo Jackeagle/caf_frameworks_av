@@ -204,6 +204,7 @@ private:
     sp<TimedEventQueue::Event>  mPauseEvent;
     bool mPauseEventPending;
     bool mSourcePaused;
+    bool mplayPendingSamples;
 
     //Routing variables
     bool mAudioSinkOpen;
