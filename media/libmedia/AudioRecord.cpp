@@ -233,6 +233,7 @@ status_t AudioRecord::set(
         notificationFrames = frameCount/2;
     }
 
+    mInputSource = inputSource;
     // create the IAudioRecord
     status_t status = openRecord_l(sampleRate, format, channelMask,
                         frameCount, input);
@@ -263,7 +264,6 @@ status_t AudioRecord::set(
     mMarkerReached = false;
     mNewPosition = 0;
     mUpdatePeriod = 0;
-    mInputSource = inputSource;
     mInput = input;
     mFirstread = false;
     AudioSystem::acquireAudioSessionId(mSessionId);
@@ -300,21 +300,29 @@ uint32_t AudioRecord::frameCount() const
 
 size_t AudioRecord::frameSize() const
 {
-    if (format() ==AUDIO_FORMAT_AMR_NB) {
-             return channelCount() * 32; // Full rate framesize
+    if(inputSource() == AUDIO_SOURCE_VOICE_COMMUNICATION) {
+        if (audio_is_linear_pcm(mFormat)) {
+             return channelCount()*audio_bytes_per_sample(mFormat);
+        } else {
+            return channelCount()*sizeof(int16_t);
+        }
+    } else {
+        if (format() ==AUDIO_FORMAT_AMR_NB) {
+            return channelCount() * 32; // Full rate framesize
         } else if (format() == AUDIO_FORMAT_EVRC) {
-             return channelCount() * 23; // Full rate framesize
+            return channelCount() * 23; // Full rate framesize
         } else if (format() == AUDIO_FORMAT_QCELP) {
-             return channelCount() * 35; // Full rate framesize
+            return channelCount() * 35; // Full rate framesize
         } else if (format() == AUDIO_FORMAT_AAC) {
             // Not actual framsize but for variable frame rate AAC encoding,
-           // buffer size is treated as a frame size
-             return 2048;
+            // buffer size is treated as a frame size
+            return 2048;
         }
-    if (audio_is_linear_pcm(mFormat)) {
-        return channelCount()*audio_bytes_per_sample(mFormat);
-    } else {
-        return sizeof(uint8_t);
+        if (audio_is_linear_pcm(mFormat)) {
+            return channelCount()*audio_bytes_per_sample(mFormat);
+        } else {
+            return sizeof(uint8_t);
+        }
     }
 }
 
