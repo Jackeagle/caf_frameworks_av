@@ -29,7 +29,7 @@
 #include <QCMediaDefs.h>
 
 namespace android {
-
+ 
 const char *MEDIA_MIMETYPE_AUDIO_EVRC = "audio/evrc";
 
 const char *MEDIA_MIMETYPE_VIDEO_WMV = "video/x-ms-wmv";
