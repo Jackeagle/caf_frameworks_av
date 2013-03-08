@@ -29,6 +29,8 @@ ifeq ($(TARGET_ARCH),arm)
     LOCAL_CFLAGS += -Wno-psabi
 endif
 
+#add by sunlei, must FEA_HS_NUPLAYER_SEEK defined in NuPlayer make file
+LOCAL_CFLAGS += -DFEA_HS_NUPLAYER_SEEK=1
 include $(BUILD_STATIC_LIBRARY)
 
 ################################################################################

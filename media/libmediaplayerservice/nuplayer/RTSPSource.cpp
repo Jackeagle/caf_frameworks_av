@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "RTSPSource"
 #include <utils/Log.h>
 
@@ -202,9 +202,16 @@ status_t NuPlayer::RTSPSource::seekTo(int64_t seekTimeUs) {
 }
 
 void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
+	ALOGE("%s ln=%d mState=%d",__FUNCTION__,__LINE__,mState);
+#if FEA_HS_NUPLAYER_SEEK
+    if (mState == DISCONNECTED){
+        return;
+    }
+#else
     if (mState != CONNECTED) {
         return;
     }
+#endif /* FEA_HS_NUPLAYER_SEEK */
 
     mState = SEEKING;
     mHandler->seek(seekTimeUs);

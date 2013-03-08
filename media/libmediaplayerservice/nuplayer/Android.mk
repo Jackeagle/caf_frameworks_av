@@ -23,6 +23,8 @@ LOCAL_C_INCLUDES := \
 LOCAL_MODULE:= libstagefright_nuplayer
 
 LOCAL_MODULE_TAGS := eng
+#add by sunlei, must FEA_HS_NUPLAYER_SEEK defined in libstagefright\rtsp\Android.mk make file
+LOCAL_CFLAGS += -DFEA_HS_NUPLAYER_SEEK=1
 
 include $(BUILD_STATIC_LIBRARY)
 
