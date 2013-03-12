@@ -201,6 +201,9 @@ public:
         return INVALID_OPERATION;
     }
 
+    virtual status_t suspend() { return INVALID_OPERATION; }
+    virtual status_t resume() { return INVALID_OPERATION; }
+
 private:
     friend class MediaPlayerService;
 
