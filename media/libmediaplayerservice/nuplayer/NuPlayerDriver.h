@@ -99,6 +99,8 @@ private:
 
     int64_t mStartupSeekTimeUs;
 
+    int64_t mSeekingPos;//sunlei add for seekbar issue
+
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayerDriver);
 };
 

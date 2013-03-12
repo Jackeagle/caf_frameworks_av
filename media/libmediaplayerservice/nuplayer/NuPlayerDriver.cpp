@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayerDriver"
 #include <utils/Log.h>
 
@@ -36,7 +36,8 @@ NuPlayerDriver::NuPlayerDriver()
       mLooper(new ALooper),
       mState(UNINITIALIZED),
       mAtEOS(false),
-      mStartupSeekTimeUs(-1) {
+      mStartupSeekTimeUs(-1),
+      mSeekingPos(-1) {//sunlei add for seekbar issue
     mLooper->setName("NuPlayerDriver Looper");
 
     mLooper->start(
@@ -184,6 +185,7 @@ bool NuPlayerDriver::isPlaying() {
 status_t NuPlayerDriver::seekTo(int msec) {
     int64_t seekTimeUs = msec * 1000ll;
 
+
     switch (mState) {
         case UNINITIALIZED:
             return INVALID_OPERATION;
@@ -197,6 +199,11 @@ status_t NuPlayerDriver::seekTo(int msec) {
         {
             mAtEOS = false;
             mPlayer->seekToAsync(seekTimeUs);
+	    //sunlei add for seekbar update issue start
+            mPositionUs = seekTimeUs;
+            mSeekingPos = seekTimeUs;
+            ALOGD("SeekTo seekTimeUs= %lld",seekTimeUs);
+            //sunlei add for seekbar update issue end 
             break;
         }
 
@@ -228,7 +235,7 @@ status_t NuPlayerDriver::getDuration(int *msec) {
     } else {
         *msec = (mDurationUs + 500ll) / 1000;
     }
-
+ALOGV("in method getDuration = %lld", mDurationUs);
     return OK;
 }
 
@@ -311,10 +318,21 @@ void NuPlayerDriver::notifyResetComplete() {
 void NuPlayerDriver::notifyDuration(int64_t durationUs) {
     Mutex::Autolock autoLock(mLock);
     mDurationUs = durationUs;
+
 }
 
 void NuPlayerDriver::notifyPosition(int64_t positionUs) {
     Mutex::Autolock autoLock(mLock);
+     //sunlei add for seekbar update issue -start
+    if(mSeekingPos > 0){
+        if(mSeekingPos > positionUs && mSeekingPos-positionUs > 500000){
+            return;
+        }else if(mSeekingPos < positionUs && positionUs - mSeekingPos > 500000){
+            return;
+        }
+        mSeekingPos = -1;
+    }
+    //sunlei add for seekbar update issue -end
     mPositionUs = positionUs;
 }
 
