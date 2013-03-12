@@ -15,7 +15,7 @@
 ** limitations under the License.
 */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "MediaPlayer"
 #include <utils/Log.h>
 
@@ -61,6 +61,7 @@ MediaPlayer::MediaPlayer()
     AudioSystem::acquireAudioSessionId(mAudioSessionId);
     mSendLevel = 0;
     mRetransmitEndpointValid = false;
+    isRTSPURL = false;
 }
 
 MediaPlayer::~MediaPlayer()
@@ -141,6 +142,9 @@ status_t MediaPlayer::setDataSource(
     ALOGV("setDataSource(%s)", url);
     status_t err = BAD_VALUE;
     if (url != NULL) {
+	if(strncmp(url, "rtsp://", 7) == 0) {
+            isRTSPURL = true;
+	}
         const sp<IMediaPlayerService>& service(getMediaPlayerService());
         if (service != 0) {
             sp<IMediaPlayer> player(service->create(getpid(), this, mAudioSessionId));
@@ -429,8 +433,9 @@ status_t MediaPlayer::seekTo_l(int msec)
             ALOGW("Stream has no duration and is therefore not seekable.");
             return err;
         }
+	ALOGW("in seekto isRTSPURL = %d", isRTSPURL);
 
-        if (msec > durationMs) {
+        if (msec > durationMs && !isRTSPURL) {
             ALOGW("Attempt to seek to past end of file: request = %d, "
                   "durationMs = %d",
                   msec,
@@ -438,6 +443,7 @@ status_t MediaPlayer::seekTo_l(int msec)
 
             msec = durationMs;
         }
+        
 
         // cache duration
         mCurrentPosition = msec;
