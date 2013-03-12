@@ -37,8 +37,9 @@ NuPlayerDriver::NuPlayerDriver()
       mState(UNINITIALIZED),
       mAtEOS(false),
       mStartupSeekTimeUs(-1),
+      mFirstPosition(true),//sunlei add for notify app buffering 100% 
       mSeekingPos(-1) {//sunlei add for seekbar issue
-    mLooper->setName("NuPlayerDriver Looper");
+      mLooper->setName("NuPlayerDriver Looper");
 
     mLooper->start(
             false, /* runOnCallingThread */
@@ -323,6 +324,16 @@ void NuPlayerDriver::notifyDuration(int64_t durationUs) {
 
 void NuPlayerDriver::notifyPosition(int64_t positionUs) {
     Mutex::Autolock autoLock(mLock);
+
+	ALOGE("noftyPosition");
+
+      /* sunlei add for notify app buffering 100% START */
+    if(mFirstPosition){
+		ALOGE("noftyPosition ----  buffer 100%");
+        notifyListener(MEDIA_BUFFERING_UPDATE, 100);
+        mFirstPosition = false;
+    }
+    /* sunlei add for notify app buffering 100% END */
      //sunlei add for seekbar update issue -start
     if(mSeekingPos > 0){
         if(mSeekingPos > positionUs && mSeekingPos-positionUs > 500000){

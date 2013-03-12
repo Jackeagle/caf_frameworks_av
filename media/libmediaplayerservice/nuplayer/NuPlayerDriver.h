@@ -84,6 +84,8 @@ private:
     int64_t mNumFramesDropped;
     // <<<
 
+     bool mFirstPosition;//sunlei add for notify app buffering 100%
+
     sp<ALooper> mLooper;
     sp<NuPlayer> mPlayer;
 
