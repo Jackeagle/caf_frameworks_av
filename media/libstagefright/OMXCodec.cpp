@@ -1798,6 +1798,8 @@ void OMXCodec::setComponentRole(
             "audio_decoder.eac3", NULL },
         { MEDIA_MIMETYPE_VIDEO_DIVX311,
             "video_decoder.divx", NULL },
+        { MEDIA_MIMETYPE_VIDEO_WMV,
+            "video_decoder.vc1", NULL },
     };
 
     static const size_t kNumMimeToRole =
