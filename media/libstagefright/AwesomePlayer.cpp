@@ -1589,6 +1589,7 @@ status_t AwesomePlayer::initAudioDecoder() {
                     &&((dlopen ("libms11.so", RTLD_NOW))!=NULL))||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)||
+                    !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS_LBR)||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3)) {
                 ALOGI("Tunnel Mode in MPQ Audio Player");
                 mIsMPQTunnelAudio = true;
