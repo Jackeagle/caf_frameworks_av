@@ -1616,6 +1616,7 @@ void MediaPlayerService::AudioOutput::switchToNextOutput() {
         mNextOutput->mCallbackData = mCallbackData;
         mCallbackData = NULL;
         mNextOutput->mRecycledTrack = mTrack;
+        mTrack->stop();
         mTrack = NULL;
         mNextOutput->mSampleRateHz = mSampleRateHz;
         mNextOutput->mMsecsPerFrame = mMsecsPerFrame;
