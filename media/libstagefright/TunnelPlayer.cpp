@@ -522,7 +522,8 @@ void TunnelPlayer::reset() {
         mInputBuffer = NULL;
     }
 
-    mSource->stop();
+    if(mStarted)
+        mSource->stop();
 
     // The following hack is necessary to ensure that the OMX
     // component is completely released by the time we may try
