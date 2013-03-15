@@ -66,8 +66,6 @@ public:
     struct NuPlayerStreamListener;
     struct Source;
 
-    int32_t getServerTimeout() ;
-
 private:
     struct Decoder;
     struct GenericSource;

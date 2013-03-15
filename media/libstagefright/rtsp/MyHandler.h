@@ -185,9 +185,7 @@ struct MyHandler : public AHandler {
     }
 
     void seek(int64_t timeUs) {
-		
 #if FEA_HS_NUPLAYER_SEEK /* sunlei begin*/
-
 		if(!mIsPlayStart)
 		{
 			mResumePosUs = timeUs;
@@ -484,7 +482,6 @@ struct MyHandler : public AHandler {
                             if(!mSessionDesc->getDurationUs(&dur))
                         	{
                         		mIsLive = true;
-				         ALOGW("Myhandler :: this is a living streaming video");
                         	}
 #endif /* sunlei  end*/
                             if (mSessionDesc->countTracks() < 2) {
@@ -648,7 +645,6 @@ struct MyHandler : public AHandler {
 					#if FEA_HS_NUPLAYER_SEEK/* sunlei begin*/
                     if(!mIsLive)
                     {
-                     ALOGW("myhandler ::play request, and range . mResumePosUs =%lld ", mResumePosUs);
 						int64_t durationUs = 0;
 						TrackInfo *track = &mTracks.editItemAt(0);
 						if (track != NULL){
@@ -1119,11 +1115,6 @@ struct MyHandler : public AHandler {
                 TRESPASS();
                 break;
         }
-    }
-
-    // return in ms
-    int32_t getServerTimeout() {
-        return mKeepAliveTimeoutUs / 1000;
     }
 
     void postKeepAlive() {
