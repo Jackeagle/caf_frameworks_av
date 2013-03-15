@@ -202,7 +202,7 @@ status_t NuPlayer::RTSPSource::seekTo(int64_t seekTimeUs) {
 }
 
 void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
-	ALOGE("%s ln=%d mState=%d",__FUNCTION__,__LINE__,mState);
+
 #if FEA_HS_NUPLAYER_SEEK
     if (mState == DISCONNECTED){
         return;
@@ -221,6 +221,19 @@ uint32_t NuPlayer::RTSPSource::flags() const {
     return FLAG_SEEKABLE;
 }
 
+// return in ms
+    int32_t NuPlayer::RTSPSource::getServerTimeout() {
+        if(mHandler != NULL) {
+            return mHandler->getServerTimeout();
+        }
+	else {
+	    int64_t kDefaultKeepAliveTimeoutUs = 60000000ll;
+	    return  kDefaultKeepAliveTimeoutUs/1000;
+	}
+	
+    }
+
+
 void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
     if (msg->what() == kWhatDisconnect) {
         uint32_t replyID;
@@ -232,7 +245,6 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
     } else if (msg->what() == kWhatPerformSeek) {
         int32_t generation;
         CHECK(msg->findInt32("generation", &generation));
-
         if (generation != mSeekGeneration) {
             // obsolete.
             return;

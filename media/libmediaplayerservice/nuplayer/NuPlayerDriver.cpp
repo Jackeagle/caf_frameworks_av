@@ -306,7 +306,13 @@ status_t NuPlayerDriver::getParameter(int key, Parcel *reply) {
 
 status_t NuPlayerDriver::getMetadata(
         const media::Metadata::Filter& ids, Parcel *records) {
-    return INVALID_OPERATION;
+	 using media::Metadata;
+       Metadata metadata(records);
+	   
+	int32_t serverTimeoutUS = mPlayer->getServerTimeout();
+	ALOGE("in getMetadata === timeout === %d", serverTimeoutUS);
+	metadata.appendInt32(Metadata::kServerTimeout, serverTimeoutUS);
+    return OK;
 }
 
 void NuPlayerDriver::notifyResetComplete() {

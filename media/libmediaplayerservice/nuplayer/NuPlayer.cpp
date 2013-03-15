@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayer"
 #include <utils/Log.h>
 
@@ -729,6 +729,13 @@ void NuPlayer::postScanSources() {
     mScanSourcesPending = true;
 }
 
+// return in ms
+    int32_t NuPlayer:: getServerTimeout() {
+
+        return mSource->getServerTimeout();
+    }
+
+
 status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
     if (*decoder != NULL) {
         return OK;
@@ -999,6 +1006,13 @@ sp<AMessage> NuPlayer::Source::getFormat(bool audio) {
     }
     return NULL;
 }
+
+ int32_t  NuPlayer::Source::getServerTimeout() {
+ 	return -1;
+ 	}
+
+
+
 
 status_t NuPlayer::setVideoScalingMode(int32_t mode) {
     mVideoScalingMode = mode;
