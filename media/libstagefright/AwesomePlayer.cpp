@@ -15,7 +15,7 @@
  */
 
 /*--------------------------------------------------------------------------
-Copyright (c) 2012, The Linux Foundation. All rights reserved.
+Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
 --------------------------------------------------------------------------*/
 #undef DEBUG_HDCP
 
@@ -1008,7 +1008,19 @@ status_t AwesomePlayer::play_l() {
 #endif
                 char lpaDecode[128];
                 property_get("lpa.decode",lpaDecode,"0");
-                if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) && tunnelObjectsAlive==0 )
+                int32_t nchannels = 0;
+                if(mAudioTrack != NULL) {
+                    sp<MetaData> format = mAudioTrack->getFormat();
+                    if(format != NULL) {
+                        format->findInt32( kKeyChannelCount, &nchannels );
+                        ALOGV("play_l nchannels %d;LPA will be skipped if nchannels is > 2 or nchannels == 0",nchannels);
+                    }
+                }
+
+
+                if((strcmp("true",lpaDecode) == 0) &&
+                   (mAudioPlayer == NULL)          &&
+                   (tunnelObjectsAlive==0) && (nchannels && (nchannels <= 2)) )
                 {
                     ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::objectsAlive);
                     if ( mDurationUs > 60000000
@@ -1538,6 +1550,10 @@ status_t AwesomePlayer::initAudioDecoder() {
 
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
+    int32_t nchannels = 0;
+    meta->findInt32( kKeyChannelCount, &nchannels );
+    ALOGV("initAudioDecoder nchannels %d;LPA will be skipped if nchannels is > 2 or nchannels == 0",nchannels);
+
 #ifndef NON_QCOM_TARGET
 #ifdef USE_TUNNEL_MODE
     char value[PROPERTY_VALUE_MAX];
@@ -1591,8 +1607,8 @@ status_t AwesomePlayer::initAudioDecoder() {
             }
         }
         if ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
-             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
-
+             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)
+             && (nchannels && (nchannels <= 2)) ) {
             flags |= OMXCodec::kSoftwareCodecsOnly;
             LPAPlayer::mLpaInProgress = true;
         }
