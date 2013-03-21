@@ -71,6 +71,7 @@ NuPlayer::NuPlayer()
       mSourceType(kDefaultSource),
       mStats(NULL),
       mBufferingNotification(false),
+      mSetVideoSize(true),
       mSRid(0) {
       mTrackName = new char[6];
 }
@@ -169,6 +170,7 @@ void NuPlayer::setDataSource(int fd, int64_t offset, int64_t length) {
 }
 
 void NuPlayer::setVideoSurfaceTexture(const sp<ISurfaceTexture> &surfaceTexture) {
+    mSetVideoSize = true;
     sp<AMessage> msg = new AMessage(kWhatSetVideoNativeWindow, id());
     sp<SurfaceTextureClient> surfaceTextureClient(surfaceTexture != NULL ?
                 new SurfaceTextureClient(surfaceTexture) : NULL);
@@ -487,26 +489,28 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 } else if (track == kVideo) {
                     // video
                     ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ kWhatOutputFormatChanged:: video");
-                    int32_t width, height;
-                    CHECK(codecRequest->findInt32("width", &width));
-                    CHECK(codecRequest->findInt32("height", &height));
+                    if (0) {
+                      int32_t width, height;
+                      CHECK(codecRequest->findInt32("width", &width));
+                      CHECK(codecRequest->findInt32("height", &height));
 
-                    int32_t cropLeft, cropTop, cropRight, cropBottom;
-                    CHECK(codecRequest->findRect(
-                                "crop",
-                                &cropLeft, &cropTop, &cropRight, &cropBottom));
+                      int32_t cropLeft, cropTop, cropRight, cropBottom;
+                      CHECK(codecRequest->findRect(
+                                  "crop",
+                                  &cropLeft, &cropTop, &cropRight, &cropBottom));
 
-                    ALOGW("Video output format changed to %d x %d "
-                         "(crop: %d x %d @ (%d, %d))",
-                         width, height,
-                         (cropRight - cropLeft + 1),
-                         (cropBottom - cropTop + 1),
-                         cropLeft, cropTop);
+                      ALOGW("Video output format changed to %d x %d "
+                           "(crop: %d x %d @ (%d, %d))",
+                           width, height,
+                           (cropRight - cropLeft + 1),
+                           (cropBottom - cropTop + 1),
+                           cropLeft, cropTop);
 
-                    notifyListener(
-                            MEDIA_SET_VIDEO_SIZE,
-                            cropRight - cropLeft + 1,
-                            cropBottom - cropTop + 1);
+                      notifyListener(
+                              MEDIA_SET_VIDEO_SIZE,
+                              cropRight - cropLeft + 1,
+                              cropBottom - cropTop + 1);
+                    }
                 }
             } else if (what == ACodec::kWhatShutdownCompleted) {
                 ALOGV("%s shutdown completed", mTrackName);
@@ -1045,12 +1049,17 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
                 meta->setInt32(kKeyEnableDecodeOrder, 1);
             }
         }
-        int32_t width = 0;
-        meta->findInt32(kKeyWidth, &width);
-        int32_t height = 0;
-        meta->findInt32(kKeyHeight, &height);
-        ALOGE("instantiate video decoder, send wxh = %dx%d",width,height);
-        notifyListener(MEDIA_SET_VIDEO_SIZE, width, height);
+        if (mSetVideoSize) {
+          int32_t width = 0;
+          meta->findInt32(kKeyWidth, &width);
+          int32_t height = 0;
+          meta->findInt32(kKeyHeight, &height);
+          ALOGE("instantiate video decoder, send wxh = %dx%d",width,height);
+          notifyListener(MEDIA_SET_VIDEO_SIZE, width, height);
+          mSetVideoSize = false;
+        } else {
+          ALOGE("instantiate video decoder, but won't set video size for the 2nd time");
+        }
     }
 
     sp<AMessage> notify;
