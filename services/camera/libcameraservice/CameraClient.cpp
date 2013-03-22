@@ -435,7 +435,7 @@ void CameraClient::stopPreview() {
 
     disableMsgType(CAMERA_MSG_PREVIEW_FRAME);
     //Disable picture related message types
-            ALOGI("stopPreview: Disable picture related messages");
+    ALOGI("stopPreview: Disable picture related messages");
     int picMsgType = 0;
     picMsgType = (CAMERA_MSG_SHUTTER |
                   CAMERA_MSG_POSTVIEW_FRAME |
@@ -456,7 +456,7 @@ void CameraClient::stopRecording() {
 
     disableMsgType(CAMERA_MSG_VIDEO_FRAME);
     //Disable picture related message types
-            ALOGI("stopRecording: Disable picture related messages");
+    ALOGI("stopRecording: Disable picture related messages");
     int picMsgType = 0;
     picMsgType = (CAMERA_MSG_SHUTTER |
                   CAMERA_MSG_POSTVIEW_FRAME |
