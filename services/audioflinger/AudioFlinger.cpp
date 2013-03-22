@@ -117,6 +117,8 @@ static const char kHardwareLockedString[] = "Hardware lock is taken\n";
 
 static const float MAX_GAIN = 4096.0f;
 static const uint32_t MAX_GAIN_INT = 0x1000;
+static int kFirstCheck = 0;
+
 
 // retry counts for buffer fill timeout
 // 50 * ~20msecs = 1 second
@@ -2708,12 +2710,16 @@ AudioFlinger::MixerThread::MixerThread(const sp<AudioFlinger>& audioFlinger, Aud
 
         // start the fast mixer
         mFastMixer->run("FastMixer", PRIORITY_URGENT_AUDIO);
-        pid_t tid = mFastMixer->getTid();
-        int err = requestPriority(getpid_cached, tid, kPriorityFastMixer);
-        if (err != 0) {
-            ALOGW("Policy SCHED_FIFO priority %d is unavailable for pid %d tid %d; error %d",
-                    kPriorityFastMixer, getpid_cached, tid, err);
-        }
+		if(kFirstCheck < 2) {
+			kFirstCheck ++;
+		} else {
+	        pid_t tid = mFastMixer->getTid();
+	        int err = requestPriority(getpid_cached, tid, kPriorityFastMixer);
+	        if (err != 0) {
+	            ALOGW("Policy SCHED_FIFO priority %d is unavailable for pid %d tid %d; error %d",
+	                    kPriorityFastMixer, getpid_cached, tid, err);
+	        }
+		}
 
 #ifdef AUDIO_WATCHDOG
         // create and start the watchdog
