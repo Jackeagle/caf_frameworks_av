@@ -7,7 +7,8 @@ LOCAL_SRC_FILES:=                     \
 
 LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/media/openmax \
-        $(TOP)/hardware/msm7k
+        $(TOP)/hardware/msm7k \
+        $(TOP)/hardware/qcom/display/libgralloc
 
 LOCAL_MODULE:= libstagefright_color_conversion
 
