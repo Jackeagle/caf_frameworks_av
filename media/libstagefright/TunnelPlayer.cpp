@@ -48,6 +48,7 @@
 static const char   mName[] = "TunnelPlayer";
 #define MEM_BUFFER_SIZE 600*1024
 #define MEM_BUFFER_COUNT 4
+
 namespace android {
 int TunnelPlayer::mTunnelObjectsAlive = 0;
 
@@ -559,6 +560,8 @@ void TunnelPlayer::extractorThreadEntry() {
             ALOGV("FillBuffer completed bytesToWrite %d", bytesWritten);
             if(!killExtractorThread) {
                 mAudioSink->write(local_buf, bytesWritten);
+                if(mReachedEOS && bytesWritten)
+                    mAudioSink->write(local_buf, 0);
             }
         }
     }
@@ -745,8 +748,7 @@ void TunnelPlayer::requestAndWaitForExtractorThreadExit() {
 
     if (!extractorThreadAlive)
         return;
-    if (mPaused)
-        mAudioSink->flush();
+    mAudioSink->flush();
     killExtractorThread = true;
     pthread_cond_signal(&extractor_cv);
     pthread_join(extractorThread,NULL);
