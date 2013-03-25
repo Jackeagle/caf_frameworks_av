@@ -74,6 +74,7 @@ public:
     virtual bool reachedEOS(status_t *finalStatus);
 
     static int objectsAlive;
+    static bool mLpaInProgress;
 private:
     int64_t mPositionTimeMediaUs;
     int64_t mPositionTimeRealUs;

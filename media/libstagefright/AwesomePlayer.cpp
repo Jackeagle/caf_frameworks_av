@@ -1581,7 +1581,9 @@ status_t AwesomePlayer::initAudioDecoder() {
         int64_t durationUs;
         uint32_t flags = 0;
         char lpaDecode[128];
+        char audioDecoderOverrideCheck[128];
         property_get("lpa.decode",lpaDecode,"0");
+        property_get("audio.decoder_override_check",audioDecoderOverrideCheck,"0");
         if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
             if (mDurationUs < 0 || durationUs > mDurationUs) {
                 mDurationUs = durationUs;
@@ -1591,6 +1593,11 @@ status_t AwesomePlayer::initAudioDecoder() {
              && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
              && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
 
+            flags |= OMXCodec::kSoftwareCodecsOnly;
+            LPAPlayer::mLpaInProgress = true;
+        }
+
+        if ((LPAPlayer::mLpaInProgress == true) && (strcmp("true",audioDecoderOverrideCheck) == 0)) {
             flags |= OMXCodec::kSoftwareCodecsOnly;
         }
         mAudioSource = OMXCodec::Create(
