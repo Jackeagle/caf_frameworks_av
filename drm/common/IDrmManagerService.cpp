@@ -758,6 +758,38 @@ status_t BpDrmManagerService::decrypt(
     return status;
 }
 
+status_t BpDrmManagerService::decrypt(
+            int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV) {
+    ALOGV("decrypt");
+    Parcel data, reply;
+
+    data.writeInterfaceToken(IDrmManagerService::getInterfaceDescriptor());
+    data.writeInt32(uniqueId);
+
+    writeDecryptHandleToParcelData(decryptHandle, &data);
+
+    data.writeInt32(decryptUnitId);
+
+    data.writeInt32((*decBuffer)->length);
+    data.writeFileDescriptor((*decBuffer)->memFd);
+
+    data.writeInt32(encBuffer->length);
+    data.writeFileDescriptor(encBuffer->memFd);
+
+    if (NULL != IV){
+        data.writeInt32(IV->length);
+        data.write(IV->data, IV->length);
+    }
+
+    remote()->transact(DECRYPT_ION, data, &reply);
+
+    const status_t status = reply.readInt32();
+    ALOGV("Return value of decrypt() is %d", status);
+
+    return status;
+}
+
 status_t BpDrmManagerService::finalizeDecryptUnit(
             int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId) {
     ALOGV("finalizeDecryptUnit");
@@ -1469,6 +1501,47 @@ status_t BnDrmManagerService::onTransact(
         delete [] buffer; buffer = NULL;
         delete IV; IV = NULL;
         return DRM_NO_ERROR;
+    }
+
+    case DECRYPT_ION:
+    {
+        ALOGV("BnDrmManagerService::onTransact :DECRYPT");
+        CHECK_INTERFACE(IDrmManagerService, data, reply);
+
+        const int uniqueId = data.readInt32();
+
+        DecryptHandle handle;
+        readDecryptHandleFromParcelData(&handle, data);
+
+        const int decryptUnitId = data.readInt32();
+        const int decBufferSize = data.readInt32();
+
+        int decBufferId = data.readFileDescriptor();
+
+        DrmIonBuffer* decBuffer = new DrmIonBuffer(decBufferId, decBufferSize);
+
+        const int encBufferSize = data.readInt32();
+        int encBufferId = data.readFileDescriptor();
+
+        DrmIonBuffer* encBuffer = new DrmIonBuffer(encBufferId, encBufferSize);
+
+        DrmBuffer* IV = NULL;
+        if (0 != data.dataAvail()) {
+            const int ivBufferlength = data.readInt32();
+            IV = new DrmBuffer((char *)data.readInplace(ivBufferlength), ivBufferlength);
+        }
+
+        const status_t status
+            = decrypt(uniqueId, &handle, decryptUnitId, encBuffer, &decBuffer, IV);
+
+        reply->writeInt32(status);
+
+        clearDecryptHandle(&handle);
+        delete encBuffer; encBuffer = NULL;
+        delete decBuffer; decBuffer = NULL;
+        delete IV; IV = NULL;
+        return DRM_NO_ERROR;
+
     }
 
     case FINALIZE_DECRYPT_UNIT:
