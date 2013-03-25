@@ -115,6 +115,9 @@ public:
     status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
             const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV);
 
+    status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV);
+
     status_t finalizeDecryptUnit(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId);
 
     ssize_t pread(int uniqueId, DecryptHandle* decryptHandle,

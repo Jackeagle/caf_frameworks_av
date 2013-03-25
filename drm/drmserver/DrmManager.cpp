@@ -541,6 +541,19 @@ status_t DrmManager::decrypt(int uniqueId, DecryptHandle* decryptHandle, int dec
     return result;
 }
 
+status_t DrmManager::decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV) {
+    status_t result = DRM_ERROR_UNKNOWN;
+
+    Mutex::Autolock _l(mDecryptLock);
+    if (mDecryptSessionMap.indexOfKey(decryptHandle->decryptId) != NAME_NOT_FOUND) {
+        IDrmEngine* drmEngine = mDecryptSessionMap.valueFor(decryptHandle->decryptId);
+        result = drmEngine->decrypt(
+                uniqueId, decryptHandle, decryptUnitId, encBuffer, decBuffer, IV);
+    }
+    return result;
+}
+
 status_t DrmManager::finalizeDecryptUnit(
             int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId) {
     status_t result = DRM_ERROR_UNKNOWN;
