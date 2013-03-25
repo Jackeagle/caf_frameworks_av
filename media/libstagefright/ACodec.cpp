@@ -3107,6 +3107,16 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
 
     AString componentName;
     uint32_t quirks = 0;
+
+    int32_t requiresSecureBuffers;
+
+    if (msg->findInt32(
+            "requires-secure-buffers",
+            &requiresSecureBuffers)
+            && requiresSecureBuffers) {
+        ALOGV("ACodec Needs Secure Buffers");
+    }
+
     if (msg->findString("componentName", &componentName)) {
         ssize_t index = matchingCodecs.add();
         OMXCodec::CodecNameAndQuirks *entry = &matchingCodecs.editItemAt(index);
@@ -3139,6 +3149,17 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
             ++matchIndex) {
         componentName = matchingCodecs.itemAt(matchIndex).mName.string();
         quirks = matchingCodecs.itemAt(matchIndex).mQuirks;
+
+        if (componentName.c_str() && requiresSecureBuffers &&
+            strstr(componentName.c_str(), "OMX.qcom.video")) {
+            AString tmp;
+
+            tmp = componentName.c_str();
+            tmp.append(".secure");
+
+            componentName = tmp.c_str();
+            ALOGE("ACodec Component name is %s", tmp.c_str());
+        }
 
         pid_t tid = androidGetTid();
         int prevPriority = androidGetThreadPriority(tid);

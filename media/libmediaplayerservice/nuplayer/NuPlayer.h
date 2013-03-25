@@ -134,9 +134,6 @@ private:
     FlushStatus mFlushingVideo;
     bool mResetInProgress;
     bool mResetPostponed;
-#ifdef QCOM_WFD_SINK
-    bool mWFDSinkSession;
-#endif //QCOM_WFD_SINK
 
     int64_t mSkipRenderingAudioUntilMediaTimeUs;
     int64_t mSkipRenderingVideoUntilMediaTimeUs;
@@ -145,6 +142,11 @@ private:
     int64_t mNumFramesTotal, mNumFramesDropped;
 
     int32_t mVideoScalingMode;
+
+#ifdef QCOM_WFD_SINK
+    bool mWFDSinkSession;
+    bool mIsSecureInputBuffers;
+#endif //QCOM_WFD_SINK
 
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 

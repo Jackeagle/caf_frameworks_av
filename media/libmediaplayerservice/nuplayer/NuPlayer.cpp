@@ -75,7 +75,8 @@ NuPlayer::NuPlayer()
       mNumFramesTotal(0ll),
       mNumFramesDropped(0ll),
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
-      mWFDSinkSession(false) {
+      mWFDSinkSession(false),
+      mIsSecureInputBuffers(false) {
 }
 
 NuPlayer::~NuPlayer() {
@@ -761,16 +762,29 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
         return OK;
     }
 
-    sp<AMessage> format  = mSource->getFormat(audio);
-    if (format == NULL){
-       return -EWOULDBLOCK;
+    sp<AMessage> format = mSource->getFormat(audio);
+
+    if (format == NULL) {
+        return -EWOULDBLOCK;
     }
-    if (!audio)
-    {
-       AString mime;
-       CHECK(format->findString("mime", &mime));
-       mVideoIsAVC = !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str());
-   }
+
+    if (!audio) {
+        AString mime;
+        CHECK(format->findString("mime", &mime));
+        mVideoIsAVC = !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str());
+
+#ifdef QCOM_WFD_SINK
+        if(mWFDSinkSession) {
+           //Handle secure buffer requests from NuPlayer Source like WFD.
+           int32_t isDRMSecBuf = 0;
+           sp<MetaData> meta = mSource->getFormatMeta(audio);
+           meta->findInt32(kKeyRequiresSecureBuffers, &isDRMSecBuf);
+           if(isDRMSecBuf) {
+              mIsSecureInputBuffers = true;
+           }
+        }
+#endif //QCOM_WFD_SINK
+    }
 
     sp<AMessage> notify =
         new AMessage(audio ? kWhatAudioNotify : kWhatVideoNotify,
@@ -820,7 +834,21 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
 
     bool dropAccessUnit;
     do {
-        status_t err = mSource->dequeueAccessUnit(audio, &accessUnit);
+        status_t err = UNKNOWN_ERROR;
+
+        if (mIsSecureInputBuffers && !audio) {
+            msg->findBuffer("buffer", &accessUnit);
+
+            if (accessUnit == NULL) {
+                ALOGE("Nuplayer NULL buffer in message");
+                return err;
+            } else {
+                ALOGV("Nuplayer buffer in message %d %d",
+                accessUnit->data(), accessUnit->capacity());
+            }
+        }
+
+        err = mSource->dequeueAccessUnit(audio, &accessUnit);
 
         if (err == -EWOULDBLOCK) {
             return err;
@@ -900,6 +928,7 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
         if (!audio
                 && mVideoLateByUs > 100000ll
                 && mVideoIsAVC
+                && !mIsSecureInputBuffers
                 && !IsAVCReferenceFrame(accessUnit)) {
             dropAccessUnit = true;
             ++mNumFramesDropped;
