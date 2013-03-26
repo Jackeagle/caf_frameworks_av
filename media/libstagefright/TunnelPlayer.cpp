@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#define LOG_NDDEBUG 0
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
+//#define LOG_NDDEBUG 0
 #define LOG_TAG "TunnelPlayer"
 #include <utils/Log.h>
 #include <utils/threads.h>
@@ -451,8 +451,11 @@ void TunnelPlayer::reset() {
     requestAndWaitForExtractorThreadExit();
 
     // Close the audiosink after all the threads exited to make sure
-    mAudioSink->stop();
-    mAudioSink->close();
+    if (mIsAudioRouted) {
+        mAudioSink->stop();
+        mAudioSink->close();
+        mIsAudioRouted = false;
+    }
     //TODO: Release Wake lock
 
     // Make sure to release any buffer we hold onto so that the
@@ -692,6 +695,7 @@ void TunnelPlayer::getPlayedTimeFromDSP_l(int64_t* timeStamp ) {
     ALOGV("timestamp returned from DSP %lld ", (*timeStamp));
     return;
 }
+
 //offset with pause and seek time
 void TunnelPlayer::getOffsetRealTime_l(int64_t* offsetTime) {
     if (mPaused) {
@@ -723,7 +727,8 @@ void TunnelPlayer::requestAndWaitForExtractorThreadExit() {
 
     if (!extractorThreadAlive)
         return;
-    mAudioSink->flush();
+    if (mIsAudioRouted)
+        mAudioSink->flush();
     killExtractorThread = true;
     pthread_cond_signal(&extractor_cv);
     pthread_join(extractorThread,NULL);
