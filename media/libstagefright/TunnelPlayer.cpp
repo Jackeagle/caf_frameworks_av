@@ -741,11 +741,17 @@ void TunnelPlayer::onPauseTimeOut() {
         // 1.) Set seek flags
         mReachedEOS = false;
         mReachedOutputEOS = false;
-        mInternalSeeking = true;
-        mLock.lock();
-        getPlayedTimeFromDSP_l(&playedTime);
-        mLock.unlock();
-        mSeekTimeUs += playedTime;
+
+        if(mSeeking == false) {
+            mInternalSeeking = true;
+            mLock.lock();
+            getPlayedTimeFromDSP_l(&playedTime);
+            mLock.unlock();
+            mSeekTimeUs += playedTime;
+        } else {
+            ALOGV("Do not update seek time if it was seeked before onpause timeout");
+        }
+
         // 2.) Close routing Session
         mAudioSink->close();
         mIsAudioRouted = false;
