@@ -153,7 +153,7 @@ public:
     virtual     String8     getParameters(audio_io_handle_t ioHandle, const String8& keys) const;
 
     virtual     void        registerClient(const sp<IAudioFlingerClient>& client);
-
+    virtual status_t deregisterClient(const sp<IAudioFlingerClient>& client);
     virtual     size_t      getInputBufferSize(uint32_t sampleRate, audio_format_t format, int channelCount) const;
 
     virtual audio_io_handle_t openOutput(audio_module_handle_t module,
@@ -322,7 +322,7 @@ private:
     public:
                             NotificationClient(const sp<AudioFlinger>& audioFlinger,
                                                 const sp<IAudioFlingerClient>& client,
-                                                pid_t pid);
+                                                sp<IBinder> binder);
         virtual             ~NotificationClient();
 
                 sp<IAudioFlingerClient> audioFlingerClient() const { return mAudioFlingerClient; }
@@ -335,7 +335,7 @@ private:
                             NotificationClient& operator = (const NotificationClient&);
 
         const sp<AudioFlinger>  mAudioFlinger;
-        const pid_t             mPid;
+        sp<IBinder>             mBinder;
         const sp<IAudioFlingerClient> mAudioFlingerClient;
     };
 
@@ -1386,7 +1386,7 @@ private:
     };
 
                 void        removeClient_l(pid_t pid);
-                void        removeNotificationClient(pid_t pid);
+                void        removeNotificationClient(sp<IBinder> binder);
 
 
     // record thread
@@ -1980,12 +1980,12 @@ mutable Mutex               mLock;      // mutex for process, commands and handl
 
                 DefaultKeyedVector< audio_io_handle_t, sp<RecordThread> >    mRecordThreads;
 
-                DefaultKeyedVector< pid_t, sp<NotificationClient> >    mNotificationClients;
+                DefaultKeyedVector< sp<IBinder>, sp<NotificationClient> >    mNotificationClients;
                 volatile int32_t                    mNextUniqueId;  // updated by android_atomic_inc
                 audio_mode_t                        mMode;
                 bool                                mBtNrecIsOff;
                 DefaultKeyedVector<audio_io_handle_t, AudioSessionDescriptor *> mDirectAudioTracks;
-
+                int                                 mA2DPHandle; // Handle to notify A2DP connection status
                 // protected by mLock
                 Vector<AudioSessionRef*> mAudioSessionRefs;
                 sp<EffectChain> mLPAEffectChain;
