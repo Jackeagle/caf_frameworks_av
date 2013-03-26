@@ -28,6 +28,7 @@
 #include "CameraService.h"
 #include "MediaPlayerService.h"
 #include "AudioPolicyService.h"
+#include "GestureDeviceService.h"
 
 using namespace android;
 
@@ -41,6 +42,7 @@ int main(int argc, char** argv)
     MediaPlayerService::instantiate();
     CameraService::instantiate();
     AudioPolicyService::instantiate();
+    GestureDeviceService::instantiate();
     ProcessState::self()->startThreadPool();
     IPCThreadState::self()->joinThreadPool();
 }
