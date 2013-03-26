@@ -137,7 +137,7 @@ struct MyHandler : public AHandler {
           mKeepAliveTimeoutUs(kDefaultKeepAliveTimeoutUs),
           mPlayRespPending(false),
           mKeepAliveGeneration(0) 
-#if FEA_HS_NUPLAYER_SEEK /*sunlei added */
+#if FEA_HS_NUPLAYER_SEEK /* we new added */
           ,mIsPlayStart(false)
           ,mResumePosUs(0)
           ,mIsLive(false)
@@ -186,14 +186,14 @@ struct MyHandler : public AHandler {
 
     void seek(int64_t timeUs) {
 		
-#if FEA_HS_NUPLAYER_SEEK /* sunlei begin*/
+#if FEA_HS_NUPLAYER_SEEK /* we new begin*/
 
 		if(!mIsPlayStart)
 		{
 			mResumePosUs = timeUs;
 			return;
 		}
-#endif /* sunlei end*/
+#endif /* we new end*/
         sp<AMessage> msg = new AMessage('seek', id());
         msg->setInt64("time", timeUs);
         msg->post();
@@ -479,14 +479,14 @@ struct MyHandler : public AHandler {
 
                                 mBaseURL = tmp;
                             }
-#if FEA_HS_NUPLAYER_SEEK /* sunlei begin*/
+#if FEA_HS_NUPLAYER_SEEK /* we new begin*/
 							int64_t dur = 0;
                             if(!mSessionDesc->getDurationUs(&dur))
                         	{
                         		mIsLive = true;
 				         ALOGW("Myhandler :: this is a living streaming video");
                         	}
-#endif /* sunlei  end*/
+#endif /* we new  end*/
                             if (mSessionDesc->countTracks() < 2) {
                                 // There's no actual tracks in this session.
                                 // The first "track" is merely session meta
@@ -627,7 +627,6 @@ struct MyHandler : public AHandler {
 
 		    /*int64_t duration;
 		    int haveDuration = mSessionDesc->getDurationUs(&duration);
-			ALOGI("SETUP--SUNLEI3");
 		    ALOGI("in setu haveDuration =%d duration=%lld",haveDuration,duration);
 			**/
 
@@ -645,7 +644,7 @@ struct MyHandler : public AHandler {
                             "Range: npt=%lld-%lld\r\n", 0,duration/1000000ll));
                     }
 					**/
-					#if FEA_HS_NUPLAYER_SEEK/* sunlei begin*/
+					#if FEA_HS_NUPLAYER_SEEK/* we new begin*/
                     if(!mIsLive)
                     {
                      ALOGW("myhandler ::play request, and range . mResumePosUs =%lld ", mResumePosUs);
@@ -658,7 +657,7 @@ struct MyHandler : public AHandler {
 								StringPrintf(
 									"Range: npt=%lld-%lld\r\n", mResumePosUs/ 1000000ll,durationUs/ 1000000ll));
                     }
-#endif /* sunlei end*/
+#endif /* we new end*/
                     request.append("\r\n");
 
                     sp<AMessage> reply = new AMessage('play', id());
@@ -1051,7 +1050,7 @@ struct MyHandler : public AHandler {
 
                         ALOGI("seek completed.");
 						#if FEA_HS_NUPLAYER_SEEK
-						//add by sunlei
+						//we new added
 						fakeTimestamps();
 						#endif
                     }
@@ -1322,11 +1321,11 @@ private:
     Vector<TrackInfo> mTracks;
 
     bool mPlayRespPending;
-#if FEA_HS_NUPLAYER_SEEK/* sunlei  begin*/
-	bool mIsPlayStart; //add by sunlei
-	int64_t mResumePosUs; //add by sunlei
-	int64_t mIsLive; //add by sunlei
-#endif/* sunlei  end*/
+#if FEA_HS_NUPLAYER_SEEK/* we new  begin*/
+	bool mIsPlayStart; // we new added
+	int64_t mResumePosUs; //we new added
+	int64_t mIsLive; //we new added
+#endif/* we new  end*/
 
     void setupTrack(size_t index) {
         sp<APacketSource> source =

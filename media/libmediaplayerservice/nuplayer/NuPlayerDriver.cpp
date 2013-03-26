@@ -37,8 +37,8 @@ NuPlayerDriver::NuPlayerDriver()
       mState(UNINITIALIZED),
       mAtEOS(false),
       mStartupSeekTimeUs(-1),
-      mFirstPosition(true),//sunlei add for notify app buffering 100% 
-      mSeekingPos(-1) {//sunlei add for seekbar issue
+      mFirstPosition(true),//we new add for notify app buffering 100% 
+      mSeekingPos(-1) {//we new add for seekbar issue
       mLooper->setName("NuPlayerDriver Looper");
 
     mLooper->start(
@@ -200,11 +200,11 @@ status_t NuPlayerDriver::seekTo(int msec) {
         {
             mAtEOS = false;
             mPlayer->seekToAsync(seekTimeUs);
-	    //sunlei add for seekbar update issue start
+	    //we new add for seekbar update issue start
             mPositionUs = seekTimeUs;
             mSeekingPos = seekTimeUs;
             ALOGD("SeekTo seekTimeUs= %lld",seekTimeUs);
-            //sunlei add for seekbar update issue end 
+            //we new add for seekbar update issue end 
             break;
         }
 
@@ -333,14 +333,14 @@ void NuPlayerDriver::notifyPosition(int64_t positionUs) {
 
 	ALOGE("noftyPosition");
 
-      /* sunlei add for notify app buffering 100% START */
+      /* we new add for notify app buffering 100% START */
     if(mFirstPosition){
 		ALOGE("noftyPosition ----  buffer 100%");
         notifyListener(MEDIA_BUFFERING_UPDATE, 100);
         mFirstPosition = false;
     }
-    /* sunlei add for notify app buffering 100% END */
-     //sunlei add for seekbar update issue -start
+    /* we new add for notify app buffering 100% END */
+     //we new add for seekbar update issue -start
     if(mSeekingPos > 0){
         if(mSeekingPos > positionUs && mSeekingPos-positionUs > 500000){
             return;
@@ -349,7 +349,7 @@ void NuPlayerDriver::notifyPosition(int64_t positionUs) {
         }
         mSeekingPos = -1;
     }
-    //sunlei add for seekbar update issue -end
+    //we new add for seekbar update issue -end
     mPositionUs = positionUs;
 }
 
