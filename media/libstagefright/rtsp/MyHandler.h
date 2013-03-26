@@ -44,7 +44,7 @@
 
 // If no access units are received within 5 secs, assume that the rtp
 // stream has ended and signal end of stream.
-static int64_t kAccessUnitTimeoutUs = 10000000ll;
+static int64_t kAccessUnitTimeoutUs = 4000000ll;
 
 // If no access units arrive for the first 10 secs after starting the
 // stream, assume none ever will and signal EOS or switch transports.
@@ -844,9 +844,12 @@ struct MyHandler : public AHandler {
 
                 if (mNumAccessUnitsReceived == 0) {
 #if 1
+
                     ALOGI("stream ended? aborting.");
                     (new AMessage('abor', id()))->post();
+                    
                     break;
+                    
 #else
                     ALOGI("haven't seen an AU in a looong time.");
 #endif
