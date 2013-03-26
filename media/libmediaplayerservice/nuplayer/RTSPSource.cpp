@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "RTSPSource"
 #include <utils/Log.h>
 
@@ -202,9 +202,16 @@ status_t NuPlayer::RTSPSource::seekTo(int64_t seekTimeUs) {
 }
 
 void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
+
+#if FEA_HS_NUPLAYER_SEEK
+    if (mState == DISCONNECTED){
+        return;
+    }
+#else
     if (mState != CONNECTED) {
         return;
     }
+#endif /* FEA_HS_NUPLAYER_SEEK */
 
     mState = SEEKING;
     mHandler->seek(seekTimeUs);
@@ -213,6 +220,19 @@ void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
 uint32_t NuPlayer::RTSPSource::flags() const {
     return FLAG_SEEKABLE;
 }
+
+// return in ms
+    int32_t NuPlayer::RTSPSource::getServerTimeout() {
+        if(mHandler != NULL) {
+            return mHandler->getServerTimeout();
+        }
+	else {
+	    int64_t kDefaultKeepAliveTimeoutUs = 60000000ll;
+	    return  kDefaultKeepAliveTimeoutUs/1000;
+	}
+	
+    }
+
 
 void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
     if (msg->what() == kWhatDisconnect) {

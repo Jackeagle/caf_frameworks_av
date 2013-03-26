@@ -49,6 +49,8 @@ struct NuPlayer::RTSPSource : public NuPlayer::Source {
 
     virtual uint32_t flags() const;
 
+    virtual int32_t getServerTimeout() ;
+
     void onMessageReceived(const sp<AMessage> &msg);
 
 protected:

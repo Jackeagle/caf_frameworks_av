@@ -84,6 +84,8 @@ private:
     int64_t mNumFramesDropped;
     // <<<
 
+     bool mFirstPosition;//sunlei add for notify app buffering 100%
+
     sp<ALooper> mLooper;
     sp<NuPlayer> mPlayer;
 
@@ -98,6 +100,8 @@ private:
     bool mAtEOS;
 
     int64_t mStartupSeekTimeUs;
+
+    int64_t mSeekingPos;//sunlei add for seekbar issue
 
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayerDriver);
 };

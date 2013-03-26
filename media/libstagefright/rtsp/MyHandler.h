@@ -18,7 +18,7 @@
 
 #define MY_HANDLER_H_
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "MyHandler"
 #include <utils/Log.h>
 
@@ -44,7 +44,7 @@
 
 // If no access units are received within 5 secs, assume that the rtp
 // stream has ended and signal end of stream.
-static int64_t kAccessUnitTimeoutUs = 10000000ll;
+static int64_t kAccessUnitTimeoutUs = 4000000ll;
 
 // If no access units arrive for the first 10 secs after starting the
 // stream, assume none ever will and signal EOS or switch transports.
@@ -135,7 +135,14 @@ struct MyHandler : public AHandler {
           mReceivedFirstRTPPacket(false),
           mSeekable(false),
           mKeepAliveTimeoutUs(kDefaultKeepAliveTimeoutUs),
-          mKeepAliveGeneration(0) {
+          mPlayRespPending(false),
+          mKeepAliveGeneration(0) 
+#if FEA_HS_NUPLAYER_SEEK /*sunlei added */
+          ,mIsPlayStart(false)
+          ,mResumePosUs(0)
+          ,mIsLive(false)
+#endif /* FEA_HS_NUPLAYER_SEEK */
+           {
         mNetLooper->setName("rtsp net");
         mNetLooper->start(false /* runOnCallingThread */,
                           false /* canCallJava */,
@@ -178,6 +185,15 @@ struct MyHandler : public AHandler {
     }
 
     void seek(int64_t timeUs) {
+		
+#if FEA_HS_NUPLAYER_SEEK /* sunlei begin*/
+
+		if(!mIsPlayStart)
+		{
+			mResumePosUs = timeUs;
+			return;
+		}
+#endif /* sunlei end*/
         sp<AMessage> msg = new AMessage('seek', id());
         msg->setInt64("time", timeUs);
         msg->post();
@@ -463,7 +479,14 @@ struct MyHandler : public AHandler {
 
                                 mBaseURL = tmp;
                             }
-
+#if FEA_HS_NUPLAYER_SEEK /* sunlei begin*/
+							int64_t dur = 0;
+                            if(!mSessionDesc->getDurationUs(&dur))
+                        	{
+                        		mIsLive = true;
+				         ALOGW("Myhandler :: this is a living streaming video");
+                        	}
+#endif /* sunlei  end*/
                             if (mSessionDesc->countTracks() < 2) {
                                 // There's no actual tracks in this session.
                                 // The first "track" is merely session meta
@@ -602,6 +625,12 @@ struct MyHandler : public AHandler {
                     ++mKeepAliveGeneration;
                     postKeepAlive();
 
+		    /*int64_t duration;
+		    int haveDuration = mSessionDesc->getDurationUs(&duration);
+			ALOGI("SETUP--SUNLEI3");
+		    ALOGI("in setu haveDuration =%d duration=%lld",haveDuration,duration);
+			**/
+
                     AString request = "PLAY ";
                     request.append(mSessionURL);
                     request.append(" RTSP/1.0\r\n");
@@ -609,7 +638,27 @@ struct MyHandler : public AHandler {
                     request.append("Session: ");
                     request.append(mSessionID);
                     request.append("\r\n");
-
+		    /* if(haveDuration)
+                    {
+                	 request.append(
+                        StringPrintf(
+                            "Range: npt=%lld-%lld\r\n", 0,duration/1000000ll));
+                    }
+					**/
+					#if FEA_HS_NUPLAYER_SEEK/* sunlei begin*/
+                    if(!mIsLive)
+                    {
+                     ALOGW("myhandler ::play request, and range . mResumePosUs =%lld ", mResumePosUs);
+						int64_t durationUs = 0;
+						TrackInfo *track = &mTracks.editItemAt(0);
+						if (track != NULL){
+							track->mPacketSource->getFormat()->findInt64(kKeyDuration, &durationUs); 
+						}
+						request.append(
+								StringPrintf(
+									"Range: npt=%lld-%lld\r\n", mResumePosUs/ 1000000ll,durationUs/ 1000000ll));
+                    }
+#endif /* sunlei end*/
                     request.append("\r\n");
 
                     sp<AMessage> reply = new AMessage('play', id());
@@ -795,9 +844,12 @@ struct MyHandler : public AHandler {
 
                 if (mNumAccessUnitsReceived == 0) {
 #if 1
+
                     ALOGI("stream ended? aborting.");
                     (new AMessage('abor', id()))->post();
+                    
                     break;
+                    
 #else
                     ALOGI("haven't seen an AU in a looong time.");
 #endif
@@ -930,12 +982,17 @@ struct MyHandler : public AHandler {
                     info->mNTPAnchorUs = -1;
                 }
 
+                mPlayRespPending = true;
                 mAllTracksHaveTime = false;
                 mNTPAnchorUs = -1;
 
                 int64_t timeUs;
                 CHECK(msg->findInt64("time", &timeUs));
 
+	          int64_t duration;
+		  int haveDuration = mSessionDesc->getDurationUs(&duration);
+		  ALOGI("in seek1 haveDuration =%d duration=%lld",haveDuration,duration);
+		  ALOGI("in seek1 timeUs =%lld",timeUs);
                 AString request = "PLAY ";
                 request.append(mSessionURL);
                 request.append(" RTSP/1.0\r\n");
@@ -944,9 +1001,17 @@ struct MyHandler : public AHandler {
                 request.append(mSessionID);
                 request.append("\r\n");
 
-                request.append(
-                        StringPrintf(
+		if(haveDuration)
+		{
+		    request.append(
+		    StringPrintf(
+		    "Range: npt=%lld-%lld\r\n", timeUs / 1000000ll,duration/1000000ll));
+		}else {
+
+                    request.append(
+                    StringPrintf(
                             "Range: npt=%lld-\r\n", timeUs / 1000000ll));
+			}
 
                 request.append("\r\n");
 
@@ -985,6 +1050,10 @@ struct MyHandler : public AHandler {
                         ALOGV("rtp-info: %s", response->mHeaders.valueAt(i).c_str());
 
                         ALOGI("seek completed.");
+						#if FEA_HS_NUPLAYER_SEEK
+						//add by sunlei
+						fakeTimestamps();
+						#endif
                     }
                 }
 
@@ -1055,6 +1124,11 @@ struct MyHandler : public AHandler {
         }
     }
 
+    // return in ms
+    int32_t getServerTimeout() {
+        return mKeepAliveTimeoutUs / 1000;
+    }
+
     void postKeepAlive() {
         sp<AMessage> msg = new AMessage('aliv', id());
         msg->setInt32("generation", mKeepAliveGeneration);
@@ -1091,6 +1165,7 @@ struct MyHandler : public AHandler {
 
     void parsePlayResponse(const sp<ARTSPResponse> &response) {
         mSeekable = false;
+     	mPlayRespPending = false;
 
         ssize_t i = response->mHeaders.indexOfKey("range");
         if (i < 0) {
@@ -1127,10 +1202,15 @@ struct MyHandler : public AHandler {
             ALOGV("streamInfo[%d] = %s", n, (*it).c_str());
 
             CHECK(GetAttribute((*it).c_str(), "url", &val));
-
             size_t trackIndex = 0;
+	   AString trackURL;	   
+	   if(val.startsWith(mBaseURL.c_str())){
+	   	trackURL = val;
+	   } else{
+	       MakeURL(mBaseURL.c_str(), val.c_str(), &trackURL);
+	   }
             while (trackIndex < mTracks.size()
-                    && !(val == mTracks.editItemAt(trackIndex).mURL)) {
+                    && !(trackURL == mTracks.editItemAt(trackIndex).mURL)) {
                 ++trackIndex;
             }
             CHECK_LT(trackIndex, mTracks.size());
@@ -1161,8 +1241,12 @@ struct MyHandler : public AHandler {
 
             ++n;
         }
-
+	// set mAllTracksHaveTime = true for in method onAccessUnitComplete
+        mAllTracksHaveTime = true;
         mSeekable = true;
+		#if FEA_HS_NUPLAYER_SEEK
+		mIsPlayStart = true;
+		#endif
     }
 
     sp<MetaData> getTrackFormat(size_t index, int32_t *timeScale) {
@@ -1236,6 +1320,13 @@ private:
     int32_t mKeepAliveGeneration;
 
     Vector<TrackInfo> mTracks;
+
+    bool mPlayRespPending;
+#if FEA_HS_NUPLAYER_SEEK/* sunlei  begin*/
+	bool mIsPlayStart; //add by sunlei
+	int64_t mResumePosUs; //add by sunlei
+	int64_t mIsLive; //add by sunlei
+#endif/* sunlei  end*/
 
     void setupTrack(size_t index) {
         sp<APacketSource> source =
@@ -1428,7 +1519,11 @@ private:
 
         TrackInfo *track = &mTracks.editItemAt(trackIndex);
 
-        if (!mAllTracksHaveTime) {
+	
+
+
+
+        if (!mAllTracksHaveTime || mPlayRespPending) {
             ALOGV("storing accessUnit, no time established yet");
             track->mPackets.push_back(accessUnit);
             return;
