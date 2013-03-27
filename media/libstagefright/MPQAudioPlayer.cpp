@@ -1254,7 +1254,13 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
        AUDIO_RAW as PCM data is fed to MPQAudioPlayer */
     if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_RAW)){
         ALOGW("Sw Decoder");
-        mAudioFormat = AUDIO_FORMAT_PCM_16_BIT;
+        sp<MetaData> format = mSource->getFormat();
+        int sampleBits = 16;
+        if (format->findInt32(kKeySampleBits, &sampleBits) && sampleBits == 24) {
+            mAudioFormat = AUDIO_FORMAT_PCM_24_BIT;
+            ALOGW("Sw Decoder: AUDIO_FORMAT_PCM_24_BIT");
+        } else
+            mAudioFormat = AUDIO_FORMAT_PCM_16_BIT;
         mDecoderType = ESoftwareDecoder;
     }
     else if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_AC3)) {
