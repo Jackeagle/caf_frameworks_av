@@ -31,7 +31,10 @@ namespace android {
 AnotherPacketSource::AnotherPacketSource(const sp<MetaData> &meta)
     : mIsAudio(false),
       mFormat(meta),
-      mEOSResult(OK) {
+      mEOSResult(OK),
+      mStreamPID(0),
+      mProgramPID(0),
+      mFirstPTS(0) {
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
 
@@ -43,7 +46,13 @@ AnotherPacketSource::AnotherPacketSource(const sp<MetaData> &meta)
 }
 
 void AnotherPacketSource::setFormat(const sp<MetaData> &meta) {
+    Mutex::Autolock autoLock(mLock);
     CHECK(mFormat == NULL);
+    mFormat = meta;
+}
+
+void AnotherPacketSource::updateFormat(const sp<MetaData> &meta) {
+    Mutex::Autolock autoLock(mLock);
     mFormat = meta;
 }
 
@@ -58,7 +67,21 @@ status_t AnotherPacketSource::stop() {
     return OK;
 }
 
+void AnotherPacketSource::setStreamInfo(unsigned streamPID, unsigned programPID, uint64_t firstPTS){
+    mStreamPID = streamPID;
+    mProgramPID = programPID;
+    mFirstPTS = firstPTS;
+}
+
+status_t AnotherPacketSource::getStreamInfo(unsigned& streamPID, unsigned& programPID, uint64_t& firstPTS){
+    streamPID = mStreamPID;
+    programPID = mProgramPID;
+    firstPTS = mFirstPTS;
+    return OK;
+}
+
 sp<MetaData> AnotherPacketSource::getFormat() {
+    Mutex::Autolock autoLock(mLock);
     return mFormat;
 }
 
@@ -147,13 +170,27 @@ void AnotherPacketSource::queueAccessUnit(const sp<ABuffer> &buffer) {
 
     Mutex::Autolock autoLock(mLock);
     mBuffers.push_back(buffer);
+    ALOGV("@@@@:: AnotherPacketSource --> size is %d ",mBuffers.size() );
     mCondition.signal();
+}
+
+int AnotherPacketSource::getQueueSize() {
+    return mBuffers.size();
 }
 
 void AnotherPacketSource::queueDiscontinuity(
         ATSParser::DiscontinuityType type,
         const sp<AMessage> &extra) {
     Mutex::Autolock autoLock(mLock);
+
+    if (type == ATSParser::DISCONTINUITY_TS_PLAYER_SEEK ||
+        type == ATSParser::DISCONTINUITY_HLS_PLAYER_SEEK) {
+        ALOGI("Flushing all Access units for seek");
+        mBuffers.clear();
+        mEOSResult = OK;
+        mCondition.signal();
+        return;
+    }
 
     // Leave only discontinuities in the queue.
     List<sp<ABuffer> >::iterator it = mBuffers.begin();
@@ -243,7 +280,24 @@ status_t AnotherPacketSource::nextBufferTime(int64_t *timeUs) {
 
     sp<ABuffer> buffer = *mBuffers.begin();
     CHECK(buffer->meta()->findInt64("timeUs", timeUs));
+    return OK;
+}
 
+status_t AnotherPacketSource::nextBufferIsSync(bool* isSyncFrame) {
+    Mutex::Autolock autoLock(mLock);
+    CHECK(isSyncFrame != NULL);
+
+    if (mBuffers.empty()) {
+        return mEOSResult != OK ? mEOSResult : -EWOULDBLOCK;
+    }
+
+    sp<ABuffer> buffer = *mBuffers.begin();
+
+    *isSyncFrame = false;
+    int32_t value = 0;
+    if (buffer->meta()->findInt32("isSync", &value) && (value == 1)) {
+       *isSyncFrame = true;
+    }
     return OK;
 }
 

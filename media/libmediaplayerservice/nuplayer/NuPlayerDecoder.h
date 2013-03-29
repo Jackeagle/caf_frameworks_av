@@ -19,6 +19,8 @@
 #define NUPLAYER_DECODER_H_
 
 #include "NuPlayer.h"
+#include "MPQHALWrapper.h"
+
 
 #include <media/stagefright/foundation/AHandler.h>
 
@@ -30,11 +32,13 @@ struct NuPlayer::Decoder : public AHandler {
     Decoder(const sp<AMessage> &notify,
             const sp<NativeWindowWrapper> &nativeWindow = NULL);
 
-    void configure(const sp<AMessage> &format);
-
+    void configure(const sp<AMessage> &format, bool WfdSink = false);
+    sp<AMessage> makeFormat(sp<MetaData> &meta);
     void signalFlush();
     void signalResume();
     void initiateShutdown();
+    void setSink(const sp<MediaPlayerBase::AudioSink> &sink, sp<Renderer> Renderer);
+
 
 protected:
     virtual ~Decoder();
@@ -47,7 +51,12 @@ private:
     };
 
     sp<AMessage> mNotify;
+    sp<MPQHALWrapper> mMPQWrapper;
     sp<NativeWindowWrapper> mNativeWindow;
+
+	  sp<MediaPlayerBase::AudioSink> mAudioSink;
+        sp<Renderer> mRenderer;
+
 
     sp<ACodec> mCodec;
     sp<ALooper> mCodecLooper;
@@ -55,9 +64,11 @@ private:
     Vector<sp<ABuffer> > mCSD;
     size_t mCSDIndex;
 
-    sp<AMessage> makeFormat(const sp<MetaData> &meta);
 
     void onFillThisBuffer(const sp<AMessage> &msg);
+    bool mIsTargetMPQ;
+    bool mMPQHALSupportedAudio;
+    bool mCreateMPQAudioHALwrapper;
 
     DISALLOW_EVIL_CONSTRUCTORS(Decoder);
 };

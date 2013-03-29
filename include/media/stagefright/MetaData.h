@@ -155,6 +155,8 @@ enum {
     kKeyCryptoKey         = 'cryK',  // uint8_t[16]
     kKeyCryptoIV          = 'cryI',  // uint8_t[16]
     kKeyCryptoMode        = 'cryM',  // int32_t
+    kKeyEnableDecodeOrder = 'EDeO',  //bool (int32_t)
+    kKeyConfigTurboMode   = 'turb' // bool
 };
 
 enum {

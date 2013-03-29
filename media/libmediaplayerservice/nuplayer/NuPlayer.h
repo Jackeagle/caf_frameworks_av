@@ -21,6 +21,8 @@
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/foundation/AHandler.h>
 #include <media/stagefright/NativeWindowWrapper.h>
+#include "NuPlayerStats.h"
+#include <media/stagefright/foundation/ABuffer.h>
 
 namespace android {
 
@@ -65,14 +67,20 @@ protected:
 public:
     struct NuPlayerStreamListener;
     struct Source;
+    struct WFDSource;
+
 
 private:
     struct Decoder;
     struct GenericSource;
     struct HTTPLiveSource;
     struct Renderer;
+#ifdef QCOM_WFD_SINK
+    struct WFDRenderer;
+#endif //QCOM_WFD_SINK
     struct RTSPSource;
     struct StreamingSource;
+    struct MPQHALWrapper;
 
     enum {
         kWhatSetDataSource              = '=DaS',
@@ -137,6 +145,17 @@ private:
 
     int32_t mVideoScalingMode;
 
+    enum NuSourceType {
+        kHttpLiveSource = 0,
+        kHttpDashSource,
+        kRtspSource,
+        kStreamingSource,
+        kWfdSource,
+        kGenericSource,
+        kDefaultSource
+    };
+
+    NuSourceType mSourceType;
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 
     status_t feedDecoderInputData(bool audio, const sp<AMessage> &msg);
@@ -152,6 +171,9 @@ private:
 
     void finishReset();
     void postScanSources();
+
+    sp<Source> LoadCreateSource(const char * uri, const KeyedVector<String8,
+                                 String8> *headers, bool uidValid, uid_t uid, NuSourceType srcTyp);
 
     void schedulePollDuration();
     void cancelPollDuration();
