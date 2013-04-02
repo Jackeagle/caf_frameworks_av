@@ -222,6 +222,10 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
             return kOurScore;
         }
 
+        if (!strncasecmp("rtp://", url, 6)) {
+            return kOurScore;
+        }
+
         return 0.0;
     }
 

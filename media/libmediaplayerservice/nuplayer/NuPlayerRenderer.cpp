@@ -670,5 +670,26 @@ void NuPlayer::Renderer::onResume() {
     }
 }
 
+void NuPlayer::Renderer::registerStats(sp<NuPlayerStats> stats) {
+    if(mStats != NULL) {
+        mStats = NULL;
+    }
+    mStats = stats;
+}
+
+status_t NuPlayer::Renderer::setMediaPresence(bool audio, bool bValue)
+{
+   if (audio)
+   {
+      ALOGV("mHasAudio set to %d from %d",bValue,mHasAudio);
+      mHasAudio = bValue;
+   }
+   else
+   {
+     ALOGV("mHasVideo set to %d from %d",bValue,mHasVideo);
+     mHasVideo = bValue;
+   }
+   return OK;
+}
 }  // namespace android
 

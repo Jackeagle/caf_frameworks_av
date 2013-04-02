@@ -18,8 +18,12 @@
 #define LOG_TAG "NuPlayer"
 #include <utils/Log.h>
 
+#include <dlfcn.h>  // for dlopen/dlclose
 #include "NuPlayer.h"
 
+#ifdef QCOM_WFD_SINK
+#include "WFDRenderer.h"
+#endif //QCOM_WFD_SINK
 #include "HTTPLiveSource.h"
 #include "NuPlayerDecoder.h"
 #include "NuPlayerDriver.h"
@@ -122,12 +126,43 @@ void NuPlayer::setDataSource(
     sp<Source> source;
     if (IsHTTPLiveURL(url)) {
         source = new HTTPLiveSource(url, headers, mUIDValid, mUID);
+        mSourceType = kHttpLiveSource;
+    } else if(!strncasecmp(url, "rtp://wfd", 9)) {
+          /* Load the WFD source librery here */
+           source = LoadCreateSource(url, headers, mUIDValid, mUID, kWfdSource);
+           if (source != NULL) {
+              mSourceType = kWfdSource;
+           } else {
+             ALOGE("Error creating WFD source");
+             //return UNKNOWN_ERROR;
+           }
+    } else if (!strncasecmp(url, "rtsp://", 7)) {
+        source = new RTSPSource(url, headers, mUIDValid, mUID);
+        mSourceType = kRtspSource;
+    } else if (!strncasecmp(url, "http://", 7) &&
+          (strlen(url) >= 4 && !strcasecmp(".mpd", &url[strlen(url) - 4]))) {
+           /* Load the DASH HTTP Live source librery here */
+           ALOGV("NuPlayer setDataSource url sting %s",url);
+           source = LoadCreateSource(url, headers, mUIDValid, mUID,kHttpDashSource);
+           if (source != NULL) {
+              mSourceType = kHttpDashSource;
+           } else {
+             ALOGE("Error creating DASH source");
+             //return UNKNOWN_ERROR;
+           }
+    } else {
+        source = new GenericSource(url, headers, mUIDValid, mUID);
+        mSourceType = kGenericSource;
+    }
+#if 0
+    if (IsHTTPLiveURL(url)) {
+        source = new HTTPLiveSource(url, headers, mUIDValid, mUID);
     } else if (!strncasecmp(url, "rtsp://", 7)) {
         source = new RTSPSource(url, headers, mUIDValid, mUID);
     } else {
         source = new GenericSource(url, headers, mUIDValid, mUID);
     }
-
+#endif
     msg->setObject("source", source);
     msg->post();
 }
@@ -273,9 +308,22 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             mSource->start();
 
-            mRenderer = new Renderer(
-                    mAudioSink,
-                    new AMessage(kWhatRendererNotify, id()));
+#ifdef QCOM_WFD_SINK
+            if (mSourceType == kWfdSource) {
+                ALOGV("creating WFDRenderer in NU player");
+                mRenderer = new WFDRenderer(
+                        mAudioSink,
+                        new AMessage(kWhatRendererNotify, id()));
+            }
+            else {
+#endif /* QCOM_WFD_SINK */
+                mRenderer = new Renderer(
+                        mAudioSink,
+                        new AMessage(kWhatRendererNotify, id()));
+#ifdef QCOM_WFD_SINK
+            }
+#endif /* QCOM_WFD_SINK */
+
 
             looper()->registerHandler(mRenderer);
 
@@ -730,20 +778,16 @@ void NuPlayer::postScanSources() {
 }
 
 status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
+    int mNumChannels;
     if (*decoder != NULL) {
         return OK;
     }
 
-    sp<AMessage> format = mSource->getFormat(audio);
+    sp<MetaData> meta =mSource->getFormatMeta(audio);
+// sp<AMessage>  format  = mSource->getFormat(audio);
 
-    if (format == NULL) {
+    if (meta == NULL) {
         return -EWOULDBLOCK;
-    }
-
-    if (!audio) {
-        AString mime;
-        CHECK(format->findString("mime", &mime));
-        mVideoIsAVC = !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str());
     }
 
     sp<AMessage> notify =
@@ -752,7 +796,15 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
 
     *decoder = audio ? new Decoder(notify) :
                        new Decoder(notify, mNativeWindow);
+
+    if(audio)
+    {
+         (*decoder)->setSink(mAudioSink, mRenderer);
+    }
     looper()->registerHandler(*decoder);
+    sp<AMessage> format  = (*decoder)->makeFormat(meta);
+
+    ALOGE("format %x",&format);
 
     (*decoder)->configure(format);
 
@@ -878,6 +930,17 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
          mediaTimeUs / 1E6);
 #endif
 
+        if (mSourceType == kWfdSource) {
+            int64_t baseTimeUs = 0;
+            if(accessUnit->meta()->findInt64("baseTimeUs", &baseTimeUs))
+            {
+                ALOGE("Nu player Set basetime");
+                if (mRenderer != NULL) {
+                    ((WFDRenderer*)(mRenderer.get()))->setBaseMediaTime(baseTimeUs);
+                }
+            }
+            }
+
     reply->setBuffer("buffer", accessUnit);
     reply->post();
 
@@ -985,6 +1048,55 @@ void NuPlayer::flushDecoder(bool audio, bool needShutdown) {
     }
 }
 
+sp<NuPlayer::Source>
+    NuPlayer::LoadCreateSource(const char * uri, const KeyedVector<String8,String8> *headers,
+                               bool uidValid, uid_t uid, NuSourceType srcTyp)
+{
+   const char* STREAMING_SOURCE_LIB = "libmmipstreamaal.so";
+   const char* DASH_HTTP_LIVE_CREATE_SOURCE = "CreateDashHttpLiveSource";
+   const char* WFD_CREATE_SOURCE = "CreateWFDSource";
+   void* pStreamingSourceLib = NULL;
+
+   typedef NuPlayer::Source* (*SourceFactory)(const char * uri, const KeyedVector<String8, String8> *headers, bool uidValid, uid_t uid);
+
+   /* Open librery */
+   pStreamingSourceLib = ::dlopen(STREAMING_SOURCE_LIB, RTLD_LAZY);
+
+   if (pStreamingSourceLib == NULL) {
+       ALOGV("@@@@:: STREAMING  Source Library (libmmipstreamaal.so) Load Failed  Error : %s ",::dlerror());
+       return NULL;
+   }
+
+   SourceFactory StreamingSourcePtr;
+
+   if(srcTyp == kHttpDashSource) {
+
+       /* Get the entry level symbol which gets us the pointer to DASH HTTP Live Source object */
+       StreamingSourcePtr = (SourceFactory) dlsym(pStreamingSourceLib, DASH_HTTP_LIVE_CREATE_SOURCE);
+   } else if (srcTyp == kWfdSource){
+
+       /* Get the entry level symbol which gets us the pointer to WFD Source object */
+       StreamingSourcePtr = (SourceFactory) dlsym(pStreamingSourceLib, WFD_CREATE_SOURCE);
+
+   }
+
+   if (StreamingSourcePtr == NULL) {
+       ALOGV("@@@@:: CreateDashHttpLiveSource symbol not found in libmmipstreamaal.so, return NULL ");
+       return NULL;
+   }
+
+    /*Get the Streaming (DASH\WFD) Source object, which will be used to communicate with Source (DASH\WFD) */
+    sp<NuPlayer::Source> StreamingSource = StreamingSourcePtr(uri, headers, uidValid, uid);
+
+    if(StreamingSource==NULL) {
+        ALOGV("@@@@:: StreamingSource failed to instantiate Source ");
+        return NULL;
+    }
+
+
+    return StreamingSource;
+}
+
 sp<AMessage> NuPlayer::Source::getFormat(bool audio) {
     sp<MetaData> meta = getFormatMeta(audio);
 
@@ -998,6 +1110,12 @@ sp<AMessage> NuPlayer::Source::getFormat(bool audio) {
         return msg;
     }
     return NULL;
+}
+
+sp<MetaData> NuPlayer::Source::getFormatMeta(bool audio)
+{
+   sp<MetaData> meta = NULL;
+   return meta;
 }
 
 status_t NuPlayer::setVideoScalingMode(int32_t mode) {
@@ -1026,3 +1144,4 @@ void NuPlayer::cancelPollDuration() {
 }
 
 }  // namespace android
+

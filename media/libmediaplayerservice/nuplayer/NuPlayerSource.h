@@ -23,6 +23,7 @@
 namespace android {
 
 struct ABuffer;
+struct MetaData;
 
 struct NuPlayer::Source : public RefBase {
     enum Flags {
@@ -53,11 +54,10 @@ struct NuPlayer::Source : public RefBase {
     }
 
     virtual uint32_t flags() const = 0;
+    virtual sp<MetaData> getFormatMeta(bool audio);
 
 protected:
     virtual ~Source() {}
-
-    virtual sp<MetaData> getFormatMeta(bool audio) { return NULL; }
 
 private:
     DISALLOW_EVIL_CONSTRUCTORS(Source);
