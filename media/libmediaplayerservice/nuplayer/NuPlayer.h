@@ -127,6 +127,7 @@ private:
     bool mScanSourcesPending;
     int32_t mScanSourcesGeneration;
     bool mBufferingNotification;
+    bool mSetVideoSize;
 
     enum TrackName {
         kVideo = 0,
