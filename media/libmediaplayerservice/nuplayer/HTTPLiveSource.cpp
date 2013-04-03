@@ -42,7 +42,8 @@ NuPlayer::HTTPLiveSource::HTTPLiveSource(
       mUID(uid),
       mFlags(0),
       mFinalResult(OK),
-      mOffset(0) {
+      mOffset(0),
+	  mSeekDoneNotify(NULL) {
     if (headers) {
         mExtraHeaders = *headers;
 
@@ -189,6 +190,9 @@ status_t NuPlayer::HTTPLiveSource::seekTo(int64_t seekTimeUs) {
 
     mLiveSession->seekTo(seekTimeUs);
 
+    if (mSeekDoneNotify != NULL) {
+        mSeekDoneNotify->post();
+    }
     return OK;
 }
 
@@ -204,6 +208,11 @@ uint32_t NuPlayer::HTTPLiveSource::flags() const {
 
     return flags;
 }
+bool NuPlayer::HTTPLiveSource::setCbfForSeekDone(const sp<AMessage> &notify) {
+    mSeekDoneNotify = notify;
+    return true;
+}
+
 
 }  // namespace android
 

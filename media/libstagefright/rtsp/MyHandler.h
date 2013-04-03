@@ -44,11 +44,11 @@
 
 // If no access units are received within 5 secs, assume that the rtp
 // stream has ended and signal end of stream.
-static int64_t kAccessUnitTimeoutUs = 4000000ll;
+static int64_t kAccessUnitTimeoutUs = 10000000ll;
 
 // If no access units arrive for the first 10 secs after starting the
 // stream, assume none ever will and signal EOS or switch transports.
-static int64_t kStartupTimeoutUs = 10000000ll;
+static int64_t kStartupTimeoutUs = 4000000ll;
 
 static int64_t kDefaultKeepAliveTimeoutUs = 60000000ll;
 
@@ -188,11 +188,15 @@ struct MyHandler : public AHandler {
 		
 #if FEA_HS_NUPLAYER_SEEK /* we new begin*/
 
-		if(!mIsPlayStart)
-		{
-			mResumePosUs = timeUs;
-			return;
-		}
+	if(!mIsPlayStart)
+	{
+	     mResumePosUs = timeUs;
+	     // we should finish this seek,so send seekdone anyway(for nuplayer receive seekdone)
+	     sp<AMessage> msg = mNotify->dup();
+              msg->setInt32("what", kWhatSeekDone);
+              msg->post();
+              return;
+	}
 #endif /* we new end*/
         sp<AMessage> msg = new AMessage('seek', id());
         msg->setInt64("time", timeUs);
@@ -800,6 +804,7 @@ struct MyHandler : public AHandler {
 
                 request.append("\r\n");
 
+                ALOGI("send TEARDOWN from abor");
                 mConn->sendRequest(request.c_str(), reply);
                 break;
             }
@@ -1243,9 +1248,9 @@ struct MyHandler : public AHandler {
 	// set mAllTracksHaveTime = true for in method onAccessUnitComplete
         mAllTracksHaveTime = true;
         mSeekable = true;
-		#if FEA_HS_NUPLAYER_SEEK
-		mIsPlayStart = true;
-		#endif
+	#if FEA_HS_NUPLAYER_SEEK
+	mIsPlayStart = true;
+	#endif
     }
 
     sp<MetaData> getTrackFormat(size_t index, int32_t *timeScale) {
@@ -1614,3 +1619,4 @@ private:
 }  // namespace android
 
 #endif  // MY_HANDLER_H_
+

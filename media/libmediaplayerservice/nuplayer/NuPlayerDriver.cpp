@@ -37,8 +37,8 @@ NuPlayerDriver::NuPlayerDriver()
       mState(UNINITIALIZED),
       mAtEOS(false),
       mStartupSeekTimeUs(-1),
-      mFirstPosition(true),//we new add for notify app buffering 100% 
-      mSeekingPos(-1) {//we new add for seekbar issue
+      mFirstPosition(true){//we new add for notify app buffering 100% 
+ 
       mLooper->setName("NuPlayerDriver Looper");
 
     mLooper->start(
@@ -185,6 +185,7 @@ bool NuPlayerDriver::isPlaying() {
 
 status_t NuPlayerDriver::seekTo(int msec) {
     int64_t seekTimeUs = msec * 1000ll;
+  
 
 
     switch (mState) {
@@ -193,6 +194,9 @@ status_t NuPlayerDriver::seekTo(int msec) {
         case STOPPED:
         {
             mStartupSeekTimeUs = seekTimeUs;
+            // remember the seek time for seekbar update rightly
+             mPositionUs = seekTimeUs;
+	    
             break;
         }
         case PLAYING:
@@ -200,11 +204,12 @@ status_t NuPlayerDriver::seekTo(int msec) {
         {
             mAtEOS = false;
             mPlayer->seekToAsync(seekTimeUs);
-	    //we new add for seekbar update issue start
+
+	    //we new add for seekbar update issue start--remember the seektime for seekbar update rightly
             mPositionUs = seekTimeUs;
-            mSeekingPos = seekTimeUs;
             ALOGD("SeekTo seekTimeUs= %lld",seekTimeUs);
             //we new add for seekbar update issue end 
+
             break;
         }
 
@@ -236,7 +241,6 @@ status_t NuPlayerDriver::getDuration(int *msec) {
     } else {
         *msec = (mDurationUs + 500ll) / 1000;
     }
-ALOGV("in method getDuration = %lld", mDurationUs);
     return OK;
 }
 
@@ -331,25 +335,12 @@ void NuPlayerDriver::notifyDuration(int64_t durationUs) {
 void NuPlayerDriver::notifyPosition(int64_t positionUs) {
     Mutex::Autolock autoLock(mLock);
 
-	ALOGE("noftyPosition");
-
       /* we new add for notify app buffering 100% START */
     if(mFirstPosition){
-		ALOGE("noftyPosition ----  buffer 100%");
         notifyListener(MEDIA_BUFFERING_UPDATE, 100);
         mFirstPosition = false;
     }
     /* we new add for notify app buffering 100% END */
-     //we new add for seekbar update issue -start
-    if(mSeekingPos > 0){
-        if(mSeekingPos > positionUs && mSeekingPos-positionUs > 500000){
-            return;
-        }else if(mSeekingPos < positionUs && positionUs - mSeekingPos > 500000){
-            return;
-        }
-        mSeekingPos = -1;
-    }
-    //we new add for seekbar update issue -end
     mPositionUs = positionUs;
 }
 

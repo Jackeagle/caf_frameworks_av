@@ -53,6 +53,7 @@ struct NuPlayer::RTSPSource : public NuPlayer::Source {
 
     void onMessageReceived(const sp<AMessage> &msg);
 
+    virtual bool setCbfForSeekDone(const sp<AMessage> &notify);
 protected:
     virtual ~RTSPSource();
 
@@ -107,6 +108,7 @@ private:
     sp<ATSParser> mTSParser;
 
     int32_t mSeekGeneration;
+    sp<AMessage> mSeekDoneNotify;
 
     sp<AnotherPacketSource> getSource(bool audio);
 

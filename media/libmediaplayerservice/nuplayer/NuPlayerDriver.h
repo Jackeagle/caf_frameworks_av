@@ -101,8 +101,6 @@ private:
 
     int64_t mStartupSeekTimeUs;
 
-    int64_t mSeekingPos;//we new add for seekbar issue
-
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayerDriver);
 };
 

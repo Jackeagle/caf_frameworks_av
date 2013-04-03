@@ -41,7 +41,8 @@ NuPlayer::RTSPSource::RTSPSource(
       mFinalResult(OK),
       mDisconnectReplyID(0),
       mStartingUp(true),
-      mSeekGeneration(0) {
+      mSeekGeneration(0),
+      mSeekDoneNotify(NULL) {
     if (headers) {
         mExtraHeaders = *headers;
 
@@ -274,6 +275,9 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
 
         case MyHandler::kWhatSeekDone:
         {
+            if (mSeekDoneNotify != NULL) {
+                mSeekDoneNotify->post();
+            }
             mState = CONNECTED;
             mStartingUp = true;
             break;
@@ -496,6 +500,7 @@ void NuPlayer::RTSPSource::onDisconnected(const sp<AMessage> &msg) {
 
 void NuPlayer::RTSPSource::finishDisconnectIfPossible() {
     if (mState != DISCONNECTED) {
+	 ALOGI("finishDisconnectIfPossible.");	
         mHandler->disconnect();
         return;
     }
@@ -504,4 +509,8 @@ void NuPlayer::RTSPSource::finishDisconnectIfPossible() {
     mDisconnectReplyID = 0;
 }
 
+bool NuPlayer::RTSPSource::setCbfForSeekDone(const sp<AMessage> &notify) {
+    mSeekDoneNotify = notify;
+    return true;
+}
 }  // namespace android

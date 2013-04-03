@@ -55,6 +55,7 @@ struct NuPlayer::Source : public RefBase {
     virtual uint32_t flags() const = 0;
     virtual int32_t getServerTimeout() ;
 
+    virtual bool setCbfForSeekDone(const sp<AMessage> &notify) { return false; }
 protected:
     virtual ~Source() {}
 

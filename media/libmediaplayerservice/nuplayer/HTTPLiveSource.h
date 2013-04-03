@@ -44,6 +44,7 @@ struct NuPlayer::HTTPLiveSource : public NuPlayer::Source {
 
     virtual uint32_t flags() const;
 
+    virtual bool setCbfForSeekDone(const sp<AMessage> &notify);
 protected:
     virtual ~HTTPLiveSource();
 
@@ -66,6 +67,7 @@ private:
     sp<LiveSession> mLiveSession;
     sp<ATSParser> mTSParser;
 
+    sp<AMessage> mSeekDoneNotify;
     DISALLOW_EVIL_CONSTRUCTORS(HTTPLiveSource);
 };
 

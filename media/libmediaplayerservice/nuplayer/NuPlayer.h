@@ -91,6 +91,7 @@ private:
         kWhatPause                      = 'paus',
         kWhatResume                     = 'rsme',
         kWhatPollDuration               = 'polD',
+        kWhatSeekDone                   = 'seeD',
     };
 
     wp<NuPlayerDriver> mDriver;
@@ -158,6 +159,8 @@ private:
     void schedulePollDuration();
     void cancelPollDuration();
 
+    // added for process-bar sync display in the seek operation
+    bool mSeeking;
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
 };
 
