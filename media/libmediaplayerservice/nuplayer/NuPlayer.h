@@ -21,7 +21,6 @@
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/foundation/AHandler.h>
 #include <media/stagefright/NativeWindowWrapper.h>
-#include "NuPlayerStats.h"
 #include <media/stagefright/foundation/ABuffer.h>
 
 namespace android {
@@ -69,7 +68,6 @@ public:
     struct Source;
     struct WFDSource;
 
-
 private:
     struct Decoder;
     struct GenericSource;
@@ -77,10 +75,10 @@ private:
     struct Renderer;
 #ifdef QCOM_WFD_SINK
     struct WFDRenderer;
+    struct MPQHALWrapper;
 #endif //QCOM_WFD_SINK
     struct RTSPSource;
     struct StreamingSource;
-    struct MPQHALWrapper;
 
     enum {
         kWhatSetDataSource              = '=DaS',
@@ -136,6 +134,9 @@ private:
     FlushStatus mFlushingVideo;
     bool mResetInProgress;
     bool mResetPostponed;
+#ifdef QCOM_WFD_SINK
+    bool mWFDSinkSession;
+#endif //QCOM_WFD_SINK
 
     int64_t mSkipRenderingAudioUntilMediaTimeUs;
     int64_t mSkipRenderingVideoUntilMediaTimeUs;
@@ -145,17 +146,6 @@ private:
 
     int32_t mVideoScalingMode;
 
-    enum NuSourceType {
-        kHttpLiveSource = 0,
-        kHttpDashSource,
-        kRtspSource,
-        kStreamingSource,
-        kWfdSource,
-        kGenericSource,
-        kDefaultSource
-    };
-
-    NuSourceType mSourceType;
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 
     status_t feedDecoderInputData(bool audio, const sp<AMessage> &msg);
@@ -173,7 +163,7 @@ private:
     void postScanSources();
 
     sp<Source> LoadCreateSource(const char * uri, const KeyedVector<String8,
-                                 String8> *headers, bool uidValid, uid_t uid, NuSourceType srcTyp);
+                                 String8> *headers, bool uidValid, uid_t uid, bool wfdSink);
 
     void schedulePollDuration();
     void cancelPollDuration();

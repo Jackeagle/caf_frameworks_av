@@ -158,10 +158,8 @@ private:
 
     // for qualcomm statistics profiling
   public:
-    virtual void registerStats(sp<NuPlayerStats> stats);
     virtual status_t setMediaPresence(bool audio, bool bValue);
   private:
-    sp<NuPlayerStats> mStats;
 
     DISALLOW_EVIL_CONSTRUCTORS(WFDRenderer);
 };

@@ -143,17 +143,14 @@ private:
     bool dropBufferWhileFlushing(bool audio, const sp<AMessage> &msg);
     void syncQueuesDone();
 
-    // for qualcomm statistics profiling
   public:
 #ifdef QCOM_WFD_SINK
-    virtual void registerStats(sp<NuPlayerStats> stats);
     virtual status_t setMediaPresence(bool audio, bool bValue);
 #else
     void registerStats(sp<NuPlayerStats> stats);
     status_t setMediaPresence(bool audio, bool bValue);
 #endif /* QCOM_WFD_SINK */
   private:
-    sp<NuPlayerStats> mStats;
 
     DISALLOW_EVIL_CONSTRUCTORS(Renderer);
 };

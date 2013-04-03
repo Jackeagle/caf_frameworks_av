@@ -48,9 +48,6 @@ struct ATSParser : public RefBase {
                 | DISCONTINUITY_VIDEO_FORMAT
                 | DISCONTINUITY_TIME,
 
-        //Seek for HLS & TS is handle from player
-        DISCONTINUITY_TS_PLAYER_SEEK = 8,
-        DISCONTINUITY_HLS_PLAYER_SEEK = 16,
     };
 
     enum Flags {

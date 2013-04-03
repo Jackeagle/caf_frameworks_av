@@ -108,7 +108,7 @@ private:
     int mSampleRate;
     int32_t mNumChannels;
     int32_t mChannelMask;
-//  audio_stream_out_t* mPCMStream;
+//    audio_stream_out_t* mPCMStream;
     uint32_t mInputBufferSize;
     bool mA2DPEnabled;
     sp<ABuffer> mLocalBuf;
