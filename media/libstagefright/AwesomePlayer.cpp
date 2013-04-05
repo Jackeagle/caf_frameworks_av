@@ -1590,6 +1590,11 @@ status_t AwesomePlayer::initAudioDecoder() {
            char tunnelAVDecode[PROPERTY_VALUE_MAX];
            property_get("tunnel.audiovideo.decode",tunnelAVDecode,"0");
            sys_prop_enabled = !strncmp("true", tunnelAVDecode, 4) || atoi(tunnelAVDecode);
+#ifdef NO_TUNNEL_MODE_FOR_AV
+           // Overwrite tunnel.audiovideo.decode if NO_TUNNEL_MODE_FOR_AV is set
+           ALOGD("Ignore tunnel.audiovideo.decode in system.prop, disable tunnel for AV playback");
+           sys_prop_enabled = false;
+#endif
            if (sys_prop_enabled) {
                ALOGD("Enable Tunnel Mode for A-V playback");
                mIsTunnelAudio = true;
@@ -1599,6 +1604,12 @@ status_t AwesomePlayer::initAudioDecoder() {
             ALOGI("Tunnel Mode Audio Enabled");
             mIsTunnelAudio = true;
         }
+#ifdef NO_TUNNEL_MODE_FOR_MULTICHANNEL
+        if (nchannels > 2 || nchannels <= 0) {
+            ALOGD("Use tunnel mode only for mono and stereo channels");
+            mIsTunnelAudio = false;
+        }
+#endif
     }
     else
        ALOGD("Normal Audio Playback");
