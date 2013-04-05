@@ -56,7 +56,6 @@ NuPlayer::WFDRenderer::WFDRenderer(
       mWasPaused(false),
       mLastPositionUpdateUs(-1ll),
       mVideoLateByUs(0ll),
-      mStats(NULL),
       mWFDAudioTimeMaster(false),
       mMediaClockUs(0),
       mMediaTimeRead(false),
@@ -65,11 +64,6 @@ NuPlayer::WFDRenderer::WFDRenderer(
 }
 
 NuPlayer::WFDRenderer::~WFDRenderer() {
-    if(mStats != NULL) {
-        mStats->logStatistics();
-        mStats->logSyncLoss();
-        mStats = NULL;
-    }
 }
 
 void NuPlayer::WFDRenderer::queueBuffer(
@@ -357,16 +351,10 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
               if (tooLate) {
                  ALOGV("Audio late by %lld us (%.2f secs)",
                  mAudioLateByUs, mAudioLateByUs / 1E6);
-                 if(mStats != NULL) {
-                 mStats->recordLate(realTimeUs,nowUs,mAudioLateByUs,realTimeUs);
               }
               else {
                 ALOGV("rendering Audio  at media time %.2f secs", mediaTimeUs / 1E6);
-                if(mStats != NULL) {
-                   mStats->recordOnTime(realTimeUs,nowUs,mAudioLateByUs);
-                }
               }
-            }
 
             size_t copy = entry->mBuffer->size() - entry->mOffset;
             /* To Do : Right now getPosition is crashing, once this is fixed
@@ -510,10 +498,6 @@ void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
         return;
     }
 
-    if(mStats != NULL) {
-        mStats->logFps();
-    }
-
     int64_t mediaTimeUs;
     CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
     int64_t realTimeUs=0;
@@ -535,14 +519,8 @@ void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
     if (tooLate) {
         ALOGV("video late by %lld us (%.2f secs)",
              mVideoLateByUs, mVideoLateByUs / 1E6);
-        if(mStats != NULL) {
-            mStats->recordLate(realTimeUs,nowUs,mVideoLateByUs,mAnchorTimeRealUs);
-        }
     } else {
         ALOGV("rendering video at media time %.2f secs", mediaTimeUs / 1E6);
-        if(mStats != NULL) {
-            mStats->recordOnTime(realTimeUs,nowUs,mVideoLateByUs);
-        }
     }
 
     entry->mNotifyConsumed->setInt32("render", !tooLate);
@@ -701,9 +679,6 @@ void NuPlayer::WFDRenderer::wfdOnFlush(const sp<AMessage> &msg) {
 
         mDrainVideoQueuePending = false;
         ++mVideoQueueGeneration;
-        if(mStats != NULL) {
-            mStats->setVeryFirstFrame(true);
-        }
     }
     wfdNotifyFlushComplete(audio);
 }
@@ -803,17 +778,6 @@ void NuPlayer::WFDRenderer::wfdOnPause() {
     mPaused = true;
     mWasPaused = true;
 
-    if(mStats != NULL) {
-        int64_t positionUs;
-        if(mAnchorTimeRealUs < 0 || mAnchorTimeMediaUs < 0) {
-            positionUs = -1000;
-        } else {
-            int64_t nowUs = wfdGetMediaTime(true);
-            positionUs = (nowUs - mAnchorTimeRealUs) + mAnchorTimeMediaUs;
-        }
-
-        mStats->logPause(positionUs);
-    }
     mPauseMediaClockUs = wfdGetMediaTime(true);
 }
 
@@ -850,13 +814,6 @@ void NuPlayer::WFDRenderer::wfdOnResume() {
     if (!mVideoQueue.empty()) {
         wfdPostDrainVideoQueue();
     }
-}
-
-void NuPlayer::WFDRenderer::registerStats(sp<NuPlayerStats> stats) {
-    if(mStats != NULL) {
-        mStats = NULL;
-    }
-    mStats = stats;
 }
 
 status_t NuPlayer::WFDRenderer::setMediaPresence(bool audio, bool bValue)

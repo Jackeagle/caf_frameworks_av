@@ -31,7 +31,6 @@
 #include <dirent.h>
 #include <unistd.h>
 
-#include <dlfcn.h>
 #include <string.h>
 
 #include <cutils/atomic.h>

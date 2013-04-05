@@ -54,9 +54,10 @@ private:
     sp<MPQHALWrapper> mMPQWrapper;
     sp<NativeWindowWrapper> mNativeWindow;
 
-	  sp<MediaPlayerBase::AudioSink> mAudioSink;
-        sp<Renderer> mRenderer;
-
+#ifdef QCOM_WFD_SINK
+    sp<MediaPlayerBase::AudioSink> mAudioSink;
+    sp<Renderer> mRenderer;
+#endif //QCOM_WFD_SINK
 
     sp<ACodec> mCodec;
     sp<ALooper> mCodecLooper;

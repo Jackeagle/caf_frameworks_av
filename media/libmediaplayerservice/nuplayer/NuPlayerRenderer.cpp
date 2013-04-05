@@ -670,13 +670,6 @@ void NuPlayer::Renderer::onResume() {
     }
 }
 
-void NuPlayer::Renderer::registerStats(sp<NuPlayerStats> stats) {
-    if(mStats != NULL) {
-        mStats = NULL;
-    }
-    mStats = stats;
-}
-
 status_t NuPlayer::Renderer::setMediaPresence(bool audio, bool bValue)
 {
    if (audio)
