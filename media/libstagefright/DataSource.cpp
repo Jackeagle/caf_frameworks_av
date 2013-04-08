@@ -124,7 +124,6 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer(SniffMPEG2PS);
     RegisterSniffer(SniffWVM);
     RegisterSniffer(SniffExtendedExtractor);
-
     char value[PROPERTY_VALUE_MAX];
     if (property_get("drm.service.enabled", value, NULL)
             && (!strcmp(value, "1") || !strcasecmp(value, "true"))) {
