@@ -245,6 +245,27 @@ void QCUtilityClass::helper_OMXCodec_setBFrames(OMX_VIDEO_PARAM_AVCTYPE &h264typ
     return;
 }
 //--  END  :: AUDIO disable and change in profile base on property -----
+void QCUtilityClass::helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer,
+                                                        sp<MetaData> &format,
+                                                        size_t size) {
+    bool mMakeBigEndian = false;
+    const char *mime;
+
+    if (format->findCString(kKeyMIMEType, &mime)
+            && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3) ||
+            !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3))) {
+        mMakeBigEndian = true;
+    }
+    if (mMakeBigEndian && *((uint8_t *)buffer->data())==0x0b &&
+            *((uint8_t *)buffer->data()+1)==0x77 ) {
+        size_t count = 0;
+        for(count=0;count<size;count+=2) { // size is always even bytes in ac3/ec3 read
+            uint8_t tmp = *((uint8_t *)buffer->data() + count);
+            *((uint8_t *)buffer->data() + count) = *((uint8_t *)buffer->data()+count+1);
+            *((uint8_t *)buffer->data() + count+1) = tmp;
+        }
+    }
+}
 
 //- returns NULL if we dont really need a new extractor (or cannot),
 //  valid extractor is returned otherwise
@@ -257,10 +278,14 @@ sp<MediaExtractor> QCUtilityClass::helper_MediaExtractor_CreateIfNeeded(sp<Media
                                                      const sp<DataSource> &source,
                                                      const char *mime) {
     bool bCheckExtendedExtractor = false;
-    bool videoOnly = true;
-    bool amrwbAudio = false;
+    bool videoTrackFound = false;
+    bool audioTrackFound = false;
+    bool amrwbAudio      = false;
+    int numOfTrack = 0;
+
     if (defaultExt != NULL) {
         for (size_t i = 0; i < defaultExt->countTracks(); ++i) {
+            ++numOfTrack;
             sp<MetaData> meta = defaultExt->getTrackMetaData(i);
             const char *_mime;
             CHECK(meta->findCString(kKeyMIMEType, &_mime));
@@ -268,15 +293,35 @@ sp<MediaExtractor> QCUtilityClass::helper_MediaExtractor_CreateIfNeeded(sp<Media
             String8 mime = String8(_mime);
 
             if (!strncasecmp(mime.string(), "audio/", 6)) {
-                videoOnly = false;
+                audioTrackFound = true;
 
                 amrwbAudio = !strncasecmp(mime.string(),
                                           MEDIA_MIMETYPE_AUDIO_AMR_WB,
                                           strlen(MEDIA_MIMETYPE_AUDIO_AMR_WB));
                 if (amrwbAudio) break;
+            }else if(!strncasecmp(mime.string(), "video/", 6)) {
+                videoTrackFound = true;
             }
         }
-        bCheckExtendedExtractor = videoOnly || amrwbAudio;
+
+        if(amrwbAudio) {
+            bCheckExtendedExtractor = true;
+        }else if (numOfTrack  == 0) {
+            bCheckExtendedExtractor = true;
+        } else if(numOfTrack == 1) {
+            if((videoTrackFound) ||
+                (!videoTrackFound && !audioTrackFound)){
+                    bCheckExtendedExtractor = true;
+            }
+        } else if (numOfTrack >= 2){
+            if(videoTrackFound && audioTrackFound) {
+                if(amrwbAudio) {
+                    bCheckExtendedExtractor = true;
+                }
+            } else {
+                bCheckExtendedExtractor = true;
+            }
+        }
     } else {
         bCheckExtendedExtractor = true;
     }
