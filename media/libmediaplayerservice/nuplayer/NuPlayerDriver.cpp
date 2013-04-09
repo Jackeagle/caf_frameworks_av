@@ -37,6 +37,7 @@ NuPlayerDriver::NuPlayerDriver()
       mState(UNINITIALIZED),
       mAtEOS(false),
       mStartupSeekTimeUs(-1),
+      mHasSendTeardown(false),
       mFirstPosition(true){//we new add for notify app buffering 100% 
  
       mLooper->setName("NuPlayerDriver Looper");
@@ -258,6 +259,7 @@ status_t NuPlayerDriver::reset() {
     mPositionUs = -1;
     mState = UNINITIALIZED;
     mStartupSeekTimeUs = -1;
+    mHasSendTeardown = false;
 
     return OK;
 }
@@ -341,6 +343,17 @@ void NuPlayerDriver::notifyPosition(int64_t positionUs) {
         mFirstPosition = false;
     }
     /* we new add for notify app buffering 100% END */
+	  //ALOGD("notifyPosition= %lld",positionUs);
+	  //ALOGD("notifyPosition duration= %lld",mDurationUs);
+
+	//  send teardown in advance(1.4S) for cmcc server could not send BYE to us and rtp streaming could not teardown
+	// automatically. so, we have to send teardown ourself.
+	  if(mDurationUs > 0 && mDurationUs - positionUs < 1400000 && !mHasSendTeardown){
+	  	 ALOGD("notifyPosition postTeardownInadvance");
+	  	 mPlayer->postTeardownInadvance();
+		 mHasSendTeardown = true;
+	  	}
+	  	
     mPositionUs = positionUs;
 }
 

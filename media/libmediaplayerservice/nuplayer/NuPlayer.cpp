@@ -359,7 +359,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                         audio, codecRequest);
 
                 if (err == -EWOULDBLOCK) {
+		     //ALOGV(" ACodec::kWhatFillThisBuffer  err == -EWOULDBLOCK ");
                     if (mSource->feedMoreTSData() == OK) {
+		      //ALOGV(" ACodec::kWhatFillThisBuffer  err == -EWOULDBLOCK  msg->post(10000ll) ");
                         msg->post(10000ll);
                     }
                 }
@@ -746,6 +748,11 @@ void NuPlayer::postScanSources() {
         return mSource->getServerTimeout();
     }
 
+     void NuPlayer::postTeardownInadvance() {
+	 	 ALOGD("notifyPosition postTeardownInadvance");
+         mSource->postTeardownInadvance();
+     }
+
 
 status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
     if (*decoder != NULL) {
@@ -1026,6 +1033,10 @@ sp<AMessage> NuPlayer::Source::getFormat(bool audio) {
  int32_t  NuPlayer::Source::getServerTimeout() {
  	return -1;
  	}
+
+ void NuPlayer::Source::postTeardownInadvance() {
+ 	return;
+ }
 
 
 

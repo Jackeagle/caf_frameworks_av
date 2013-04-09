@@ -234,6 +234,13 @@ uint32_t NuPlayer::RTSPSource::flags() const {
 	
     }
 
+void NuPlayer::RTSPSource::postTeardownInadvance() {
+	if(mHandler != NULL) {
+		 ALOGD("notifyPosition postTeardownInadvance");
+             mHandler->postTeardownInadvance();
+        } 
+}
+
 
 void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
     if (msg->what() == kWhatDisconnect) {

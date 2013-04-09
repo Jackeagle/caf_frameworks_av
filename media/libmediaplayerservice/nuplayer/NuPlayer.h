@@ -67,6 +67,7 @@ public:
     struct Source;
 
     int32_t getServerTimeout() ;
+    void postTeardownInadvance();
 
 private:
     struct Decoder;
@@ -131,6 +132,7 @@ private:
     FlushStatus mFlushingVideo;
     bool mResetInProgress;
     bool mResetPostponed;
+    
 
     int64_t mSkipRenderingAudioUntilMediaTimeUs;
     int64_t mSkipRenderingVideoUntilMediaTimeUs;

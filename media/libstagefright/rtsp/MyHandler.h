@@ -184,6 +184,13 @@ struct MyHandler : public AHandler {
         (new AMessage('abor', id()))->post();
     }
 
+    void postTeardownInadvance() {
+          if(!mIsLive) { // if the streaming is not living, we do not post teardown in advance
+	  ALOGV("This is not a living streaming");
+	  (new AMessage('abor', id()))->post();
+          }
+    }
+
     void seek(int64_t timeUs) {
 		
 #if FEA_HS_NUPLAYER_SEEK /* we new begin*/
@@ -654,7 +661,7 @@ struct MyHandler : public AHandler {
                      ALOGW("myhandler ::play request, and range . mResumePosUs =%lld ", mResumePosUs);
 						int64_t durationUs = 0;
 						TrackInfo *track = &mTracks.editItemAt(0);
-						if (track != NULL){
+						if (track != NULL && track->mPacketSource != NULL && track->mPacketSource->getFormat() !=NULL){
 							track->mPacketSource->getFormat()->findInt64(kKeyDuration, &durationUs); 
 						}
 						request.append(
@@ -1132,6 +1139,7 @@ struct MyHandler : public AHandler {
     int32_t getServerTimeout() {
         return mKeepAliveTimeoutUs / 1000;
     }
+
 
     void postKeepAlive() {
         sp<AMessage> msg = new AMessage('aliv', id());

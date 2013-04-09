@@ -77,6 +77,7 @@ status_t AnotherPacketSource::dequeueAccessUnit(sp<ABuffer> *buffer) {
         *buffer = *mBuffers.begin();
         mBuffers.erase(mBuffers.begin());
 
+
         int32_t discontinuity;
         if ((*buffer)->meta()->findInt32("discontinuity", &discontinuity)) {
             if (wasFormatChange(discontinuity)) {
@@ -196,7 +197,6 @@ bool AnotherPacketSource::hasBufferAvailable(status_t *finalResult) {
     if (!mBuffers.empty()) {
         return true;
     }
-
     *finalResult = mEOSResult;
     return false;
 }
