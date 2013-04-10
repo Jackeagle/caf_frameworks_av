@@ -204,6 +204,9 @@ private:
     void handleA2DPSwitch();
     void onPauseTimeOut();
 
+    int64_t getMediaTimeUs_l();
+    bool seekTooClose(int64_t);
+
     sp<AudioFlingerLPAdecodeClient> AudioFlingerClient;
     friend class AudioFlingerLPAdecodeClient;
     Mutex AudioFlingerLock;
@@ -258,7 +261,6 @@ private:
         MediaPlayerBase::AudioSink *audioSink,
         void *buffer, size_t size, void *cookie);
     size_t AudioCallback(void *cookie, void *data, size_t size);
-    int64_t getMediaTimeUs_l();
 
     void convertMonoToStereo(int16_t *data, size_t size);
 
