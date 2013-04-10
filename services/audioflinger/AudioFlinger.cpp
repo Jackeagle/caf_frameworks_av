@@ -6217,6 +6217,7 @@ void AudioFlinger::DirectAudioTrack::pause() {
 ssize_t AudioFlinger::DirectAudioTrack::write(const void *buffer, size_t size) {
     ALOGV("Writing to AudioSessionOut");
     int isAvail = 0;
+    int rc = 0;
     mOutputDesc->stream->is_buffer_available(mOutputDesc->stream, &isAvail);
     if (!isAvail) {
         return 0;
@@ -6233,13 +6234,23 @@ ssize_t AudioFlinger::DirectAudioTrack::write(const void *buffer, size_t size) {
         mAudioFlinger->applyEffectsOn(static_cast<void *>(this), (int16_t*)buf.localBuf,(int16_t*)buffer,(int)size);
         mEffectLock.unlock();
     }
-    return mOutputDesc->stream->write(mOutputDesc->stream, buffer, size);
+    rc = mOutputDesc->stream->write(mOutputDesc->stream, buffer, size);
+    if (rc && (mFlag & AUDIO_OUTPUT_FLAG_LPA)) {
+        ALOGV("buffer skipped in HAL, restore effectspool to maintain order");
+        mEffectLock.lock();
+        mEffectsPool.clear();
+        mEffectsPool = mBufPool;
+        mEffectLock.unlock();
+    }
+    return rc;
 }
 
 void AudioFlinger::DirectAudioTrack::flush() {
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
+        mEffectLock.lock();
         mEffectsPool.clear();
         mEffectsPool = mBufPool;
+        mEffectLock.unlock();
     }
     mOutputDesc->stream->flush(mOutputDesc->stream);
 }
