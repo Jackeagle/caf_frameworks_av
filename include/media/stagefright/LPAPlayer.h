@@ -168,9 +168,6 @@ private:
     void requestAndWaitForDecoderThreadExit();
 
 
-    // make sure the Effects thread also exited
-    void requestAndWaitForA2DPNotificationThreadExit();
-
     static void *decoderThreadWrapper(void *me);
     void decoderThreadEntry();
     static void *A2DPNotificationThreadWrapper(void *me);
