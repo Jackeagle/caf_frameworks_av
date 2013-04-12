@@ -914,8 +914,12 @@ struct MyHandler : public AHandler {
                 int32_t eos;
                 if (msg->findInt32("eos", &eos)) {
                     ALOGI("received BYE on track index %d", trackIndex);
-#if 0
-                    track->mPacketSource->signalEOS(ERROR_END_OF_STREAM);
+//#if 0
+              //      track->mPacketSource->signalEOS(ERROR_END_OF_STREAM);
+#if 1
+	        if (!mFirstAccessUnit) {
+                        postQueueEOS(trackIndex, ERROR_END_OF_STREAM);
+                    }
 #endif
                     return;
                 }
