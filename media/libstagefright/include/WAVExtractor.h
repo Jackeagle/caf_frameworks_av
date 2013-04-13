@@ -20,6 +20,7 @@
 
 #include <utils/Errors.h>
 #include <media/stagefright/MediaExtractor.h>
+#include <hardware/hardware.h>
 
 namespace android {
 
@@ -45,6 +46,7 @@ private:
     sp<DataSource> mDataSource;
     status_t mInitCheck;
     bool mValidFormat;
+    bool mIsMpqTarget;
     uint16_t mWaveFormat;
     uint16_t mNumChannels;
     uint32_t mChannelMask;
