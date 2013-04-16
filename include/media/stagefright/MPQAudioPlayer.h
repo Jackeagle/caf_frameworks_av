@@ -185,7 +185,6 @@ private:
     int64_t mTimePaused;
     int64_t mSeekTimeUs;
     int64_t mDurationUs;
-    int32_t mTimeout;
     int64_t mPostEOSDelayUs;
 
     //Seek variables
@@ -204,7 +203,6 @@ private:
     sp<TimedEventQueue::Event>  mPauseEvent;
     bool mPauseEventPending;
     bool mSourcePaused;
-    bool mplayPendingSamples;
 
     //Routing variables
     bool mAudioSinkOpen;
@@ -253,10 +251,6 @@ private:
     void updateConfigData();
 
     status_t seekPlayback();
-
-    size_t fillBufferfromSoftwareDecoder(void *data, size_t size);
-    size_t fillBufferfromParser(void *data, size_t size);
-    size_t fillMS11InputBufferfromParser(void *data, size_t size);
 
     status_t checkForInfoFormatChanged();
     status_t updateMetaDataInformation();

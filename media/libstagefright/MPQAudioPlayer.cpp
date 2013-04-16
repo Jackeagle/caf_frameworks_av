@@ -61,7 +61,6 @@ static const char   mName[] = "MPQAudioPlayer";
 
 #define RENDER_LATENCY 24000
 #define AAC_AC3_BUFFER_SIZE 32768
-#define TUNNEL_BUFFER_METADATA_SIZE 64
 
 namespace android {
 
@@ -114,7 +113,6 @@ mObserver(observer) {
     mPauseEvent        = new MPQAudioEvent(this, &MPQAudioPlayer::onPauseTimeOut);
     mPauseEventPending = false;
     mSourcePaused = false;
-    mplayPendingSamples = false;
 
     getAudioFlinger();
     ALOGD("Registering client with AudioFlinger");
@@ -124,7 +122,6 @@ mObserver(observer) {
     mTimePaused  = 0;
     mDurationUs = 0;
     mSeekTimeUs = 0;
-    mTimeout = -1;
     mPostEOSDelayUs = 0;
 
     mLocalBuf = NULL;
@@ -138,7 +135,8 @@ mObserver(observer) {
 
 void MPQAudioPlayer::acquireWakeLock()
 {
-/*    Mutex::Autolock _l(pmLock);
+#if 0
+    Mutex::Autolock _l(pmLock);
 
     if (mPowerManager == 0) {
         // use checkService() to avoid blocking if power service is not up yet
@@ -161,12 +159,12 @@ void MPQAudioPlayer::acquireWakeLock()
         }
         ALOGV("acquireWakeLock() %s status %d", mName, status);
     }
-    */
+#endif
 }
 
 void MPQAudioPlayer::releaseWakeLock()
 {
-/*
+#if 0
     Mutex::Autolock _l(pmLock);
 
     if (mWakeLockToken != 0) {
@@ -176,7 +174,7 @@ void MPQAudioPlayer::releaseWakeLock()
         }
         mWakeLockToken.clear();
     }
-*/
+#endif
 }
 
 void MPQAudioPlayer::clearPowerManager()
@@ -326,7 +324,6 @@ status_t MPQAudioPlayer::seekTo(int64_t time_us) {
     if (mReachedExtractorEOS) {
         mReachedExtractorEOS = false;
         mPostedEOS = false;
-        mTimeout = -1;
     }
     mSeeking = true;
     mSeekTimeUs = time_us;
@@ -345,8 +342,7 @@ status_t MPQAudioPlayer::seekPlayback() {
     //Just give the buffer from new location
     mPositionTimeRealUs = mPositionTimeMediaUs = -1;
     mNumFramesPlayed = 0;
-    if (mStarted) {
-        if(!mIsAACFormatAdif && mIsAudioRouted) {
+    if (mStarted && !mIsAACFormatAdif && mIsAudioRouted) {
             mAudioSink->flush();
             if(err != OK) {
                 ALOGE("flush returned error =%d",err);
@@ -354,7 +350,6 @@ status_t MPQAudioPlayer::seekPlayback() {
             }
             if (!mIsPaused)
                 mExtractorCv.signal();
-        }
     }
     return OK;
 }
@@ -373,35 +368,8 @@ void MPQAudioPlayer::pause(bool playPendingSamples) {
         mPauseEventPending = true;
     }
 
-    switch(mDecoderType) {
-
-        case ESoftwareDecoder:
-            if(mAudioSink->getSessionId() && !playPendingSamples) {
-                CHECK(mSource != NULL);
-                if ((mSource->pause()) == OK)
-                    mSourcePaused = true;
-            }
-        break;
-
-        case EMS11Decoder:
-        break;
-
-        case EHardwareDecoder:
-            mTimeout  = -1;
-            playPendingSamples = false;
-        break;
-
-        default:
-            ALOGE("Invalid Decoder Type -");
-        break;
-    }
-    mplayPendingSamples = playPendingSamples;
     mTimePaused = mSeekTimeUs + getAudioTimeStampUs();
-    if (playPendingSamples)
-        mIsPaused = false;
-    else
-        mAudioSink->pause();
-    return;
+    mAudioSink->pause();
 }
 
 
@@ -412,26 +380,15 @@ void MPQAudioPlayer::resume() {
     CHECK(mStarted);
     CHECK(mSource != NULL);
 
-    ALOGD("Resume: mIsPaused %d, mplayPendingSamples %d",
-           mIsPaused, mplayPendingSamples);
+    ALOGD("Resume: mIsPaused %d", mIsPaused);
 
-    if (!(mIsPaused || mplayPendingSamples))
+    if (!mIsPaused)
         return;
-    mplayPendingSamples = false;
 
     if(mPauseEventPending) {
         ALOGV("Resume(): Cancelling the puaseTimeout event");
         mPauseEventPending = false;
         mQueue.cancelEvent(mPauseEvent->eventID());
-    }
-
-    if(mDecoderType == ESoftwareDecoder) {
-        if(mAudioSink->getSessionId()) {
-             if(mSourcePaused) {
-                 mSource->start();
-                 mSourcePaused = false;
-             }
-        }
     }
 
     if (!mIsAudioRouted) {
@@ -533,7 +490,6 @@ void MPQAudioPlayer::reset() {
     mTimePaused  = 0;
     mDurationUs = 0;
     mSeekTimeUs = 0;
-    mTimeout = -1;
 
     mNumChannels = 0;
     mMimeType.setTo("");
@@ -576,91 +532,46 @@ void MPQAudioPlayer::extractorThreadEntry() {
     mExtractorMutex.unlock();
 
     while (!mKillExtractorThread) {
-        if (mDecoderType ==ESoftwareDecoder || mDecoderType == EMS11Decoder) {
-
-            mExtractorMutex.lock();
-            if(mPostedEOS || mIsPaused || mAsyncReset) {
-                ALOGV("extractorThreadEntry: waiting on mExtractorCv");
-                mExtractorCv.wait(mExtractorMutex);
-                //TODO: Guess this should be removed plz verify
-                mExtractorMutex.unlock();
-                ALOGV("extractorThreadEntry: received a signal to wake upi - extractor mutex");
-                continue;
-            }
+        mExtractorMutex.lock();
+        if(mReachedExtractorEOS || mIsPaused || mAsyncReset) {
+            ALOGV("extractorThreadEntry: mIsPaused %d\
+                    mReachedExtractorEOS %d mAsyncReset %d ",\
+                    mIsPaused, mReachedExtractorEOS, mAsyncReset);
+            ALOGV("extractorThreadEntry: waiting on mExtractorCv");
+            mExtractorCv.wait(mExtractorMutex);
+            //TODO: Guess this should be removed plz verify
             mExtractorMutex.unlock();
-            int bytesToWrite = 0;
-            if(mDecoderType == EMS11Decoder)
-                bytesToWrite = fillBuffer(mLocalBuf, AAC_AC3_BUFFER_SIZE);
-            else
-                bytesToWrite = fillBuffer(mLocalBuf, mInputBufferSize);
-            ALOGV("fillBuffer returned size %d",bytesToWrite);
-            if((mSeeking || mIsPaused) && mFirstEncodedBuffer)
-                continue;
-            //TODO : What if bytesWritetn is zero
-            ALOGV("write - pcm  ++");
-            if(mAudioSink.get() != NULL && bytesToWrite) {
-                ssize_t bytesWritten = 0;
-                if (mDecoderType == EMS11Decoder) {
-                    bytesWritten = mAudioSink->write(mLocalBuf, bytesToWrite);
-                }
-                else {
-                     bytesWritten = mAudioSink->write(mLocalBuf, mInputBufferSize);
-                }
-                if (!mFirstEncodedBuffer)
-                    mFirstEncodedBuffer = true;
-                ALOGV("bytesWritten = %d",(int)bytesWritten);
-            }
-            else if(!mAudioSink->getSessionId()) {
-                ALOGV("bytesToWrite = %d, mInputBufferSize = %d",\
-                        bytesToWrite,mInputBufferSize);
-                mAudioSink->write(mLocalBuf, bytesToWrite);
-            }
-            if(mObserver && mReachedExtractorEOS) {
-                ALOGV("Posting EOS event..zero byte buffer ");
-                //TODO : make it POST EOS to amke sense for  Software
-                if(!mPostedEOS) {
-                    mPostedEOS = true;
-                    mObserver->postAudioEOS( mPostEOSDelayUs);
-                }
-            }
+            ALOGV("extractorThreadEntry: received a signal to wake upi - extractor mutex");
             continue;
         }
-        else if (mDecoderType == EHardwareDecoder) {
-            mExtractorMutex.lock();
-            if (mReachedExtractorEOS || mIsPaused || mAsyncReset ) {
-                ALOGV("extractorThreadEntry: mIsPaused %d\
-                        mReachedExtractorEOS %d mAsyncReset %d ",\
-                        mIsPaused, mReachedExtractorEOS, mAsyncReset);
-                ALOGV("extractorThreadEntry: waiting on mExtractorCv");
-                mExtractorCv.wait(mExtractorMutex);
-                //TODO: Guess this should be removed plz verify
-                mExtractorMutex.unlock();
-                ALOGV("extractorThreadEntry: received a signal to wake up");
-                continue;
+        mExtractorMutex.unlock();
+        int bytesToWrite = 0;
+        if(mDecoderType == EMS11Decoder)
+            bytesToWrite = fillBuffer(mLocalBuf, AAC_AC3_BUFFER_SIZE);
+        else
+            bytesToWrite = fillBuffer(mLocalBuf, mInputBufferSize);
+        ALOGV("fillBuffer returned size %d",bytesToWrite);
+        if((mSeeking || mIsPaused) && mFirstEncodedBuffer)
+            continue;
+        ssize_t bytesWritten = 0;
+        bytesWritten = mAudioSink->write(mLocalBuf, bytesToWrite);
+        if(mObserver && mReachedExtractorEOS && !mAudioSink->getSessionId()) {
+            ALOGV("Posting EOS event..zero byte ddbuffer ");
+            if(!mPostedEOS) {
+                mPostedEOS = true;
+                mObserver->postAudioEOS( mPostEOSDelayUs);
             }
-
-            mExtractorMutex.unlock();
-            ALOGV("Calling fillBuffer for size %d", mInputBufferSize);
-            int bytesToWrite = fillBuffer(mLocalBuf, mInputBufferSize);
-            ALOGV("fillBuffer returned size %d", bytesToWrite);
-            if ((mSeeking || mIsPaused) && mFirstEncodedBuffer) {
-                continue;
-            }
-            mAudioSink->write(mLocalBuf, bytesToWrite);
-            if (!mFirstEncodedBuffer)
-                mFirstEncodedBuffer = true;
-            if (!mInputBufferSize) {
-                mInputBufferSize = mAudioSink->frameCount()-TUNNEL_BUFFER_METADATA_SIZE;
-                ALOGD("mInputBufferSize = %d",mInputBufferSize);
-                bufferAlloc(mInputBufferSize);
-            }
-            if (bytesToWrite <= 0)
-                continue;
         }
-        else  {
-           ALOGE("Invalid Decoder Type in extractor thread");
-           break;
+        if (!mFirstEncodedBuffer)
+            mFirstEncodedBuffer = true;
+        if (!mInputBufferSize) {
+            mInputBufferSize = mAudioSink->frameCount();
+            ALOGD("mInputBufferSize = %d",mInputBufferSize);
+            bufferAlloc(mInputBufferSize);
         }
+        ALOGV("bytesWritten = %d",(int)bytesWritten);
+        if(mReachedExtractorEOS && bytesWritten)
+            mAudioSink->write(mLocalBuf, 0);
     }
     mExtractorThreadAlive = false;
     ALOGD("Extractor Thread is dying");
@@ -714,191 +625,26 @@ void MPQAudioPlayer::createThreads() {
 }
 
 size_t MPQAudioPlayer::fillBuffer(void *data, size_t size) {
-
-    switch(mDecoderType) {
-
-        case EHardwareDecoder:
-            return fillBufferfromParser(data, size);
-        break;
-
-        case ESoftwareDecoder:
-            return fillBufferfromSoftwareDecoder(data, size);
-        break;
-
-        case EMS11Decoder:
-                ALOGE("get AAC/ AC3 dat from parser");
-                return fillMS11InputBufferfromParser(data, size);
-        break;
-
-        default:
-         ALOGE("Fill Buffer - Invalid Decoder");
-         //Returning zero size
-         return 0;
-    }
-}
-
-size_t MPQAudioPlayer::fillBufferfromSoftwareDecoder(void *data, size_t size) {
-
-    ALOGE("fillBufferfromSoftwareDecoder");
+    ALOGV("fillBuffer");
     if (mReachedExtractorEOS) {
         return 0;
     }
 
     size_t size_done = 0;
     size_t size_remaining = size;
-
-    while (size_remaining > 0) {
-        MediaSource::ReadOptions options;
-        {
-            Mutex::Autolock autoLock(mLock);
-
-            if (mSeeking || mInternalSeeking) {
-
-                if (mIsFirstBuffer) {
-                    if (mFirstBuffer != NULL) {
-                        mFirstBuffer->release();
-                        mFirstBuffer = NULL;
-                    }
-                    mIsFirstBuffer = false;
-                }
-
-                MediaSource::ReadOptions::SeekMode seekMode;
-                seekMode = MediaSource::ReadOptions::SEEK_CLOSEST_SYNC;
-                options.setSeekTo(mSeekTimeUs, seekMode );
-                if (mInputBuffer != NULL) {
-                    mInputBuffer->release();
-                    mInputBuffer = NULL;
-                }
-
-                // This is to ignore the data already filled in the output buffer
-                size_done = 0;
-                size_remaining = size;
-
-                if (mObserver && !mAsyncReset && mSeeking) {
-                    ALOGD("fillBuffer: Posting audio seek complete event");
-                    mObserver->postAudioSeekComplete();
-                }
-                mSeeking = false;
-                mInternalSeeking = false;
-            }
-        }
-        if (mInputBuffer == NULL) {
-            status_t err;
-
-            if (mIsFirstBuffer) {
-                mInputBuffer = mFirstBuffer;
-                mFirstBuffer = NULL;
-                err = mFirstBufferResult;
-
-                mIsFirstBuffer = false;
-            } else {
-                Mutex::Autolock autoLock(mLock);
-                if(mSourcePaused)
-                   break;
-                err = mSource->read(&mInputBuffer, &options);
-            }
-
-            CHECK((err == OK && mInputBuffer != NULL)
-                  || (err != OK && mInputBuffer == NULL));
-            {
-                Mutex::Autolock autoLock(mLock);
-
-                if (err != OK) {
-                    if (mObserver && !mReachedExtractorEOS) {
-                        if(mAudioSink->getSessionId()) {
-                            mPostEOSDelayUs = (int64_t)mAudioSink->latency() * 1000;
-                            ALOGV("mPostEOSDelayUs = %lld", mPostEOSDelayUs);
-                        }
-                        else {
-                            uint32_t numFramesPlayedOut, numFramesPendingPlayout;
-                            status_t err = mAudioSink->getPosition(&numFramesPlayedOut);
-                            if (err != OK || mNumFramesPlayed < numFramesPlayedOut) {
-                                numFramesPendingPlayout = 0;
-                            }
-                            else {
-                                numFramesPendingPlayout =
-                                        mNumFramesPlayed - numFramesPlayedOut;
-                            }
-
-                            mFrameSize = mAudioSink->frameSize();
-                            uint32_t numAdditionalFrames = size_done / mFrameSize;
-
-                            numFramesPendingPlayout += numAdditionalFrames;
-
-                            int64_t timeToCompletionUs =
-                                (1000000ll * numFramesPendingPlayout) / mSampleRate;
-
-                            ALOGV("total number of frames played: %lld (%lld us)",
-                                   (mNumFramesPlayed + numAdditionalFrames),
-                                   1000000ll * (mNumFramesPlayed + numAdditionalFrames)
-                                    / mSampleRate);
-                            ALOGV("%d frames left to play, %lld us (%.2f secs)",
-                                numFramesPendingPlayout,
-                               timeToCompletionUs, timeToCompletionUs / 1E6);
-                            mPostEOSDelayUs = mLatencyUs + timeToCompletionUs;
-                            ALOGV("mPostEOSDelayUs = %lld", mPostEOSDelayUs);
-
-                        }
-                    }
-                    ALOGD("fill buffer - reached eos true");
-                    mReachedExtractorEOS = true;
-                    mFinalStatus = err;
-                    break;
-                }
-            }
-        }
-
-
-        if (mInputBuffer->range_length() == 0) {
-            mInputBuffer->release();
-            mInputBuffer = NULL;
-            continue;
-        }
-
-        size_t copy = size_remaining;
-        if (copy > mInputBuffer->range_length()) {
-            copy = mInputBuffer->range_length();
-        }
-        memcpy((char *)data + size_done,
-               (const char *)mInputBuffer->data() + mInputBuffer->range_offset(),
-               copy);
-
-        mInputBuffer->set_range(mInputBuffer->range_offset() + copy,
-                                mInputBuffer->range_length() - copy);
-
-        size_done += copy;
-        size_remaining -= copy;
-    }
-
-    {
-        Mutex::Autolock autoLock(mLock);
-        if(mFrameSize != 0)
-            mNumFramesPlayed += size_done / mFrameSize;
-    }
-
-
-    ALOGV("fill buffer size_done = %d",size_done);
-    return size_done;
-}
-
-size_t MPQAudioPlayer::fillMS11InputBufferfromParser(void *data, size_t size) {
-
-    ALOGV("fillAC3BufferfromParser");
-    if (mReachedExtractorEOS) {
-        return 0;
-    }
-
-    size_t size_done = 0;
-    size_t size_remaining =  0;
-
-    if(!mFirstEncodedBuffer && ((mAudioFormat == AUDIO_FORMAT_AAC) || (mAudioFormat == AUDIO_FORMAT_AAC_ADIF))) {
+    if (!mFirstEncodedBuffer &&
+        (mAudioFormat == AUDIO_FORMAT_WMA ||
+         mAudioFormat == AUDIO_FORMAT_WMA_PRO ||
+         mAudioFormat == AUDIO_FORMAT_AAC ||
+         mAudioFormat == AUDIO_FORMAT_AAC_ADIF)) {
         if(mCodecSpecificData != NULL)
-             memcpy((char *)data,(const char *)mCodecSpecificData,mCodecSpecificDataSize);
+           memcpy((char *)data,(const char *)mCodecSpecificData,mCodecSpecificDataSize);
 
         size_done = mCodecSpecificDataSize;
 
         ALOGV("size_done = %d",size_done);
         return size_done;
+
     }
 
     while (1) {
@@ -924,110 +670,6 @@ size_t MPQAudioPlayer::fillMS11InputBufferfromParser(void *data, size_t size) {
 
                 // This is to ignore the data already filled in the output buffer
                 size_done = 0;
-                //size_remaining = size;
-
-                if (mObserver && !mAsyncReset && mSeeking) {
-                    ALOGD("fillBuffer: Posting audio seek complete event");
-                    mObserver->postAudioSeekComplete();
-                }
-                mSeeking = false;
-                mInternalSeeking = false;
-            }
-        }
-        if (mInputBuffer == NULL) {
-
-            status_t err = OK;
-
-            if (mIsFirstBuffer) {
-                mInputBuffer = mFirstBuffer;
-                mFirstBuffer = NULL;
-                err = mFirstBufferResult;
-                mIsFirstBuffer = false;
-            } else {
-                err = mSource->read(&mInputBuffer, &options);
-            }
-            CHECK((err == OK && mInputBuffer != NULL)
-                  || (err != OK && mInputBuffer == NULL));
-            {
-                Mutex::Autolock autoLock(mLock);
-
-                if (err != OK) {
-                    ALOGD("fill buffer - reached eos true");
-                    mReachedExtractorEOS = true;
-                    mFinalStatus = err;
-                    mFinalStatus = err;
-                    break;
-                }
-            }
-        }
-
-
-        if (mInputBuffer->range_length() == 0) {
-            mInputBuffer->release();
-            mInputBuffer = NULL;
-            continue;
-        }
-
-        memcpy((char *)data,
-               (const char *)mInputBuffer->data() + mInputBuffer->range_offset(),
-               mInputBuffer->range_length());
-
-        size_done =  mInputBuffer->range_length();
-
-        mInputBuffer->set_range(mInputBuffer->range_offset(),
-                                mInputBuffer->range_length() - mInputBuffer->range_length());
-
-        break;
-    }
-
-    ALOGV("fill buffer size_done = %d",size_done);
-    return size_done;
-}
-
-
-size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
-
-    ALOGV("fillBufferfromParser");
-    if (mReachedExtractorEOS) {
-        return 0;
-    }
-
-    size_t size_done = 0;
-    size_t size_remaining = size;
-    if (!mFirstEncodedBuffer && (mAudioFormat == AUDIO_FORMAT_WMA || mAudioFormat == AUDIO_FORMAT_WMA_PRO)) {
-        if(mCodecSpecificData != NULL)
-           memcpy((char *)data,(const char *)mCodecSpecificData,mCodecSpecificDataSize);
-
-        size_done = mCodecSpecificDataSize;
-
-        ALOGV("size_done = %d",size_done);
-        return size_done;
-
-    }
-
-    while (size_remaining > 0) {
-        MediaSource::ReadOptions options;
-        {
-            Mutex::Autolock autoLock(mLock);
-
-            if (mSeeking || mInternalSeeking) {
-                if (mIsFirstBuffer) {
-                   if (mFirstBuffer != NULL) {
-                       mFirstBuffer->release();
-                       mFirstBuffer = NULL;
-                   }
-                   mIsFirstBuffer = false;
-                }
-                MediaSource::ReadOptions::SeekMode seekMode;
-                seekMode = MediaSource::ReadOptions::SEEK_CLOSEST_SYNC;
-                options.setSeekTo(mSeekTimeUs, seekMode );
-                if (mInputBuffer != NULL) {
-                    mInputBuffer->release();
-                    mInputBuffer = NULL;
-                }
-
-                // This is to ignore the data already filled in the output buffer
-                size_done = 0;
                 size_remaining = size;
 
                 if (mObserver && !mAsyncReset && mSeeking) {
@@ -1039,7 +681,7 @@ size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
             }
         }
         if (mInputBuffer == NULL) {
-            status_t err;
+            status_t err = OK;
             if (mIsFirstBuffer) {
                 mInputBuffer = mFirstBuffer;
                 mFirstBuffer = NULL;
@@ -1054,6 +696,33 @@ size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
                 Mutex::Autolock autoLock(mLock);
 
                 if (err != OK) {
+                    if (mObserver && !mReachedExtractorEOS && !mAudioSink->getSessionId()) {
+                        uint32_t numFramesPlayedOut, numFramesPendingPlayout;
+                        status_t err = mAudioSink->getPosition(&numFramesPlayedOut);
+                        if (err != OK || mNumFramesPlayed < numFramesPlayedOut) {
+                            numFramesPendingPlayout = 0;
+                        }
+                        else {
+                            numFramesPendingPlayout =
+                                    mNumFramesPlayed - numFramesPlayedOut;
+                        }
+                        mFrameSize = mAudioSink->frameSize();
+                        uint32_t numAdditionalFrames = size_done / mFrameSize;
+                        numFramesPendingPlayout += numAdditionalFrames;
+                        int64_t timeToCompletionUs =
+                            (1000000ll * numFramesPendingPlayout) / mSampleRate;
+
+                        ALOGV("total number of frames played: %lld (%lld us)",
+                               (mNumFramesPlayed + numAdditionalFrames),
+                               1000000ll * (mNumFramesPlayed + numAdditionalFrames)
+                                / mSampleRate);
+                        ALOGV("%d frames left to play, %lld us (%.2f secs)",
+                            numFramesPendingPlayout,
+                            timeToCompletionUs, timeToCompletionUs / 1E6);
+                            mPostEOSDelayUs = mLatencyUs + timeToCompletionUs;
+                            ALOGV("mPostEOSDelayUs = %lld", mPostEOSDelayUs);
+
+                    }
                     ALOGD("fill buffer - reached eos true");
                     mReachedExtractorEOS = true;
                     mFinalStatus = err;
@@ -1068,24 +737,39 @@ size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
             continue;
         }
 
-        size_t copy = size_remaining;
-        if (copy > mInputBuffer->range_length()) {
-            copy = mInputBuffer->range_length();
+        if(mDecoderType == ESoftwareDecoder ||
+           mDecoderType == EHardwareDecoder) {
+            size_t copy = size_remaining;
+            if (copy > mInputBuffer->range_length())
+                copy = mInputBuffer->range_length();
+            memcpy((char *)data + size_done,
+                   (const char *)mInputBuffer->data() + mInputBuffer->range_offset(),
+                   copy);
+            mInputBuffer->set_range(mInputBuffer->range_offset() + copy,
+                                    mInputBuffer->range_length() - copy);
+            size_done += copy;
+            size_remaining -= copy;
+            if(size_remaining > 0)
+                continue;
+        } else {
+            memcpy((char *)data,
+                   (const char *)mInputBuffer->data() + mInputBuffer->range_offset(),
+                   mInputBuffer->range_length());
+
+            size_done =  mInputBuffer->range_length();
+
+            mInputBuffer->set_range(mInputBuffer->range_offset(),
+                                mInputBuffer->range_length() - mInputBuffer->range_length());
         }
-        memcpy((char *)data + size_done,
-               (const char *)mInputBuffer->data() + mInputBuffer->range_offset(),
-               copy);
-
-        mInputBuffer->set_range(mInputBuffer->range_offset() + copy,
-                                mInputBuffer->range_length() - copy);
-
-        size_done += copy;
-        size_remaining -= copy;
+        break;
+    }
+    {
+        Mutex::Autolock autoLock(mLock);
+        if(mFrameSize != 0)
+            mNumFramesPlayed += size_done / mFrameSize;
     }
 
-    if(mReachedExtractorEOS) {
-        memset((char *)data + size_done, 0x0, size_remaining);
-    }
+
     ALOGV("fill buffer size_done = %d",size_done);
     return size_done;
 }
@@ -1095,21 +779,8 @@ int64_t MPQAudioPlayer::getRealTimeUs() {
     Mutex::Autolock autoLock(mLock);
     CHECK(mStarted);
 
-    switch(mDecoderType) {
+    mPositionTimeRealUs = mSeekTimeUs + mPositionTimeMediaUs;
 
-        case EHardwareDecoder:
-            mPositionTimeRealUs = mSeekTimeUs + mPositionTimeMediaUs;
-            break;
-        case EMS11Decoder:
-        case ESoftwareDecoder:
-             mPositionTimeRealUs =  (-((int64_t)mAudioSink->latency() * 1000) + mSeekTimeUs
-                                       + mPositionTimeMediaUs);
-            break;
-        default:
-            ALOGV(" Invalide Decoder return zero time");
-            mPositionTimeRealUs = 0;
-            break;
-    }
     return mPositionTimeRealUs;
 }
 
@@ -1133,17 +804,7 @@ bool MPQAudioPlayer::getMediaTimeMapping(
     Mutex::Autolock autoLock(mLock);
 
     mPositionTimeMediaUs = (mSeekTimeUs + getAudioTimeStampUs());
-    switch(mDecoderType) {
-        case EHardwareDecoder:
-            mPositionTimeRealUs = mSeekTimeUs + mPositionTimeMediaUs;
-            break;
-        case EMS11Decoder:
-        case ESoftwareDecoder:
-            mPositionTimeRealUs =  -mLatencyUs + mSeekTimeUs + mPositionTimeMediaUs;
-            break;
-        default:
-            mPositionTimeRealUs = 0;
-    }
+    mPositionTimeRealUs = mSeekTimeUs + mPositionTimeMediaUs;
 
     *realtime_us = mPositionTimeRealUs;
     *mediatime_us = mPositionTimeMediaUs;
@@ -1237,7 +898,7 @@ status_t MPQAudioPlayer::configurePCM() {
              ALOGV("getOutputSession-- ");
 
              if (mAudioFormat != AUDIO_FORMAT_WMA && mAudioFormat != AUDIO_FORMAT_WMA_PRO) {
-                 mInputBufferSize = mAudioSink->frameCount() - TUNNEL_BUFFER_METADATA_SIZE;
+                 mInputBufferSize = mAudioSink->frameCount();
                  ALOGD("mInputBufferSize = %d",mInputBufferSize);
                  bufferAlloc(mInputBufferSize);
              } else {
@@ -1491,7 +1152,6 @@ void MPQAudioPlayer::onPauseTimeOut() {
     // 1.) Set seek flags
     mPostedEOS = false;
     mReachedExtractorEOS = false;
-    mTimeout = -1;
 
     if(mSeeking == false) {
         mInternalSeeking = true;
