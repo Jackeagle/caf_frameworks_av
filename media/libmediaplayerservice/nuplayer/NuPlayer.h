@@ -66,6 +66,9 @@ public:
     struct NuPlayerStreamListener;
     struct Source;
 
+    int32_t getServerTimeout() ;
+    void postTeardownInadvance();
+
 private:
     struct Decoder;
     struct GenericSource;
@@ -89,6 +92,7 @@ private:
         kWhatPause                      = 'paus',
         kWhatResume                     = 'rsme',
         kWhatPollDuration               = 'polD',
+        kWhatSeekDone                   = 'seeD',
     };
 
     wp<NuPlayerDriver> mDriver;
@@ -128,6 +132,7 @@ private:
     FlushStatus mFlushingVideo;
     bool mResetInProgress;
     bool mResetPostponed;
+    
 
     int64_t mSkipRenderingAudioUntilMediaTimeUs;
     int64_t mSkipRenderingVideoUntilMediaTimeUs;
@@ -156,6 +161,8 @@ private:
     void schedulePollDuration();
     void cancelPollDuration();
 
+    // added for process-bar sync display in the seek operation
+    bool mSeeking;
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
 };
 

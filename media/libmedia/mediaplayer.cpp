@@ -15,7 +15,7 @@
 ** limitations under the License.
 */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "MediaPlayer"
 #include <utils/Log.h>
 
@@ -61,6 +61,7 @@ MediaPlayer::MediaPlayer()
     AudioSystem::acquireAudioSessionId(mAudioSessionId);
     mSendLevel = 0;
     mRetransmitEndpointValid = false;
+    isRTSPURL = false;
 }
 
 MediaPlayer::~MediaPlayer()
@@ -73,6 +74,7 @@ MediaPlayer::~MediaPlayer()
 
 void MediaPlayer::disconnect()
 {
+	ALOGE("before MediaPlayer::disconnect()");
     ALOGV("disconnect");
     sp<IMediaPlayer> p;
     {
@@ -84,6 +86,7 @@ void MediaPlayer::disconnect()
     if (p != 0) {
         p->disconnect();
     }
+    ALOGE("after MediaPlayer::disconnect()");
 }
 
 // always call with lock held
@@ -141,6 +144,9 @@ status_t MediaPlayer::setDataSource(
     ALOGV("setDataSource(%s)", url);
     status_t err = BAD_VALUE;
     if (url != NULL) {
+	if(strncmp(url, "rtsp://", 7) == 0) {
+            isRTSPURL = true;
+	}
         const sp<IMediaPlayerService>& service(getMediaPlayerService());
         if (service != 0) {
             sp<IMediaPlayer> player(service->create(getpid(), this, mAudioSessionId));
@@ -305,6 +311,7 @@ status_t MediaPlayer::start()
 
 status_t MediaPlayer::stop()
 {
+	ALOGE("before MediaPlayer::stop()");
     ALOGV("stop");
     Mutex::Autolock _l(mLock);
     if (mCurrentState & MEDIA_PLAYER_STOPPED) return NO_ERROR;
@@ -319,6 +326,7 @@ status_t MediaPlayer::stop()
         return ret;
     }
     ALOGE("stop called in state %d", mCurrentState);
+    ALOGE("after MediaPlayer::stop()");
     return INVALID_OPERATION;
 }
 
@@ -429,8 +437,9 @@ status_t MediaPlayer::seekTo_l(int msec)
             ALOGW("Stream has no duration and is therefore not seekable.");
             return err;
         }
+	ALOGW("in seekto isRTSPURL = %d", isRTSPURL);
 
-        if (msec > durationMs) {
+        if (msec > durationMs && !isRTSPURL) {
             ALOGW("Attempt to seek to past end of file: request = %d, "
                   "durationMs = %d",
                   msec,
@@ -438,6 +447,7 @@ status_t MediaPlayer::seekTo_l(int msec)
 
             msec = durationMs;
         }
+        
 
         // cache duration
         mCurrentPosition = msec;
@@ -466,6 +476,7 @@ status_t MediaPlayer::seekTo(int msec)
 
 status_t MediaPlayer::reset_l()
 {
+	ALOGE("before MediaPlayer::reset_l()");
     mLoop = false;
     if (mCurrentState == MEDIA_PLAYER_IDLE) return NO_ERROR;
     mPrepareSync = false;
@@ -483,6 +494,7 @@ status_t MediaPlayer::reset_l()
         return ret;
     }
     clear_l();
+    ALOGE("after MediaPlayer::reset_l()");
     return NO_ERROR;
 }
 

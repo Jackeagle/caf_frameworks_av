@@ -264,6 +264,7 @@ private:
     float                       mSendLevel;
     struct sockaddr_in          mRetransmitEndpoint;
     bool                        mRetransmitEndpointValid;
+    bool  isRTSPURL;
 };
 
 }; // namespace android

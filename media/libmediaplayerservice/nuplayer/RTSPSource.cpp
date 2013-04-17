@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "RTSPSource"
 #include <utils/Log.h>
 
@@ -41,7 +41,8 @@ NuPlayer::RTSPSource::RTSPSource(
       mFinalResult(OK),
       mDisconnectReplyID(0),
       mStartingUp(true),
-      mSeekGeneration(0) {
+      mSeekGeneration(0),
+      mSeekDoneNotify(NULL) {
     if (headers) {
         mExtraHeaders = *headers;
 
@@ -202,9 +203,16 @@ status_t NuPlayer::RTSPSource::seekTo(int64_t seekTimeUs) {
 }
 
 void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
+
+#if FEA_HS_NUPLAYER_SEEK
+    if (mState == DISCONNECTED){
+        return;
+    }
+#else
     if (mState != CONNECTED) {
         return;
     }
+#endif /* FEA_HS_NUPLAYER_SEEK */
 
     mState = SEEKING;
     mHandler->seek(seekTimeUs);
@@ -213,6 +221,26 @@ void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
 uint32_t NuPlayer::RTSPSource::flags() const {
     return FLAG_SEEKABLE;
 }
+
+// return in ms
+    int32_t NuPlayer::RTSPSource::getServerTimeout() {
+        if(mHandler != NULL) {
+            return mHandler->getServerTimeout();
+        }
+	else {
+	    int64_t kDefaultKeepAliveTimeoutUs = 60000000ll;
+	    return  kDefaultKeepAliveTimeoutUs/1000;
+	}
+	
+    }
+
+void NuPlayer::RTSPSource::postTeardownInadvance() {
+	if(mHandler != NULL) {
+		 ALOGD("notifyPosition postTeardownInadvance");
+             mHandler->postTeardownInadvance();
+        } 
+}
+
 
 void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
     if (msg->what() == kWhatDisconnect) {
@@ -254,6 +282,9 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
 
         case MyHandler::kWhatSeekDone:
         {
+            if (mSeekDoneNotify != NULL) {
+                mSeekDoneNotify->post();
+            }
             mState = CONNECTED;
             mStartingUp = true;
             break;
@@ -321,8 +352,11 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
                 if (!info->mNPTMappingValid) {
                     // This is a live stream, we didn't receive any normal
                     // playtime mapping. We won't map to npt time.
-                    source->queueAccessUnit(accessUnit);
-                    break;
+                    info->mRTPTime = rtpTime;
+                    info->mNormalPlaytimeUs = 0ll;
+                    info->mNPTMappingValid = true;
+                    //source->queueAccessUnit(accessUnit);
+                    //break;
                 }
 
                 int64_t nptUs =
@@ -476,6 +510,7 @@ void NuPlayer::RTSPSource::onDisconnected(const sp<AMessage> &msg) {
 
 void NuPlayer::RTSPSource::finishDisconnectIfPossible() {
     if (mState != DISCONNECTED) {
+	 ALOGI("finishDisconnectIfPossible.");	
         mHandler->disconnect();
         return;
     }
@@ -484,4 +519,8 @@ void NuPlayer::RTSPSource::finishDisconnectIfPossible() {
     mDisconnectReplyID = 0;
 }
 
+bool NuPlayer::RTSPSource::setCbfForSeekDone(const sp<AMessage> &notify) {
+    mSeekDoneNotify = notify;
+    return true;
+}
 }  // namespace android

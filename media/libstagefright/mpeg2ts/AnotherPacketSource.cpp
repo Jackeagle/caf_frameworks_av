@@ -13,6 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#define LOG_NDEBUG 0
+#define LOG_TAG "AnotherPacketSource"
+#include <utils/Log.h>
 
 #include "AnotherPacketSource.h"
 
@@ -73,6 +76,7 @@ status_t AnotherPacketSource::dequeueAccessUnit(sp<ABuffer> *buffer) {
     if (!mBuffers.empty()) {
         *buffer = *mBuffers.begin();
         mBuffers.erase(mBuffers.begin());
+
 
         int32_t discontinuity;
         if ((*buffer)->meta()->findInt32("discontinuity", &discontinuity)) {
@@ -193,7 +197,6 @@ bool AnotherPacketSource::hasBufferAvailable(status_t *finalResult) {
     if (!mBuffers.empty()) {
         return true;
     }
-
     *finalResult = mEOSResult;
     return false;
 }

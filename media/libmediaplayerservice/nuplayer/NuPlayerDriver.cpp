@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayerDriver"
 #include <utils/Log.h>
 
@@ -36,8 +36,11 @@ NuPlayerDriver::NuPlayerDriver()
       mLooper(new ALooper),
       mState(UNINITIALIZED),
       mAtEOS(false),
-      mStartupSeekTimeUs(-1) {
-    mLooper->setName("NuPlayerDriver Looper");
+      mStartupSeekTimeUs(-1),
+      mHasSendTeardown(false),
+      mFirstPosition(true){//we new add for notify app buffering 100% 
+ 
+      mLooper->setName("NuPlayerDriver Looper");
 
     mLooper->start(
             false, /* runOnCallingThread */
@@ -183,6 +186,8 @@ bool NuPlayerDriver::isPlaying() {
 
 status_t NuPlayerDriver::seekTo(int msec) {
     int64_t seekTimeUs = msec * 1000ll;
+  
+
 
     switch (mState) {
         case UNINITIALIZED:
@@ -190,6 +195,9 @@ status_t NuPlayerDriver::seekTo(int msec) {
         case STOPPED:
         {
             mStartupSeekTimeUs = seekTimeUs;
+            // remember the seek time for seekbar update rightly
+             mPositionUs = seekTimeUs;
+	    
             break;
         }
         case PLAYING:
@@ -197,6 +205,12 @@ status_t NuPlayerDriver::seekTo(int msec) {
         {
             mAtEOS = false;
             mPlayer->seekToAsync(seekTimeUs);
+
+	    //we new add for seekbar update issue start--remember the seektime for seekbar update rightly
+            mPositionUs = seekTimeUs;
+            ALOGD("SeekTo seekTimeUs= %lld",seekTimeUs);
+            //we new add for seekbar update issue end 
+
             break;
         }
 
@@ -228,7 +242,6 @@ status_t NuPlayerDriver::getDuration(int *msec) {
     } else {
         *msec = (mDurationUs + 500ll) / 1000;
     }
-
     return OK;
 }
 
@@ -246,6 +259,7 @@ status_t NuPlayerDriver::reset() {
     mPositionUs = -1;
     mState = UNINITIALIZED;
     mStartupSeekTimeUs = -1;
+    mHasSendTeardown = false;
 
     return OK;
 }
@@ -298,7 +312,13 @@ status_t NuPlayerDriver::getParameter(int key, Parcel *reply) {
 
 status_t NuPlayerDriver::getMetadata(
         const media::Metadata::Filter& ids, Parcel *records) {
-    return INVALID_OPERATION;
+	 using media::Metadata;
+       Metadata metadata(records);
+	   
+	int32_t serverTimeoutUS = mPlayer->getServerTimeout();
+	ALOGE("in getMetadata === timeout === %d", serverTimeoutUS);
+	metadata.appendInt32(Metadata::kServerTimeout, serverTimeoutUS);
+    return OK;
 }
 
 void NuPlayerDriver::notifyResetComplete() {
@@ -311,10 +331,29 @@ void NuPlayerDriver::notifyResetComplete() {
 void NuPlayerDriver::notifyDuration(int64_t durationUs) {
     Mutex::Autolock autoLock(mLock);
     mDurationUs = durationUs;
+
 }
 
 void NuPlayerDriver::notifyPosition(int64_t positionUs) {
     Mutex::Autolock autoLock(mLock);
+
+      /* we new add for notify app buffering 100% START */
+    if(mFirstPosition){
+        notifyListener(MEDIA_BUFFERING_UPDATE, 100);
+        mFirstPosition = false;
+    }
+    /* we new add for notify app buffering 100% END */
+	  //ALOGD("notifyPosition= %lld",positionUs);
+	  //ALOGD("notifyPosition duration= %lld",mDurationUs);
+
+	//  send teardown in advance(1.4S) for cmcc server could not send BYE to us and rtp streaming could not teardown
+	// automatically. so, we have to send teardown ourself.
+	  if(mDurationUs > 0 && mDurationUs - positionUs < 1400000 && !mHasSendTeardown){
+	  	 ALOGD("notifyPosition postTeardownInadvance");
+	  	 mPlayer->postTeardownInadvance();
+		 mHasSendTeardown = true;
+	  	}
+	  	
     mPositionUs = positionUs;
 }
 

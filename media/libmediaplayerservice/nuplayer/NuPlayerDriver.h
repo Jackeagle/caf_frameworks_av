@@ -84,6 +84,9 @@ private:
     int64_t mNumFramesDropped;
     // <<<
 
+     bool mFirstPosition;//we new add for notify app buffering 100%
+     bool mHasSendTeardown; // the signal if we send teardown 
+
     sp<ALooper> mLooper;
     sp<NuPlayer> mPlayer;
 

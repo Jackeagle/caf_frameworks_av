@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayer"
 #include <utils/Log.h>
 
@@ -70,7 +70,8 @@ NuPlayer::NuPlayer()
       mVideoLateByUs(0ll),
       mNumFramesTotal(0ll),
       mNumFramesDropped(0ll),
-      mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW) {
+      mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
+	  mSeeking(false) {
 }
 
 NuPlayer::~NuPlayer() {
@@ -358,7 +359,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                         audio, codecRequest);
 
                 if (err == -EWOULDBLOCK) {
+		     //ALOGV(" ACodec::kWhatFillThisBuffer  err == -EWOULDBLOCK ");
                     if (mSource->feedMoreTSData() == OK) {
+		      //ALOGV(" ACodec::kWhatFillThisBuffer  err == -EWOULDBLOCK  msg->post(10000ll) ");
                         msg->post(10000ll);
                     }
                 }
@@ -543,7 +546,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 if (mDriver != NULL) {
                     sp<NuPlayerDriver> driver = mDriver.promote();
                     if (driver != NULL) {
+                        if (!mSeeking) { // if seeking ,do not notify position case we have save the seektime for seebar in nuplayerdriver
                         driver->notifyPosition(positionUs);
+                         }
 
                         driver->notifyFrameStats(
                                 mNumFramesTotal, mNumFramesDropped);
@@ -623,8 +628,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             ALOGV("kWhatSeek seekTimeUs=%lld us (%.2f secs)",
                  seekTimeUs, seekTimeUs / 1E6);
 
+            bool bSeekDoneCbf = mSource->setCbfForSeekDone(new AMessage(kWhatSeekDone, id()));
             mSource->seekTo(seekTimeUs);
 
+            mSeeking = true;
+            if (!bSeekDoneCbf) {
+                (new AMessage(kWhatSeekDone, id()))->post();
+            }
             if (mDriver != NULL) {
                 sp<NuPlayerDriver> driver = mDriver.promote();
                 if (driver != NULL) {
@@ -649,6 +659,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatSeekDone:  // if seek done, set signal mseeking as false for notifyPosition used
+            mSeeking = false;
+            break;
         default:
             TRESPASS();
             break;
@@ -728,6 +741,18 @@ void NuPlayer::postScanSources() {
 
     mScanSourcesPending = true;
 }
+
+// return in ms
+    int32_t NuPlayer:: getServerTimeout() {
+
+        return mSource->getServerTimeout();
+    }
+
+     void NuPlayer::postTeardownInadvance() {
+	 	 ALOGD("notifyPosition postTeardownInadvance");
+         mSource->postTeardownInadvance();
+     }
+
 
 status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
     if (*decoder != NULL) {
@@ -890,6 +915,11 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
     sp<AMessage> reply;
     CHECK(msg->findMessage("reply", &reply));
 
+ if (mSeeking) {
+        reply->post();
+        return;
+    }
+
     if (IsFlushingState(audio ? mFlushingAudio : mFlushingVideo)) {
         // We're currently attempting to flush the decoder, in order
         // to complete this, the decoder wants all its buffers back,
@@ -999,6 +1029,16 @@ sp<AMessage> NuPlayer::Source::getFormat(bool audio) {
     }
     return NULL;
 }
+
+ int32_t  NuPlayer::Source::getServerTimeout() {
+ 	return -1;
+ 	}
+
+ void NuPlayer::Source::postTeardownInadvance() {
+ 	return;
+ }
+
+
 
 status_t NuPlayer::setVideoScalingMode(int32_t mode) {
     mVideoScalingMode = mode;
