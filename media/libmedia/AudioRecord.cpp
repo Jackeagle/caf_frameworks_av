@@ -194,8 +194,6 @@ status_t AudioRecord::set(
         notificationFrames = frameCount/2;
     }
 
-    //update mInputSource before openRecord_l
-    mInputSource = inputSource;
     // create the IAudioRecord
     status = openRecord_l(sampleRate, format, channelMask,
                         frameCount, input);
@@ -226,6 +224,7 @@ status_t AudioRecord::set(
     mMarkerReached = false;
     mNewPosition = 0;
     mUpdatePeriod = 0;
+    mInputSource = inputSource;
     mInput = input;
     AudioSystem::acquireAudioSessionId(mSessionId);
 
@@ -445,7 +444,7 @@ status_t AudioRecord::openRecord_l(
                                                        sampleRate, format,
                                                        channelMask,
                                                        frameCount,
-                                                       (int16_t)inputSource(),
+                                                       IAudioFlinger::TRACK_DEFAULT,
                                                        tid,
                                                        &mSessionId,
                                                        &status);
