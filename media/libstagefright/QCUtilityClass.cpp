@@ -369,7 +369,7 @@ sp<MediaExtractor> QCUtilityClass::helper_MediaExtractor_CreateIfNeeded(sp<Media
         }
     }
 
-    if (bUseDefaultExtractor) {
+    if (bUseDefaultExtractor && defaultExt != NULL) {
         ALOGD("using default extractor inspite of having a new extractor");
         retextParser.clear();
         return defaultExt;
