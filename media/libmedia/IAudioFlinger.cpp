@@ -160,7 +160,7 @@ public:
             lSessionId = *sessionId;
         }
         data.writeInt32(lSessionId);
-        data.write(client, sizeof(IDirectTrackClient));
+        data.writeStrongBinder(client->asBinder());
         data.writeInt32((int32_t) streamType);
         status_t lStatus = remote()->transact(CREATE_DIRECT_TRACK, data, &reply);
         if (lStatus != NO_ERROR) {
@@ -801,12 +801,11 @@ status_t BnAudioFlinger::onTransact(
             audio_channel_mask_t channelMask = data.readInt32();
             audio_io_handle_t output = (audio_io_handle_t) data.readInt32();
             int sessionId = data.readInt32();
-            IDirectTrackClient* client;
-            data.read(client,sizeof(IDirectTrackClient));
+            sp<IDirectTrackClient> client = interface_cast<IDirectTrackClient>(data.readStrongBinder());
             int streamType = data.readInt32();
             status_t status;
             sp<IDirectTrack> track = createDirectTrack(pid,
-                    sampleRate, channelMask, output, &sessionId, client,(audio_stream_type_t) streamType, &status);
+                    sampleRate, channelMask, output, &sessionId, client.get(),(audio_stream_type_t) streamType, &status);
             reply->writeInt32(sessionId);
             reply->writeInt32(status);
             reply->writeStrongBinder(track->asBinder());

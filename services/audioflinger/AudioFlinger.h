@@ -1447,7 +1447,7 @@ private:
             uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags);
     private:
 
-        IDirectTrackClient* mClient;
+        IDirectTrackClient *mClient;
         AudioSessionDescriptor *mOutputDesc;
         int  mOutput;
         bool mIsPaused;
