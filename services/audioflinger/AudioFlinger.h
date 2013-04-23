@@ -111,6 +111,7 @@ public:
                                 uint32_t sampleRate,
                                 audio_channel_mask_t channelMask,
                                 audio_io_handle_t output,
+                                int bufferSize,
                                 int *sessionId,
                                 IDirectTrackClient* client,
                                 audio_stream_type_t streamType,
@@ -1430,7 +1431,7 @@ private:
     {
     public:
                             DirectAudioTrack(const sp<AudioFlinger>& audioFlinger,
-                                             int output, AudioSessionDescriptor *outputDesc,
+                                             int output, AudioSessionDescriptor *outputDesc, int bufferSize,
                                              IDirectTrackClient* client, audio_output_flags_t outflag);
         virtual             ~DirectAudioTrack();
         virtual status_t    start();
@@ -1442,6 +1443,8 @@ private:
         virtual void        setVolume(float left, float right);
         virtual int64_t     getTimeStamp();
         virtual void        postEOS(int64_t delayUs);
+        virtual sp<IMemoryHeap> getSharedBuffer();
+        virtual ssize_t     signalData(size_t size);
 
         virtual status_t    onTransact(
             uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags);
@@ -1482,6 +1485,8 @@ private:
         bool mKillEffectsThread;
         bool mEffectsThreadAlive;
         bool mEffectConfigChanged;
+        sp<MemoryHeapBase> mMemHeap;
+        void *mSharedBuffer;
 
         //Structure to recieve the Effect notification from the flinger.
         class AudioFlingerDirectTrackClient: public IBinder::DeathRecipient, public BnAudioFlingerClient {

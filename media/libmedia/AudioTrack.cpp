@@ -322,10 +322,16 @@ status_t AudioTrack::set(
         mAudioFlinger = audioFlinger;
         status_t status = NO_ERROR;
         mAudioDirectOutput = output;
+        int bufferSize = audioFlinger->frameCount(mAudioDirectOutput); //Considering worse case of 24bit PCM
+        if (bufferSize <= 0) {
+            bufferSize = DEFAULT_DIRECT_BUFFER_SIZE;
+        }
+        mDirectTrackBufferSize = bufferSize;
         mDirectTrack = audioFlinger->createDirectTrack( getpid(),
                                                         sampleRate,
                                                         channelMask,
                                                         mAudioDirectOutput,
+                                                        bufferSize,
                                                         &mSessionId,
                                                         this,
                                                         streamType,
@@ -334,6 +340,8 @@ status_t AudioTrack::set(
             ALOGE("createDirectTrack returned with status %d", status);
             return status;
         }
+        mMemHeap = mDirectTrack->getSharedBuffer();
+        mSharedBufferAddress = mMemHeap->getBase();
         mAudioTrack = NULL;
         mSharedBuffer = NULL;
     }
@@ -1178,7 +1186,19 @@ void AudioTrack::releaseBuffer(Buffer* audioBuffer)
 ssize_t AudioTrack::write(const void* buffer, size_t userSize)
 {
     if (mDirectTrack != NULL) {
-        mDirectTrack->write(buffer,userSize);
+        int remaining = userSize, offset = 0, writeSize = 0;
+        if(userSize == 0) {
+            //Block for till all audio is rendered at EOS
+            mDirectTrack->signalData(0);
+        } else {
+            while(remaining) {
+                writeSize = (remaining > mDirectTrackBufferSize) ? mDirectTrackBufferSize : remaining;
+                remaining -= writeSize;
+                memcpy(mSharedBufferAddress, (uint8_t *)buffer +  offset, writeSize);
+                offset += writeSize;
+                mDirectTrack->signalData(writeSize);
+            }
+        }
         return userSize;
     }
     if (mSharedBuffer != 0) return INVALID_OPERATION;
@@ -1187,7 +1207,7 @@ ssize_t AudioTrack::write(const void* buffer, size_t userSize)
     if (ssize_t(userSize) < 0) {
         // Sanity-check: user is most-likely passing an error code, and it would
         // make the return value ambiguous (actualSize vs error).
-        ALOGE("AudioTrack::write(buffer=%p, size=%u (%d)",
+        ALOGV("AudioTrack::write(buffer=%p, size=%u (%d)",
                 buffer, userSize, userSize);
         return BAD_VALUE;
     }

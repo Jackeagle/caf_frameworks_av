@@ -43,6 +43,8 @@
 
 namespace android {
 
+#define DEFAULT_DIRECT_BUFFER_SIZE 4032
+
 // ----------------------------------------------------------------------------
 
 class IAudioFlinger : public IInterface
@@ -83,6 +85,7 @@ public:
                                 uint32_t sampleRate,
                                 audio_channel_mask_t channelMask,
                                 audio_io_handle_t output,
+                                int bufferSize,
                                 int *sessionId,
                                 IDirectTrackClient* client,
                                 audio_stream_type_t streamType,

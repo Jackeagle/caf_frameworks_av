@@ -1,5 +1,5 @@
 /*
-** Copyright (c) 2012, The Linux Foundation. All rights reserved.
+** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
 ** Not a Contribution, Apache license notifications and license are retained
 ** for attribution purposes only.
 **
@@ -26,6 +26,7 @@
 #include <sys/types.h>
 
 #include <binder/Parcel.h>
+#include <binder/MemoryHeapBase.h>
 
 #include <media/IDirectTrack.h>
 
@@ -39,7 +40,9 @@ enum {
     PAUSE,
     SET_VOLUME,
     WRITE,
-    GET_TIMESTAMP
+    GET_TIMESTAMP,
+    GET_SHARED_BUFFER,
+    SIGNAL_DATA
 };
 
 class BpDirectTrack : public BpInterface<IDirectTrack>
@@ -96,6 +99,8 @@ public:
     {
         Parcel data, reply;
         data.writeInterfaceToken(IDirectTrack::getInterfaceDescriptor());
+        data.writeFloat(left);
+        data.writeFloat(right);
         remote()->transact(SET_VOLUME, data, &reply);
     }
 
@@ -110,8 +115,26 @@ public:
     virtual int64_t getTimeStamp() {
         Parcel data, reply;
         data.writeInterfaceToken(IDirectTrack::getInterfaceDescriptor());
-        int64_t tstamp = remote()->transact(GET_TIMESTAMP, data, &reply);
-        return tstamp;
+        remote()->transact(GET_TIMESTAMP, data, &reply);
+        int64_t time = reply.readInt64();
+        return time;
+    }
+
+    virtual sp<IMemoryHeap> getSharedBuffer() {
+        Parcel data, reply;
+        data.writeInterfaceToken(IDirectTrack::getInterfaceDescriptor());
+        remote()->transact(GET_SHARED_BUFFER, data, &reply);
+        sp<IMemoryHeap> mem = interface_cast<IMemoryHeap>(reply.readStrongBinder());
+        return mem;
+    }
+
+    virtual ssize_t signalData(size_t size) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IDirectTrack::getInterfaceDescriptor());
+        data.writeInt32(size);
+        remote()->transact(SIGNAL_DATA, data, &reply);
+        ssize_t bytesWritten = reply.readInt32();
+        return bytesWritten;
     }
 };
 
@@ -150,8 +173,8 @@ status_t BnDirectTrack::onTransact(
         }
         case SET_VOLUME: {
             CHECK_INTERFACE(IDirectTrack, data, reply);
-            float left = 1.0;
-            float right = 1.0;
+            float left = data.readFloat();
+            float right = data.readFloat();
             setVolume(left, right);
             return NO_ERROR;
         }
@@ -166,9 +189,23 @@ status_t BnDirectTrack::onTransact(
         case GET_TIMESTAMP: {
             CHECK_INTERFACE(IDirectTrack, data, reply);
             int64_t time = getTimeStamp();
-            reply->writeInt32(time);
+            reply->writeInt64(time);
             return NO_ERROR;
         }
+        case GET_SHARED_BUFFER: {
+            CHECK_INTERFACE(IDirectTrack, data, reply);
+            sp<IMemoryHeap> mem = getSharedBuffer();
+            reply->writeStrongBinder(mem->asBinder());
+            return NO_ERROR;
+        }
+        case SIGNAL_DATA: {
+            CHECK_INTERFACE(IDirectTrack, data, reply);
+            size_t size = data.readInt32();
+            ssize_t sizeWritten = signalData(size);
+            reply->writeInt32(sizeWritten);
+            return NO_ERROR;
+        }
+
         default:
             return BBinder::onTransact(code, data, reply, flags);
     }

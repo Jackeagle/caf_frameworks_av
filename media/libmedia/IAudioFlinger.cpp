@@ -143,6 +143,7 @@ public:
                                 uint32_t sampleRate,
                                 audio_channel_mask_t channelMask,
                                 audio_io_handle_t output,
+                                int bufferSize,
                                 int *sessionId,
                                 IDirectTrackClient* client,
                                 audio_stream_type_t streamType,
@@ -155,6 +156,7 @@ public:
         data.writeInt32(sampleRate);
         data.writeInt32(channelMask);
         data.writeInt32((int32_t)output);
+        data.writeInt32(bufferSize);
         int lSessionId = 0;
         if (sessionId != NULL) {
             lSessionId = *sessionId;
@@ -800,12 +802,13 @@ status_t BnAudioFlinger::onTransact(
             uint32_t sampleRate = data.readInt32();
             audio_channel_mask_t channelMask = data.readInt32();
             audio_io_handle_t output = (audio_io_handle_t) data.readInt32();
+            int bufferSize = data.readInt32();
             int sessionId = data.readInt32();
             sp<IDirectTrackClient> client = interface_cast<IDirectTrackClient>(data.readStrongBinder());
             int streamType = data.readInt32();
             status_t status;
             sp<IDirectTrack> track = createDirectTrack(pid,
-                    sampleRate, channelMask, output, &sessionId, client.get(),(audio_stream_type_t) streamType, &status);
+                    sampleRate, channelMask, output, bufferSize, &sessionId, client.get(),(audio_stream_type_t) streamType, &status);
             reply->writeInt32(sessionId);
             reply->writeInt32(status);
             reply->writeStrongBinder(track->asBinder());
