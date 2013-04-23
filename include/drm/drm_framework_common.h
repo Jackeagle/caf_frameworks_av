@@ -80,6 +80,25 @@ public:
 };
 
 /**
+ * Defines DRM buffer pointed to by descriptor memFd
+ */
+class DrmIonBuffer{
+public:
+    int memFd;
+    int length;
+    DrmIonBuffer() :
+        length(0),
+        memFd(-1){
+    }
+
+    DrmIonBuffer(int fd, int dataLength) :
+        memFd(fd),
+        length(dataLength) {
+    }
+
+};
+
+/**
  * Defines detailed description of the action
  */
 class ActionDescription {
