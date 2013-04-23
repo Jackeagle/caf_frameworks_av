@@ -744,13 +744,19 @@ void NuPlayer::postScanSources() {
 
 // return in ms
     int32_t NuPlayer:: getServerTimeout() {
-
-        return mSource->getServerTimeout();
+         if (mSource != NULL) {
+             return mSource->getServerTimeout();
+         }
+         else {
+	     int64_t kDefaultKeepAliveTimeoutUs = 60000000ll;
+	     return  kDefaultKeepAliveTimeoutUs/1000;
+         }
     }
 
      void NuPlayer::postTeardownInadvance() {
-	 	 ALOGD("notifyPosition postTeardownInadvance");
-         mSource->postTeardownInadvance();
+	 if(mSource != NULL) {	 
+             mSource->postTeardownInadvance();
+	 }
      }
 
 
