@@ -91,6 +91,7 @@ mStarted(false),
 mAsyncReset(false),
 mPositionTimeMediaUs(-1),
 mPositionTimeRealUs(-1),
+mSavedTimeMediaUs(-1),
 mInternalSeeking(false),
 mSeeking(false),
 mPostedEOS(false),
@@ -528,7 +529,7 @@ void MPQAudioPlayer::reset() {
     ALOGD("Buffer Deallocation complete!");
     mPositionTimeMediaUs = -1;
     mPositionTimeRealUs = -1;
-
+    mSavedTimeMediaUs = -1;
     mSeeking = false;
 
     mPostedEOS = false;
@@ -1193,10 +1194,12 @@ int64_t MPQAudioPlayer::getAudioTimeStampUs() {
     }
     if (mAudioSink->getTimeStamp(&tstamp)) {
         ALOGE("MPQ Player: failed SNDRV_COMPRESS_TSTAMP\n");
-        return 0;
+        ALOGV("mSavedTimeMediaUs = %lld\n", mSavedTimeMediaUs);
+        return (mSavedTimeMediaUs);
     } else {
+        mSavedTimeMediaUs = tstamp + RENDER_LATENCY ;
         ALOGV("timestamp = %lld\n", tstamp);
-        return (tstamp + RENDER_LATENCY);
+        return (mSavedTimeMediaUs);
     }
     return 0;
 }
