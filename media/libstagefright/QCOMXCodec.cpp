@@ -604,8 +604,6 @@ void QCOMXCodec::checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta)
     memcpy(seqParamSet->data(), spsStart, spsSize);
     FindAVCDimensions(seqParamSet, &width, &height, &isInterlaced);
 
-    isInterlaced = 1;
-
     ALOGV("height is %d, width is %d, isInterlaced is %d\n", height, width, isInterlaced);
     if (isInterlaced) {
         meta->setInt32(kKeyUseArbitraryMode, 1);
