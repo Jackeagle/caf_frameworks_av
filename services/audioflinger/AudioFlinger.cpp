@@ -6233,12 +6233,12 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
 }
 
 status_t AudioFlinger::DirectAudioTrack::start() {
+    AudioSystem::startOutput(mOutput, (audio_stream_type_t)mOutputDesc->mStreamType);
     if(mIsPaused) {
         mIsPaused = false;
         mOutputDesc->stream->start(mOutputDesc->stream);
     }
     mOutputDesc->mActive = true;
-    AudioSystem::startOutput(mOutput, (audio_stream_type_t)mOutputDesc->mStreamType);
     return NO_ERROR;
 }
 
@@ -6293,7 +6293,7 @@ void AudioFlinger::DirectAudioTrack::mute(bool muted) {
 
 void AudioFlinger::DirectAudioTrack::setVolume(float left, float right) {
     ALOGV("DirectAudioTrack::setVolume left: %f, right: %f", left, right);
-    if(mOutputDesc && mOutputDesc->mActive) {
+    if(mOutputDesc && mOutputDesc->mActive &&  mOutputDesc->stream) {
         mOutputDesc->mVolumeLeft = left;
         mOutputDesc->mVolumeRight = right;
         mOutputDesc->stream->set_volume(mOutputDesc->stream,
