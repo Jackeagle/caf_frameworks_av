@@ -940,7 +940,6 @@ status_t AwesomePlayer::play() {
 status_t AwesomePlayer::play_l() {
     int tunnelObjectsAlive = 0;
     int mpqAudioObjetcsAlive = 0;
-    int is_mpq = 0;
     modifyFlags(SEEK_PREVIEW, CLEAR);
 
     if (mFlags & PLAYING) {
@@ -986,7 +985,6 @@ status_t AwesomePlayer::play_l() {
                 }
 #ifdef USE_TUNNEL_MODE
                 ALOGD("MPQ Audio Player ");
-                IS_TARGET_MPQ(is_mpq);
                 if(mIsMPQAudio) {
                     ALOGD("MPQ Audio player created for  mime %s duration %lld\n", mime, mDurationUs);
                     bool initCheck =  false;
@@ -1605,8 +1603,9 @@ status_t AwesomePlayer::initAudioDecoder() {
     char value[PROPERTY_VALUE_MAX];
 
     char mpqAudioDecode[128];
-    int is_mpq;
+    int is_mpq, is_mpq_sound;
     IS_TARGET_MPQ(is_mpq);
+    IS_SOUND_DRIVER_MPQ(is_mpq_sound);
     property_get("mpq.audio.decode",mpqAudioDecode,"0");
 
     // Enable tunnel mode for mp3 and aac and if the clip is not aac adif
@@ -1616,7 +1615,7 @@ status_t AwesomePlayer::initAudioDecoder() {
             (MPQAudioPlayer::getMPQAudioObjectsAlive()));
 
 
-    if((is_mpq)&&((strcmp("true",mpqAudioDecode) == 0)||(atoi(mpqAudioDecode))) &&
+    if((is_mpq || is_mpq_sound)&&((strcmp("true",mpqAudioDecode) == 0)||(atoi(mpqAudioDecode))) &&
             /* Allowing two instances of MPQAudioPlayer to Acomodate Audio from Video
                Playback while Music Player is still holding an MPQAudioPlayer instance 
                in Paused state */
