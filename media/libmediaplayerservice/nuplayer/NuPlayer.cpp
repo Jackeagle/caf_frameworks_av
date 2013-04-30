@@ -781,6 +781,7 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
            meta->findInt32(kKeyRequiresSecureBuffers, &isDRMSecBuf);
            if(isDRMSecBuf) {
               mIsSecureInputBuffers = true;
+              format->setInt32("requires-secure-buffers", 1);
            }
         }
 #endif //QCOM_WFD_SINK
