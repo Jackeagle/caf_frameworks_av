@@ -343,8 +343,7 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
 
               int64_t nowUs = wfdGetMediaTime(true);
               mAudioLateByUs = nowUs - realTimeUs;
-              //tooLate = (mAudioLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
-              tooLate = false;
+              tooLate = (mAudioLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
               ALOGV("@@@@:: wfdOnDrainAudioQueue mediaTimeUs  %lld us nowUs  %lld us  realTimeUs %lld us   mAudioLateByUs  %lld us ", mediaTimeUs, nowUs, realTimeUs, mAudioLateByUs);
 
               if (tooLate) {
@@ -371,7 +370,7 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
                        (ssize_t)copy);
             }
             else {
-                ALOGV("@@@@:: Dropping audio buffer frame is too late by % lld us", mAudioLateByUs);
+               ALOGV("@@@@:: Dropping audio buffer frame is too late by % lld us", mAudioLateByUs);
             }
 
             entry->mOffset += copy;
@@ -509,7 +508,6 @@ void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
     mVideoLateByUs = nowUs - realTimeUs;
 
     bool tooLate = (mVideoLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
-	tooLate = false;
     ALOGV("@@@@:: wfdOnDrainVideoQueue mediaTimeUs %lld us \
            realTimeUs %lld us nowUs  %lld us  mVideoLateByUs  %lld us",\
            mediaTimeUs, realTimeUs, nowUs, mVideoLateByUs);
