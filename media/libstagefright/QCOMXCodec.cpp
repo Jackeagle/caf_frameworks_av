@@ -559,12 +559,6 @@ void QCOMXCodec::setQCSpecificVideoFormat(const sp<MetaData> &meta, sp<IOMX> OMX
         useArbitraryMode = arbitraryMode ? true : false;
     }
 
-   if (!strcmp(componentName,"OMX.qcom.video.decoder.vc1")) {
-        useArbitraryMode = false;
-    } else {
-        useArbitraryMode = true;
-    }
-
     if (useArbitraryMode) {
         ALOGI("Decoder should be in arbitrary mode");
         // Is it required to set OMX_QCOM_FramePacking_Arbitrary ??
