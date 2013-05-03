@@ -227,10 +227,11 @@ public:
                                 Parcel* reply,
                                 uint32_t flags);
 
-    void applyEffectsOn(void *token,
+    bool applyEffectsOn(void *token,
                         int16_t *buffer1,
                         int16_t *buffer2,
-                        int size);
+                        int size,
+                        bool force);
 
     // end of IAudioFlinger interface
 
@@ -1356,6 +1357,7 @@ private:
         };
         List<BufferInfo> mBufPool;
         List<BufferInfo> mEffectsPool;
+        void *mEffectsThreadScratchBuffer;
 
         void allocateBufPool();
         void deallocateBufPool();
