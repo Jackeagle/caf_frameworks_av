@@ -290,11 +290,13 @@ status_t MPEG2TSSource::feedMoreForStream() {
             offset += kTSPacketSize;
             break;
         }
+#if 0
         //TODO handle program/stream PID change
         if (PID == 0 || PID == mStream->mProgramPID) {
             ALOGE("PID Changed ... at these clips are not supported");
             return DEAD_OBJECT;
         }
+#endif
 
         offset += kTSPacketSize;
     }
