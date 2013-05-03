@@ -736,7 +736,8 @@ void AudioFlinger::deleteEffectSession()
 
 // ToDo: Should we go ahead with this frameCount?
 #define DEAFULT_FRAME_COUNT 1200
-void AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer, int16_t *outBuffer, int size)
+bool AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer,
+                            int16_t *outBuffer, int size, bool force)
 {
     ALOGV("applyEffectsOn: inBuf %p outBuf %p size %d token %p", inBuffer, outBuffer, size, token);
     // This might be the first buffer to apply effects after effect config change
@@ -744,6 +745,12 @@ void AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer, int16_t *outBu
     mIsEffectConfigChanged = false;
 
     volatile size_t numEffects = 0;
+
+#ifdef SRS_PROCESSING
+    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(token, AUDIO_FORMAT_PCM_16_BIT, outBuffer, size,
+        mLPASampleRate, mLPANumChannels);
+#endif
+
     if(mLPAEffectChain != NULL) {
         numEffects = mLPAEffectChain->getNumEffects();
     }
@@ -774,16 +781,17 @@ void AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer, int16_t *outBu
             bool isEffectEnabled = false;
             for(i = 0; i < numEffects; i++) {
                 // If effect configuration is changed while applying effects do not process further
-                if(mIsEffectConfigChanged) {
+
+                if(mIsEffectConfigChanged && !force) {
                     mLPAEffectChain->unlock();
-                    ALOGV("applyEffectsOn: mIsEffectConfigChanged is set - no further processing");
-                    return;
+                    ALOGV("applyEffectsOn: mIsEffectConfigChanged is set - no further processing %d",frameCount);
+                    return false;
                 }
                 sp<EffectModule> effect = mLPAEffectChain->getEffectFromIndex_l(i);
                 if(effect == NULL) {
                     ALOGE("getEffectFromIndex_l(%d) returned NULL ptr", i);
                     mLPAEffectChain->unlock();
-                    return;
+                    return false;
                 }
                 if(i == 0) {
                     // For the first set input and output buffers different
@@ -818,16 +826,14 @@ void AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer, int16_t *outBu
         }
     }
 
-    if (!numEffects) {
+    if (!numEffects && !force) {
         ALOGV("applyEffectsOn: There are no effects to be applied");
         if(inBuffer != outBuffer) {
             // No effect applied so just copy input buffer to output buffer
             memcpy(outBuffer, inBuffer, size);
         }
     }
-#ifdef SRS_PROCESSING
-    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(token, AUDIO_FORMAT_PCM_16_BIT, outBuffer, size, mLPASampleRate, mLPANumChannels);
-#endif
+    return true;
 }
 
 uint32_t AudioFlinger::sampleRate(audio_io_handle_t output) const
@@ -6464,7 +6470,8 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
                                                  int output, AudioSessionDescriptor *outputDesc,
                                                  IDirectTrackClient* client, audio_output_flags_t outflag)
     : BnDirectTrack(), mIsPaused(false), mAudioFlinger(audioFlinger), mOutput(output), mOutputDesc(outputDesc),
-      mClient(client), mEffectConfigChanged(false), mKillEffectsThread(false), mFlag(outflag)
+      mClient(client), mEffectConfigChanged(false), mKillEffectsThread(false), mFlag(outflag),
+      mEffectsThreadScratchBuffer(NULL)
 {
 #ifdef SRS_PROCESSING
     ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
@@ -6561,9 +6568,11 @@ ssize_t AudioFlinger::DirectAudioTrack::write(const void *buffer, size_t size) {
         memcpy((char *) buf.localBuf, (char *)buffer, size);
         buf.bytesToWrite = size;
         mEffectsPool.push_back(buf);
-        mAudioFlinger->applyEffectsOn(static_cast<void *>(this), (int16_t*)buf.localBuf,(int16_t*)buffer,(int)size);
+        mAudioFlinger->applyEffectsOn(static_cast<void *>(this),
+            (int16_t*)buf.localBuf, (int16_t*)buffer, (int)size, true);
         mEffectLock.unlock();
     }
+    ALOGV("out of Writing to AudioSessionOut");
     return mOutputDesc->stream->write(mOutputDesc->stream, buffer, size);
 }
 
@@ -6643,6 +6652,10 @@ void AudioFlinger::DirectAudioTrack::allocateBufPool() {
 
         ALOGV("The MEM that is allocated buffer is %x, size %d",(unsigned int)dsp_buf,nSize);
     }
+
+    mEffectsThreadScratchBuffer = malloc(nSize);
+    ALOGV("effectsThreadScratchBuffer = %x",mEffectsThreadScratchBuffer);
+
     free(buf);
 }
 
@@ -6661,6 +6674,9 @@ void AudioFlinger::DirectAudioTrack::deallocateBufPool() {
         ALOGV("Removing from bufpool");
         mBufPool.erase(it);
     }
+
+    free(mEffectsThreadScratchBuffer);
+    mEffectsThreadScratchBuffer = NULL;
 }
 
 status_t AudioFlinger::DirectAudioTrack::onTransact(
@@ -6691,16 +6707,25 @@ void AudioFlinger::DirectAudioTrack::EffectsThreadEntry() {
             if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
                 for ( List<BufferInfo>::iterator it = mEffectsPool.begin();
                       it != mEffectsPool.end(); it++) {
-                    ALOGV("Apply effects on the buffer dspbuf %p, mEffectsPool.size() %d",
-                             it->dspBuf,mEffectsPool.size());
-                    mAudioFlinger->applyEffectsOn(static_cast<void *>(this),
-                                                  (int16_t *)it->localBuf,
-                                                  (int16_t *)it->dspBuf,
-                                                  it->bytesToWrite);
+                    ALOGV("ete: calling applyEffectsOn buff %x",it->localBuf);
+                    bool isEffectsApplied = mAudioFlinger->applyEffectsOn(
+                                    static_cast<void *>(this),
+                                    (int16_t *)it->localBuf,
+                                    (int16_t *)mEffectsThreadScratchBuffer,
+                                    it->bytesToWrite,
+                                    false);
+                    if (isEffectsApplied == true){
+                        ALOGV("ete:dsp updated for local buf %x",it->localBuf);
+                        memcpy(it->dspBuf, mEffectsThreadScratchBuffer, it->bytesToWrite);
+                    }
+                    else
+                        ALOGV("ete:dsp updated for local buf %x SKIPPED",it->localBuf);
+
                     if (mEffectConfigChanged) {
+                        ALOGE("ete:effects changed, abort effects application");
                         break;
                     }
-                }
+            }
 #ifdef SRS_PROCESSING
             } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
                 ALOGV("applying effects for TUNNEL");
@@ -9568,7 +9593,7 @@ status_t AudioFlinger::EffectModule::configure(bool isForLPA, int sampleRate, in
         } else {
             channels = AUDIO_CHANNEL_OUT_STEREO;
         }
-        ALOGV("%s: LPA ON - channels %d", __func__, channels);
+//        ALOGV("%s: LPA ON - channels %d", __func__, channels);
     } else {
         if (thread->channelCount() == 1) {
             channels = AUDIO_CHANNEL_OUT_MONO;
@@ -9587,7 +9612,7 @@ status_t AudioFlinger::EffectModule::configure(bool isForLPA, int sampleRate, in
     mConfig.outputCfg.format = AUDIO_FORMAT_PCM_16_BIT;
     if(isForLPA){
         mConfig.inputCfg.samplingRate = sampleRate;
-        ALOGV("%s: LPA ON - sampleRate %d", __func__, sampleRate);
+//        ALOGV("%s: LPA ON - sampleRate %d", __func__, sampleRate);
     } else {
         mConfig.inputCfg.samplingRate = thread->sampleRate();
     }
@@ -9617,14 +9642,14 @@ status_t AudioFlinger::EffectModule::configure(bool isForLPA, int sampleRate, in
     mConfig.outputCfg.mask = EFFECT_CONFIG_ALL;
     if(isForLPA) {
         mConfig.inputCfg.buffer.frameCount = frameCount;
-        ALOGV("%s: LPA ON - frameCount %d", __func__, frameCount);
+//        ALOGV("%s: LPA ON - frameCount %d", __func__, frameCount);
     } else {
         mConfig.inputCfg.buffer.frameCount = thread->frameCount();
     }
     mConfig.outputCfg.buffer.frameCount = mConfig.inputCfg.buffer.frameCount;
 
-    ALOGV("configure() %p thread %p buffer %p framecount %d",
-            this, thread.get(), mConfig.inputCfg.buffer.raw, mConfig.inputCfg.buffer.frameCount);
+//    ALOGV("configure() %p thread %p buffer %p framecount %d",
+//            this, thread.get(), mConfig.inputCfg.buffer.raw, mConfig.inputCfg.buffer.frameCount);
 
     status_t cmdStatus;
     uint32_t size = sizeof(int);
@@ -10299,14 +10324,14 @@ status_t AudioFlinger::EffectHandle::command(uint32_t cmdCode,
         return disable();
     }
 
-    ALOGV("EffectHandle::command: isOnLPA %d", mEffect->isOnLPA());
+//    ALOGV("EffectHandle::command: isOnLPA %d", mEffect->isOnLPA());
     if(mEffect->isOnLPA() &&
        ((cmdCode == EFFECT_CMD_SET_PARAM) || (cmdCode == EFFECT_CMD_SET_PARAM_DEFERRED) ||
         (cmdCode == EFFECT_CMD_SET_PARAM_COMMIT) || (cmdCode == EFFECT_CMD_SET_DEVICE) ||
         (cmdCode == EFFECT_CMD_SET_VOLUME) || (cmdCode == EFFECT_CMD_SET_AUDIO_MODE)) ) {
         // Notify Direct track for the change in Effect module
         // TODO: check if it is required to send mLPAHandle
-        ALOGV("Notifying Direct Track for the change in effect config");
+        ALOGV("Notifying Direct Track for the change in effect config %d", cmdCode);
         mClient->audioFlinger()->audioConfigChanged_l(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
     }
     return mEffect->command(cmdCode, cmdSize, pCmdData, replySize, pReplyData);
