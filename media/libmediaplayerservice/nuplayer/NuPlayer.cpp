@@ -630,7 +630,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             mTimeDiscontinuityPending = true;
-
+#ifdef QCOM_WFD_SINK
+            if(mWFDSinkSession) {
+               mTimeDiscontinuityPending = false;
+            }
+#endif
             if (mAudioDecoder != NULL) {
                 flushDecoder(true /* audio */, true /* needShutdown */);
             }
