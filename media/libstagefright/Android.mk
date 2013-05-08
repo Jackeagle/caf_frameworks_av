@@ -18,6 +18,10 @@ ifeq ($(call is-chipset-in-board-platform,msm8960),true)
    LOCAL_CFLAGS += -DUSE_HWCPLL_CORRECTION
 endif
 
+ifeq ($(TARGET_USES_QCOM_BSP),true)
+    LOCAL_CFLAGS += -DQCOM_BSP
+endif
+
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 LOCAL_SRC_FILES:=                         \
@@ -99,6 +103,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
+<<<<<<< HEAD
         $(TOP)/hardware/qcom/display/libgralloc \
 	$(TOP)/hardware/qcom/media/mm-core/inc \
 	$(TOP)/system/core/include \
@@ -106,6 +111,11 @@ LOCAL_C_INCLUDES:= \
 	$(TOP)/frameworks/native/include/binder \
 	$(TOP)/frameworks/av/media/libstagefright/include \
 	$(TOP)/frameworks/av/media/libstagefright/utils
+=======
+        $(TOP)/hardware/qcom/media/mm-core/inc \
+        $(TOP)/hardware/qcom/display/libgralloc \
+        $(TOP)/hardware/qcom/display/libqdutils
+>>>>>>> f8621a9... libstagefright: Set frame info metadata to display buffers
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -129,6 +139,11 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz
+
+ifeq ($(TARGET_USES_QCOM_BSP),true)
+    LOCAL_SHARED_LIBRARIES += \
+        libqdMetaData
+endif
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
