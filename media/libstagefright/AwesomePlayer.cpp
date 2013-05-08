@@ -73,6 +73,8 @@
 #include <cutils/properties.h>
 
 #include "include/ResourceManager.h"
+#include <gralloc_priv.h>
+#include <qdMetaData.h>
 
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
@@ -145,6 +147,8 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
             int32_t rotationDegrees)
         : mNativeWindow(nativeWindow) {
         applyRotation(rotationDegrees);
+        mLastRenderTimeUs = 0;
+        mVideoFrameCounter = 0;
     }
 
     virtual void render(MediaBuffer *buffer) {
@@ -152,6 +156,31 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
         int64_t timeUs;
         CHECK(buffer->meta_data()->findInt64(kKeyTime, &timeUs));
         native_window_set_buffers_timestamp(mNativeWindow.get(), timeUs * 1000);
+#ifdef QCOM_BSP
+        {
+            int nErr;
+            MetaData_t sDispBuffMetaData;
+            int64_t curTime;
+
+            private_handle_t* pBufPrvtHandle = (private_handle_t *)buffer->graphicBuffer().get()->handle;
+            memset(&sDispBuffMetaData, 0, sizeof(MetaData_t));
+            sDispBuffMetaData.videoFrame.frc_enable = true;
+            sDispBuffMetaData.videoFrame.timestamp = timeUs;
+            sDispBuffMetaData.videoFrame.counter = mVideoFrameCounter++;
+
+            nErr = setMetaData(pBufPrvtHandle, PP_PARAM_VIDEO_FRAME, (void*)&sDispBuffMetaData.videoFrame);
+            if(0 != nErr)
+            {
+                ALOGE("Error:%d in setMetaData PP_PARAM_VIDEO_FRAME", nErr);
+            }
+            else
+            {
+                ALOGD("setMetaData PP_PARAM_TIMESTAMP: %lld us Counter=%d", timeUs, mVideoFrameCounter);
+            }
+            curTime = ns2us(systemTime());
+            mLastRenderTimeUs = curTime;
+        }
+#endif
         status_t err = mNativeWindow->queueBuffer(
                 mNativeWindow.get(), buffer->graphicBuffer().get(), -1);
         if (err != 0) {
@@ -189,6 +218,9 @@ private:
     AwesomeNativeWindowRenderer(const AwesomeNativeWindowRenderer &);
     AwesomeNativeWindowRenderer &operator=(
             const AwesomeNativeWindowRenderer &);
+
+    int64_t mLastRenderTimeUs;
+    uint32_t mVideoFrameCounter;
 };
 
 // To collect the decoder usage
