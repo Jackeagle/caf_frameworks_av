@@ -3109,7 +3109,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     AString componentName;
     uint32_t quirks = 0;
 
-    int32_t requiresSecureBuffers;
+    int32_t requiresSecureBuffers = 0;
 
     if (msg->findInt32(
             "requires-secure-buffers",
