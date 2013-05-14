@@ -567,6 +567,7 @@ sp<IDirectTrack> AudioFlinger::createDirectTrack(
         uint32_t sampleRate,
         audio_channel_mask_t channelMask,
         audio_io_handle_t output,
+        int bufferSize,
         int *sessionId,
         IDirectTrackClient *client,
         audio_stream_type_t streamType,
@@ -623,7 +624,7 @@ sp<IDirectTrack> AudioFlinger::createDirectTrack(
         }
     }
     mLock.unlock();
-    directTrack = new DirectAudioTrack(this, output, desc, client, desc->flag);
+    directTrack = new DirectAudioTrack(this, output, desc, bufferSize, client, desc->flag);
     desc->trackRefPtr = dynamic_cast<void *>(directTrack);
     mLock.lock();
     if (directTrack != 0) {
@@ -6179,7 +6180,7 @@ void AudioFlinger::NotificationClient::binderDied(const wp<IBinder>& who)
 // ----------------------------------------------------------------------------
 
 AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFlinger,
-                                                 int output, AudioSessionDescriptor *outputDesc,
+                                                 int output, AudioSessionDescriptor *outputDesc, int bufferSize,
                                                  IDirectTrackClient* client, audio_output_flags_t outflag)
     : BnDirectTrack(), mIsPaused(false), mAudioFlinger(audioFlinger), mOutput(output), mOutputDesc(outputDesc),
       mClient(client), mEffectConfigChanged(false), mKillEffectsThread(false), mFlag(outflag)
@@ -6207,6 +6208,16 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
     outputDesc->mVolumeScale = 1.0;
     mDeathRecipient = new PMDeathRecipient(this);
     acquireWakeLock();
+
+    if(bufferSize <= 0) {
+        bufferSize = DEFAULT_DIRECT_BUFFER_SIZE;
+    }
+    mMemHeap = new MemoryHeapBase(bufferSize);
+    if(mMemHeap == NULL) {
+        ALOGE("Shared Buffer Creation failed for Direct Track");
+        return;
+    }
+    mSharedBuffer = mMemHeap->getBase();
 }
 
 AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
@@ -6512,6 +6523,16 @@ void AudioFlinger::DirectAudioTrack::releaseWakeLock()
         }
         mWakeLockToken.clear();
     }
+}
+
+sp<IMemoryHeap> AudioFlinger::DirectAudioTrack::getSharedBuffer()
+{
+    return mMemHeap;
+}
+
+ssize_t AudioFlinger::DirectAudioTrack::signalData(size_t size)
+{
+    return write(mSharedBuffer, size);
 }
 
 void AudioFlinger::DirectAudioTrack::clearPowerManager()

@@ -511,6 +511,7 @@ protected:
     float                   mVolume[2];
     float                   mSendLevel;
     uint32_t                mFrameCount;
+    int                     mDirectTrackBufferSize;
 
     audio_track_cblk_t*     mCblk;
     audio_format_t          mFormat;
@@ -547,6 +548,8 @@ protected:
     bool                    mIsTimed;
     int                     mPreviousPriority;          // before start()
     SchedPolicy             mPreviousSchedulingGroup;
+    sp<IMemoryHeap>         mMemHeap;
+    void *mSharedBufferAddress;
 };
 
 class TimedAudioTrack : public AudioTrack

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  * Not a Contribution, Apache license notifications and license are retained
  * for attribution purposes only.
  *
@@ -73,6 +73,10 @@ public:
     virtual ssize_t     write(const void*, size_t) =  0;
 
     virtual int64_t     getTimeStamp() =  0;
+
+    virtual sp<IMemoryHeap> getSharedBuffer()= 0;
+
+    virtual ssize_t     signalData(size_t) = 0;
 };
 
 // ----------------------------------------------------------------------------
