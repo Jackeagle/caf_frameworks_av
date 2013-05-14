@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010 The Android Open Source Project
+ * Copyright (c) 2013 The Linux Foundation. All rights reserved
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,13 +31,15 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/NativeWindowWrapper.h>
 #include <media/stagefright/OMXClient.h>
+#include <OMX_Audio.h>
 #include <media/stagefright/OMXCodec.h>
 
 #include <media/hardware/HardwareAPI.h>
 
 #include <OMX_Component.h>
 #include <OMX_QCOMExtns.h>
-
+#include <QOMX_AudioExtensions.h>
+#include <QOMX_AudioIndexExtensions.h>
 #include "include/avc_utils.h"
 
 namespace android {
@@ -830,6 +833,10 @@ status_t ACodec::setComponentRole(
             "audio_decoder.raw", "audio_encoder.raw" },
         { MEDIA_MIMETYPE_AUDIO_FLAC,
             "audio_decoder.flac", "audio_encoder.flac" },
+        { MEDIA_MIMETYPE_AUDIO_AC3,
+            "audio_decoder.ac3", "audio_encoder.ac3" },
+        { MEDIA_MIMETYPE_AUDIO_EAC3,
+            "audio_decoder.eac3", "audio_encoder.eac3" },
     };
 
     static const size_t kNumMimeToRole =
@@ -1002,6 +1009,16 @@ status_t ACodec::configureCodec(
                 }
             }
             err = setupFlacCodec(encoder, numChannels, sampleRate, compressionLevel);
+        }
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3)
+          || (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3))) {
+        int32_t numChannels, sampleRate;
+        if (encoder
+                || !msg->findInt32("channel-count", &numChannels)
+                || !msg->findInt32("sample-rate", &sampleRate)) {
+            err = INVALID_OPERATION;
+        } else {
+            err = setupAC3Codec(numChannels, sampleRate);
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         int32_t numChannels, sampleRate;
@@ -1314,6 +1331,45 @@ status_t ACodec::setupFlacCodec(
             encoder ? kPortIndexInput : kPortIndexOutput,
             sampleRate,
             numChannels);
+}
+
+status_t ACodec::setupAC3Codec(int32_t numChannels, int32_t sampleRate) {
+
+    QOMX_AUDIO_PARAM_AC3TYPE profileAC3;
+    OMX_INDEXTYPE indexTypeAC3;
+    OMX_PARAM_PORTDEFINITIONTYPE portParam;
+
+    //configure input port
+    ALOGV("setupAC3Codec samplerate %d, numChannels %d", sampleRate, numChannels);
+    InitOMXParams(&portParam);
+
+    portParam.nPortIndex = 0;
+
+    status_t err = mOMX->getExtensionIndex(mNode,
+                    OMX_QCOM_INDEX_PARAM_AC3TYPE,
+                    &indexTypeAC3);
+
+    if (err != OK) {
+        return err;
+    }
+
+    InitOMXParams(&profileAC3);
+    profileAC3.nPortIndex = kPortIndexInput;
+    err = mOMX->getParameter(mNode,
+            indexTypeAC3,
+            &profileAC3,
+            sizeof(profileAC3));
+    if (err != OK) {
+        return err;
+    }
+
+    profileAC3.nSamplingRate  =  sampleRate;
+    profileAC3.nChannels      =  numChannels;
+
+    return mOMX->setParameter(mNode,
+                indexTypeAC3,
+                &profileAC3,
+                sizeof(profileAC3));
 }
 
 status_t ACodec::setupRawAudioFormat(
@@ -2219,41 +2275,61 @@ void ACodec::sendFormatChange() {
         case OMX_PortDomainAudio:
         {
             OMX_AUDIO_PORTDEFINITIONTYPE *audioDef = &def.format.audio;
-            CHECK_EQ((int)audioDef->eEncoding, (int)OMX_AUDIO_CodingPCM);
 
-            OMX_AUDIO_PARAM_PCMMODETYPE params;
-            InitOMXParams(&params);
-            params.nPortIndex = kPortIndexOutput;
+            if( audioDef->eEncoding == OMX_AUDIO_CodingPCM) {
+                OMX_AUDIO_PARAM_PCMMODETYPE params;
 
-            CHECK_EQ(mOMX->getParameter(
-                        mNode, OMX_IndexParamAudioPcm,
-                        &params, sizeof(params)),
-                     (status_t)OK);
+                InitOMXParams(&params);
 
-            CHECK(params.nChannels == 1 || params.bInterleaved);
-            CHECK_EQ(params.nBitPerSample, 16u);
-            CHECK_EQ((int)params.eNumData, (int)OMX_NumericalDataSigned);
-            CHECK_EQ((int)params.ePCMMode, (int)OMX_AUDIO_PCMModeLinear);
+                params.nPortIndex = kPortIndexOutput;
+                CHECK_EQ(mOMX->getParameter(
+                                        mNode, OMX_IndexParamAudioPcm,
+                                        &params, sizeof(params)),
+                                (status_t)OK);
 
-            notify->setString("mime", MEDIA_MIMETYPE_AUDIO_RAW);
-            notify->setInt32("channel-count", params.nChannels);
-            notify->setInt32("sample-rate", params.nSamplingRate);
-            if (mEncoderDelay + mEncoderPadding) {
-                size_t frameSize = params.nChannels * sizeof(int16_t);
-                if (mSkipCutBuffer != NULL) {
-                    size_t prevbufsize = mSkipCutBuffer->size();
-                    if (prevbufsize != 0) {
-                        ALOGW("Replacing SkipCutBuffer holding %d bytes", prevbufsize);
-                    }
+                CHECK(params.nChannels == 1 || params.bInterleaved);
+                CHECK_EQ(params.nBitPerSample, 16u);
+                CHECK_EQ((int)params.eNumData, (int)OMX_NumericalDataSigned);
+                CHECK_EQ((int)params.ePCMMode, (int)OMX_AUDIO_PCMModeLinear);
+
+                notify->setString("mime", MEDIA_MIMETYPE_AUDIO_RAW);
+                notify->setInt32("channel-count", params.nChannels);
+                notify->setInt32("sample-rate", params.nSamplingRate);
+                if (mEncoderDelay + mEncoderPadding) {
+                        size_t frameSize = params.nChannels * sizeof(int16_t);
+                        if (mSkipCutBuffer != NULL) {
+                                size_t prevbufsize = mSkipCutBuffer->size();
+                                if (prevbufsize != 0) {
+                                        ALOGW("Replacing SkipCutBuffer holding %d bytes", prevbufsize);
+                                }
+                        }
+                        mSkipCutBuffer = new SkipCutBuffer(mEncoderDelay * frameSize,
+                                        mEncoderPadding * frameSize);
                 }
-                mSkipCutBuffer = new SkipCutBuffer(mEncoderDelay * frameSize,
-                                                   mEncoderPadding * frameSize);
+
+           } else if(audioDef->eEncoding == OMX_AUDIO_CodingAC3) {
+                QOMX_AUDIO_PARAM_AC3TYPE params;
+
+                InitOMXParams(&params);
+
+                params.nPortIndex = kPortIndexOutput;
+                CHECK_EQ(mOMX->getParameter(
+                                        mNode,
+                                        (OMX_INDEXTYPE)QOMX_IndexParamAudioAc3,
+                                        &params, sizeof(params)),
+                                (status_t)OK);
+
+                if(params.eFormat == omx_audio_ac3)
+                     notify->setString("mime", MEDIA_MIMETYPE_AUDIO_AC3);
+                else
+                     notify->setString("mime", MEDIA_MIMETYPE_AUDIO_EAC3);
+                notify->setInt32("channel-count", params.nChannels);
+                notify->setInt32("sample-rate", params.nSamplingRate);
             }
 
             if (mChannelMaskPresent) {
-                notify->setInt32("channel-mask", mChannelMask);
+                    notify->setInt32("channel-mask", mChannelMask);
             }
-
             break;
         }
 
