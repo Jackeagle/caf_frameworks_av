@@ -52,6 +52,20 @@
 namespace android {
 // ---------------------------------------------------------------------------
 
+DirectTrackClient::DirectTrackClient(AudioTrack *audioTrack) {
+    mAudioTrack = audioTrack;
+}
+
+DirectTrackClient::~DirectTrackClient() {
+    ALOGV("Destroying DirectTrackClient");
+}
+
+void DirectTrackClient::notify(int msg) {
+    if (mAudioTrack != NULL) {
+        mAudioTrack->notify(msg);
+    }
+}
+
 // static
 status_t AudioTrack::getMinFrameCount(
         int* frameCount,
@@ -322,10 +336,11 @@ status_t AudioTrack::set(
         mAudioFlinger = audioFlinger;
         status_t status = NO_ERROR;
         mAudioDirectOutput = output;
-        int bufferSize = audioFlinger->frameCount(mAudioDirectOutput); //Considering worse case of 24bit PCM
+        int bufferSize = audioFlinger->frameCount(mAudioDirectOutput);
         if (bufferSize <= 0) {
             bufferSize = DEFAULT_DIRECT_BUFFER_SIZE;
         }
+        mDirectTrackClient = new DirectTrackClient(this);
         mDirectTrackBufferSize = bufferSize;
         mDirectTrack = audioFlinger->createDirectTrack( getpid(),
                                                         sampleRate,
@@ -333,7 +348,7 @@ status_t AudioTrack::set(
                                                         mAudioDirectOutput,
                                                         bufferSize,
                                                         &mSessionId,
-                                                        this,
+                                                        mDirectTrackClient.get(),
                                                         streamType,
                                                         &status);
         if(status != NO_ERROR) {
@@ -1584,11 +1599,15 @@ status_t AudioTrack::dump(int fd, const Vector<String16>& args) const
 void AudioTrack::notify(int msg) {
     if (msg == EVENT_UNDERRUN) {
         ALOGV("Posting event underrun to Audio Sink.");
-        mCbf(EVENT_UNDERRUN, mUserData, 0);
+        if(mCbf) {
+            mCbf(EVENT_UNDERRUN, mUserData, 0);
+        }
     }
     if (msg == EVENT_HW_FAIL) {
         ALOGV("Posting event HW fail to Audio Sink.");
-        mCbf(EVENT_HW_FAIL, mUserData, 0);
+        if(mCbf) {
+            mCbf(EVENT_HW_FAIL, mUserData, 0);
+        }
     }
 }
 

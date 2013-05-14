@@ -38,7 +38,7 @@ namespace android {
 // ----------------------------------------------------------------------------
 
 class audio_track_cblk_t;
-
+class DirectTrackClient;
 // ----------------------------------------------------------------------------
 
 class AudioTrack : public BnDirectTrackClient,
@@ -549,7 +549,8 @@ protected:
     int                     mPreviousPriority;          // before start()
     SchedPolicy             mPreviousSchedulingGroup;
     sp<IMemoryHeap>         mMemHeap;
-    void *mSharedBufferAddress;
+    void                    *mSharedBufferAddress;
+    sp<DirectTrackClient>   mDirectTrackClient;
 };
 
 class TimedAudioTrack : public AudioTrack
@@ -574,6 +575,19 @@ public:
     status_t setMediaTimeTransform(const LinearTransform& xform,
                                    TargetTimeline target);
 };
+
+class DirectTrackClient : public BnDirectTrackClient
+{
+public:
+    DirectTrackClient(AudioTrack *audioTrack);
+    virtual ~DirectTrackClient();
+
+    virtual void notify(int msg);
+
+private:
+    AudioTrack* mAudioTrack;
+};
+
 
 }; // namespace android
 
