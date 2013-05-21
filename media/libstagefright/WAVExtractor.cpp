@@ -58,7 +58,8 @@ struct WAVSource : public MediaSource {
             const sp<MetaData> &meta,
             uint16_t waveFormat,
             int32_t bitsPerSample,
-            off64_t offset, size_t size);
+            off64_t offset, size_t size,
+            bool isMpqTarget);
 
     virtual status_t start(MetaData *params = NULL);
     virtual status_t stop();
@@ -82,6 +83,7 @@ private:
     off64_t mOffset;
     size_t mSize;
     bool mStarted;
+    bool mIsMpqTarget;
     MediaBufferGroup *mGroup;
     off64_t mCurrentPos;
 
@@ -92,6 +94,7 @@ private:
 WAVExtractor::WAVExtractor(const sp<DataSource> &source)
     : mDataSource(source),
       mValidFormat(false),
+      mIsMpqTarget(false),
       mChannelMask(CHANNEL_MASK_USE_CHANNEL_ORDER) {
     mInitCheck = init();
 }
@@ -122,7 +125,7 @@ sp<MediaSource> WAVExtractor::getTrack(size_t index) {
 
     return new WAVSource(
             mDataSource, mTrackMeta,
-            mWaveFormat, mBitsPerSample, mDataOffset, mDataSize);
+            mWaveFormat, mBitsPerSample, mDataOffset, mDataSize, mIsMpqTarget);
 }
 
 sp<MetaData> WAVExtractor::getTrackMetaData(
@@ -272,12 +275,15 @@ status_t WAVExtractor::init() {
                 mDataOffset = offset;
                 mDataSize = chunkSize;
 
+                IS_TARGET_MPQ(mIsMpqTarget);
                 mTrackMeta = new MetaData;
 
                 switch (mWaveFormat) {
                     case WAVE_FORMAT_PCM:
                         mTrackMeta->setCString(
                                 kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_RAW);
+                        if (mBitsPerSample == 24 && mIsMpqTarget == true)
+                            mTrackMeta->setInt32(kKeySampleBits, mBitsPerSample);
                         break;
                     case WAVE_FORMAT_ALAW:
                         mTrackMeta->setCString(
@@ -319,7 +325,8 @@ WAVSource::WAVSource(
         const sp<MetaData> &meta,
         uint16_t waveFormat,
         int32_t bitsPerSample,
-        off64_t offset, size_t size)
+        off64_t offset, size_t size,
+        bool isMpqTarget)
     : mDataSource(dataSource),
       mMeta(meta),
       mWaveFormat(waveFormat),
@@ -329,6 +336,7 @@ WAVSource::WAVSource(
       mOffset(offset),
       mSize(size),
       mStarted(false),
+      mIsMpqTarget(isMpqTarget),
       mGroup(NULL) {
     CHECK(mMeta->findInt32(kKeySampleRate, &mSampleRate));
     CHECK(mMeta->findInt32(kKeyChannelCount, &mNumChannels));
@@ -447,7 +455,7 @@ status_t WAVSource::read(
 
             buffer->release();
             buffer = tmp;
-        } else if (mBitsPerSample == 24) {
+        } else if (mBitsPerSample == 24 && mIsMpqTarget == false) {
             // Convert 24-bit signed samples to 16-bit signed.
 
             const uint8_t *src =
