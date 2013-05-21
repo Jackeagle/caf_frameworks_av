@@ -1264,12 +1264,17 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
     if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_RAW)){
         ALOGW("Sw Decoder");
         sp<MetaData> format = mSource->getFormat();
+        int isStreamTE = 0;
         int sampleBits = 16;
         if (format->findInt32(kKeySampleBits, &sampleBits) && sampleBits == 24) {
             mAudioFormat = AUDIO_FORMAT_PCM_24_BIT;
             ALOGW("Sw Decoder: AUDIO_FORMAT_PCM_24_BIT");
         } else
             mAudioFormat = AUDIO_FORMAT_PCM_16_BIT;
+        if (format->findInt32(kKeyIsStreamTE, &isStreamTE) && isStreamTE == 1) {
+            mAudioFormat = (audio_format_t)(mAudioFormat | AUDIO_FORMAT_SUB_DTS_TE);
+            ALOGW("Sw Decoder - DTS Transcoder Engaged");
+        }
         mDecoderType = ESoftwareDecoder;
     }
     else if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_AC3)) {

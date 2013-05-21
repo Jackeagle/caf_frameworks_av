@@ -299,6 +299,7 @@ status_t WAVExtractor::init() {
                 mTrackMeta->setInt32(kKeyChannelCount, mNumChannels);
                 mTrackMeta->setInt32(kKeyChannelMask, mChannelMask);
                 mTrackMeta->setInt32(kKeySampleRate, mSampleRate);
+                mTrackMeta->setInt32(kKeyIsStreamTE, 1);
 
                 size_t bytesPerSample = mBitsPerSample >> 3;
 
