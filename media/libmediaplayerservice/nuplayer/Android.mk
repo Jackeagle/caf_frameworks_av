@@ -29,6 +29,12 @@ LOCAL_C_INCLUDES := \
 	$(TOP)/frameworks/av/media/libstagefright/rtsp                \
 	$(TOP)/frameworks/native/include/media/openmax                \
         $(TOP)/frameworks/av/media/libstagefright/timedtext           \
+	$(TOP)/frameworks/av/media/libstagefright/utils               \
+	$(TOP)/hardware/qcom/display/libgralloc
+
+ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+   LOCAL_CFLAGS += -DUSE_HWCPLL_CORRECTION
+endif
 
 LOCAL_MODULE:= libstagefright_nuplayer
 

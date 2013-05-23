@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "StagefrightPlayer"
 #include <utils/Log.h>
 
@@ -91,8 +91,7 @@ status_t StagefrightPlayer::start() {
 }
 
 status_t StagefrightPlayer::stop() {
-    ALOGV("stop");
-
+    ALOGE("stop");
     return pause();  // what's the difference?
 }
 

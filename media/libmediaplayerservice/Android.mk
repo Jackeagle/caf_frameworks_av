@@ -6,6 +6,10 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 
+ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+   LOCAL_CFLAGS += -DUSE_HWCPLL_CORRECTION
+endif
+
 LOCAL_SRC_FILES:=               \
     ActivityManager.cpp         \
     Crypto.cpp                  \
@@ -32,8 +36,8 @@ LOCAL_SHARED_LIBRARIES :=     		\
 	libstagefright_foundation       \
 	libgui                          \
 	libdl                           \
-	libaah_rtp
-
+	libaah_rtp			\
+	libIfe
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_nuplayer                 \
         libstagefright_rtsp                     \

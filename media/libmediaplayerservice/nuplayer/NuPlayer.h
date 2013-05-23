@@ -26,6 +26,8 @@
 #define KEY_DASH_ADAPTION_PROPERTIES 8002
 #define KEY_DASH_MPD_QUERY           8003
 
+#define FPS_DECISION_WINDOW 4
+#define MAX_AUDIO_STORED_BUFFERS 10
 namespace android {
 
 struct ACodec;
@@ -195,6 +197,7 @@ private:
 
     status_t feedDecoderInputData(int track, const sp<AMessage> &msg);
     void renderBuffer(bool audio, const sp<AMessage> &msg);
+    void renderCtrledBuffer(bool audio, const sp<AMessage> &msg);
 
     void notifyListener(int msg, int ext1, int ext2, const Parcel *obj=NULL);
 
@@ -225,8 +228,19 @@ private:
 
     List<QueueEntry> mDecoderMessageQueue;
 
-
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
+    status_t SetOutputFramerate();
+    status_t getClipFps(int mIFEFps,int64_t *fps);
+    sp<AMessage> Storedreply[FPS_DECISION_WINDOW];
+    sp<ABuffer> VidBuffer[FPS_DECISION_WINDOW];
+    sp<ABuffer> AudBuffer[MAX_AUDIO_STORED_BUFFERS];
+    sp<AMessage> StoredreplyAudio[MAX_AUDIO_STORED_BUFFERS];
+    bool bPLLAdjustmentDone;
+    int Fps_DecisionWindowCnt;
+    int StoredAudioBuffers;
+    int64_t mFps;
+    void* mIfe;
+    bool mbHWPLLChangeSupport;
 };
 
 }  // namespace android

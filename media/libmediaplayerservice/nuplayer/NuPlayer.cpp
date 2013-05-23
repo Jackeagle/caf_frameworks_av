@@ -1,4 +1,6 @@
-/*
+ /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +34,7 @@
 #include "RTSPSource.h"
 #include "StreamingSource.h"
 #include "GenericSource.h"
+#include <cutils/properties.h>
 
 #include "ATSParser.h"
 
@@ -48,6 +51,9 @@
 #include <gui/ISurfaceTexture.h>
 
 #include "avc_utils.h"
+#include <InFpsEstimator.h>
+
+#define DEFAULT_HWC_FRAMEREFRESH 60000
 
 namespace android {
 
@@ -75,8 +81,29 @@ NuPlayer::NuPlayer()
       mRenderer(NULL),
       mStats(NULL),
       mBufferingNotification(false),
-      mSRid(0) {
+      mSRid(0),
+      bPLLAdjustmentDone(false),
+      Fps_DecisionWindowCnt(0),
+      StoredAudioBuffers(0){
       mTrackName = new char[6];
+      ALOGE("NuPlayer constructor W+C");
+      {
+          IFE_ERRORTYPE eRet;
+          IfeCreateParams sIfeCreateParams;
+          sIfeCreateParams.nSlidingWindowWidth = 2000;
+          eRet = IfeCreate(&sIfeCreateParams, (void **)&mIfe);
+          if(eRet){
+              ALOGE("Error in creating IFE");
+              mIfe = NULL;
+          }
+      }
+      mbHWPLLChangeSupport = false;
+      char acValue[10] = "";
+      if (property_get("sf.hwpllnuplayer.support", acValue, "1"))
+      {
+        mbHWPLLChangeSupport = (bool)atoi(acValue);
+        ALOGE("mbHWPLLChangeSupport is %d",mbHWPLLChangeSupport);
+      }
 }
 
 NuPlayer::~NuPlayer() {
@@ -84,6 +111,59 @@ NuPlayer::~NuPlayer() {
         mStats->logFpsSummary();
         mStats = NULL;
     }
+    int cnt = 0;
+    for(;cnt<FPS_DECISION_WINDOW;cnt++) {
+        VidBuffer[cnt].clear();
+        Storedreply[cnt].clear();
+    }
+    for(cnt =0 ; cnt < MAX_AUDIO_STORED_BUFFERS ; cnt++) {
+        AudBuffer[cnt].clear();
+        StoredreplyAudio[cnt].clear();
+    }
+}
+status_t NuPlayer::getClipFps(int mIFEFps,int64_t *fps)
+{
+    ALOGE("IFE fps %d",mIFEFps);
+    if( ( 23700 < mIFEFps ) & (mIFEFps < 24300 ) ) {
+        *fps = 24000;
+    } else if ( ( 29700 < mIFEFps ) & (mIFEFps < 30300) ) {
+        *fps = 30000;
+    } else if ( ( 24700 < mIFEFps ) & (mIFEFps < 25300) ){
+        *fps = 25000;
+    } else if ( ( 49700 < mIFEFps ) & (mIFEFps < 50300) ){
+        *fps = 50000;
+    } else {
+        *fps = DEFAULT_HWC_FRAMEREFRESH;
+    }
+    ALOGE("HWC Settings (fps) %lld ",*fps);
+    return OK;
+}
+status_t NuPlayer::SetOutputFramerate()
+{
+#ifdef USE_HWCPLL_CORRECTION
+    int ret;
+    void * lib = dlopen("libhwcpllchange.so", RTLD_NOW);
+    if (!lib) {
+        ALOGE("dlopen for libhwcpllchange failed with errno %d", errno);
+        return ERROR_UNSUPPORTED;
+    }
+    typedef int (*setPLLFn)(float mFps);
+    setPLLFn hwc_setFrameRate = (setPLLFn )dlsym(lib,"_Z16hwc_setoutputPLLf");
+    if(!hwc_setFrameRate) {
+        ALOGE("hwc_setoutputPLL symbol not found in libhwcpllchange");
+        dlclose(lib);
+        return ERROR_UNSUPPORTED;
+    }
+    ret = hwc_setFrameRate(mFps);
+    if(ret) {
+        ALOGE("hwc_setFrameRate failed ");
+    }
+    dlclose(lib);
+    ALOGE("hwc_setFrameRate done ");
+#else
+    ALOGE("USE_HWCPLL_CORRECTION is not used , not adjusting the HWC PLL");
+#endif
+   return OK;
 }
 
 void NuPlayer::setUID(uid_t uid) {
@@ -562,9 +642,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 }
             } else if (what == ACodec::kWhatDrainThisBuffer) {
                 if(track == kAudio || track == kVideo) {
-                   ALOGV("@@@@:: Nuplayer :: MESSAGE FROM ACODEC +++++++++++++++++++++++++++++++ ACodec::kWhatRenderBuffer:: %s",track == kAudio ? "audio" : "video");
-                        renderBuffer(track, codecRequest);
-                    }
+                    if ((mSourceType == kWfdSource) || (mbHWPLLChangeSupport != true)) {
+                           renderBuffer(track, codecRequest);
+                     } else {
+                           renderCtrledBuffer(track, codecRequest);
+                     }
+                }
             } else {
                 ALOGV("Unhandled codec notification %d.", what);
             }
@@ -642,6 +725,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         {
             ALOGV("kWhatReset");
             Mutex::Autolock autoLock(mLock);
+
+            if(mFps != DEFAULT_HWC_FRAMEREFRESH ) {
+                ALOGE("Changed the Default fps so setting it back");
+                mFps = DEFAULT_HWC_FRAMEREFRESH;
+                SetOutputFramerate();
+            }
 
             if (mRenderer != NULL) {
                 // There's an edge case where the renderer owns all output
@@ -991,6 +1080,11 @@ void NuPlayer::finishReset() {
     CHECK(mAudioDecoder == NULL);
     CHECK(mVideoDecoder == NULL);
 
+    if(mFps != DEFAULT_HWC_FRAMEREFRESH ) {
+        mFps = DEFAULT_HWC_FRAMEREFRESH;
+        SetOutputFramerate();
+    }
+
     ++mScanSourcesGeneration;
     mScanSourcesPending = false;
 
@@ -1307,8 +1401,110 @@ status_t NuPlayer::feedDecoderInputData(int track, const sp<AMessage> &msg) {
     return OK;
 }
 
+void NuPlayer::renderCtrledBuffer(bool audio, const sp<AMessage> &msg) {
+    ALOGE("renderCtrledBuffer %s", audio ? "audio" : "video");
+
+    sp<AMessage> reply;
+    CHECK(msg->findMessage("reply", &reply));
+    int cnt;
+    IFE_ERRORTYPE eRet;
+    int nFps;
+    status_t eSettingRet;
+
+    Mutex::Autolock autoLock(mLock);
+    if (IsFlushingState(audio ? mFlushingAudio : mFlushingVideo)) {
+        // We're currently attempting to flush the decoder, in order
+        // to complete this, the decoder wants all its buffers back,
+        // so we don't want any output buffers it sent us (from before
+        // we initiated the flush) to be stuck in the renderer's queue.
+
+        ALOGV("we're still flushing the %s decoder, sending its output buffer"
+             " right back.", audio ? "audio" : "video");
+
+        reply->post();
+        return;
+    }
+
+    sp<ABuffer> buffer;
+    CHECK(msg->findBuffer("buffer", &buffer));
+
+    int64_t &skipUntilMediaTimeUs =
+        audio
+            ? mSkipRenderingAudioUntilMediaTimeUs
+            : mSkipRenderingVideoUntilMediaTimeUs;
+
+        int64_t mediaTimeUs;
+        CHECK(buffer->meta()->findInt64("timeUs", &mediaTimeUs));
+        if(audio != true ) {
+            ALOGV("PTS is %lld US",mediaTimeUs);
+        }
+
+    if (skipUntilMediaTimeUs >= 0) {
+        if (mediaTimeUs < skipUntilMediaTimeUs) {
+            ALOGV("dropping %s buffer at time %lld as requested.",
+                 audio ? "audio" : "video",
+                 mediaTimeUs);
+
+            reply->post();
+            return;
+        }
+
+        skipUntilMediaTimeUs = -1;
+    }
+
+    if((bPLLAdjustmentDone != true) && (audio == true)) {
+        if(StoredAudioBuffers >= MAX_AUDIO_STORED_BUFFERS) {
+            ALOGE("No Space to store the Audio Messages ");
+            return ;
+        }
+        StoredreplyAudio[StoredAudioBuffers] = reply;
+        AudBuffer[StoredAudioBuffers] = buffer;
+        StoredAudioBuffers++;
+        ALOGE("Audio data Stored");
+    }
+
+    if((bPLLAdjustmentDone != true) && (audio != true)) {
+        VidBuffer[Fps_DecisionWindowCnt] = buffer;
+        Storedreply[Fps_DecisionWindowCnt] = reply;
+        Fps_DecisionWindowCnt++;
+        eRet = IfeAddPts(mIfe, us2ns(mediaTimeUs));
+        if(IFE_NO_ERROR == eRet) {
+            eRet = IfeGetCurrentFps(mIfe, &nFps);
+            int64_t fps;
+            ALOGE("Estimated input fps: %d", nFps);
+            eSettingRet = getClipFps(nFps, &fps);
+            ALOGE("stored fps:%lld and new Value %lld",mFps,fps);
+            if(( eSettingRet == OK) && (mFps != fps)) {
+                ALOGE("fps not matched with previous interpolation loop cnt %d",Fps_DecisionWindowCnt);
+                mFps = fps;
+             }
+        }
+        if(Fps_DecisionWindowCnt == FPS_DECISION_WINDOW) {
+            int AudioBufCnt = 0;
+            if(mFps != DEFAULT_HWC_FRAMEREFRESH) {
+                SetOutputFramerate();
+            }
+            bPLLAdjustmentDone = true;
+            for(AudioBufCnt = 0;AudioBufCnt < StoredAudioBuffers;AudioBufCnt++)
+            {
+                mRenderer->queueBuffer(audio, AudBuffer[AudioBufCnt],StoredreplyAudio[AudioBufCnt]);
+            }
+            for (cnt = 0;cnt<(FPS_DECISION_WINDOW-1);cnt++) {
+                    ALOGE("Queue the Stored Buffer after adjustment");
+                    mRenderer->queueBuffer(audio, VidBuffer[cnt], Storedreply[cnt]);
+               }
+          }
+    }
+    if(bPLLAdjustmentDone != true ) return;
+    //Render the Audio
+    if(mRenderer != NULL) {
+        ALOGV("Normal queing Buffer");
+        mRenderer->queueBuffer(audio, buffer, reply);
+    }
+}
+
 void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
-    // ALOGV("renderBuffer %s", audio ? "audio" : "video");
+    ALOGV("renderBuffer %s", audio ? "audio" : "video");
 
     sp<AMessage> reply;
     CHECK(msg->findMessage("reply", &reply));
@@ -1335,10 +1531,9 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
             ? mSkipRenderingAudioUntilMediaTimeUs
             : mSkipRenderingVideoUntilMediaTimeUs;
 
-    if (skipUntilMediaTimeUs >= 0) {
+        if (skipUntilMediaTimeUs >= 0) {
         int64_t mediaTimeUs;
         CHECK(buffer->meta()->findInt64("timeUs", &mediaTimeUs));
-
         if (mediaTimeUs < skipUntilMediaTimeUs) {
             ALOGV("dropping %s buffer at time %lld as requested.",
                  audio ? "audio" : "video",
