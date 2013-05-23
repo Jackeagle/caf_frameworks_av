@@ -3291,7 +3291,8 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
 
     int32_t value = 0;
     if (msg->findInt32("decodeOrderEnable", &value) && (value == 1) &&
-       !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str())) {
+       !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str()) ||
+       !strcmp("OMX.qcom.video.decoder.avc.secure",mCodec->mComponentName.c_str())) {
 
        QOMX_VIDEO_DECODER_PICTURE_ORDER prm;
        InitOMXParams(&prm);
@@ -3306,7 +3307,8 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     }
 
     if (msg->findInt32("videoHwTurboMode", &value) && (value == 1) &&
-       !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str())) {
+       !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str()) ||
+       !strcmp("OMX.qcom.video.decoder.avc.secure",mCodec->mComponentName.c_str())) {
 
        QOMX_ENABLETYPE enable;
        enable.bEnable = OMX_TRUE;
