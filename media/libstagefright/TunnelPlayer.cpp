@@ -319,22 +319,29 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
     if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC)) {
         mFormat = AUDIO_FORMAT_AAC;
     }
-    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB)) {
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB)) {
         mFormat = AUDIO_FORMAT_AMR_WB;
-        ALOGV("TunnelPlayer::start AUDIO_FORMAT_AMR_WB");
+        ALOGD("TunnelPlayer::start AUDIO_FORMAT_AMR_WB");
     }
-    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS)) {
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS)) {
         mFormat = AUDIO_FORMAT_AMR_WB_PLUS;
-        ALOGV("TunnelPlayer::start AUDIO_FORMAT_AMR_WB_PLUS");
+        ALOGD("TunnelPlayer::start AUDIO_FORMAT_AMR_WB_PLUS");
     }
-    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AC3)) {
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AC3)) {
         mFormat = AUDIO_FORMAT_AC3;
         ALOGV("TunnelPlayer::start AUDIO_FORMAT_AC3");
     }
-    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_EAC3)) {
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_EAC3)) {
         mFormat = AUDIO_FORMAT_EAC3;
         ALOGV("TunnelPlayer::start AUDIO_FORMAT_EAC3");
     }
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_MPEG)) {
+        mFormat = AUDIO_FORMAT_MP3;
+        ALOGD("TunnelPlayer::start AUDIO_FORMAT_MP3");
+    } else {
+        ALOGE("TunnelPlayer::UNSUPPORTED");
+    }
+
 
     CHECK(success);
 
@@ -470,6 +477,7 @@ void TunnelPlayer::resume() {
                 (mA2DPEnabled ?  AUDIO_OUTPUT_FLAG_NONE : flags ));
             if (err != NO_ERROR) {
                 ALOGE("Audio sink open failed.");
+                return;
             }
             mIsAudioRouted = true;
         }

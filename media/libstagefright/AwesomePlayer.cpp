@@ -354,11 +354,27 @@ status_t AwesomePlayer::setDataSource_l(
     return OK;
 }
 
+void AwesomePlayer::printFileName(int fd) {
+
+    char symName[40] = {0};
+    char fileName[256] = {0};
+
+    sprintf(symName, "/proc/%d/fd/%d", getpid(), fd);
+
+    if (readlink( symName, fileName, 256) != -1 ) {
+        ALOGD("printFileName fd(%d) -> %s", fd, fileName);
+    }
+}
+
 status_t AwesomePlayer::setDataSource(
         int fd, int64_t offset, int64_t length) {
     Mutex::Autolock autoLock(mLock);
 
+    ALOGD("Before reset_l");
     reset_l();
+
+    if(fd)
+        printFileName(fd);
 
     sp<DataSource> dataSource = new FileSource(fd, offset, length);
 
@@ -993,10 +1009,12 @@ status_t AwesomePlayer::play_l() {
                     if(mVideoSource != NULL) {
                         // The parameter true is to inform tunnel player that
                         // clip is audio video
+                        ALOGD("Tunnel for video");
                         mAudioPlayer = new TunnelPlayer(mAudioSink, initCheck,
                                 this, true);
                     }
                     else {
+                        ALOGD("Tunnel for audio");
                         mAudioPlayer = new TunnelPlayer(mAudioSink, initCheck,
                                 this);
                     }
@@ -1023,8 +1041,10 @@ status_t AwesomePlayer::play_l() {
                 property_get("lpa.min_duration",minUserDefDuration,"LPA_MIN_DURATION_USEC_DEFAULT");
                 minDurationForLPA = atoi(minUserDefDuration);
                 if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
-                    ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
-                    minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+                    if(mAudioPlayer == NULL) {
+                        ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
+                        minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+                    }
                 }
                 if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) &&
                    (tunnelObjectsAlive==0) && (nchannels && (nchannels <= 2)))
@@ -1037,6 +1057,7 @@ status_t AwesomePlayer::play_l() {
                         bool initCheck =  false;
                         mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
                         if(!initCheck) {
+                             ALOGE("deleting Tunnel Player - initCheck failed");
                              delete mAudioPlayer;
                              mAudioPlayer = NULL;
                         }
@@ -1143,6 +1164,7 @@ status_t AwesomePlayer::startAudioPlayer_l(bool sendErrorNotification) {
                 true /* sourceAlreadyStarted */);
 
         if (err != OK) {
+            ALOGE("AudioPlayer start error");
             if (sendErrorNotification) {
                 notifyListener_l(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, err);
             }
