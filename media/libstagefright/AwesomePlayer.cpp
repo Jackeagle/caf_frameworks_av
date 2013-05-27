@@ -70,11 +70,19 @@ Copyright (c) 2012, The Linux Foundation. All rights reserved.
 
 #include <gralloc_priv.h>
 #include <qdMetaData.h>
+#include <cutils/properties.h>
 
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
 
 #define DEFAULT_HWC_FRAMEREFRESH 60000
+
+#define FRC_FIRST_FRAME_SLEEP_US 30000
+#define FRC_WAIT_FOR_PLAY_POLLING_TIME_US 3000
+#define MAX_FRC_WAIT_FOR_PLAY_POLLING 10
+#define FRC_INVALID_FPS 1000000
+#define MAX_FRC_TIMEOUT_CNT 4
+
 namespace android {
 
 static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
@@ -146,9 +154,69 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
             int32_t rotationDegrees)
         : mNativeWindow(nativeWindow) {
         applyRotation(rotationDegrees);
-        mLastRenderTimeUs = 0;
         mVideoFrameCounter = 0;
+        mLastRenderTimeUs = 0;
+        mLastBufHandle = 0;
+        mFrcDisable = false;
+        mLastVideoTimeUs = 0;
+        mTimeoutBase = 0;
+        mTimeoutCnt = 0;
+        char prop[128];
+        if (property_get("media.disable-frc", prop, NULL)
+                && (!strcmp(prop, "1") || !strcasecmp(prop, "true"))) {
+            mFrcDisable = true;
+        }
+        ALOGD("media.disable-frc: %s, frc_disable:%d", prop, mFrcDisable);
     }
+
+#ifdef QCOM_BSP
+    int renderTimeCtrl(private_handle_t* pBufPrvtHandle, MetaData_t *curDispBuffMetaData)
+    {
+        int64_t cur_time;
+        int nErr = 0, poll_cnt = 0, poll_max;
+
+        if (mFrcDisable)
+            return 0;
+        MetaData_t sDispBuffMetaData;
+        if (mLastBufHandle == 0) {
+           usleep(FRC_FIRST_FRAME_SLEEP_US);
+        } else {
+            poll_max = curDispBuffMetaData->videoFrame.timestamp - mLastVideoTimeUs;
+            poll_max /= (FRC_WAIT_FOR_PLAY_POLLING_TIME_US * 2);
+            if (poll_max > MAX_FRC_WAIT_FOR_PLAY_POLLING)
+                poll_max = MAX_FRC_WAIT_FOR_PLAY_POLLING;
+            while (poll_cnt < poll_max){
+                nErr = getMetaData(mLastBufHandle, PP_PARAM_VIDEO_FRAME, (void*)&sDispBuffMetaData.videoFrame);
+                if (nErr != 0) {
+                    mFrcDisable = true;
+                    break;
+                }
+                if (sDispBuffMetaData.videoFrame.hwc_play_time)
+                    break;
+                usleep(FRC_WAIT_FOR_PLAY_POLLING_TIME_US);
+                poll_cnt++;
+            }
+            if (poll_cnt >= poll_max) {
+                mTimeoutCnt++;
+                if (mTimeoutCnt >= MAX_FRC_TIMEOUT_CNT) {
+                    if ((curDispBuffMetaData->videoFrame.counter - mTimeoutBase) <= MAX_FRC_TIMEOUT_CNT)
+                        mFrcDisable = true;
+                    else
+                        mTimeoutBase = curDispBuffMetaData->videoFrame.counter;
+                    mTimeoutCnt = 0;
+                }
+            }
+        }
+        cur_time= ns2us(systemTime());
+        ALOGV("frc: frame=%d  hwc_play_time=%d poll_cnt=%d delay=%d ts=%d",
+            sDispBuffMetaData.videoFrame.counter, (int)(sDispBuffMetaData.videoFrame.hwc_play_time / 1000), poll_cnt,
+            (int)((sDispBuffMetaData.videoFrame.hwc_play_time - mLastRenderTimeUs) / 1000), (int)curDispBuffMetaData->videoFrame.timestamp);
+        mLastRenderTimeUs = cur_time;
+        mLastBufHandle = pBufPrvtHandle;
+        mLastVideoTimeUs = curDispBuffMetaData->videoFrame.timestamp;
+        return nErr;
+    }
+#endif
 
     virtual void render(MediaBuffer *buffer) {
         ATRACE_CALL();
@@ -159,25 +227,22 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
         {
             int nErr;
             MetaData_t sDispBuffMetaData;
-            int64_t curTime;
 
             private_handle_t* pBufPrvtHandle = (private_handle_t *)buffer->graphicBuffer().get()->handle;
             memset(&sDispBuffMetaData, 0, sizeof(MetaData_t));
             sDispBuffMetaData.videoFrame.frc_enable = true;
             sDispBuffMetaData.videoFrame.timestamp = timeUs;
             sDispBuffMetaData.videoFrame.counter = mVideoFrameCounter++;
-
+            sDispBuffMetaData.videoFrame.render_time = ns2us(systemTime());
+            if (mFrcDisable)
+                sDispBuffMetaData.videoFrame.fp100s = FRC_INVALID_FPS;
+            else
+                renderTimeCtrl(pBufPrvtHandle, &sDispBuffMetaData);
             nErr = setMetaData(pBufPrvtHandle, PP_PARAM_VIDEO_FRAME, (void*)&sDispBuffMetaData.videoFrame);
             if(0 != nErr)
             {
                 ALOGE("Error:%d in setMetaData PP_PARAM_VIDEO_FRAME", nErr);
             }
-            else
-            {
-                ALOGD("setMetaData PP_PARAM_TIMESTAMP: %lld us Counter=%d", timeUs, mVideoFrameCounter);
-            }
-            curTime = ns2us(systemTime());
-            mLastRenderTimeUs = curTime;
         }
 #endif
         status_t err = mNativeWindow->queueBuffer(
@@ -217,9 +282,13 @@ private:
     AwesomeNativeWindowRenderer(const AwesomeNativeWindowRenderer &);
     AwesomeNativeWindowRenderer &operator=(
             const AwesomeNativeWindowRenderer &);
-
+    int32_t mVideoFrameCounter;
     int64_t mLastRenderTimeUs;
-    uint32_t mVideoFrameCounter;
+    private_handle_t* mLastBufHandle;
+    int64_t mLastVideoTimeUs;
+    bool mFrcDisable;
+    int32_t mTimeoutBase;
+    int32_t mTimeoutCnt;
 };
 
 // To collect the decoder usage
