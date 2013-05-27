@@ -363,6 +363,7 @@ status_t AwesomePlayer::setDataSource_l(
 
 void AwesomePlayer::checkDrmStatus(const sp<DataSource>& dataSource) {
     dataSource->getDrmInfo(mDecryptHandle, &mDrmManagerClient);
+
     if (mDecryptHandle != NULL) {
         CHECK(mDrmManagerClient);
         if (RightsStatus::RIGHTS_VALID != mDecryptHandle->status) {
@@ -1408,7 +1409,7 @@ status_t AwesomePlayer::getPosition(int64_t *positionUs) {
             && (mAudioPlayer == NULL || !(mFlags & VIDEO_AT_EOS))) {
         Mutex::Autolock autoLock(mMiscStateLock);
         *positionUs = mVideoTimeUs;
-    } else if (mAudioPlayer != NULL) {
+    } else if (mAudioPlayer != NULL && !(mFlags&AT_EOS)) {
         *positionUs = mAudioPlayer->getMediaTimeUs();
     } else {
         *positionUs = 0;
