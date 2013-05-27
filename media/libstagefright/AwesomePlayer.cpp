@@ -79,6 +79,13 @@
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
 
+#define CADENCE_DELAY_STATIC_ADJUSTMENT 300
+#define CADENCE_DELAY_DYNAMIC_ADJUSTMENT_MAX 2000
+#define CADENCE_DELAY_DYNAMIC_ADJUSTMENT_MIN -100
+#define CADENCE_MAX_SLEEP_US 30000
+#define CADENCE_MAX_FRAME_PERIOD 30000
+#define CADENCE_DELAY_START_FRAME_COUNT 3
+
 namespace android {
 
 static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
@@ -147,10 +154,53 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
             int32_t rotationDegrees)
         : mNativeWindow(nativeWindow) {
         applyRotation(rotationDegrees);
-        mLastRenderTimeUs = 0;
+        mLastRenderTimeUs = -1;
+        mLastVideoTimeUs  = -1;
         mVideoFrameCounter = 0;
+        mLastRenderDeltaTimeUs = 0;
+        mMinVideoDelta = 10000000;
     }
+#ifdef QCOM_BSP
+    void renderTimeCtrl(int64_t timeUs) {
+        int64_t cur_ts, cur_ts_delayed, vts_delta = -1, real_delta, sleepTime = 0;
+        struct timeval tv;
 
+        if (mLastVideoTimeUs >= 0) {
+            vts_delta = timeUs - mLastVideoTimeUs;
+            if (mMinVideoDelta > vts_delta)
+                mMinVideoDelta = vts_delta;
+            vts_delta -= CADENCE_DELAY_STATIC_ADJUSTMENT;
+        }
+        gettimeofday(&tv, NULL);
+        cur_ts = (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+        if ((mLastRenderTimeUs > 0) && (vts_delta > 0) && (mMinVideoDelta > CADENCE_MAX_FRAME_PERIOD) &&
+            ((cur_ts - mLastRenderTimeUs) < (vts_delta - mLastRenderDeltaTimeUs)) &&
+            (mVideoFrameCounter > 1)) {
+            sleepTime = (vts_delta - mLastRenderDeltaTimeUs)-(cur_ts - mLastRenderTimeUs);
+            if (sleepTime > CADENCE_MAX_SLEEP_US)
+                sleepTime = CADENCE_MAX_SLEEP_US;
+            if (sleepTime > 0)
+                usleep(sleepTime);
+        } else if (mVideoFrameCounter == 1) {
+           sleepTime = CADENCE_MAX_SLEEP_US;
+           usleep(sleepTime);
+        }
+        gettimeofday(&tv, NULL);
+        cur_ts_delayed = (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+        real_delta = cur_ts_delayed - mLastRenderTimeUs;
+        ALOGV("QB: frame=%d Vts=%d, Cts=%lld, Sts=%lld, diff=%d, Td=%d, Sleep=%d", mVideoFrameCounter, (int)timeUs, cur_ts, cur_ts_delayed,
+            (int)real_delta, (int)(vts_delta-mLastRenderDeltaTimeUs), (int)sleepTime);
+        if (mLastRenderTimeUs > 0) {
+            mLastRenderDeltaTimeUs = real_delta - vts_delta;
+            if (mLastRenderDeltaTimeUs > CADENCE_DELAY_DYNAMIC_ADJUSTMENT_MAX)
+                mLastRenderDeltaTimeUs = CADENCE_DELAY_DYNAMIC_ADJUSTMENT_MAX;
+            if (mLastRenderDeltaTimeUs < CADENCE_DELAY_DYNAMIC_ADJUSTMENT_MIN)
+                mLastRenderDeltaTimeUs = CADENCE_DELAY_DYNAMIC_ADJUSTMENT_MIN;
+        }
+        mLastRenderTimeUs = cur_ts_delayed;
+        mLastVideoTimeUs = timeUs;
+    }
+#endif
     virtual void render(MediaBuffer *buffer) {
         ATRACE_CALL();
         int64_t timeUs;
@@ -160,25 +210,18 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
         {
             int nErr;
             MetaData_t sDispBuffMetaData;
-            int64_t curTime;
 
             private_handle_t* pBufPrvtHandle = (private_handle_t *)buffer->graphicBuffer().get()->handle;
             memset(&sDispBuffMetaData, 0, sizeof(MetaData_t));
             sDispBuffMetaData.videoFrame.frc_enable = true;
             sDispBuffMetaData.videoFrame.timestamp = timeUs;
             sDispBuffMetaData.videoFrame.counter = mVideoFrameCounter++;
-
             nErr = setMetaData(pBufPrvtHandle, PP_PARAM_VIDEO_FRAME, (void*)&sDispBuffMetaData.videoFrame);
             if(0 != nErr)
             {
                 ALOGE("Error:%d in setMetaData PP_PARAM_VIDEO_FRAME", nErr);
             }
-            else
-            {
-                ALOGD("setMetaData PP_PARAM_TIMESTAMP: %lld us Counter=%d", timeUs, mVideoFrameCounter);
-            }
-            curTime = ns2us(systemTime());
-            mLastRenderTimeUs = curTime;
+            renderTimeCtrl(timeUs);
         }
 #endif
         status_t err = mNativeWindow->queueBuffer(
@@ -220,7 +263,10 @@ private:
             const AwesomeNativeWindowRenderer &);
 
     int64_t mLastRenderTimeUs;
+    int64_t mLastVideoTimeUs;
+    int64_t mLastRenderDeltaTimeUs;
     uint32_t mVideoFrameCounter;
+	uint32_t mMinVideoDelta;
 };
 
 // To collect the decoder usage
