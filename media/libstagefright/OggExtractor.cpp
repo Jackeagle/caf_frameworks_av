@@ -320,7 +320,7 @@ status_t MyVorbisExtractor::seekToTime(int64_t timeUs) {
     }
 
     size_t left = 0;
-    size_t right = mTableOfContents.size();
+    size_t right = mTableOfContents.size() - 1;
     while (left < right) {
         size_t center = left / 2 + right / 2 + (left & right & 1);
 
