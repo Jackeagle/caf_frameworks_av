@@ -33,7 +33,11 @@
 #include <media/stagefright/OMXClient.h>
 #include <OMX_Audio.h>
 #include <media/stagefright/OMXCodec.h>
-
+//Smmoth streaming settings
+//Max resolution 1080p
+#define MAX_WIDTH 1920;
+#define MAX_HEIGHT 1080;
+#include <cutils/properties.h>
 #include <media/hardware/HardwareAPI.h>
 
 #include <OMX_Component.h>
@@ -368,7 +372,8 @@ ACodec::ACodec()
       mEncoderDelay(0),
       mEncoderPadding(0),
       mChannelMaskPresent(false),
-      mChannelMask(0) {
+      mChannelMask(0) ,
+      mSmoothStreaming(false) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -605,6 +610,12 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
     if (def.nBufferCountActual < def.nBufferCountMin + minUndequeuedBufs) {
         OMX_U32 newBufferCount = def.nBufferCountMin + minUndequeuedBufs;
         def.nBufferCountActual = newBufferCount;
+
+        //Keep an extra buffer for smooth streaming
+        if (mSmoothStreaming) {
+            def.nBufferCountActual += 1;
+        }
+
         err = mOMX->setParameter(
                 mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
 
@@ -953,6 +964,11 @@ status_t ACodec::configureCodec(
                     || !msg->findInt32("height", &height)) {
                 err = INVALID_OPERATION;
             } else {
+                //override height & width with max for smooth streaming
+                if (mSmoothStreaming) {
+                    width = MAX_WIDTH;
+                    height = MAX_HEIGHT;
+                }
                 err = setupVideoDecoder(mime, width, height);
             }
         }
@@ -1559,7 +1575,31 @@ status_t ACodec::setupVideoDecoder(
     if (err != OK) {
         return err;
     }
-
+    char ss_disable[PROPERTY_VALUE_MAX];
+    property_get("disable.video.dec.ss",ss_disable,"0");
+    if(!strcmp("true",ss_disable) || atoi(ss_disable)) {
+      ALOGV("disable.video.dec.ss property is set..skipping smooth streaming..");
+    } else {
+    //enable smoothstreaming
+    OMX_INDEXTYPE index = OMX_IndexMax;
+      ALOGV("Querying for Smooth streaming extension...");
+    err = mOMX->getExtensionIndex(
+            mNode,
+            "OMX.QCOM.index.param.enableSmoothStreaming",
+            &index);
+      ALOGV("Smooth streaming extension index = %d",(int32_t)index);
+    if (err == OK) {
+        OMX_BOOL enable = OMX_TRUE;
+          ALOGV("Enabling Smooth streaming");
+        mSmoothStreaming = true;
+        err = mOMX->setParameter(
+                mNode, index, &enable, sizeof(enable));
+    }
+    if (err != OK) {
+        mSmoothStreaming = false;
+        ALOGE("Failed to enable Smooth-streaming");
+      }
+    }
     return OK;
 }
 
@@ -2252,6 +2292,18 @@ void ACodec::sendFormatChange() {
             CHECK_LE(rect.nLeft + rect.nWidth - 1, videoDef->nFrameWidth);
             CHECK_LE(rect.nTop + rect.nHeight - 1, videoDef->nFrameHeight);
 
+            if( mSmoothStreaming ) {
+              //call Update buffer geometry here
+              ALOGV("Calling native window update buffer geometry videoDef->nFrameWidth %ld videoDef->nFrameHeight %ld",videoDef->nFrameWidth, videoDef->nFrameHeight);
+              status_t err = mNativeWindow.get()->perform(mNativeWindow.get(),
+                                         NATIVE_WINDOW_UPDATE_BUFFERS_GEOMETRY,
+                                         videoDef->nFrameWidth, videoDef->nFrameHeight, def.format.video.eColorFormat);
+              if( err != OK ) {
+                   ALOGV("native_window_update_buffers_geometry failed in SS mode %d", err);
+              }
+
+            }
+
             notify->setRect(
                     "crop",
                     rect.nLeft,
@@ -2622,6 +2674,7 @@ bool ACodec::BaseState::onOMXMessage(const sp<AMessage> &msg) {
             CHECK(msg->findInt64("timestamp", &timeUs));
             CHECK(msg->findPointer("platform_private", &platformPrivate));
             CHECK(msg->findPointer("data_ptr", &dataPtr));
+            ALOGV("FILL_BUFFER_DONE rangeOffset %d rangeLength %d",rangeOffset,rangeLength);
 
             return onOMXFillBufferDone(
                     bufferID,
@@ -2960,7 +3013,7 @@ bool ACodec::BaseState::onOMXFillBufferDone(
                 break;
             }
 
-            if (!mCodec->mIsEncoder && !mCodec->mSentFormat) {
+            if (!mCodec->mIsEncoder && !mCodec->mSentFormat && !mCodec->mSmoothStreaming) {
                 mCodec->sendFormatChange();
             }
 
@@ -2987,6 +3040,11 @@ bool ACodec::BaseState::onOMXFillBufferDone(
 
             sp<AMessage> reply =
                 new AMessage(kWhatOutputBufferDrained, mCodec->id());
+
+           if (!mCodec->mSentFormat && mCodec->mSmoothStreaming){
+                   ALOGV("Resolution will change from this buffer, set a flag");
+                   reply->setInt32("resChange", 1);
+            }
 
             reply->setPointer("buffer-id", info->mBufferID);
 
@@ -3031,6 +3089,14 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
         mCodec->findBufferByID(kPortIndexOutput, bufferID, &index);
     CHECK_EQ((int)info->mStatus, (int)BufferInfo::OWNED_BY_DOWNSTREAM);
 
+    if (mCodec->mSmoothStreaming && !mCodec->mSentFormat) {
+        int32_t resChange = 0;
+        if (msg->findInt32("resChange", &resChange) && resChange == 1) {
+            ALOGV("ACodec::BaseState::onOutputBufferDrained Resolution change being sent to native windo.. ");
+            mCodec->sendFormatChange();
+            msg->setInt32("resChange", 0);
+        }
+    }
     int32_t render;
     if (mCodec->mNativeWindow != NULL
             && msg->findInt32("render", &render) && render != 0) {
