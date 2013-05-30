@@ -263,6 +263,7 @@ private:
 
     //Fallback to Ittiam Software Decoder
     bool mIsIttiamDecoderRequired;
+    bool mFrcEnable;
 
     /* This is used to set decoder to frame-by-frame mode */
     bool mFrameAssemblyOneFrame;
