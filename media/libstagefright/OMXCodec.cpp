@@ -568,6 +568,7 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
 
+            QCOMXCodec::setAVCProfileLevel(profile, level, mOMX, mNode, mComponentName);
             mInterlaceFormatDetected = QCOMXCodec::checkIfInterlaced((const uint8_t *)data, meta);
             CODEC_LOGI(
                     "AVC profile = %u (%s), level = %u",
