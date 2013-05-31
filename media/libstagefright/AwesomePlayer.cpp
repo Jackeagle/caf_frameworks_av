@@ -238,7 +238,7 @@ AwesomePlayer::~AwesomePlayer() {
 
     // Disable Tunnel Mode Audio
     if (mIsTunnelAudio) {
-        if(mTunnelAliveAP > 0) {
+        if (mTunnelAliveAP > 0) {
             mTunnelAliveAP--;
             ALOGV("mTunnelAliveAP = %d", mTunnelAliveAP);
         }
@@ -986,7 +986,7 @@ status_t AwesomePlayer::play_l() {
 
                 if(mIsTunnelAudio && (mAudioPlayer == NULL) &&
                         (LPAPlayer::objectsAlive == 0) &&
-                        (TunnelPlayer::mTunnelObjectsAlive == 0)) {
+                        (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax())) {
                     ALOGD("Tunnel player created for  mime %s duration %lld\n",\
                         mime, mDurationUs);
                     bool initCheck =  false;
@@ -1027,7 +1027,10 @@ status_t AwesomePlayer::play_l() {
                     minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
                 }
                 if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) &&
-                   (tunnelObjectsAlive==0) && (nchannels && (nchannels <= 2)))
+#ifdef USE_TUNNEL_MODE
+                   (tunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
+#endif
+                   (nchannels && (nchannels <= 2)))
                 {
                     ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::objectsAlive);
                     if ( mDurationUs > minDurationForLPA
@@ -1572,10 +1575,10 @@ status_t AwesomePlayer::initAudioDecoder() {
             mime, (TunnelPlayer::mTunnelObjectsAlive), mTunnelAliveAP);
 
     bool sys_prop_enabled = !strcmp("true",tunnelDecode) || atoi(tunnelDecode);
-
+    ALOGD("maxPossible tunnels = %d", TunnelPlayer::getTunnelObjectsAliveMax());
     //widevine will fallback to software decoder
-    if (sys_prop_enabled && (TunnelPlayer::mTunnelObjectsAlive == 0) &&
-       (mTunnelAliveAP == 0) && (isADTS == 0) &&
+    if (sys_prop_enabled && (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
+       (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax()) && (isADTS == 0) &&
         mAudioSink->realtime() &&
         inSupportedTunnelFormats(mime)) {
 
@@ -1606,7 +1609,11 @@ status_t AwesomePlayer::initAudioDecoder() {
     checkTunnelExceptions();
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
-             (mIsTunnelAudio && (mTunnelAliveAP == 0))) {
+             (mIsTunnelAudio
+#ifdef USE_TUNNEL_MODE
+             && (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax())
+#endif
+    )) {
         ALOGD("Set Audio Track as Audio Source");
         if(mIsTunnelAudio) {
             mTunnelAliveAP++;

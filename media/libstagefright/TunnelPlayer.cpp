@@ -48,6 +48,7 @@
 #include "include/AwesomePlayer.h"
 #include <powermanager/PowerManager.h>
 
+#include <cutils/properties.h>
 static const char   mName[] = "TunnelPlayer";
 #define MEM_METADATA_SIZE 64
 #define MEM_PADDING 64
@@ -116,6 +117,14 @@ mObserver(observer) {
     initCheck = true;
 
     //mDeathRecipient = new PMDeathRecipient(this);
+}
+const int TunnelPlayer::getTunnelObjectsAliveMax() {
+    char value[PROPERTY_VALUE_MAX];
+    property_get("tunnel.multiple", value, "0");
+    if (strcmp("true",value) == 0) {
+        return 4;
+    }
+    return 1;
 }
 void TunnelPlayer::acquireWakeLock()
 {
