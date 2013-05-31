@@ -11,6 +11,10 @@ ifeq ($(BOARD_USES_ALSA_AUDIO),true)
     endif
 endif
 
+ifeq ($(TARGET_USES_QCOM_BSP),true)
+    LOCAL_CFLAGS += -DQCOM_BSP
+endif
+
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 LOCAL_SRC_FILES:=                         \
@@ -83,7 +87,9 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
-        $(TOP)/hardware/qcom/media/mm-core/inc
+        $(TOP)/hardware/qcom/media/mm-core/inc \
+        $(TOP)/hardware/qcom/display/libgralloc \
+        $(TOP)/hardware/qcom/display/libqdutils
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -108,6 +114,11 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz \
+
+ifeq ($(TARGET_USES_QCOM_BSP),true)
+    LOCAL_SHARED_LIBRARIES += \
+        libqdMetaData
+endif
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
