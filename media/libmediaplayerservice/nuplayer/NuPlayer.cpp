@@ -986,6 +986,9 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
     sp<ABuffer> buffer;
     CHECK(msg->findBuffer("buffer", &buffer));
 
+    if(mWFDSinkSession){
+        reply->setInt32("WFDSinkSession", 1);
+    }
     int64_t &skipUntilMediaTimeUs =
         audio
             ? mSkipRenderingAudioUntilMediaTimeUs

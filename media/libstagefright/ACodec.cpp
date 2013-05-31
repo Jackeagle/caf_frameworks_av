@@ -45,6 +45,9 @@
 #include <QOMX_AudioExtensions.h>
 #include <QOMX_AudioIndexExtensions.h>
 #include "include/avc_utils.h"
+#include <gralloc_priv.h>
+#include <qdMetaData.h>
+#include <cutils/properties.h> // for property_get
 
 namespace android {
 
@@ -154,6 +157,8 @@ protected:
     void postFillThisBuffer(BufferInfo *info);
 
 private:
+    uint32_t mVideoFrameCounter;
+
     bool onOMXMessage(const sp<AMessage> &msg);
 
     bool onOMXEmptyBufferDone(IOMX::buffer_id bufferID);
@@ -373,7 +378,17 @@ ACodec::ACodec()
       mEncoderPadding(0),
       mChannelMaskPresent(false),
       mChannelMask(0) ,
-      mSmoothStreaming(false) {
+      mSmoothStreaming(false),
+      mFrcEnable(true) {
+
+    /* Read all the relevant properties */
+    char prop[128];
+    if (property_get("media.disable-frc", prop, NULL)
+            && (!strcmp(prop, "1") || !strcasecmp(prop, "true"))) {
+        mFrcEnable = false;
+    }
+    ALOGD("media.disable-frc: %s", prop);
+
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -2585,6 +2600,7 @@ sp<ABuffer> ACodec::PortDescription::bufferAt(size_t index) const {
 ACodec::BaseState::BaseState(ACodec *codec, const sp<AState> &parentState)
     : AState(parentState),
       mCodec(codec) {
+    mVideoFrameCounter = 0;
 }
 
 ACodec::BaseState::PortMode ACodec::BaseState::getPortMode(OMX_U32 portIndex) {
@@ -3101,7 +3117,43 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
     if (mCodec->mNativeWindow != NULL
             && msg->findInt32("render", &render) && render != 0) {
         // The client wants this buffer to be rendered.
+#ifdef QCOM_BSP
+        /* SetMetadata to the display buffer */
+        {
+            int64_t timeUs;
+            int nErr, wfdSinkSession = 0;
+            MetaData_t sDispBuffMetaData;
 
+            /* Read time stamp from the decoded buffer */
+            info->mData->meta()->findInt64("timeUs", &timeUs);
+            msg->findInt32("WFDSinkSession", &wfdSinkSession);
+            if(wfdSinkSession){
+                mCodec->mFrcEnable = false;
+            }
+
+            memset(&sDispBuffMetaData, 0, sizeof(MetaData_t));
+            sDispBuffMetaData.videoFrame.frc_enable = mCodec->mFrcEnable;
+            sDispBuffMetaData.videoFrame.timestamp = timeUs;
+            sDispBuffMetaData.videoFrame.counter = mVideoFrameCounter++;
+
+            private_handle_t* pBufPrvtHandle =
+                (private_handle_t *)info->mGraphicBuffer.get()->handle;
+
+            nErr = setMetaData(pBufPrvtHandle, PP_PARAM_VIDEO_FRAME,
+                               (void*)&sDispBuffMetaData.videoFrame);
+            if(0 != nErr)
+            {
+                ALOGE("Error:%d in setMetaData PP_PARAM_VIDEO_FRAME", nErr);
+            }
+            else
+            {
+                ALOGD("setMetaData PP_PARAM_VIDEO_FRAME: timestamp: %lld uS, "
+                      "counter: %d frc-enable: %d",
+                   sDispBuffMetaData.videoFrame.timestamp, mVideoFrameCounter,
+                   sDispBuffMetaData.videoFrame.frc_enable);
+            }
+        }
+#endif
         status_t err;
         if ((err = mCodec->mNativeWindow->queueBuffer(
                     mCodec->mNativeWindow.get(),
