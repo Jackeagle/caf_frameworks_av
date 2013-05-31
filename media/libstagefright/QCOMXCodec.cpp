@@ -592,6 +592,21 @@ void QCOMXCodec::setQCSpecificVideoFormat(const sp<MetaData> &meta, sp<IOMX> OMX
     }
 }
 
+status_t QCOMXCodec::enableSmoothStreaming(
+        const sp<IOMX> &omx, IOMX::node_id nodeID)
+{
+    status_t err = omx->setParameter(
+            nodeID,
+            (OMX_INDEXTYPE)OMX_QcomIndexParamEnableSmoothStreaming,
+            &err, sizeof(status_t));
+    if (err != OK) {
+        ALOGE("Failed to enable Smoothstreaming");
+        return err;
+    }
+    ALOGI("Smoothstreaming Enabled");
+    return OK;
+}
+
 void QCOMXCodec::checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta)
 {
     uint16_t spsSize = (((uint16_t)ptr[6]) << 8) + (uint16_t)(ptr[7]);
