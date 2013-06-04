@@ -56,6 +56,8 @@
 #include "include/QCUtilityClass.h"
 namespace android {
 
+static const bool isSmoothStreamingEnabled = true;
+
 // Treat time out as an error if we have not received any output
 // buffers after 3 seconds.
 const static int64_t kBufferFilledEventTimeOutNs = 3000000000LL;
@@ -708,6 +710,13 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             }
 
             QCOMXCodec::setQCSpecificVideoFormat(meta,mOMX,mNode,mComponentName );
+            if (isSmoothStreamingEnabled && !strncmp(mComponentName, "OMX.qcom.", 9)) {
+                err = QCOMXCodec::enableSmoothStreaming(mOMX, mNode);
+                if (err != OK) {
+                    return err;
+                }
+                mInSmoothStreamingMode = true;
+            }
         }
     }
 
@@ -1514,7 +1523,8 @@ OMXCodec::OMXCodec(
               (!strncmp(componentName, "OMX.google.", 11)
               || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
                         ? NULL : nativeWindow),
-      mNumBFrames(0) {
+      mNumBFrames(0),
+      mInSmoothStreamingMode(false) {
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
 
@@ -4996,7 +5006,18 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 }
 
                 if (mNativeWindow != NULL) {
-                     initNativeWindowCrop();
+                    if (mInSmoothStreamingMode) {
+                        CODEC_LOGI("Calling native window update buffer geometry [%lu x %lu]",
+                                video_def->nFrameWidth, video_def->nFrameHeight);
+                        status_t err = mNativeWindow.get()->perform(
+                                mNativeWindow.get(), NATIVE_WINDOW_UPDATE_BUFFERS_GEOMETRY,
+                                video_def->nFrameWidth, video_def->nFrameHeight,
+                                video_def->eColorFormat);
+                        if (err != OK) {
+                            CODEC_LOGE("NATIVE_WINDOW_UPDATE_BUFFERS_GEOMETRY failed %d", err);
+                        }
+                    }
+                    initNativeWindowCrop();
                 }
             } else {
                 QCUtilityClass::helper_OMXCodec_hfr(inputFormat, mOutputFormat);
