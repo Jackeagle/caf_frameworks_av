@@ -254,7 +254,13 @@ status_t NuCachedSource2::initCheck() const {
 }
 
 status_t NuCachedSource2::getSize(off64_t *size) {
-    return mSource->getSize(size);
+
+    status_t ret = mSource->getSize(size);
+    return ret;
+}
+
+status_t NuCachedSource2::getCurrentOffset(off64_t *size) {
+    return mSource->getCurrentOffset(size);
 }
 
 uint32_t NuCachedSource2::flags() {
