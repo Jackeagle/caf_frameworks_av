@@ -6526,6 +6526,17 @@ status_t AudioFlinger::DirectAudioTrack::start() {
         mOutputDesc->stream->start(mOutputDesc->stream);
     }
     mOutputDesc->mActive = true;
+    mOutputDesc->stream->set_volume(mOutputDesc->stream,
+                                    mOutputDesc->mVolumeLeft * mOutputDesc->mVolumeScale,
+                                    mOutputDesc->mVolumeRight* mOutputDesc->mVolumeScale);
+#ifdef DOLBY_DAP_QDSP
+    uint32_t volume[2];
+    volume[0] = (uint32_t)(mOutputDesc->mVolumeLeft * mOutputDesc->mVolumeScale * (1 << 24));
+    volume[1] = (uint32_t)(mOutputDesc->mVolumeRight* mOutputDesc->mVolumeScale * (1 << 24));
+
+    if (gDsNativeSetParam != NULL && !gMixerTracksActive && !gDirectOutputTrackActive)
+        (*gDsNativeSetParam)(DS_PARAM_PREGAIN, volume);
+#endif // DOLBY_DAP_QDSP
     return NO_ERROR;
 }
 
@@ -6580,21 +6591,27 @@ void AudioFlinger::DirectAudioTrack::mute(bool muted) {
 
 void AudioFlinger::DirectAudioTrack::setVolume(float left, float right) {
     ALOGV("DirectAudioTrack::setVolume left: %f, right: %f", left, right);
-    if(mOutputDesc && mOutputDesc->mActive &&  mOutputDesc->stream) {
+    if(mOutputDesc) {
         mOutputDesc->mVolumeLeft = left;
         mOutputDesc->mVolumeRight = right;
-        mOutputDesc->stream->set_volume(mOutputDesc->stream,
+        if(mOutputDesc->mActive &&  mOutputDesc->stream) {
+            mOutputDesc->stream->set_volume(mOutputDesc->stream,
                                     left * mOutputDesc->mVolumeScale,
                                     right* mOutputDesc->mVolumeScale);
 #ifdef DOLBY_DAP_QDSP
-        uint32_t volume[2];
-        volume[0] = (uint32_t)(mOutputDesc->mVolumeLeft * mOutputDesc->mVolumeScale * (1 << 24));
-        volume[1] = (uint32_t)(mOutputDesc->mVolumeRight* mOutputDesc->mVolumeScale * (1 << 24));
+            uint32_t volume[2];
+            volume[0] = (uint32_t)(mOutputDesc->mVolumeLeft * mOutputDesc->mVolumeScale * (1 << 24));
+            volume[1] = (uint32_t)(mOutputDesc->mVolumeRight* mOutputDesc->mVolumeScale * (1 << 24));
 
-        if (gDsNativeSetParam != NULL && !gMixerTracksActive && !gDirectOutputTrackActive) {
-            (*gDsNativeSetParam)(DS_PARAM_PREGAIN, volume);
-        }
+            if (gDsNativeSetParam != NULL && !gMixerTracksActive && !gDirectOutputTrackActive) {
+                (*gDsNativeSetParam)(DS_PARAM_PREGAIN, volume);
+            }
 #endif // DOLBY_DAP_QDSP
+        } else {
+            ALOGD("stream is not active, so cache and send when stream is active");
+        }
+    } else {
+        ALOGD("output descriptor is not valid to set the volume");
     }
 }
 
@@ -8177,6 +8194,7 @@ status_t AudioFlinger::closeOutput_nonvirtual(audio_io_handle_t output)
         desc->stream->common.standby(&desc->stream->common);
         desc->hwDev->close_output_stream(desc->hwDev, desc->stream);
         desc->trackRefPtr = NULL;
+        desc->stream = NULL;
         mDirectAudioTracks.removeItem(output);
         audioConfigChanged_l(AudioSystem::OUTPUT_CLOSED, output, NULL);
         delete desc;
