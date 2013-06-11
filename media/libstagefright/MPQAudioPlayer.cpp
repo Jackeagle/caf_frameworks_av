@@ -427,17 +427,14 @@ void MPQAudioPlayer::reset() {
     ALOGD("Reset called!!!!!");
     mAsyncReset = true;
 
+    if (mAudioSink.get()) {
+        ALOGV("Close the PCM Stream");
+        mAudioSink->flush();
+        mAudioSink->stop();
+    }
     // make sure Extractor thread has exited
     requestAndWaitForExtractorThreadExit();
     ALOGV("Extractor Thread killed");
-    // make sure the event thread also has exited
-
-    if (mAudioSink.get()) {
-        mAudioSink->pause();
-        mAudioSink->flush();
-        ALOGV("Close the PCM Stream");
-        mAudioSink->stop();
-    }
 
     if(mCodecSpecificData != NULL) {
        free(mCodecSpecificData);
@@ -816,9 +813,6 @@ void MPQAudioPlayer::requestAndWaitForExtractorThreadExit() {
 
     if (!mExtractorThreadAlive)
         return;
-    if (mIsPaused) {
-        mAudioSink->flush();
-    }
     ALOGD("mKillExtractorThread true");
     mKillExtractorThread = true;
     while (mExtractorThreadAlive) {
