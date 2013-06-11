@@ -365,6 +365,7 @@ status_t MPQAudioPlayer::seekPlayback() {
 void MPQAudioPlayer::pause(bool playPendingSamples) {
 
     Mutex::Autolock autolock(mLock);
+    Mutex::Autolock autolock1(mPauseLock);
     CHECK(mStarted);
 
     ALOGD("Pause: playPendingSamples %d", playPendingSamples);
@@ -599,8 +600,12 @@ void MPQAudioPlayer::extractorThreadEntry() {
             else
                 bytesToWrite = fillBuffer(mLocalBuf, mInputBufferSize);
             ALOGV("fillBuffer returned size %d",bytesToWrite);
-            if((mSeeking || mIsPaused) && mFirstEncodedBuffer)
+
+            mPauseLock.lock();
+            if((mSeeking || mIsPaused) && mFirstEncodedBuffer){
+                mPauseLock.unlock();
                 continue;
+            }
             //TODO : What if bytesWritetn is zero
             ALOGV("write - pcm  ++");
             if(mAudioSink.get() != NULL && bytesToWrite) {
@@ -620,6 +625,8 @@ void MPQAudioPlayer::extractorThreadEntry() {
                         bytesToWrite,mInputBufferSize);
                 mAudioSink->write(mLocalBuf, bytesToWrite);
             }
+            mPauseLock.unlock();
+
             if(mObserver && mReachedExtractorEOS) {
                 ALOGV("Posting EOS event..zero byte buffer ");
                 //TODO : make it POST EOS to amke sense for  Software
