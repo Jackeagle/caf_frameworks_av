@@ -377,8 +377,14 @@ private:
 
     bool mNumBFrames;
     bool mInSmoothStreamingMode;
+    bool mSignalledReadTryAgain;
+    bool mReturnedRetry;
+    int64_t mLastSeekTimeUs;
+    ReadOptions::SeekMode mLastSeekMode;
 
     status_t releaseMediaBuffersOn(OMX_U32 portIndex);
+
+    bool hasDisabledPorts();
 };
 
 struct CodecCapabilities {
