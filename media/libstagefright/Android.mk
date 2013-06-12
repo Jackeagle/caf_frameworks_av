@@ -14,6 +14,10 @@ ifeq ($(call is-board-platform-in-list,msm8660),true)
    LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
 endif
 
+ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+   LOCAL_CFLAGS += -DUSE_HWCPLL_CORRECTION
+endif
+
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 LOCAL_SRC_FILES:=                         \
@@ -100,7 +104,8 @@ LOCAL_C_INCLUDES:= \
 	$(TOP)/system/core/include \
 	$(TOP)/frameworks/av/media/libmediaplayerservice \
 	$(TOP)/frameworks/native/include/binder \
-	$(TOP)/frameworks/av/media/libstagefright/include
+	$(TOP)/frameworks/av/media/libstagefright/include \
+	$(TOP)/frameworks/av/media/libstagefright/utils
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -123,7 +128,7 @@ LOCAL_SHARED_LIBRARIES := \
         libui \
         libutils \
         libvorbisidec \
-        libz \
+        libz
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
@@ -136,7 +141,7 @@ LOCAL_STATIC_LIBRARIES := \
         libstagefright_mpeg2ts \
         libstagefright_httplive \
         libstagefright_id3 \
-        libFLAC \
+        libFLAC
 
 ifeq ($(call is-vendor-board-platform,QCOM),true)
     ifeq ($(BOARD_USES_ALSA_AUDIO),true)
@@ -170,7 +175,8 @@ LOCAL_SHARED_LIBRARIES += \
         libstagefright_enc_common \
         libstagefright_avc_common \
         libstagefright_foundation \
-        libdl
+        libdl \
+        libIfe
 
 LOCAL_CFLAGS += -Wno-multichar
 LOCAL_CFLAGS += -Werror

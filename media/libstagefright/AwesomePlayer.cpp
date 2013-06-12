@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution
+ *
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,15 +63,15 @@ Copyright (c) 2012, The Linux Foundation. All rights reserved.
 
 #include <gui/ISurfaceTexture.h>
 #include <gui/SurfaceTextureClient.h>
-
 #include <media/stagefright/foundation/AMessage.h>
-
 #include <cutils/properties.h>
 #include <gralloc_priv.h>
+#include <InFpsEstimator.h>
 
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
 
+#define DEFAULT_HWC_FRAMEREFRESH 60000
 namespace android {
 
 static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
@@ -216,10 +219,15 @@ AwesomePlayer::AwesomePlayer()
       mBufferingDone(false),
       mPostProcNativeWindow(NULL),
       mPostProcController(NULL),
-      mIsLocalPlayback(true) {
+      mIsLocalPlayback(true),
+      mFps(60000),
+      mFrameWindow(0),
+      bChangePLL(0),
+      bFpsChanged(false){
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
+    ALOGE("AwesomePlayer constructor W+C");
 
     mVideoEvent = new AwesomeEvent(this, &AwesomePlayer::onVideoEvent);
     mVideoEventPending = false;
@@ -262,13 +270,37 @@ AwesomePlayer::AwesomePlayer()
     reset();
     mIsTunnelAudio = false;
     mSecurePlayback = false;
+    mbHWPLLChangeSupport = false;
+    char acValue[10] = "";
+    if (property_get("sf.hwpllawesomeplayer.support", acValue, "1"))
+    {
+      mbHWPLLChangeSupport = (bool)atoi(acValue);
+      ALOGE("mbHWPLLChangeSupport is %d",mbHWPLLChangeSupport);
+    }
+
+    {
+        IFE_ERRORTYPE eRet;
+        IfeCreateParams sIfeCreateParams;
+        sIfeCreateParams.nSlidingWindowWidth = 2000;
+        eRet = IfeCreate(&sIfeCreateParams, (void **)&mIfe);
+        if(eRet){
+            ALOGE("Error in creating IFE");
+            mIfe = NULL;
+        }
+    }
 }
 
 AwesomePlayer::~AwesomePlayer() {
     if (mQueueStarted) {
         mQueue.stop();
     }
+    bChangePLL = 0;
 
+    if (mIfe != NULL) {
+         IfeDestroy(mIfe);
+         mIfe = NULL;
+    }
+    ALOGE("AwesomePlayer destructor W+C");
     if (mStatistics) {
         Mutex::Autolock autoLock(mStatsLock);
         ALOGW("=========================================================");
@@ -287,7 +319,6 @@ AwesomePlayer::~AwesomePlayer() {
         }
     }
     mIsTunnelAudio = false;
-
     mClient.disconnect();
 }
 
@@ -535,6 +566,12 @@ status_t AwesomePlayer::setDataSource_l(const sp<MediaExtractor> &extractor) {
 
 void AwesomePlayer::reset() {
     Mutex::Autolock autoLock(mLock);
+    if(bFpsChanged) {
+        ALOGE("Setting back to Default PLL");
+        mFps = DEFAULT_HWC_FRAMEREFRESH;
+        SetOutputFramerate();
+        bFpsChanged= false;
+    }
     if (mConnectingDataSource != NULL) {
         mConnectingDataSource->disconnect();
     }
@@ -1945,7 +1982,136 @@ void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
     }
 }
 
+status_t AwesomePlayer::getClipFps(int mIFEFps,float *fps)
+{
+    ALOGE("IFE fps %d",mIFEFps);
+    if( ( 23700 < mIFEFps ) & (mIFEFps < 24300 ) ) {
+        *fps = 24000;
+    } else if ( ( 29700 < mIFEFps ) & (mIFEFps < 30300) ) {
+        *fps = 30000;
+    } else if ( ( 24700 < mIFEFps ) & (mIFEFps < 25300) ){
+        *fps = 25000;
+    } else if ( ( 49700 < mIFEFps ) & (mIFEFps < 50300) ){
+        *fps = 50000;
+    } else {
+        *fps = DEFAULT_HWC_FRAMEREFRESH;
+    }
+    ALOGE("HWC Settings (fps) %f ",*fps);
+    return OK;
+}
+status_t AwesomePlayer::SetOutputFramerate()
+{
+#ifdef USE_HWCPLL_CORRECTION
+    int ret;
+    void * lib = dlopen("libhwcpllchange.so", RTLD_NOW);
+    if (!lib) {
+        ALOGE("dlopen for libhwcpllchange failed with errno %d", errno);
+        return ERROR_UNSUPPORTED;
+    }
+
+    typedef int (*setPLLFn)(float mFps);
+    setPLLFn hwc_setFrameRate = (setPLLFn )dlsym(lib,"_Z16hwc_setoutputPLLf");
+    if(!hwc_setFrameRate) {
+        ALOGE("hwc_setoutputPLL symbol not found in libhwcpllchange");
+        dlclose(lib);
+        return ERROR_UNSUPPORTED;
+       }
+    ret = hwc_setFrameRate(mFps);
+    {
+        ALOGE("hwc_setFrameRate failed ");
+   }
+    dlclose(lib);
+    bFpsChanged= true;
+#else
+    ALOGE("Not using USE_HWCPLL_CORRECTION");
+#endif
+   return OK;
+}
+void AwesomePlayer::ChangePll() {
+    IFE_ERRORTYPE eRet;
+    status_t eSettingRet;
+    int nFps;
+    int errCnt = 0;
+    int64_t timeUs;
+    MediaSource::ReadOptions options;
+    ALOGE("ChangePll called");
+#if 0
+    if (mVideoSource != NULL) {
+        status_t err = mVideoSource->start();
+        if (err != OK) {
+            ALOGE("VideoSource failed to start\n");
+            return ;
+        } ALOGE("Video Source Started ");
+    } else {
+        ALOGE("mVideoSource is NULL cant start the source ");
+        return ;
+    }
+#endif
+    while(mFrameWindow < FPS_DECISION_WINDOW) {
+        mFrameWindow++;
+        status_t err = mVideoSource->read(&mVideoBuffer, &options);
+        if (err != OK) {
+            ALOGE("Video source Reading Failed");
+            if(mVideoBuffer == NULL) {
+                ALOGE("Video Buffer return from read call is NULL ");
+                return ;
+            }
+        }
+        ALOGE("Video Buffer Read Successfully ");
+        if (mVideoBuffer->range_length() == 0) {
+            ALOGE("Video Buffer Range Length is 0");
+            mVideoBuffer->release();
+            mVideoBuffer = NULL;
+            continue;
+        }
+        CHECK(mVideoBuffer->meta_data()->findInt64(kKeyTime, &timeUs));
+        mLastVideoTimeUs = timeUs;
+        mVideoBuffer->release();
+        mVideoBuffer = NULL;
+        eRet = IfeAddPts(mIfe, us2ns(timeUs));
+        if(IFE_NO_ERROR == eRet) {
+            eRet = IfeGetCurrentFps(mIfe, &nFps);
+            if(IFE_NO_ERROR == eRet){
+                float fps;
+                ALOGE("Estimated input fps: %d", nFps);
+                eSettingRet = getClipFps(nFps, &fps);
+                if(( eSettingRet == OK) && (mFps != fps)) {
+                    ALOGE("fps not matched with previous interpolation loop cnt %d",mFrameWindow);
+                    mFps = fps;
+                    errCnt++;
+                 }
+               }
+            }
+    }
+    if(errCnt == FPS_DECISION_WINDOW ) mFps = DEFAULT_HWC_FRAMEREFRESH;
+    if((mFrameWindow == FPS_DECISION_WINDOW) && (mFps != DEFAULT_HWC_FRAMEREFRESH)) {
+        mFrameWindow = 0;
+        ALOGE("Setting the output FPS to %f",mFps);
+        eSettingRet = SetOutputFramerate();
+        if(eSettingRet != OK){
+              ALOGE("SetOutputFramerate failed ");
+        }
+    }
+#if 0
+    if (mVideoSource != NULL) {
+        ALOGE("Video source Stopped");
+        mVideoSource->stop();
+    }
+#endif
+    ALOGE("PLL Changes Done");
+    seekTo_l(mSeekTimeUs);
+    return ;
+}
 void AwesomePlayer::onVideoEvent() {
+//use the setprop and select when it is required
+    if(mbHWPLLChangeSupport == true) {
+        ALOGV(">> HW PLL Change support is present");
+        if(bChangePLL == 0) {
+            ChangePll();
+            bChangePLL++;
+        }
+        ALOGV(">> PLL Change has been Completed");
+    }
     ATRACE_CALL();
     Mutex::Autolock autoLock(mLock);
     int mAudioSourcePaused = false;
@@ -1955,6 +2121,7 @@ void AwesomePlayer::onVideoEvent() {
         return;
     }
     mVideoEventPending = false;
+    int64_t timeUs;
 
     if (mStatistics) {
         Mutex::Autolock autoLock(mStatsLock);
@@ -2084,7 +2251,6 @@ void AwesomePlayer::onVideoEvent() {
         notifyVideoAttributes_l();
     }
 
-    int64_t timeUs;
     CHECK(mVideoBuffer->meta_data()->findInt64(kKeyTime, &timeUs));
 
     mLastVideoTimeUs = timeUs;

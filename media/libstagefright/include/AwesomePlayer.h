@@ -46,6 +46,8 @@ class DecryptHandle;
 class TimedTextDriver;
 struct WVMExtractor;
 
+//Window to check the FPS Decision
+#define FPS_DECISION_WINDOW 4
 struct AwesomeRenderer : public RefBase {
     AwesomeRenderer() {}
 
@@ -317,7 +319,7 @@ private:
 
     bool mVeryFirstFrame;
     bool mStatistics;
-
+    bool mbHWPLLChangeSupport;
     struct TrackStat {
         String8 mMIME;
         String8 mDecoderName;
@@ -393,6 +395,15 @@ private:
 
     //Flag to check if Secure Playback.
     bool mSecurePlayback;
+    void*    mIfe;
+    float mFps;
+    uint32_t mFrameWindow;
+    int bChangePLL;
+    bool bFpsChanged;
+public:
+    void ChangePll();
+    status_t getClipFps(int mIFEFps,float *fps);
+    status_t SetOutputFramerate();
 };
 
 }  // namespace android
