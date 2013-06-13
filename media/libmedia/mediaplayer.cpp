@@ -433,7 +433,7 @@ status_t MediaPlayer::seekTo_l(int msec)
             return err;
         }
 
-        if (msec > durationMs) {
+        if ((durationMs > 0) && (msec > durationMs)) {
             ALOGW("Attempt to seek to past end of file: request = %d, "
                   "durationMs = %d",
                   msec,
