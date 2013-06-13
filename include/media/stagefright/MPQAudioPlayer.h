@@ -148,6 +148,8 @@ private:
     Mutex pmLock;
     Mutex mLock;
     Mutex mSeekLock;
+    // Lock to synchronize pause and write
+    Mutex mPauseLock;
 
     int32_t mChannelMask;
 
