@@ -26,7 +26,7 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "ExtendedExtractor"
 #include <utils/Log.h>
 #include <dlfcn.h>  // for dlopen/dlclose

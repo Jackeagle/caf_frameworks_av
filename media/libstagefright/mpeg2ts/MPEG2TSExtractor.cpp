@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "MPEG2TSExtractor"
 #include <utils/Log.h>
 
@@ -84,6 +84,7 @@ sp<MetaData> MPEG2TSSource::getFormat() {
     int64_t durationUs;
     if (mExtractor->mLiveSession != NULL
             && mExtractor->mLiveSession->getDuration(&durationUs) == OK) {
+          ALOGI("mExtractor->mLiveSession != NULL");
         meta->setInt64(kKeyDuration, durationUs);
     }
 
