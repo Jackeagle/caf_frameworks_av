@@ -1988,6 +1988,7 @@ status_t MPEG4Writer::Track::threadEntry() {
     int64_t lastCttsOffsetTimeTicks = -1;  // Timescale based ticks
     int32_t cttsSampleCount = 0;           // Sample count in the current ctts table entry
     uint32_t lastSamplesPerChunk = 0;
+    bool lUseThreadWrite = 1; // File write in seperate thread
 
     if (mIsAudio) {
         prctl(PR_SET_NAME, (unsigned long)"AudioTrackEncoding", 0, 0, 0);
@@ -2223,7 +2224,8 @@ status_t MPEG4Writer::Track::threadEntry() {
             }
             trackProgressStatus(timestampUs);
         }
-        if (!hasMultipleTracks) {
+        //if (!hasMultipleTracks) {
+        if (!hasMultipleTracks && !lUseThreadWrite) {
             off64_t offset = mIsAvc? mOwner->addLengthPrefixedSample_l(copy)
                                  : mOwner->addSample_l(copy);
 
@@ -2273,7 +2275,8 @@ status_t MPEG4Writer::Track::threadEntry() {
     mOwner->trackProgressStatus(mTrackId, -1, err);
 
     // Last chunk
-    if (!hasMultipleTracks) {
+    //if (!hasMultipleTracks) {
+    if (!hasMultipleTracks && !lUseThreadWrite) {
         addOneStscTableEntry(1, mStszTableEntries->count());
     } else if (!mChunkSamples.empty()) {
         addOneStscTableEntry(++nChunks, mChunkSamples.size());
