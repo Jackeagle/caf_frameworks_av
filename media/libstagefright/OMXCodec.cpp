@@ -568,8 +568,7 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
 
-            QCOMXCodec::checkIfInterlaced((const uint8_t *)data, meta);
-
+            mInterlaceFormatDetected = QCOMXCodec::checkIfInterlaced((const uint8_t *)data, meta);
             CODEC_LOGI(
                     "AVC profile = %u (%s), level = %u",
                     profile, AVCProfileToString(profile), level);
@@ -1532,7 +1531,9 @@ OMXCodec::OMXCodec(
               || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
                         ? NULL : nativeWindow),
       mNumBFrames(0),
-      mInSmoothStreamingMode(false) {
+      mInSmoothStreamingMode(false),
+      mInterlaceFormatDetected(false),
+      mInterlaceFrame(0) {
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
 
@@ -3424,9 +3425,14 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
 
     OMX_U32 flags = OMX_BUFFERFLAG_ENDOFFRAME;
 
+    if (mInterlaceFormatDetected) {
+        mInterlaceFrame++;
+    }
+
     if (signalEOS) {
         flags |= OMX_BUFFERFLAG_EOS;
-    } else if ((mFlags & kClientNeedsFramebuffer) && !strncmp(mComponentName, "OMX.qcom.", 9)) {
+    } else if (((mFlags & kClientNeedsFramebuffer) && !strncmp(mComponentName, "OMX.qcom.", 9))
+                 && (!mInterlaceFormatDetected || mInterlaceFrame >= 2)) {
         // Because we don't get an EOS after getting the first frame, we
         // need to notify the component with OMX_BUFFERFLAG_EOS, set
         // mNoMoreOutputData to false so fillOutputBuffer gets called on
