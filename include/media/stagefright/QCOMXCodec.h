@@ -96,7 +96,7 @@ struct QCOMXCodec {
 
     static status_t enableSmoothStreaming(const sp<IOMX> &omx, IOMX::node_id nodeID);
 
-    static void     checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta);
+    static bool     checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta);
 
     static bool     checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
 
