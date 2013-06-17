@@ -386,4 +386,9 @@ sp<MediaExtractor> QCUtilityClass::helper_MediaExtractor_CreateIfNeeded(sp<Media
     }
 }
 
+bool QCUtilityClass::helper_Awesomeplayer_checkIfSeekToZero(int64_t timeUs, uint32_t  mExtractorFlags) {
+
+    return ((timeUs == 0) && (mExtractorFlags & CAN_SEEK_TO_ZERO));
+}
+
 }
