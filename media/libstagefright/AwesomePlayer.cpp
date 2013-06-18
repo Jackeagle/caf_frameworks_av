@@ -3218,6 +3218,7 @@ status_t AwesomePlayer::suspend() {
     // In some user case of suspend, the surface will be destroyed,
     // so video render should be create again with the new surface
     mVideoRenderer.clear();
+    printStats();
     if (mVideoSource != NULL) {
         shutdownVideoDecoder_l();
     }
