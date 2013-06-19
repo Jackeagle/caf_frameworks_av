@@ -148,22 +148,16 @@ private:
 
     //Declare the condition Variables and Mutex
 
-    pthread_mutex_t decoder_mutex;
+    Mutex mDecoderMutex;
 
-    pthread_mutex_t audio_sink_setup_mutex;
+    Mutex mA2dpNotificationMutex;
 
-    pthread_mutex_t a2dp_notification_mutex;
+    Condition mDecoderCv;
 
-
-
-    pthread_cond_t decoder_cv;
-
-
-    pthread_cond_t a2dp_notification_cv;
-
+    Condition mA2dpNotificationCv;
 
     // make sure Decoder thread has exited
-    void requestAndWaitForDecoderThreadExit();
+    void requestAndWaitForDecoderThreadExit_l();
 
 
     // make sure the Effects thread also exited
