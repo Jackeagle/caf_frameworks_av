@@ -245,6 +245,8 @@ void QCUtilityClass::helper_OMXCodec_setBFrames(OMX_VIDEO_PARAM_AVCTYPE &h264typ
         h264type.nAllowedPictureTypes |= OMX_VIDEO_PictureTypeB;
         h264type.nBFrames = 1;
         h264type.nPFrames /= (h264type.nBFrames + 1);
+	h264type.bEntropyCodingCABAC = OMX_TRUE;
+        h264type.nCabacInitIdc = 0;
         numBFrames = h264type.nBFrames;
     }
     return;

@@ -397,10 +397,10 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
     mIsAudioRouted = true;
     mStarted = true;
     mAudioSink->start();
-    pthread_mutex_lock(&extractor_mutex);
+    mLock.lock();
     ALOGV("Waking up extractor thread");
-    pthread_cond_signal(&extractor_cv);
-    pthread_mutex_unlock(&extractor_mutex);
+    mExtractorCv.signal();
+    mLock.unlock();
     return OK;
 }
 
@@ -432,7 +432,7 @@ status_t TunnelPlayer::seekTo(int64_t time_us) {
         mReachedOutputEOS = false;
         if(mPaused == false) {
             ALOGV("Going to signal extractor thread since playback is already going on ");
-            pthread_cond_signal(&extractor_cv);
+            mExtractorCv.signal();
             ALOGV("Signalled extractor thread.");
         }
     }
@@ -495,7 +495,7 @@ void TunnelPlayer::resume() {
         ALOGV("Audio sink open succeeded.");
         mAudioSink->start();
         ALOGV("Audio sink start succeeded.");
-        pthread_cond_signal(&extractor_cv);
+        mExtractorCv.signal();
         ALOGV("Audio signalling extractor thread.");
     }
 }
@@ -540,7 +540,7 @@ void TunnelPlayer::reset() {
     mReachedEOS = true;
 
     // make sure Decoder thread has exited
-    requestAndWaitForExtractorThreadExit();
+    requestAndWaitForExtractorThreadExit_l();
 
     // Close the audiosink after all the threads exited to make sure
     if (mIsAudioRouted) {
@@ -599,7 +599,7 @@ void *TunnelPlayer::extractorThreadWrapper(void *me) {
 
 void TunnelPlayer::extractorThreadEntry() {
 
-    pthread_mutex_lock(&extractor_mutex);
+    mLock.lock();
     uint32_t BufferSizeToUse = MEM_BUFFER_SIZE;
 
     pid_t tid  = gettid();
@@ -609,10 +609,10 @@ void TunnelPlayer::extractorThreadEntry() {
 
     ALOGV("extractorThreadEntry wait for signal \n");
     if (!mStarted && !killExtractorThread) {
-        pthread_cond_wait(&extractor_cv, &extractor_mutex);
+        mExtractorCv.wait(mLock);
     }
     ALOGV("extractorThreadEntry ready to work \n");
-    pthread_mutex_unlock(&extractor_mutex);
+    mLock.unlock();
     if (killExtractorThread) {
         return;
     }
@@ -632,9 +632,9 @@ void TunnelPlayer::extractorThreadEntry() {
             ALOGV("Going to sleep before write since "
                   "mReachedEOS %d, mPaused %d, mIsAudioRouted %d",
                   mReachedEOS, mPaused, mIsAudioRouted);
-            pthread_mutex_lock(&extractor_mutex);
-            pthread_cond_wait(&extractor_cv, &extractor_mutex);
-            pthread_mutex_unlock(&extractor_mutex);
+            mExtractorMutex.lock();
+            mExtractorCv.wait(mExtractorMutex);
+            mExtractorMutex.unlock();
             ALOGV("Woke up from sleep before write since "
                   "mReachedEOS %d, mPaused %d, mIsAudioRouted %d",
                   mReachedEOS, mPaused, mIsAudioRouted);
@@ -655,12 +655,12 @@ void TunnelPlayer::extractorThreadEntry() {
                     //write only if player is not in paused state. Sleep on lock
                     // resume is called
                     ALOGV("Going to sleep in decodethreadiwrite since sink is paused");
-                    pthread_mutex_lock(&extractor_mutex);
-                    pthread_cond_wait(&extractor_cv, &extractor_mutex);
+                    mExtractorMutex.lock();
+                    mExtractorCv.wait(mExtractorMutex);
                     ALOGV("Going to unlock n decodethreadwrite since sink "
                           "resumed mPaused %d, mIsAudioRouted %d, mReachedEOS %d",
                           mPaused, mIsAudioRouted, mReachedEOS);
-                    pthread_mutex_unlock(&extractor_mutex);
+                    mExtractorMutex.unlock();
                 }
                 mLock.lock();
                 lSeeking = mSeeking||mInternalSeeking;
@@ -704,11 +704,7 @@ void TunnelPlayer::extractorThreadEntry() {
 }
 void TunnelPlayer::createThreads() {
 
-    //Initialize all the Mutexes and Condition Variables
-    pthread_mutex_init(&extractor_mutex, NULL);
-    pthread_cond_init (&extractor_cv, NULL);
-
-    // Create 4 threads Effect, decoder, event and A2dp
+    // Create extractor Thread
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -894,30 +890,28 @@ bool TunnelPlayer::getMediaTimeMapping(
 }
 
 //lock has been taken in reset() to sync with onpausetimeout
-void TunnelPlayer::requestAndWaitForExtractorThreadExit() {
+void TunnelPlayer::requestAndWaitForExtractorThreadExit_l() {
 
-    ALOGV("requestAndWaitForExtractorThreadExit -1");
+    ALOGV("requestAndWaitForExtractorThreadExit_l -1");
 
     if (!extractorThreadAlive)
         return;
 
+    killExtractorThread = true;
 
-    ALOGV("requestAndWaitForExtractorThreadExit +0");
+    ALOGV("requestAndWaitForExtractorThreadExit_l +0");
     if (mIsAudioRouted && !mReachedOutputEOS) {
         mAudioSink->flush();
     }
 
-    mLock.unlock();
 
-    pthread_mutex_lock(&extractor_mutex);
-    killExtractorThread = true;
-    ALOGV("requestAndWaitForExtractorThreadExit +1");
-    pthread_cond_signal(&extractor_cv);
-    pthread_mutex_unlock(&extractor_mutex);
-    ALOGV("requestAndWaitForExtractorThreadExit +2");
+    ALOGV("requestAndWaitForExtractorThreadExit_l +1");
+    mExtractorCv.signal();
+    mLock.unlock();
+    ALOGV("requestAndWaitForExtractorThreadExit_l +2");
     pthread_join(extractorThread,NULL);
     mLock.lock();
-    ALOGV("requestAndWaitForExtractorThreadExit +3");
+    ALOGV("requestAndWaitForExtractorThreadExit_l +3");
 
     ALOGV("Extractor thread killed");
 }
