@@ -159,6 +159,12 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
             mFrcDisable = true;
         }
         ALOGD("media.disable-frc: %s, frc_disable:%d", prop, mFrcDisable);
+
+#ifdef QCOM_BSP
+        mMPdecisionHandle = display_perf_boost_on();
+        if (mMPdecisionHandle < 0)
+            ALOGE("Error: failed to acquire perf lock");
+#endif
     }
 
 #ifdef QCOM_BSP
@@ -250,7 +256,12 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
     }
 
 protected:
-    virtual ~AwesomeNativeWindowRenderer() {}
+    virtual ~AwesomeNativeWindowRenderer() {
+#ifdef QCOM_BSP
+    if (mMPdecisionHandle >= 0)
+        display_perf_boost_off(mMPdecisionHandle);
+#endif
+    }
 
 private:
     sp<ANativeWindow> mNativeWindow;
@@ -281,6 +292,7 @@ private:
     bool mFrcDisable;
     int32_t mTimeoutBase;
     int32_t mTimeoutCnt;
+    int mMPdecisionHandle;
 };
 
 // To collect the decoder usage
