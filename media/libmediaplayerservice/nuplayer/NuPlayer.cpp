@@ -364,6 +364,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             if ((mAudioDecoder == NULL && mAudioSink != NULL)
                     || (mVideoDecoder == NULL && mNativeWindow != NULL)) {
+#ifdef QCOM_WFD_SINK
+              if (mWFDSinkSession)
+                msg->post(5000ll);
+              else
+#endif//QCOM_WFD_SINK
                 msg->post(100000ll);
                 mScanSourcesPending = true;
             }
@@ -387,7 +392,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 if (err == -EWOULDBLOCK) {
                     if (mSource->feedMoreTSData() == OK) {
-                        msg->post(10000ll);
+#ifdef QCOM_WFD_SINK
+                    if (mWFDSinkSession)
+                       msg->post(5000ll);
+                    else
+#endif//QCOM_WFD_SINK
+                       msg->post(10000ll);
                     }
                 }
             } else if (what == ACodec::kWhatEOS) {
