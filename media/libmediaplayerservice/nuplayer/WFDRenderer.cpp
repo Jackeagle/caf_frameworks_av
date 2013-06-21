@@ -349,6 +349,12 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
               if (tooLate) {
                  ALOGV("Audio late by %lld us (%.2f secs)",
                  mAudioLateByUs, mAudioLateByUs / 1E6);
+                 if (mediaTimeUs == 0 && entry->mBuffer->size() == 2)
+                 {
+                     // 2 bytes codec config frame, no need to drop the frame
+                    tooLate = 0;
+                    ALOGV("Audio Codec config frame, hence no need to drop the frame %d ", entry->mBuffer->size());
+                 }
               }
               else {
                 ALOGV("rendering Audio  at media time %.2f secs", mediaTimeUs / 1E6);
