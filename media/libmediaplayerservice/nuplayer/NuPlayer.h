@@ -136,6 +136,7 @@ private:
     int64_t mNumFramesTotal, mNumFramesDropped;
 
     int32_t mVideoScalingMode;
+    bool mPauseIndication;
 
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 

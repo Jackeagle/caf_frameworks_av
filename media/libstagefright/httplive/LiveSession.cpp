@@ -217,6 +217,7 @@ status_t LiveSession::fetchFile(
         const char *url, sp<ABuffer> *out,
         int64_t range_offset, int64_t range_length) {
     *out = NULL;
+    ALOGW("fetchFile %s", url);
 
     sp<DataSource> source;
 
@@ -412,7 +413,7 @@ size_t LiveSession::getBandwidthIndex() {
     int32_t bandwidthBps;
     if (mHTTPDataSource != NULL
             && mHTTPDataSource->estimateBandwidth(&bandwidthBps)) {
-        ALOGV("bandwidth estimated at %.2f kbps", bandwidthBps / 1024.0f);
+        ALOGW("bandwidth estimated at %.2f kbps", bandwidthBps / 1024.0f);
     } else {
         ALOGV("no bandwidth estimate.");
         return 0;  // Pick the lowest bandwidth stream by default.
@@ -424,7 +425,7 @@ size_t LiveSession::getBandwidthIndex() {
         long maxBw = strtoul(value, &end, 10);
         if (end > value && *end == '\0') {
             if (maxBw > 0 && bandwidthBps > maxBw) {
-                ALOGV("bandwidth capped to %ld bps", maxBw);
+                ALOGW("bandwidth capped to %ld bps", maxBw);
                 bandwidthBps = maxBw;
             }
         }
@@ -628,7 +629,7 @@ rinse_repeat:
                 int32_t newSeqNumber = firstSeqNumberInPlaylist + index;
 
                 if (newSeqNumber != mSeqNumber) {
-                    ALOGI("seeking to seq no %d", newSeqNumber);
+                    ALOGW("seeking to seq no %d", newSeqNumber);
 
                     mSeqNumber = newSeqNumber;
 
@@ -673,7 +674,7 @@ rinse_repeat:
         if (mPrevBandwidthIndex != (ssize_t)bandwidthIndex) {
             // Go back to the previous bandwidth.
 
-            ALOGI("new bandwidth does not have the sequence number "
+            ALOGW("new bandwidth does not have the sequence number "
                  "we're looking for, switching back to previous bandwidth");
 
             mLastPlaylistFetchTimeUs = -1;
@@ -693,13 +694,13 @@ rinse_repeat:
             // we've missed the boat, let's start from the lowest sequence
             // number available and signal a discontinuity.
 
-            ALOGI("We've missed the boat, restarting playback.");
+            ALOGW("We've missed the boat, restarting playback.");
             mSeqNumber = lastSeqNumberInPlaylist;
             explicitDiscontinuity = true;
 
             // fall through
         } else {
-            ALOGE("Cannot find sequence number %d in playlist "
+            ALOGV("Cannot find sequence number %d in playlist "
                  "(contains %d - %d)",
                  mSeqNumber, firstSeqNumberInPlaylist,
                  firstSeqNumberInPlaylist + mPlaylist->size() - 1);
@@ -764,7 +765,7 @@ rinse_repeat:
             return;
         }
 
-        ALOGI("Retrying with a different bandwidth stream.");
+        ALOGW("Retrying with a different bandwidth stream.");
 
         mLastPlaylistFetchTimeUs = -1;
         bandwidthIndex = getBandwidthIndex();
@@ -792,7 +793,7 @@ rinse_repeat:
     if (seekDiscontinuity || explicitDiscontinuity || bandwidthChanged) {
         // Signal discontinuity.
 
-        ALOGI("queueing discontinuity (seek=%d, explicit=%d, bandwidthChanged=%d)",
+        ALOGW("queueing discontinuity (seek=%d, explicit=%d, bandwidthChanged=%d)",
              seekDiscontinuity, explicitDiscontinuity, bandwidthChanged);
 
         sp<ABuffer> tmp = new ABuffer(188);
