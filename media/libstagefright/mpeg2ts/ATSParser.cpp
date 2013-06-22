@@ -35,6 +35,7 @@
 #include <media/stagefright/Utils.h>
 #include <media/IStreamSource.h>
 #include <utils/KeyedVector.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -130,6 +131,7 @@ private:
     sp<ABuffer> mBuffer;
     sp<AnotherPacketSource> mSource;
     bool mPayloadStarted;
+    bool mFormatChanged;
 
     uint64_t mPrevPTS;
 
@@ -342,6 +344,17 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
             PIDsChanged = true;
             break;
         }
+
+        for (size_t j = 0; j < mStreams.size(); j++){
+
+            sp<Stream> stream = mStreams.editValueAt(j);
+            if (infos.itemAt(i).mType == stream->type() &&
+                infos.itemAt(i).mPID != stream->pid()) {
+               ALOGE("stream PIDs have changed.");
+               PIDsChanged = true;
+               break;
+            }
+        }
     }
 
     if (PIDsChanged) {
@@ -365,8 +378,37 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
         // and they switched PIDs.
 
         bool success = false;
+        bool bDiscontinuityOn = false;
+        char value[PROPERTY_VALUE_MAX];
+        if (property_get("httplive.enable.discontinuity", value, NULL) &&
+           (!strcasecmp(value, "true") || !strcmp(value, "1")) ) {
+           ALOGI("discontinuity property is set");
+           bDiscontinuityOn = true;
+        }
 
-        if (mStreams.size() == 2 && infos.size() == 2) {
+        if (!bDiscontinuityOn) {
+            ALOGI("Discontinuity is not enabled, handle PID change");
+            //PIDs can change in between due to BW switches
+            //Set PID based on stream type
+            for (size_t i = 0; i < infos.size(); i++) {
+                for (size_t j = 0; j < mStreams.size(); j++){
+
+                    sp<Stream> stream = mStreams.editValueAt(j);
+                    if (infos.itemAt(i).mType == stream->type() &&
+                        infos.itemAt(i).mPID != stream->pid()) {
+
+                        ALOGI("PID change for stream %d to %d stream type %x",
+                           stream->pid(), infos.itemAt(i).mPID, infos.itemAt(i).mType);
+                        mStreams.removeItem(stream->pid());
+                        stream->setPID(infos.itemAt(i).mPID);
+                        mStreams.add(stream->pid(), stream);
+                    }
+                }
+            }
+            success = true;
+        }
+
+        if (!success && mStreams.size() == 2 && infos.size() == 2) {
             const StreamInfo &info1 = infos.itemAt(0);
             const StreamInfo &info2 = infos.itemAt(1);
 
@@ -469,6 +511,7 @@ ATSParser::Stream::Stream(
       mExpectedContinuityCounter(-1),
       mPayloadStarted(false),
       mPrevPTS(0),
+      mFormatChanged(false),
       mQueue(NULL) {
     switch (mStreamType) {
         case STREAMTYPE_H264:
@@ -627,6 +670,15 @@ void ATSParser::Stream::signalDiscontinuity(
         if (type & DISCONTINUITY_VIDEO_FORMAT) {
             clearFormat = true;
         }
+    }
+    if (type & DISCONTINUITY_TS_PLAYER_SEEK) {
+        //TODO update format in ESQueue
+        mFormatChanged = true;
+    }
+
+    if (type & DISCONTINUITY_HLS_PLAYER_SEEK) {
+        clearFormat = true;
+        mFormatChanged = true;
     }
 
     mQueue->clear(clearFormat);
@@ -884,6 +936,10 @@ void ATSParser::Stream::onPayloadData(
 
             if (mSource->getFormat() == NULL) {
                 mSource->setFormat(mQueue->getFormat());
+            }
+            else if (mFormatChanged) {
+                mSource->updateFormat(mQueue->getFormat());
+                mFormatChanged = false;
             }
             mSource->queueAccessUnit(accessUnit);
         }
