@@ -749,10 +749,14 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             QCOMXCodec::setQCSpecificVideoFormat(meta,mOMX,mNode,mComponentName );
             if (isSmoothStreamingEnabled && !strncmp(mComponentName, "OMX.qcom.", 9)) {
                 err = QCOMXCodec::enableSmoothStreaming(mOMX, mNode);
-                if (err != OK) {
+                if (err == OK) {
+                    mInSmoothStreamingMode = true;
+                } else if (err == ERROR_UNSUPPORTED) {
+                    mInSmoothStreamingMode = false;
+                    err = OK;
+                } else {
                     return err;
                 }
-                mInSmoothStreamingMode = true;
             }
         }
     }
