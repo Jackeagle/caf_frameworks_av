@@ -98,6 +98,13 @@ struct QCOMXCodec {
 
     static bool     checkIfInterlaced(const uint8_t *ptr, const sp<MetaData> &meta);
 
+    static void     setAVCProfileLevel(unsigned int profile, unsigned int level,
+                        sp<IOMX> OMXhandle, IOMX::node_id nodeID,
+                        char* componentName);
+private:
+    static OMX_VIDEO_AVCPROFILETYPE  avcProfileToOmxAvcProfile(uint8_t profile);
+
+    static OMX_VIDEO_AVCLEVELTYPE  avcLevelToOmxAvcLevel(uint8_t level);
 };
 
 }
