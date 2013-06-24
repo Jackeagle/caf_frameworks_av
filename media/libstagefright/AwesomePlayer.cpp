@@ -1508,7 +1508,7 @@ status_t AwesomePlayer::getPosition(int64_t *positionUs) {
 status_t AwesomePlayer::seekTo(int64_t timeUs) {
     ATRACE_CALL();
 
-    if (((timeUs == 0) && (mExtractorFlags & MediaExtractor::CAN_SEEK_TO_ZERO)) ||
+    if (QCUtilityClass::helper_Awesomeplayer_checkIfSeekToZero(timeUs, mExtractorFlags) ||
         (mExtractorFlags & MediaExtractor::CAN_SEEK)) {
         Mutex::Autolock autoLock(mLock);
         return seekTo_l(timeUs);

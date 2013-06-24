@@ -822,15 +822,13 @@ status_t MPEG4Writer::reset() {
         lseek64(mFd, mOffset, SEEK_SET);
         writeInt32(mEstimatedMoovBoxSize - mMoovBoxBufferOffset);
         write("free", 4);
-
-        // Free temp memory
-        free(mMoovBoxBuffer);
-        mMoovBoxBuffer = NULL;
-        mMoovBoxBufferOffset = 0;
     } else {
         ALOGI("The mp4 file will not be streamable.");
     }
-
+    // Free temp memory
+    free(mMoovBoxBuffer);
+    mMoovBoxBuffer = NULL;
+    mMoovBoxBufferOffset = 0;
     CHECK(mBoxes.empty());
 
     release();
