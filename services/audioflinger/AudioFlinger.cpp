@@ -1906,6 +1906,7 @@ AudioFlinger::PlaybackThread::PlaybackThread(const sp<AudioFlinger>& audioFlinge
         mMixerStatusIgnoringFastTracks(MIXER_IDLE),
         standbyDelay(AudioFlinger::mStandbyTimeInNsecs),
         mScreenState(gScreenState),
+        mOutputFlags(AUDIO_OUTPUT_FLAG_NONE),
         // index 0 is reserved for normal mixer's submix
         mFastTrackAvailMask(((1 << FastMixerState::kMaxFastTracks) - 1) & ~1)
 {
@@ -7905,6 +7906,7 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
         }
         if (thread != NULL) {
             mPlaybackThreads.add(id, thread);
+            thread->mOutputFlags = flags;
         }
 
 
@@ -8174,7 +8176,10 @@ status_t AudioFlinger::setStreamOutput(audio_stream_type_t stream, audio_io_hand
 
     for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
         PlaybackThread *thread = mPlaybackThreads.valueAt(i).get();
-        thread->invalidateTracks(stream);
+        // Do not invalidate voip stream which uses directoutput thread
+        if(!(thread->type() == ThreadBase::DIRECT && (thread->mOutputFlags & AUDIO_OUTPUT_FLAG_VOIP_RX))) {
+            thread->invalidateTracks(stream);
+        }
     }
 
     return NO_ERROR;
