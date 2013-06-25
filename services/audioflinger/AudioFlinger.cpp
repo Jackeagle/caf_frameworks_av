@@ -1205,9 +1205,10 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
             String8 key = String8(AudioParameter::keyRouting);
             int device;
             if (param.getInt(key, device) == NO_ERROR) {
-#ifdef SRS_PROCESSING
                 ALOGV("setParameters:: routing change to device %d", device);
                 desc->device = (audio_devices_t)device;
+                mDirectDevice = device;
+#ifdef SRS_PROCESSING
                 POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(desc->trackRefPtr, param, device);
 #endif
                 if(mLPAEffectChain != NULL){
@@ -7920,6 +7921,7 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
             desc->mVolumeRight = 1.0;
             desc->device = *pDevices;
             mDirectAudioTracks.add(id, desc);
+            mDirectDevice = desc->device;
         } else if ((flags & AUDIO_OUTPUT_FLAG_DIRECT) ||
             (config.format != AUDIO_FORMAT_PCM_16_BIT) ||
             (config.channel_mask != AUDIO_CHANNEL_OUT_STEREO)) {
@@ -8784,7 +8786,7 @@ sp<AudioFlinger::EffectHandle> AudioFlinger::ThreadBase::createEffect_l(
             }
             effectCreated = true;
 
-            effect->setDevice(mOutDevice);
+            effect->setDevice(mAudioFlinger->mLPASessionId == sessionId ? mAudioFlinger->mDirectDevice:mOutDevice);
             effect->setDevice(mInDevice);
             effect->setMode(mAudioFlinger->getMode());
             effect->setAudioSource(mAudioSource);
