@@ -49,6 +49,11 @@
 #include <qdMetaData.h>
 #include <cutils/properties.h> // for property_get
 
+#define FRC_FIRST_FRAME_SLEEP_US 30000
+#define FRC_WAIT_FOR_PLAY_POLLING_TIME_US 3000
+#define MAX_FRC_WAIT_FOR_PLAY_POLLING 10
+#define MAX_FRC_TIMEOUT_CNT 4
+
 namespace android {
 
 template<class T>
@@ -157,7 +162,12 @@ protected:
     void postFillThisBuffer(BufferInfo *info);
 
 private:
-    uint32_t mVideoFrameCounter;
+    uint32_t mFrcVideoFrameCounter;
+    int64_t mFrcLastRenderTimeUs;
+    private_handle_t* mFrcLastBufHandle;
+    int64_t mFrcLastVideoTimeUs;
+    int32_t mFrcTimeoutBase;
+    int32_t mFrcTimeoutCnt;
 
     bool onOMXMessage(const sp<AMessage> &msg);
 
@@ -172,6 +182,8 @@ private:
             void *dataPtr);
 
     void getMoreInputDataIfPossible();
+
+    int renderTimeCtrl(private_handle_t* pBufPrvtHandle, MetaData_t *curDispBuffMetaData);
 
     DISALLOW_EVIL_CONSTRUCTORS(BaseState);
 };
@@ -387,7 +399,7 @@ ACodec::ACodec()
             && (!strcmp(prop, "1") || !strcasecmp(prop, "true"))) {
         mFrcEnable = false;
     }
-    ALOGD("media.disable-frc: %s", prop);
+    ALOGV("media.disable-frc: %s", prop);
 
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
@@ -2600,7 +2612,12 @@ sp<ABuffer> ACodec::PortDescription::bufferAt(size_t index) const {
 ACodec::BaseState::BaseState(ACodec *codec, const sp<AState> &parentState)
     : AState(parentState),
       mCodec(codec) {
-    mVideoFrameCounter = 0;
+    mFrcVideoFrameCounter = 0;
+    mFrcLastRenderTimeUs = 0;
+    mFrcLastBufHandle = 0;
+    mFrcLastVideoTimeUs = 0;
+    mFrcTimeoutBase = 0;
+    mFrcTimeoutCnt = 0;
 }
 
 ACodec::BaseState::PortMode ACodec::BaseState::getPortMode(OMX_U32 portIndex) {
@@ -3134,10 +3151,15 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
             memset(&sDispBuffMetaData, 0, sizeof(MetaData_t));
             sDispBuffMetaData.videoFrame.frc_enable = mCodec->mFrcEnable;
             sDispBuffMetaData.videoFrame.timestamp = timeUs;
-            sDispBuffMetaData.videoFrame.counter = mVideoFrameCounter++;
+            sDispBuffMetaData.videoFrame.counter = mFrcVideoFrameCounter++;
+            sDispBuffMetaData.videoFrame.render_time = ns2us(systemTime());
 
             private_handle_t* pBufPrvtHandle =
                 (private_handle_t *)info->mGraphicBuffer.get()->handle;
+
+            if(mCodec->mFrcEnable){
+                renderTimeCtrl(pBufPrvtHandle, &sDispBuffMetaData);
+            }
 
             nErr = setMetaData(pBufPrvtHandle, PP_PARAM_VIDEO_FRAME,
                                (void*)&sDispBuffMetaData.videoFrame);
@@ -3147,9 +3169,9 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
             }
             else
             {
-                ALOGD("setMetaData PP_PARAM_VIDEO_FRAME: timestamp: %lld uS, "
+                ALOGV("setMetaData PP_PARAM_VIDEO_FRAME: timestamp: %lld uS, "
                       "counter: %d frc-enable: %d",
-                   sDispBuffMetaData.videoFrame.timestamp, mVideoFrameCounter,
+                   sDispBuffMetaData.videoFrame.timestamp, mFrcVideoFrameCounter,
                    sDispBuffMetaData.videoFrame.frc_enable);
             }
         }
@@ -3216,6 +3238,53 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
         }
     }
 }
+
+#ifdef QCOM_BSP
+int ACodec::BaseState::renderTimeCtrl(private_handle_t* pBufPrvtHandle, MetaData_t *curDispBuffMetaData)
+    {
+        int64_t cur_time;
+        int nErr = 0, poll_cnt = 0, poll_max;
+
+        MetaData_t sDispBuffMetaData;
+        if (mFrcLastBufHandle == 0) {
+           usleep(FRC_FIRST_FRAME_SLEEP_US);
+        } else {
+            poll_max = curDispBuffMetaData->videoFrame.timestamp - mFrcLastVideoTimeUs;
+            poll_max /= (FRC_WAIT_FOR_PLAY_POLLING_TIME_US * 2);
+            if (poll_max > MAX_FRC_WAIT_FOR_PLAY_POLLING)
+                poll_max = MAX_FRC_WAIT_FOR_PLAY_POLLING;
+            while (poll_cnt < poll_max){
+                nErr = getMetaData(mFrcLastBufHandle, PP_PARAM_VIDEO_FRAME, (void*)&sDispBuffMetaData.videoFrame);
+                if (nErr != 0) {
+                    break;
+                }
+                if (sDispBuffMetaData.videoFrame.hwc_play_time){
+                    break;
+                }
+                usleep(FRC_WAIT_FOR_PLAY_POLLING_TIME_US);
+                poll_cnt++;
+            }
+            if (poll_cnt >= poll_max) {
+                mFrcTimeoutCnt++;
+                if (mFrcTimeoutCnt >= MAX_FRC_TIMEOUT_CNT) {
+                    if ((curDispBuffMetaData->videoFrame.counter - mFrcTimeoutBase) <= MAX_FRC_TIMEOUT_CNT)
+                        {;}//mFrcDisable = true;
+                    else
+                        mFrcTimeoutBase = curDispBuffMetaData->videoFrame.counter;
+                    mFrcTimeoutCnt = 0;
+                }
+            }
+        }
+        cur_time= ns2us(systemTime());
+        ALOGV("frc: frame=%d  hwc_play_time=%d poll_cnt=%d delay=%d ts=%d",
+            sDispBuffMetaData.videoFrame.counter, (int)(sDispBuffMetaData.videoFrame.hwc_play_time / 1000), poll_cnt,
+            (int)((sDispBuffMetaData.videoFrame.hwc_play_time - mFrcLastRenderTimeUs) / 1000), (int)curDispBuffMetaData->videoFrame.timestamp);
+        mFrcLastRenderTimeUs = cur_time;
+        mFrcLastBufHandle = pBufPrvtHandle;
+        mFrcLastVideoTimeUs = curDispBuffMetaData->videoFrame.timestamp;
+        return nErr;
+    }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
