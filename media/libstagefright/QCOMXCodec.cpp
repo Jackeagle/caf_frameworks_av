@@ -555,7 +555,8 @@ void QCOMXCodec::setQCSpecificVideoFormat(const sp<MetaData> &meta, sp<IOMX> OMX
                                        IOMX::node_id nodeID, char* componentName ) {
     int32_t arbitraryMode = 1;
     bool success = meta->findInt32(kKeyUseArbitraryMode, &arbitraryMode);
-    bool useArbitraryMode = true;
+    // FBF should be the default mode
+    bool useArbitraryMode = false;
     char qcComponentName[] = "OMX.qcom.video.decoder.";
 
     if (success) {
