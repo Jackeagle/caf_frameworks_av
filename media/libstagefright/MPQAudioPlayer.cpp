@@ -927,12 +927,24 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
     else if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_AC3)) {
         ALOGW("MS11 AC3");
        mDecoderType = EMS11Decoder;
-       mAudioFormat = AUDIO_FORMAT_AC3;
+       sp<MetaData> format = mSource->getFormat();
+       int acmod = -1;
+       if(format->findInt32(kKeyAcmod, &acmod) && acmod == 0)
+           mAudioFormat = AUDIO_FORMAT_AC3_DM;
+       else
+           mAudioFormat = AUDIO_FORMAT_AC3;
+       ALOGW("AC3 mAcmod = %d", acmod);
     }
     else if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_EAC3)) {
         ALOGW("MS11 EAC3");
        mDecoderType = EMS11Decoder;
-       mAudioFormat = AUDIO_FORMAT_EAC3;
+       sp<MetaData> format = mSource->getFormat();
+       int acmod = -1;
+       if(format->findInt32(kKeyAcmod, &acmod) && acmod == 0)
+           mAudioFormat = AUDIO_FORMAT_EAC3_DM;
+       else
+           mAudioFormat = AUDIO_FORMAT_EAC3;
+       ALOGW("EAC3 mAcmod = %d", acmod);
     }
     else if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_AAC)) {
         ALOGW("MS11 AAC");
