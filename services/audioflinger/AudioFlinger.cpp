@@ -1307,7 +1307,6 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
             }
             mLock.lock();
         }
-        mLock.unlock();
     }
     if (thread != 0) {
         return thread->setParameters(keyValuePairs);
