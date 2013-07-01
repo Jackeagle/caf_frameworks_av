@@ -738,7 +738,10 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         }
 
         if (mIsEncoder) {
-            setVideoInputFormat(mMIME, meta);
+            status_t err = setVideoInputFormat(mMIME, meta);
+            if (err != OK) {
+                return err;
+            }
         } else {
             status_t err = setVideoOutputFormat(
                     mMIME, meta);
@@ -974,7 +977,7 @@ status_t OMXCodec::isColorFormatSupported(
     return UNKNOWN_ERROR;
 }
 
-void OMXCodec::setVideoInputFormat(
+status_t OMXCodec::setVideoInputFormat(
         const char *mime, const sp<MetaData>& meta) {
 
     int32_t width, height, frameRate, bitRate, stride, sliceHeight;
@@ -1013,21 +1016,30 @@ void OMXCodec::setVideoInputFormat(
     OMX_VIDEO_PORTDEFINITIONTYPE *video_def = &def.format.video;
 
     //////////////////////// Input port /////////////////////////
-    CHECK_EQ(setVideoPortFormatType(
-            kPortIndexInput, OMX_VIDEO_CodingUnused,
-            colorFormat), (status_t)OK);
+    err = setVideoPortFormatType(
+            kPortIndexInput, OMX_VIDEO_CodingUnused, colorFormat);
+    if(err != OK) {
+        ALOGE("Setting OMX_VIDEO_CodingUnused failed");
+        return err;
+    }
 
     InitOMXParams(&def);
     def.nPortIndex = kPortIndexInput;
 
     err = mOMX->getParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
-    CHECK_EQ(err, (status_t)OK);
+    if(err != OK) {
+        ALOGE("Getting OMX_IndexParamPortDefinition failed");
+        return err;
+    }
 
     def.nBufferSize = getFrameSize(colorFormat,
             stride > 0? stride: -stride, sliceHeight);
 
-    CHECK_EQ((int)def.eDomain, (int)OMX_PortDomainVideo);
+    if((int)def.eDomain != (int)OMX_PortDomainVideo) {
+        ALOGE("Input port: Not a Video Domain!!");
+        return UNKNOWN_ERROR;
+    }
 
     video_def->nFrameWidth = width;
     video_def->nFrameHeight = height;
@@ -1039,20 +1051,33 @@ void OMXCodec::setVideoInputFormat(
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
-    CHECK_EQ(err, (status_t)OK);
+    if(err != OK) {
+        ALOGE("Setting Video InPort Definition failed");
+        return err;
+    }
 
     //////////////////////// Output port /////////////////////////
-    CHECK_EQ(setVideoPortFormatType(
-            kPortIndexOutput, compressionFormat, OMX_COLOR_FormatUnused),
-            (status_t)OK);
+    err = setVideoPortFormatType(
+            kPortIndexOutput, compressionFormat, OMX_COLOR_FormatUnused);
+    if(err != OK) {
+        ALOGE("Setting compressionFormat failed");
+        return err;
+    }
+
     InitOMXParams(&def);
     def.nPortIndex = kPortIndexOutput;
 
     err = mOMX->getParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
+    if(err != OK) {
+        ALOGE("Getting Video InPort Definition failed");
+        return err;
+    }
 
-    CHECK_EQ(err, (status_t)OK);
-    CHECK_EQ((int)def.eDomain, (int)OMX_PortDomainVideo);
+    if((int)def.eDomain != (int)OMX_PortDomainVideo) {
+        ALOGE("Output port: Not a Video Domain");
+        return UNKNOWN_ERROR;
+    }
 
     video_def->nFrameWidth = width;
     video_def->nFrameHeight = height;
@@ -1067,7 +1092,10 @@ void OMXCodec::setVideoInputFormat(
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
-    CHECK_EQ(err, (status_t)OK);
+    if(err != OK) {
+        ALOGE("Setting Video OutPort Definition failed");
+        return err;
+    }
 
     /////////////////// Codec-specific ////////////////////////
     switch (compressionFormat) {
@@ -1091,6 +1119,7 @@ void OMXCodec::setVideoInputFormat(
             CHECK(!"Support for this compressionFormat to be implemented.");
             break;
     }
+    return OK;
 }
 
 static OMX_U32 setPFramesSpacing(int32_t iFramesInterval, int32_t frameRate) {
@@ -1428,14 +1457,6 @@ status_t OMXCodec::setVideoOutputFormat(
                 &format, sizeof(format));
         CHECK_EQ(err, (status_t)OK);
         CHECK_EQ((int)format.eCompressionFormat, (int)OMX_VIDEO_CodingUnused);
-
-        CHECK(format.eColorFormat == OMX_COLOR_FormatYUV420Planar
-               || format.eColorFormat == OMX_COLOR_FormatYUV420SemiPlanar
-               || format.eColorFormat == OMX_COLOR_FormatCbYCrY
-               || format.eColorFormat == OMX_TI_COLOR_FormatYUV420PackedSemiPlanar
-               || format.eColorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar
-               || format.eColorFormat == OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka
-               || format.eColorFormat == OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar32m);
 
         int32_t colorFormat;
         if (meta->findInt32(kKeyColorFormat, &colorFormat)
