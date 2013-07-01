@@ -711,11 +711,11 @@ Exit:
 
 void AudioFlinger::deleteEffectSession()
 {
+    Mutex::Autolock _l(mLock);
     ALOGV("deleteSession");
     // -2 is invalid session ID
     mLPASessionId = -2;
     if (mLPAEffectChain != NULL) {
-        mLPAEffectChain->lock();
         mLPAEffectChain->setLPAFlag(false);
         size_t i, numEffects = mLPAEffectChain->getNumEffects();
         for(i = 0; i < numEffects; i++) {
@@ -729,7 +729,6 @@ void AudioFlinger::deleteEffectSession()
             effect->configure();
         }
         mLPAEffectChain.clear();
-        mLPAEffectChain->unlock();
         mLPAEffectChain = NULL;
     }
 }
@@ -1314,7 +1313,6 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
             }
             mLock.lock();
         }
-        mLock.unlock();
     }
     if (thread != 0) {
         return thread->setParameters(keyValuePairs);
@@ -1644,8 +1642,10 @@ status_t AudioFlinger::ThreadBase::setParameters(const String8& keyValuePairs)
 }
 
 void AudioFlinger::ThreadBase::effectConfigChanged() {
+    mAudioFlinger->mLock.lock();
     ALOGV("New effect is being added to LPA chain, Notifying LPA Direct Track");
     mAudioFlinger->audioConfigChanged_l(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
+    mAudioFlinger->mLock.unlock();
 }
 
 void AudioFlinger::ThreadBase::sendIoConfigEvent(int event, int param)
@@ -8131,6 +8131,7 @@ audio_io_handle_t AudioFlinger::openOutput(audio_module_handle_t module,
             desc->mVolumeLeft = 1.0;
             desc->mVolumeRight = 1.0;
             desc->device = *pDevices;
+            desc->trackRefPtr = NULL;
             mDirectAudioTracks.add(id, desc);
         } else if ((flags & AUDIO_OUTPUT_FLAG_DIRECT) ||
             (config.format != AUDIO_FORMAT_PCM_16_BIT) ||

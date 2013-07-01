@@ -790,4 +790,70 @@ bool QCOMXCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
     return retVal;
 }
 
+OMX_VIDEO_AVCPROFILETYPE  QCOMXCodec::avcProfileToOmxAvcProfile(uint8_t profile)
+{
+   switch (profile) {
+        case kAVCProfileBaseline:
+            return OMX_VIDEO_AVCProfileBaseline;
+        case kAVCProfileMain:
+            return OMX_VIDEO_AVCProfileMain;
+        case kAVCProfileExtended:
+            return OMX_VIDEO_AVCProfileExtended;
+        case kAVCProfileHigh:
+            return OMX_VIDEO_AVCProfileHigh;
+        case kAVCProfileHigh10:
+            return OMX_VIDEO_AVCProfileHigh10;
+        case kAVCProfileHigh422:
+            return OMX_VIDEO_AVCProfileHigh422;
+        case kAVCProfileHigh444:
+            return OMX_VIDEO_AVCProfileHigh444;
+    }
+    return (OMX_VIDEO_AVCPROFILETYPE)-1;
+}
+
+OMX_VIDEO_AVCLEVELTYPE QCOMXCodec::avcLevelToOmxAvcLevel(uint8_t level)
+{
+    switch (level) {
+        case 10: return OMX_VIDEO_AVCLevel1;
+        case 11: return OMX_VIDEO_AVCLevel11;
+        case 12: return OMX_VIDEO_AVCLevel12;
+        case 13: return OMX_VIDEO_AVCLevel13;
+        case 20: return OMX_VIDEO_AVCLevel2;
+        case 21: return OMX_VIDEO_AVCLevel21;
+        case 22: return OMX_VIDEO_AVCLevel22;
+        case 30: return OMX_VIDEO_AVCLevel3;
+        case 31: return OMX_VIDEO_AVCLevel31;
+        case 32: return OMX_VIDEO_AVCLevel32;
+        case 40: return OMX_VIDEO_AVCLevel4;
+        case 41: return OMX_VIDEO_AVCLevel41;
+        case 42: return OMX_VIDEO_AVCLevel42;
+        case 50: return OMX_VIDEO_AVCLevel5;
+        case 51: return OMX_VIDEO_AVCLevel51;
+    }
+    return (OMX_VIDEO_AVCLEVELTYPE)-1;
+}
+
+
+void QCOMXCodec::setAVCProfileLevel(unsigned int profile, unsigned int level,
+                 sp<IOMX> OMXhandle, IOMX::node_id nodeID, char* componentName)
+{
+    if (!strcmp(componentName, "OMX.qcom.video.decoder.avc")) {
+        OMX_VIDEO_PARAM_PROFILELEVELTYPE param;
+        InitOMXParams(&param);
+        param.nPortIndex = OMXCodec::kPortIndexInput;
+        param.eProfile = avcProfileToOmxAvcProfile(profile);
+        param.eLevel = avcLevelToOmxAvcLevel(level);
+        ALOGI("param.eProfile = %u param.eLevel = %u",param.eProfile, param.eLevel);
+        if (param.eProfile > 0 && param.eLevel > 0) {
+            if (OMXhandle->setParameter(nodeID,
+                                OMX_IndexParamVideoProfileLevelCurrent,
+                                &param, sizeof(param))) {
+                 ALOGE("setparam: OMX_IndexParamVideoProfileLevelCurrent returned error...ignore");
+                 //ignore the error, not all qcom omx component will have
+                 //implemented OMX_IndexParamVideoProfileLevelCurrent.
+            }
+        }
+    }
+}
+
 }
