@@ -53,7 +53,11 @@ enum {
 // Sample rate and channel count are explicit, PCM interleaved 16-bit is assumed.
 typedef unsigned NBAIO_Format;
 enum {
-    Format_Invalid
+    Format_Invalid,
+    Format_SR44_1_C2_I16,   // 44.1 kHz PCM stereo interleaved 16-bit signed
+    Format_SR48_C2_I16,     // 48 kHz PCM stereo interleaved 16-bit signed
+    Format_SR44_1_C1_I16,   // 44.1 kHz PCM mono interleaved 16-bit signed
+    Format_SR48_C1_I16,     // 48 kHz PCM mono interleaved 16-bit signed
 };
 
 // Return the frame size of an NBAIO_Format in bytes
