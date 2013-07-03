@@ -967,7 +967,7 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
             {
                 ALOGE("Nu player Set basetime");
                 if (mRenderer != NULL) {
-                    ((WFDRenderer*)(mRenderer.get()))->setBaseMediaTime(baseTimeUs);
+                    ((WFDRenderer*)(mRenderer.get()))->setBaseMediaTime(baseTimeUs,true);
                 }
             }
         }
