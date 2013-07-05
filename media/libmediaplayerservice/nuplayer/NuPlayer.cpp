@@ -64,6 +64,7 @@ NuPlayer::NuPlayer()
       mVideoIsAVC(false),
       mAudioEOS(false),
       mVideoEOS(false),
+      mDontSendFramesToRenderer(0),
       mScanSourcesPending(false),
       mScanSourcesGeneration(0),
       mTimeDiscontinuityPending(false),
@@ -76,6 +77,7 @@ NuPlayer::NuPlayer()
       mVideoLateByUs(0ll),
       mNumFramesTotal(0ll),
       mNumFramesDropped(0ll),
+      mWFDSinkSession(false),
       mPauseIndication(false),
       mSourceType(kDefaultSource),
       mRenderer(NULL),
@@ -212,6 +214,10 @@ void NuPlayer::setDataSource(
            source = LoadCreateSource(url, headers, mUIDValid, mUID, kWfdSource);
            if (source != NULL) {
               mSourceType = kWfdSource;
+              mWFDSinkSession = true;
+              //find  from URL if AVSYNC is disabled then dont create wfdrenderer
+              getValueforKey(url, "disableAVsync=", &mDontSendFramesToRenderer);
+              ALOGE("Nuplayer : disableAVsync = %d",mDontSendFramesToRenderer);
            } else {
              ALOGE("Error creating WFD source");
              //return UNKNOWN_ERROR;
@@ -643,7 +649,19 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             } else if (what == ACodec::kWhatDrainThisBuffer) {
                 if(track == kAudio || track == kVideo) {
                     if ((mSourceType == kWfdSource) || (mbHWPLLChangeSupport != true)) {
+                       if (mWFDSinkSession && mDontSendFramesToRenderer)
+                        {
+                          ///send the frames from here itself to the NativeWindow
+                          ALOGE("Nuplayer : send frames to native window");
+                          sp<AMessage>reply;
+                          CHECK(codecRequest->findMessage("reply",&reply));
+                          reply->setInt32("render",true);
+                          reply->post();
+                        }
+                        else
+                        {
                            renderBuffer(track, codecRequest);
+                        }
                      } else {
                            renderCtrledBuffer(track, codecRequest);
                      }
@@ -999,7 +1017,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 }
             }
             break;
-	}
+    }
 
         default:
             TRESPASS();
@@ -1185,7 +1203,11 @@ status_t NuPlayer::instantiateDecoder(int track, sp<Decoder> *decoder) {
         ALOGV("Creating Audio Decoder ");
         *decoder = new Decoder(notify);
         ALOGV("@@@@:: setting Sink/Renderer pointer to decoder");
-        (*decoder)->setSink(mAudioSink, mRenderer);
+
+        if(mDontSendFramesToRenderer)
+          (*decoder)->setSink(mAudioSink, NULL);
+        else
+          (*decoder)->setSink(mAudioSink, mRenderer);
     } else if (track == kVideo) {
         notify = new AMessage(kWhatVideoNotify ,id());
         *decoder = new Decoder(notify, mNativeWindow);
@@ -1870,5 +1892,32 @@ void NuPlayer::prepareSource()
        }
     }
 }
+
+
+bool NuPlayer::getValueforKey(const char *pUrl, const char* pKey, int *Val)
+{
+     int startIndex = 0;
+     int endIndx = 0;
+     char *pMetaInfo = strstr(pUrl, pKey);
+
+     if(!pMetaInfo) {
+       ALOGE("Get key value creation failed");
+        return false;
+     }
+
+     startIndex = strlen(pKey);
+    *Val = 0;
+    while(pMetaInfo[startIndex] != '/' && pMetaInfo[startIndex] != '/0') {
+       if(pMetaInfo[startIndex] >= '0' && pMetaInfo[startIndex] <= '9') {
+           *Val = *Val * 10 + ((int)pMetaInfo[startIndex] - (int)'0');
+       }else {
+           break;
+       }
+       ++startIndex;
+    }
+
+    return true;
+}
+
 
 }  // namespace android
