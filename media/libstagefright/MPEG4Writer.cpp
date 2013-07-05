@@ -2328,7 +2328,7 @@ status_t MPEG4Writer::Track::threadEntry() {
 }
 
 bool MPEG4Writer::Track::isTrackMalFormed() const {
-    if (mStszTableEntries->count() == 0) {                      // no samples written
+    if (!mIsAudio && mStszTableEntries->count() == 0) {                      // no samples written
         ALOGE("The number of recorded samples is 0");
         return true;
     }
