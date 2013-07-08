@@ -25,6 +25,7 @@
 #include "NuPlayerDriver.h"
 #include "NuPlayerRenderer.h"
 #include "NuPlayerSource.h"
+#include "NuPlayerStats.h"
 #include "RTSPSource.h"
 #include "StreamingSource.h"
 #include "GenericSource.h"
@@ -72,7 +73,8 @@ NuPlayer::NuPlayer()
       mNumFramesDropped(0ll),
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
       mPauseIndication(false),
-      mSourceType(kDefaultSource) {
+      mSourceType(kDefaultSource),
+      mStats(NULL) {
 }
 
 NuPlayer::~NuPlayer() {
@@ -281,12 +283,16 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             mSource->start();
 
+            mStats = new NuPlayerStats();
+
             mRenderer = new Renderer(
                     mAudioSink,
                     new AMessage(kWhatRendererNotify, id()));
 
+            mRenderer->registerStats(mStats);
             looper()->registerHandler(mRenderer);
 
+            mStats->logFpsSummary();
             postScanSources();
             break;
         }
@@ -628,11 +634,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             mResetInProgress = true;
+            mStats->logFpsSummary();
             break;
         }
 
         case kWhatSeek:
         {
+            mStats->notifySeek();
+
             Mutex::Autolock autoLock(mLock);
             int64_t seekTimeUs = -1, newSeekTime = -1;
             status_t nRet = OK;
@@ -668,9 +677,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                    mFlushingVideo = SHUT_DOWN;
                }
             }
+
+            mStats->logSeek(seekTimeUs);
+
             if (mDriver != NULL) {
                 sp<NuPlayerDriver> driver = mDriver.promote();
                 if (driver != NULL) {
+                    mStats->logFpsSummary();
                     driver->notifySeekComplete();
                     if( newSeekTime >= 0 ) {
                         driver->notifyPosition( newSeekTime );
@@ -816,6 +829,7 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
         AString mime;
         CHECK(format->findString("mime", &mime));
         mVideoIsAVC = !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str());
+        mStats->setMime(mime.c_str());
     }
 
     sp<AMessage> notify =
@@ -943,6 +957,8 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
 
         if (!audio) {
             ++mNumFramesTotal;
+            mStats->incrementTotalFrames();
+
         }
 
         dropAccessUnit = false;
@@ -952,6 +968,7 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
                 && !IsAVCReferenceFrame(accessUnit)) {
             dropAccessUnit = true;
             ++mNumFramesDropped;
+            mStats->incrementDroppedFrames();
         }
     } while (dropAccessUnit);
 

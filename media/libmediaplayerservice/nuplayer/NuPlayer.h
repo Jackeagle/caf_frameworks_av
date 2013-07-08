@@ -27,6 +27,7 @@ namespace android {
 struct ACodec;
 struct MetaData;
 struct NuPlayerDriver;
+struct NuPlayerStats;
 
 struct NuPlayer : public AHandler {
     NuPlayer();
@@ -150,6 +151,8 @@ private:
         kDefaultSource
     };
     NuSourceType mSourceType;
+
+    sp<NuPlayerStats> mStats;
 
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 

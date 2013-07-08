@@ -19,6 +19,7 @@
 #include <utils/Log.h>
 
 #include "NuPlayerRenderer.h"
+#include "NuPlayerStats.h"
 
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
@@ -50,7 +51,8 @@ NuPlayer::Renderer::Renderer(
       mVideoRenderingStarted(false),
       mLastPositionUpdateUs(-1ll),
       mVideoLateByUs(0ll),
-      mWasPaused(false) {
+      mWasPaused(false),
+      mStats(NULL) {
 }
 
 NuPlayer::Renderer::~Renderer() {
@@ -384,15 +386,20 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
     CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
 
     int64_t realTimeUs = mediaTimeUs - mAnchorTimeMediaUs + mAnchorTimeRealUs;
-    mVideoLateByUs = ALooper::GetNowUs() - realTimeUs;
+    int64_t nowUs = ALooper::GetNowUs();
+    mVideoLateByUs = nowUs - realTimeUs;
 
     bool tooLate = (mVideoLateByUs > 40000);
 
     if (tooLate) {
         ALOGV("video late by %lld us (%.2f secs)",
              mVideoLateByUs, mVideoLateByUs / 1E6);
+            mStats->recordLate(realTimeUs,nowUs,mVideoLateByUs,mAnchorTimeRealUs);
     } else {
         ALOGV("rendering video at media time %.2f secs", mediaTimeUs / 1E6);
+        mStats->recordOnTime(realTimeUs,nowUs,mVideoLateByUs);
+        mStats->incrementTotalRenderingFrames();
+        mStats->logFps();
     }
 
     entry->mNotifyConsumed->setInt32("render", !tooLate);
@@ -562,6 +569,7 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
 
         mDrainVideoQueuePending = false;
         ++mVideoQueueGeneration;
+        mStats->setVeryFirstFrame(true);
     }
 
     notifyFlushComplete(audio);
@@ -661,6 +669,16 @@ void NuPlayer::Renderer::onPause() {
 
     mPaused = true;
     mWasPaused = true;
+
+
+    int64_t positionUs;
+    if(mAnchorTimeRealUs < 0 || mAnchorTimeMediaUs < 0) {
+        positionUs = -1000;
+    } else {
+        int64_t nowUs = ALooper::GetNowUs();
+        positionUs = (nowUs - mAnchorTimeRealUs) + mAnchorTimeMediaUs;
+    }
+    mStats->logPause(positionUs);
 }
 
 void NuPlayer::Renderer::onResume() {
@@ -681,6 +699,10 @@ void NuPlayer::Renderer::onResume() {
     if (!mVideoQueue.empty()) {
         postDrainVideoQueue();
     }
+}
+
+void NuPlayer::Renderer::registerStats(sp<NuPlayerStats> stats) {
+    mStats = stats;
 }
 
 }  // namespace android
