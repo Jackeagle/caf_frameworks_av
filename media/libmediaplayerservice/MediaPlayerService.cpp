@@ -1663,7 +1663,7 @@ void MediaPlayerService::AudioOutput::pause()
 void MediaPlayerService::AudioOutput::close()
 {
     ALOGV("close");
-    delete mTrack;
+    if (mTrack) delete mTrack;
     mTrack = 0;
 }
 
