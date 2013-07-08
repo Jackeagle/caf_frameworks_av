@@ -547,6 +547,8 @@ protected:
     bool                    mIsTimed;
     int                     mPreviousPriority;          // before start()
     SchedPolicy             mPreviousSchedulingGroup;
+    audio_io_handle_t       mOutput;
+    uint32_t                mSampleRate;
 };
 
 class TimedAudioTrack : public AudioTrack
