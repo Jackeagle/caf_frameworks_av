@@ -316,6 +316,8 @@ status_t AudioTrack::set(
     mAuxEffectId = 0;
     mFlags = flags;
     mCbf = cbf;
+    mOutput = output;
+    mSampleRate = sampleRate;
 
     if (flags & AUDIO_OUTPUT_FLAG_LPA || flags & AUDIO_OUTPUT_FLAG_TUNNEL) {
         ALOGV("Creating Direct Track");
@@ -402,6 +404,14 @@ uint32_t AudioTrack::latency() const
 {
     if(mAudioDirectOutput != -1) {
         return mAudioFlinger->latency(mAudioDirectOutput);
+    }
+    else if (mOutput != 0) {
+        uint32_t afLatency = 0;
+        uint32_t newLatency = 0;
+        AudioSystem::getLatency(mOutput, mStreamType, &afLatency);
+        newLatency = afLatency + (1000*mCblk->frameCount) / mSampleRate;
+        ALOGD("latency() mLatency = %d, newLatency = %d", mLatency, newLatency);
+        return newLatency;
     }
     return mLatency;
 }
@@ -1569,7 +1579,9 @@ status_t AudioTrack::dump(int fd, const Vector<String16>& args) const
     result.append(buffer);
     snprintf(buffer, 255, "  sample rate(%d), status(%d), muted(%d)\n", (mCblk == 0) ? 0 : mCblk->sampleRate, mStatus, mMuted);
     result.append(buffer);
-    snprintf(buffer, 255, "  active(%d), latency (%d)\n", mActive, mLatency);
+    uint32_t afLatency = 0;
+    AudioSystem::getLatency(mOutput, mStreamType, &afLatency);
+    snprintf(buffer, 255, "  active(%d), latency (%d)\n", mActive, afLatency + (1000*mCblk->frameCount) / mSampleRate);
     result.append(buffer);
     ::write(fd, result.string(), result.size());
     return NO_ERROR;
