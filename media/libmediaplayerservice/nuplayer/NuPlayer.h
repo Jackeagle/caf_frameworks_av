@@ -27,6 +27,7 @@ namespace android {
 struct ACodec;
 struct MetaData;
 struct NuPlayerDriver;
+struct NuPlayerStats;
 
 struct NuPlayer : public AHandler {
     NuPlayer();
@@ -149,6 +150,8 @@ private:
     int32_t mVideoScalingMode;
 
     bool mStarted;
+
+    sp<NuPlayerStats> mStats;
 
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 
