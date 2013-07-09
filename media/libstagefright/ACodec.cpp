@@ -401,6 +401,11 @@ ACodec::ACodec()
     }
     ALOGV("media.disable-frc: %s", prop);
 
+#ifdef QCOM_BSP
+    mMPdecisionHandle = display_perf_boost_on();
+    if (mMPdecisionHandle < 0)
+        ALOGE("Error: failed to acquire perf lock");
+#endif
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -422,6 +427,10 @@ ACodec::ACodec()
 }
 
 ACodec::~ACodec() {
+#ifdef QCOM_BSP
+    if (mMPdecisionHandle >= 0)
+        display_perf_boost_off(mMPdecisionHandle);
+#endif
 }
 
 void ACodec::setNotificationMessage(const sp<AMessage> &msg) {
