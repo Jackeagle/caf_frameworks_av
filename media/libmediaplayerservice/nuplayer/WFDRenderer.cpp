@@ -850,12 +850,13 @@ int64_t NuPlayer::WFDRenderer::wfdGetMediaTime(bool audio)
    return mediaTimeClockUs;
 }
 
-void NuPlayer::WFDRenderer::setBaseMediaTime(int64_t ts)
+void NuPlayer::WFDRenderer::setBaseMediaTime(int64_t ts, bool bForceReset)
 {
 ALOGE("$$$$$ WFDRenderer: Setting basetime %lld", ts);
-   if(mMediaTimeRead == false) {
+   if((mMediaTimeRead == false)||bForceReset) {
      mMediaClockUs = ts;
      mMediaTimeRead = true;
+     ALOGE("$$$$$ WFDRenderer: Set basetime %lld bForceReset %d mMediaTimeRead %d", ts, bForceReset, mMediaTimeRead);
    }
 }
 
