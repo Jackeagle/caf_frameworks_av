@@ -129,6 +129,9 @@ private:
     bool mAudioEOS;
     bool mVideoEOS;
 
+    int mDontSendFramesToRenderer;
+    bool mWFDSinkSession;
+
     bool mScanSourcesPending;
     int32_t mScanSourcesGeneration;
     bool mBufferingNotification;
@@ -229,6 +232,8 @@ private:
     List<QueueEntry> mDecoderMessageQueue;
 
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
+    bool getValueforKey(const char *pUrl, const char* pKey, int *Val);
+
     status_t SetOutputFramerate();
     status_t getClipFps(int mIFEFps,int64_t *fps);
     sp<AMessage> Storedreply[FPS_DECISION_WINDOW];

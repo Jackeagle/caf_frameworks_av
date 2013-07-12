@@ -360,8 +360,13 @@ void NuPlayer::MPQHALWrapper::onInputBufferFilled(const sp<AMessage> &msg) {
 
     bool audio = true;
     if(mRenderer != NULL) {
-    mRenderer->queueBuffer(audio, buffer, reply);
-}
+      mRenderer->queueBuffer(audio, buffer, reply);
+    }
+    else
+    {
+      //this mean no AVsync for WFD Sink send directly to Sink device
+      writeDataToAudioRenderer(buffer);
+    }
 }
 
 #if 0
