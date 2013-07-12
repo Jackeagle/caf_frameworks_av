@@ -396,6 +396,7 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
 
     mIsAudioRouted = true;
     mStarted = true;
+    mLatencyUs = ((uint64_t)mAudioSink->latency()) * 1000;
     mAudioSink->start();
     mLock.lock();
     ALOGV("Waking up extractor thread");
@@ -797,7 +798,6 @@ size_t TunnelPlayer::fillBuffer(void *data, size_t size) {
                     break;
                 }
             }
-
         }
         if (mInputBuffer->range_length() == 0) {
             mInputBuffer->release();
@@ -852,7 +852,10 @@ int64_t TunnelPlayer::getRealTimeUs() {
     getOffsetRealTime_l(&mPositionTimeRealUs);
     //update media time too
     mPositionTimeMediaUs = mPositionTimeRealUs;
-    return mPositionTimeRealUs;
+    if (mAudioSink != NULL) {
+        mLatencyUs = ((uint64_t)mAudioSink->latency()) * 1000;
+    }
+    return mPositionTimeRealUs-mLatencyUs;
 }
 
 void TunnelPlayer::getPlayedTimeFromDSP_l(int64_t* timeStamp ) {
