@@ -892,6 +892,13 @@ size_t AudioFlinger::frameCount(audio_io_handle_t output) const
 uint32_t AudioFlinger::latency(audio_io_handle_t output) const
 {
     Mutex::Autolock _l(mLock);
+    if (!mDirectAudioTracks.isEmpty()) {
+        AudioSessionDescriptor *desc = mDirectAudioTracks.valueFor(output);
+        if(desc != NULL) {
+            return desc->stream->get_latency(desc->stream);
+        }
+    }
+
     PlaybackThread *thread = checkPlaybackThread_l(output);
     if (thread == NULL) {
         ALOGW("latency() unknown thread %d", output);
@@ -2338,6 +2345,7 @@ uint32_t AudioFlinger::PlaybackThread::latency() const
     Mutex::Autolock _l(mLock);
     return latency_l();
 }
+
 uint32_t AudioFlinger::PlaybackThread::latency_l() const
 {
     if (initCheck() == NO_ERROR) {
