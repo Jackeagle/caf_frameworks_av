@@ -16,6 +16,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -55,6 +74,8 @@
 
 #include "include/QCUtilityClass.h"
 namespace android {
+
+static const bool isSmoothStreamingEnabled = true;
 
 // Treat time out as an error if we have not received any output
 // buffers after 3 seconds.
@@ -170,6 +191,11 @@ static void InitOMXParams(T *params) {
 }
 
 static bool IsSoftwareCodec(const char *componentName) {
+#ifdef DOLBY_UDC
+    if (!strncmp("OMX.dolby.", componentName, 10)) {
+        return true;
+    }
+#endif // DOLBY_UDC
     if (!strncmp("OMX.google.", componentName, 11)
         || !strncmp("OMX.PV.", componentName, 7)) {
         return true;
@@ -304,6 +330,16 @@ uint32_t OMXCodec::getComponentQuirks(
       quirks |= kDefersOutputBufferAllocation;
     }
 
+#ifdef DOLBY_UDC
+    if (list->codecHasQuirk(
+                index, "needs-flush-before-disable")) {
+        quirks |= kNeedsFlushBeforeDisable;
+    }
+    if (list->codecHasQuirk(
+                index, "requires-flush-complete-emulation")) {
+        quirks |= kRequiresFlushCompleteEmulation;
+    }
+#endif // DOLBY_UDC
     quirks |= QCOMXCodec::getQCComponentQuirks(list,index);
 
     return quirks;
@@ -566,8 +602,8 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
 
-            QCOMXCodec::checkIfInterlaced((const uint8_t *)data, meta);
-
+            QCOMXCodec::setAVCProfileLevel(profile, level, mOMX, mNode, mComponentName);
+            mInterlaceFormatDetected = QCOMXCodec::checkIfInterlaced((const uint8_t *)data, meta);
             CODEC_LOGI(
                     "AVC profile = %u (%s), level = %u",
                     profile, AVCProfileToString(profile), level);
@@ -631,12 +667,16 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-        setAC3Format(numChannels, sampleRate);
+        /* Commenting follwoing call as AC3 soft decoder does not need it and it
+        causes issue */
+        //setAC3Format(numChannels, sampleRate);
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_EAC3, mMIME)) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-        setAC3Format(numChannels, sampleRate); //since AC3 and EAC3 use same format at present
+        /* Commenting follwoing call as AC3 soft decoder does not need it causes
+        issue */
+        //setAC3Format(numChannels, sampleRate); //since AC3 and EAC3 use same format at present
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_EVRC, mMIME)) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
@@ -708,6 +748,13 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             }
 
             QCOMXCodec::setQCSpecificVideoFormat(meta,mOMX,mNode,mComponentName );
+            if (isSmoothStreamingEnabled && !strncmp(mComponentName, "OMX.qcom.", 9)) {
+                err = QCOMXCodec::enableSmoothStreaming(mOMX, mNode);
+                if (err != OK) {
+                    return err;
+                }
+                mInSmoothStreamingMode = true;
+            }
         }
     }
 
@@ -1514,7 +1561,10 @@ OMXCodec::OMXCodec(
               (!strncmp(componentName, "OMX.google.", 11)
               || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
                         ? NULL : nativeWindow),
-      mNumBFrames(0) {
+      mNumBFrames(0),
+      mInSmoothStreamingMode(false),
+      mInterlaceFormatDetected(false),
+      mInterlaceFrame(0) {
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
 
@@ -3384,9 +3434,14 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
 
     OMX_U32 flags = OMX_BUFFERFLAG_ENDOFFRAME;
 
+    if (mInterlaceFormatDetected) {
+        mInterlaceFrame++;
+    }
+
     if (signalEOS) {
         flags |= OMX_BUFFERFLAG_EOS;
-    } else if ((mFlags & kClientNeedsFramebuffer) && !strncmp(mComponentName, "OMX.qcom.", 9)) {
+    } else if (((mFlags & kClientNeedsFramebuffer) && !strncmp(mComponentName, "OMX.qcom.", 9))
+                 && (!mInterlaceFormatDetected || mInterlaceFrame >= 2)) {
         // Because we don't get an EOS after getting the first frame, we
         // need to notify the component with OMX_BUFFERFLAG_EOS, set
         // mNoMoreOutputData to false so fillOutputBuffer gets called on
@@ -4524,6 +4579,9 @@ static const char *audioCodingTypeString(OMX_AUDIO_CODINGTYPE type) {
         "OMX_AUDIO_CodingWMA",
         "OMX_AUDIO_CodingRA",
         "OMX_AUDIO_CodingMIDI",
+#ifdef DOLBY_UDC
+        "OMX_AUDIO_CodingDDP",
+#endif // DOLBY_UDC
     };
 
     size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
@@ -4966,7 +5024,18 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 }
 
                 if (mNativeWindow != NULL) {
-                     initNativeWindowCrop();
+                    if (mInSmoothStreamingMode) {
+                        CODEC_LOGI("Calling native window update buffer geometry [%lu x %lu]",
+                                video_def->nFrameWidth, video_def->nFrameHeight);
+                        status_t err = mNativeWindow.get()->perform(
+                                mNativeWindow.get(), NATIVE_WINDOW_UPDATE_BUFFERS_GEOMETRY,
+                                video_def->nFrameWidth, video_def->nFrameHeight,
+                                video_def->eColorFormat);
+                        if (err != OK) {
+                            CODEC_LOGE("NATIVE_WINDOW_UPDATE_BUFFERS_GEOMETRY failed %d", err);
+                        }
+                    }
+                    initNativeWindowCrop();
                 }
             } else {
                 QCUtilityClass::helper_OMXCodec_hfr(inputFormat, mOutputFormat);

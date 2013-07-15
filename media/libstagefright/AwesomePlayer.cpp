@@ -238,7 +238,7 @@ AwesomePlayer::~AwesomePlayer() {
 
     // Disable Tunnel Mode Audio
     if (mIsTunnelAudio) {
-        if(mTunnelAliveAP > 0) {
+        if (mTunnelAliveAP > 0) {
             mTunnelAliveAP--;
             ALOGV("mTunnelAliveAP = %d", mTunnelAliveAP);
         }
@@ -259,6 +259,8 @@ void AwesomePlayer::printStats() {
             "   Total Playback Duration(%lld ms)\n"
             "   numVideoFramesDropped(%lld)\n"
             "   Average Frames Per Second(%.4f)\n"
+            "   Last Seek To Time(%lld ms)\n"
+            "   Last Paused Time(%lld ms)\n"
             "   First Frame Latency (%lld ms)\n"
             "   Number of times AV Sync Lost(%u)\n"
             "   Max Video Ahead Time Delta(%u)\n"
@@ -274,6 +276,8 @@ void AwesomePlayer::printStats() {
             mStats.mTotalTimeUs/1000,
             mStats.mNumVideoFramesDropped,
             mStats.mTotalTimeUs > 0 ? ((double)(mStats.mTotalFrames)*1E6)/((double)mStats.mTotalTimeUs) : 0,
+            mStats.mLastSeekToTimeMs,
+            mStats.mLastPausedTimeMs,
             mStats.mFirstFrameLatencyUs/1000,
             mStats.mNumTimesSyncLoss,
             -mStats.mMaxEarlyDelta/1000,
@@ -354,11 +358,27 @@ status_t AwesomePlayer::setDataSource_l(
     return OK;
 }
 
+void AwesomePlayer::printFileName(int fd) {
+
+    char symName[40] = {0};
+    char fileName[256] = {0};
+
+    sprintf(symName, "/proc/%d/fd/%d", getpid(), fd);
+
+    if (readlink( symName, fileName, 256) != -1 ) {
+        ALOGD("printFileName fd(%d) -> %s", fd, fileName);
+    }
+}
+
 status_t AwesomePlayer::setDataSource(
         int fd, int64_t offset, int64_t length) {
     Mutex::Autolock autoLock(mLock);
 
+    ALOGD("Before reset_l");
     reset_l();
+
+    if(fd)
+        printFileName(fd);
 
     sp<DataSource> dataSource = new FileSource(fd, offset, length);
 
@@ -651,6 +671,8 @@ void AwesomePlayer::reset_l() {
         mStats.mTotalTimeUs = 0;
         mStats.mVeryFirstFrame = true;
         mStats.mFirstFrameLatencyUs = 0;
+        mStats.mLastPausedTimeMs = 0;
+        mStats.mLastSeekToTimeMs = 0;
         mStats.mResumeDelayStartUs = -1;
         mStats.mSeekDelayStartUs = -1;
     }
@@ -986,17 +1008,19 @@ status_t AwesomePlayer::play_l() {
 
                 if(mIsTunnelAudio && (mAudioPlayer == NULL) &&
                         (LPAPlayer::objectsAlive == 0) &&
-                        (TunnelPlayer::mTunnelObjectsAlive == 0)) {
+                        (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax())) {
                     ALOGD("Tunnel player created for  mime %s duration %lld\n",\
                         mime, mDurationUs);
                     bool initCheck =  false;
                     if(mVideoSource != NULL) {
                         // The parameter true is to inform tunnel player that
                         // clip is audio video
+                        ALOGD("Tunnel for video");
                         mAudioPlayer = new TunnelPlayer(mAudioSink, initCheck,
                                 this, true);
                     }
                     else {
+                        ALOGD("Tunnel for audio");
                         mAudioPlayer = new TunnelPlayer(mAudioSink, initCheck,
                                 this);
                     }
@@ -1023,11 +1047,16 @@ status_t AwesomePlayer::play_l() {
                 property_get("lpa.min_duration",minUserDefDuration,"LPA_MIN_DURATION_USEC_DEFAULT");
                 minDurationForLPA = atoi(minUserDefDuration);
                 if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
-                    ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
-                    minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+                    if(mAudioPlayer == NULL) {
+                        ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
+                        minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+                    }
                 }
                 if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) &&
-                   (tunnelObjectsAlive==0) && (nchannels && (nchannels <= 2)))
+#ifdef USE_TUNNEL_MODE
+                   (tunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
+#endif
+                   (nchannels && (nchannels <= 2)))
                 {
                     ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::objectsAlive);
                     if ( mDurationUs > minDurationForLPA
@@ -1037,6 +1066,7 @@ status_t AwesomePlayer::play_l() {
                         bool initCheck =  false;
                         mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
                         if(!initCheck) {
+                             ALOGE("deleting Tunnel Player - initCheck failed");
                              delete mAudioPlayer;
                              mAudioPlayer = NULL;
                         }
@@ -1143,6 +1173,7 @@ status_t AwesomePlayer::startAudioPlayer_l(bool sendErrorNotification) {
                 true /* sourceAlreadyStarted */);
 
         if (err != OK) {
+            ALOGE("AudioPlayer start error");
             if (sendErrorNotification) {
                 notifyListener_l(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, err);
             }
@@ -1322,6 +1353,12 @@ status_t AwesomePlayer::pause_l(bool at_eos) {
                 Playback::PAUSE, 0);
     }
 
+    if(!(mFlags & VIDEO_AT_EOS)){
+        Mutex::Autolock autoLock(mStatsLock);
+        mStats.mLastPausedTimeMs = mVideoTimeUs/1000;
+        printStats();
+    }
+
     uint32_t params = IMediaPlayerService::kBatteryDataTrackDecoder;
     if ((mAudioSource != NULL) && (mAudioSource != mAudioTrack)) {
         params |= IMediaPlayerService::kBatteryDataTrackAudio;
@@ -1458,7 +1495,7 @@ status_t AwesomePlayer::getPosition(int64_t *positionUs) {
 status_t AwesomePlayer::seekTo(int64_t timeUs) {
     ATRACE_CALL();
 
-    if (((timeUs == 0) && (mExtractorFlags & MediaExtractor::CAN_SEEK_TO_ZERO)) ||
+    if (QCUtilityClass::helper_Awesomeplayer_checkIfSeekToZero(timeUs, mExtractorFlags) ||
         (mExtractorFlags & MediaExtractor::CAN_SEEK)) {
         Mutex::Autolock autoLock(mLock);
         return seekTo_l(timeUs);
@@ -1572,10 +1609,10 @@ status_t AwesomePlayer::initAudioDecoder() {
             mime, (TunnelPlayer::mTunnelObjectsAlive), mTunnelAliveAP);
 
     bool sys_prop_enabled = !strcmp("true",tunnelDecode) || atoi(tunnelDecode);
-
+    ALOGD("maxPossible tunnels = %d", TunnelPlayer::getTunnelObjectsAliveMax());
     //widevine will fallback to software decoder
-    if (sys_prop_enabled && (TunnelPlayer::mTunnelObjectsAlive == 0) &&
-       (mTunnelAliveAP == 0) && (isADTS == 0) &&
+    if (sys_prop_enabled && (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
+       (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax()) && (isADTS == 0) &&
         mAudioSink->realtime() &&
         inSupportedTunnelFormats(mime)) {
 
@@ -1606,7 +1643,11 @@ status_t AwesomePlayer::initAudioDecoder() {
     checkTunnelExceptions();
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
-             (mIsTunnelAudio && (mTunnelAliveAP == 0))) {
+             (mIsTunnelAudio
+#ifdef USE_TUNNEL_MODE
+             && (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax())
+#endif
+    )) {
         ALOGD("Set Audio Track as Audio Source");
         if(mIsTunnelAudio) {
             mTunnelAliveAP++;
@@ -1841,6 +1882,12 @@ void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
                 Playback::PAUSE, 0);
         mDrmManagerClient->setPlaybackStatus(mDecryptHandle,
                 Playback::START, videoTimeUs / 1000);
+    }
+
+    {
+        Mutex::Autolock autoLock(mStatsLock);
+        mStats.mLastSeekToTimeMs = mSeekTimeUs/1000;
+        printStats();
     }
 }
 
@@ -2132,10 +2179,12 @@ void AwesomePlayer::onVideoEvent() {
             property_get("persist.debug.sf.statistics", value, "0");
             if (atoi(value) && mVideoSource != NULL) {
                 if (mStats.mResumeDelayStartUs > 0) {
+                    printStats();
                     ALOGE("Resume Latency = %lld us", getTimeOfDayUs() - mStats.mResumeDelayStartUs);
                     mStats.mResumeDelayStartUs = -1;
                 }
                 if (mStats.mSeekDelayStartUs > 0) {
+                    printStats();
                     ALOGE("Seek Latency = %lld us", getTimeOfDayUs() - mStats.mSeekDelayStartUs);
                     mStats.mSeekDelayStartUs = -1;
                 }

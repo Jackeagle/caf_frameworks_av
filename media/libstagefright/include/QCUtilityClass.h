@@ -96,6 +96,8 @@ struct QCUtilityClass
     static void helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer, sp<MetaData> &format,
                                                    size_t size);
 
+    //helper function for cheking extra flags
+    static bool helper_Awesomeplayer_checkIfSeekToZero(int64_t timeUs, uint32_t  mExtractorFlags);
 };
 
 }

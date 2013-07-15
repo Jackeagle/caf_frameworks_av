@@ -822,15 +822,13 @@ status_t MPEG4Writer::reset() {
         lseek64(mFd, mOffset, SEEK_SET);
         writeInt32(mEstimatedMoovBoxSize - mMoovBoxBufferOffset);
         write("free", 4);
-
-        // Free temp memory
-        free(mMoovBoxBuffer);
-        mMoovBoxBuffer = NULL;
-        mMoovBoxBufferOffset = 0;
     } else {
         ALOGI("The mp4 file will not be streamable.");
     }
-
+    // Free temp memory
+    free(mMoovBoxBuffer);
+    mMoovBoxBuffer = NULL;
+    mMoovBoxBufferOffset = 0;
     CHECK(mBoxes.empty());
 
     release();
@@ -2084,10 +2082,14 @@ status_t MPEG4Writer::Track::threadEntry() {
 
         if (mOwner->exceedsFileSizeLimit()) {
             mOwner->notify(MEDIA_RECORDER_EVENT_INFO, MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED, 0);
+            copy->release();
+            copy = NULL;
             break;
         }
         if (mOwner->exceedsFileDurationLimit()) {
             mOwner->notify(MEDIA_RECORDER_EVENT_INFO, MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
+            copy->release();
+            copy = NULL;
             break;
         }
 
