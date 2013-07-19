@@ -78,6 +78,7 @@ public:
 
 
     static int mTunnelObjectsAlive;
+    static const int getTunnelObjectsAliveMax();
 private:
     int64_t mPositionTimeMediaUs;
     int64_t mPositionTimeRealUs;
@@ -130,15 +131,13 @@ private:
     //Thread alive boolean
     bool extractorThreadAlive;
 
-
     //Declare the condition Variables and Mutex
-
-    pthread_mutex_t extractor_mutex;
-    pthread_cond_t extractor_cv;
+    Mutex mExtractorMutex;
+    Condition mExtractorCv;
 
 
     // make sure Decoder thread has exited
-    void requestAndWaitForExtractorThreadExit();
+    void requestAndWaitForExtractorThreadExit_l();
 
 
     static void *extractorThreadWrapper(void *me);
