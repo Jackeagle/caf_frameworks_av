@@ -59,7 +59,7 @@ static const char   mName[] = "MPQAudioPlayer";
 #define MPQ_AUDIO_SESSION_ID 3
 #define TUNNEL_SESSION_ID 2
 
-#define RENDER_LATENCY 24000
+#define RENDER_LATENCY 0
 #define AAC_AC3_BUFFER_SIZE 32768
 
 namespace android {
