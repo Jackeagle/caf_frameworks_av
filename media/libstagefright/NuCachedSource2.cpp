@@ -664,7 +664,7 @@ String8 NuCachedSource2::getMIMEType() const {
 
 void NuCachedSource2::updateCacheParamsFromSystemProperty() {
     char value[PROPERTY_VALUE_MAX];
-    if (!property_get("media.stagefright.cache-params", value, NULL)) {
+    if (!property_get("persist.env.media.cache-params", value, NULL)) {
         return;
     }
 
