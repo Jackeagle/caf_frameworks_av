@@ -391,6 +391,7 @@ ACodec::ACodec()
       mChannelMaskPresent(false),
       mChannelMask(0) ,
       mSmoothStreaming(false),
+      mFrameAssemblyOneFrame(false),
       mFrcEnable(true) {
 
     /* Read all the relevant properties */
@@ -2218,6 +2219,19 @@ status_t ACodec::setVideoFormatOnPort(
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
+    /* If frame assembly set to one frame then configure accordingly */
+    if(portIndex == kPortIndexInput && mFrameAssemblyOneFrame)
+    {
+        ALOGV("Enable frame by frame mode");
+        OMX_QCOM_PARAM_PORTDEFINITIONTYPE portFmt;
+        portFmt.nPortIndex = kPortIndexInput;
+        portFmt.nFramePackingFormat = OMX_QCOM_FramePacking_OnlyOneCompleteFrame;
+        status_t err = mOMX->setParameter(
+           mNode, (OMX_INDEXTYPE)OMX_QcomIndexPortDefn, (void *)&portFmt, sizeof(portFmt));
+        if(err != OK) {
+          ALOGE("Failed to set frame packing format on component");
+        }
+    }
 
     return err;
 }
@@ -3515,6 +3529,13 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
        if (err != OK) {
           ALOGE("ERROR:: unable to set Video HW in turbo mode..");
        }
+    }
+
+    /* Frame assembly set to Frame-by-Frame */
+    if(msg->findInt32("frameAssemblyCount", &value) && (value == 1))
+    {
+      ALOGV("frameAssemblyCount set to frame by frame mode");
+      mCodec->mFrameAssemblyOneFrame = true;
     }
     mCodec->changeState(mCodec->mLoadedState);
 
