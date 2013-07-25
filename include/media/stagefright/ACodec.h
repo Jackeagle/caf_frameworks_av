@@ -180,6 +180,8 @@ private:
     // If "mKeepComponentAllocated" we only transition back to Loaded state
     // and do not release the component instance.
     bool mKeepComponentAllocated;
+    /* Used to set the component to frame by frame mode */
+    bool mFrameAssemblyOneFrame;
 
     int32_t mEncoderDelay;
     int32_t mEncoderPadding;
