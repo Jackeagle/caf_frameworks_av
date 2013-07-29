@@ -548,7 +548,7 @@ void MPQAudioPlayer::extractorThreadEntry() {
         else
             bytesToWrite = fillBuffer(mLocalBuf, mInputBufferSize);
         ALOGV("fillBuffer returned size %d",bytesToWrite);
-        if((mSeeking || mIsPaused) && mFirstEncodedBuffer)
+        if(mSeeking && mFirstEncodedBuffer)
             continue;
         ssize_t bytesWritten = 0;
         bytesWritten = mAudioSink->write(mLocalBuf, bytesToWrite);
