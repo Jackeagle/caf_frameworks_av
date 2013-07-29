@@ -361,6 +361,7 @@ private:
             unsigned *profile, unsigned *level);
 
     status_t stopOmxComponent_l();
+    status_t flushBuffersOnError(void);
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
@@ -368,6 +369,7 @@ private:
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
 
     bool mNumBFrames;
+    status_t releaseMediaBuffersOn(OMX_U32 portIndex);
 };
 
 struct CodecCapabilities {
