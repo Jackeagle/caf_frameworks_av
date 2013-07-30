@@ -610,6 +610,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             ALOGV("kWhatReset");
 
             cancelPollDuration();
+#ifdef QCOM_WFD_SINK
+            if (mWFDSinkSession && mSource != NULL) {
+                mSource->stop();
+            }
+#endif
 
             if (mRenderer != NULL) {
                 // There's an edge case where the renderer owns all output
