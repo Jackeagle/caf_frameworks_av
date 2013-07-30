@@ -619,14 +619,9 @@ status_t SampleTable::findSyncSampleNear(
 
     *sample_index = 0;
 
-    if (mSyncSampleOffset < 0) {
+    if (mSyncSampleOffset < 0 || mNumSyncSamples == 0) {
         // All samples are sync-samples.
         *sample_index = start_sample_index;
-        return OK;
-    }
-
-    if (mNumSyncSamples == 0) {
-        *sample_index = 0;
         return OK;
     }
 
