@@ -96,6 +96,10 @@ struct ExtendedCodec {
 
     static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
 
+    static void enableSmoothStreaming(
+            const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
+            const char* componentName);
+
 private:
 
     static status_t setWMAFormat(

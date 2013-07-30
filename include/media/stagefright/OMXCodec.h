@@ -370,6 +370,7 @@ private:
 
     bool mNumBFrames;
     status_t releaseMediaBuffersOn(OMX_U32 portIndex);
+    bool mInSmoothStreamingMode;
 };
 
 struct CodecCapabilities {
