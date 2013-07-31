@@ -666,12 +666,16 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-        setAC3Format(numChannels, sampleRate);
+        /* Commenting follwoing call as AC3 soft decoder does not need it and it
+        causes issue */
+        //setAC3Format(numChannels, sampleRate);
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_EAC3, mMIME)) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-        setAC3Format(numChannels, sampleRate); //since AC3 and EAC3 use same format at present
+        /* Commenting follwoing call as AC3 soft decoder does not need it causes
+        issue */
+        //setAC3Format(numChannels, sampleRate); //since AC3 and EAC3 use same format at present
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_EVRC, mMIME)) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
