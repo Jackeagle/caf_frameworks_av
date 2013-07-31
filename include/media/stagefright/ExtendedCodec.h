@@ -78,9 +78,8 @@ struct ExtendedCodec {
 
     static status_t handleSupportedAudioFormats(int format, AString* meta);
 
-    static void overrideComponentName(
-            uint32_t quirks, const sp<MetaData> &meta,
-            const char* componentName);
+    static const char* overrideComponentName(
+            uint32_t quirks, const sp<MetaData> &meta);
 
     static void getRawCodecSpecificData(
             const sp<MetaData> &meta, const void* &data, size_t& size);
@@ -92,6 +91,10 @@ struct ExtendedCodec {
     static void configureVideoCodec(
             const sp<MetaData> &meta, sp<IOMX> OMXhandle,
             const uint32_t flags, IOMX::node_id nodeID, char* componentName );
+
+    static void enableSmoothStreaming(
+            const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
+            const char* componentName);
 
 private:
 

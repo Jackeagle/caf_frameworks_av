@@ -891,7 +891,8 @@ void AudioFlinger::ThreadBase::lockEffectChains_l(
 {
     effectChains = mEffectChains;
     for (size_t i = 0; i < mEffectChains.size(); i++) {
-        mEffectChains[i]->lock();
+        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
+            mEffectChains[i]->lock();
     }
 }
 
@@ -899,7 +900,8 @@ void AudioFlinger::ThreadBase::unlockEffectChains(
         const Vector< sp<AudioFlinger::EffectChain> >& effectChains)
 {
     for (size_t i = 0; i < effectChains.size(); i++) {
-        effectChains[i]->unlock();
+        if (mEffectChains[i] != mAudioFlinger->mLPAEffectChain)
+            effectChains[i]->unlock();
     }
 }
 
@@ -3051,9 +3053,11 @@ bool AudioFlinger::MixerThread::checkForNewParameters_l()
 
             // forward device change to effects that have requested to be
             // aware of attached audio device.
-            mOutDevice = value;
-            for (size_t i = 0; i < mEffectChains.size(); i++) {
-                mEffectChains[i]->setDevice_l(mOutDevice);
+            if (value != AUDIO_DEVICE_NONE) {
+                mOutDevice = value;
+                for (size_t i = 0; i < mEffectChains.size(); i++) {
+                    mEffectChains[i]->setDevice_l(mOutDevice);
+                }
             }
         }
 
@@ -3298,6 +3302,9 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
                 if (--(track->mRetryCount) <= 0) {
                     ALOGV("BUFFER TIMEOUT: remove(%d) from active list", track->name());
                     tracksToRemove->add(track);
+                    // indicate to client process that the track was disabled because of underrun
+                    // it will then automatically call start() when data is available
+                    android_atomic_or(CBLK_DISABLED, &cblk->flags);
                 } else if (i == (count -1)){
                     mixerStatus = MIXER_TRACKS_ENABLED;
                 }

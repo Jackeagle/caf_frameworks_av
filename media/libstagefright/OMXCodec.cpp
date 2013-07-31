@@ -383,7 +383,14 @@ sp<MediaSource> OMXCodec::Create(
             return softwareCodec;
         }
 
-        ExtendedCodec::overrideComponentName(quirks, meta, componentName);
+        const char* ext_componentName = ExtendedCodec::overrideComponentName(quirks, meta);
+        if(ext_componentName != NULL) {
+          componentName = ext_componentName;
+        }
+        if (softwareCodec != NULL) {
+            ALOGE("Successfully allocated software codec '%s'", componentName);
+            return softwareCodec;
+        }
 
         ALOGV("Attempting to allocate OMX node '%s'", componentName);
 
@@ -668,6 +675,8 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
 
             ExtendedCodec::configureVideoCodec(
                     meta, mOMX, mFlags, mNode, mComponentName);
+            ExtendedCodec::enableSmoothStreaming(
+                    mOMX, mNode, &mInSmoothStreamingMode, mComponentName);
         }
     }
 
@@ -1249,7 +1258,9 @@ status_t OMXCodec::setupAVCEncoderParameters(const sp<MetaData>& meta) {
     QCUtils::HFR::reCalculateHFRParams(meta, frameRate, bitRate);
 
     // XXX
-    if (h264type.eProfile != OMX_VIDEO_AVCProfileBaseline) {
+    if (QCUtils::isAVCProfileSupported(h264type.eProfile)){
+        ALOGI("Profile type is  %d ",h264type.eProfile);
+    } else if (h264type.eProfile != OMX_VIDEO_AVCProfileBaseline) {
         ALOGW("Use baseline profile instead of %d for AVC recording",
             h264type.eProfile);
         h264type.eProfile = OMX_VIDEO_AVCProfileBaseline;
@@ -1457,6 +1468,7 @@ OMXCodec::OMXCodec(
       mState(LOADED),
       mInitialBufferSubmit(true),
       mSignalledEOS(false),
+      mFinalStatus(OK),
       mNoMoreOutputData(false),
       mOutputPortSettingsHaveChanged(false),
       mSeekTimeUs(-1),
@@ -1470,7 +1482,8 @@ OMXCodec::OMXCodec(
               (!strncmp(componentName, "OMX.google.", 11)
               || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
                         ? NULL : nativeWindow),
-      mNumBFrames(0) {
+      mNumBFrames(0),
+      mInSmoothStreamingMode(false) {
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
 
@@ -3052,15 +3065,23 @@ void OMXCodec::fillOutputBuffers() {
     // end-of-output-stream. If we own all input buffers and also own
     // all output buffers and we already signalled end-of-input-stream,
     // the end-of-output-stream is implied.
-    if (mSignalledEOS
+
+    // NOTE: Thumbnail mode needs a call to fillOutputBuffer in order
+    // to get the decoded frame from the component. Currently,
+    // thumbnail mode calls emptyBuffer with an EOS flag on its first
+    // frame and sets mSignalledEOS to true, so without the check for
+    // !mThumbnailMode, fillOutputBuffer will never be called.
+    if(!QCUtils::checkIsThumbNailMode(mFlags, mComponentName)) {
+        if (mSignalledEOS
             && countBuffersWeOwn(mPortBuffers[kPortIndexInput])
                 == mPortBuffers[kPortIndexInput].size()
             && countBuffersWeOwn(mPortBuffers[kPortIndexOutput])
                 == mPortBuffers[kPortIndexOutput].size()) {
-        mNoMoreOutputData = true;
-        mBufferFilled.signal();
+            mNoMoreOutputData = true;
+            mBufferFilled.signal();
 
-        return;
+            return;
+        }
     }
 
     Vector<BufferInfo> *buffers = &mPortBuffers[kPortIndexOutput];
@@ -3350,6 +3371,18 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
 
     if (signalEOS) {
         flags |= OMX_BUFFERFLAG_EOS;
+    } else if(QCUtils::checkIsThumbNailMode(mFlags, mComponentName)) {
+        // Because we don't get an EOS after getting the first frame, we
+        // need to notify the component with OMX_BUFFERFLAG_EOS, set
+        // mNoMoreOutputData to false so fillOutputBuffer gets called on
+        // the first output buffer (see comment in fillOutputBuffer), and
+        // mSignalledEOS must be true so drainInputBuffer is not executed
+        // on extra frames. Setting mFinalStatus to ERROR_END_OF_STREAM as
+        // we dont want to return OK and NULL buffer in read.
+        flags |= OMX_BUFFERFLAG_EOS;
+        mNoMoreOutputData = false;
+        mSignalledEOS = true;
+        mFinalStatus = ERROR_END_OF_STREAM;
     } else {
         mNoMoreOutputData = false;
     }
@@ -4729,7 +4762,12 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 }
 
                 if (mNativeWindow != NULL) {
-                     initNativeWindowCrop();
+                    if (mInSmoothStreamingMode) {
+                        QCUtils::updateNativeWindowBufferGeometry(
+                                mNativeWindow.get(), video_def->nFrameWidth,
+                                video_def->nFrameHeight, video_def->eColorFormat);
+                    }
+                    initNativeWindowCrop();
                 }
             } else {
                 QCUtils::HFR::copyHFRParams(inputFormat, mOutputFormat);
