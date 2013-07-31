@@ -380,6 +380,14 @@ private:
     status_t releaseMediaBuffersOn(OMX_U32 portIndex);
     bool mInSmoothStreamingMode;
     size_t countOutputBuffers(BufferStatus);
+
+    bool mSignalledReadTryAgain;
+    bool mReturnedRetry;
+    int64_t mLastSeekTimeUs;
+    ReadOptions::SeekMode mLastSeekMode;
+
+
+    bool hasDisabledPorts();
 };
 
 struct CodecCapabilities {

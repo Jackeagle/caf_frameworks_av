@@ -95,6 +95,7 @@ AudioPlayer::AudioPlayer(
       mReachedEOS(false),
       mFinalStatus(OK),
       mStarted(false),
+      mSourcePaused(false),
       mIsFirstBuffer(false),
       mFirstBufferResult(OK),
       mFirstBuffer(NULL),
@@ -131,6 +132,7 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
 
     status_t err;
     if (!sourceAlreadyStarted) {
+        mSourcePaused = false;
         err = mSource->start();
 
         if (err != OK) {
@@ -276,10 +278,12 @@ void AudioPlayer::pause(bool playPendingSamples) {
 
         mPinnedTimeUs = ALooper::GetNowUs();
     }
+    mSourcePaused = true;
 }
 
 void AudioPlayer::resume() {
     CHECK(mStarted);
+    mSourcePaused = false;
 
     if (mAudioSink.get() != NULL) {
         mAudioSink->start();
@@ -316,6 +320,7 @@ void AudioPlayer::reset() {
         mInputBuffer = NULL;
     }
 
+    mSourcePaused = false;
     mSource->stop();
 
     // The following hack is necessary to ensure that the OMX
@@ -601,10 +606,22 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
 
                 mIsFirstBuffer = false;
             } else {
-                err = mSource->read(&mInputBuffer, &options);
-                if (err == OK && mInputBuffer == NULL && mSourcePaused) {
-                    ALOGV("mSourcePaused, return 0 from fillBuffer");
-                    return 0;
+                if(!mSourcePaused) {
+                    err = mSource->read(&mInputBuffer, &options);
+                    if (err == OK && mInputBuffer == NULL && mSourcePaused) {
+                        ALOGV("mSourcePaused, return 0 from fillBuffer");
+                        return 0;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            if(err == -EAGAIN) {
+                if(mSourcePaused){
+                    break;
+                } else {
+                    continue;
                 }
             }
 #ifdef DOLBY_UDC_MULTICHANNEL

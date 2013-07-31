@@ -1574,7 +1574,11 @@ OMXCodec::OMXCodec(
                         ? NULL : nativeWindow),
       mNumBFrames(0),
       mInSmoothStreamingMode(false),
-      mDeferReason(0) {
+      mDeferReason(0),
+      mSignalledReadTryAgain(false),
+      mReturnedRetry(false),
+      mLastSeekTimeUs(-1),
+      mLastSeekMode(ReadOptions::SEEK_CLOSEST) {
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
 
@@ -3400,6 +3404,14 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
             err = mSource->read(&srcBuffer);
         }
 
+        if (err == -EAGAIN) {
+            mSignalledReadTryAgain = true;
+            mBufferFilled.signal();
+            return false;
+        } else {
+            mSignalledReadTryAgain = false;
+        }
+
         if (err != OK) {
             signalEOS = true;
             mFinalStatus = err;
@@ -3620,6 +3632,11 @@ status_t OMXCodec::waitForBufferFilled_l() {
         // for video encoding.
         return mBufferFilled.wait(mLock);
     }
+
+    if ((mState == EXECUTING) && (mSignalledReadTryAgain == true)) {
+        return -EAGAIN;
+    }
+
     status_t err = mBufferFilled.waitRelative(mLock, kBufferFilledEventTimeOutNs);
     if ((err == -ETIMEDOUT) && (mPaused == true)){
         // When the audio playback is paused, the fill buffer maybe timed out
@@ -3627,6 +3644,11 @@ status_t OMXCodec::waitForBufferFilled_l() {
         // timed out as a valid case.
         err = OK;
     }
+
+    if ((err == OK) && (mSignalledReadTryAgain == true) && (mState == EXECUTING)) {
+        return -EAGAIN;
+    }
+
     if (err != OK) {
         CODEC_LOGE("Timed out waiting for output buffers: %d/%d",
             countBuffersWeOwn(mPortBuffers[kPortIndexInput]),
@@ -4003,6 +4025,10 @@ status_t OMXCodec::start(MetaData *meta) {
     mTargetTimeUs = -1;
     mFilledBuffers.clear();
     mPaused = false;
+    mSignalledReadTryAgain = false;
+    mReturnedRetry = false;
+    mLastSeekTimeUs = -1;
+    mLastSeekMode = ReadOptions::SEEK_CLOSEST;
 
     status_t err;
     if (mIsEncoder) {
@@ -4174,14 +4200,27 @@ status_t OMXCodec::read(
     Mutex::Autolock autoLock(mLock);
 
     if (mState != EXECUTING && mState != RECONFIGURING) {
+        mReturnedRetry = false;
         return UNKNOWN_ERROR;
     }
 
+    //Flushing state
+    if (mState == EXECUTING && hasDisabledPorts()){
+        mReturnedRetry = true;
+        return -EAGAIN;
+    }
+
     bool seeking = false;
-    int64_t seekTimeUs;
-    ReadOptions::SeekMode seekMode;
+    int64_t seekTimeUs = -1;
+    ReadOptions::SeekMode seekMode = ReadOptions::SEEK_CLOSEST;
     if (options && options->getSeekTo(&seekTimeUs, &seekMode)) {
         seeking = true;
+        if(mReturnedRetry &&
+          (seekTimeUs == mLastSeekTimeUs) &&
+          (seekMode == mLastSeekMode))
+            seeking = false;
+        mLastSeekTimeUs = seekTimeUs;
+        mLastSeekMode = seekMode;
     }
 
     if (mInitialBufferSubmit) {
@@ -4210,11 +4249,13 @@ status_t OMXCodec::read(
     if (seeking) {
         while (mState == RECONFIGURING) {
             if ((err = waitForBufferFilled_l()) != OK) {
+                mReturnedRetry = (err == -EAGAIN);
                 return err;
             }
         }
 
         if (mState != EXECUTING) {
+            mReturnedRetry = false;
             return UNKNOWN_ERROR;
         }
 
@@ -4262,9 +4303,14 @@ status_t OMXCodec::read(
 
         while (mSeekTimeUs >= 0) {
             if ((err = waitForBufferFilled_l()) != OK) {
+                mReturnedRetry = (err == -EAGAIN);
                 return err;
             }
         }
+    }
+
+    if ((mSignalledReadTryAgain == true) && (mState == EXECUTING)) {
+        drainInputBuffers();
     }
 
     while (mState != ERROR && !mNoMoreOutputData && mFilledBuffers.empty() &&
@@ -4277,10 +4323,11 @@ status_t OMXCodec::read(
                 ALOGV("returned OK instead of timedout from read() as mPaused is true");
                 err = OK;
             }
+            mReturnedRetry = (err == -EAGAIN);
             return err;
         }
     }
-
+    mReturnedRetry = false;
     if (mState == ERROR) {
         return UNKNOWN_ERROR;
     }
@@ -5257,6 +5304,13 @@ size_t OMXCodec::countOutputBuffers(BufferStatus status) {
     }
 
     return count;
+}
+
+bool OMXCodec::hasDisabledPorts() {
+    if ((mPortStatus[kPortIndexOutput] == ENABLED) && (mPortStatus[kPortIndexInput] == ENABLED)) {
+        return false;
+    }
+    return true;
 }
 
 }  // namespace android

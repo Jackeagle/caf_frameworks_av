@@ -379,6 +379,8 @@ private:
     bool mIsTunnelAudio;
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
+
+    bool mReadRetry;
 };
 
 }  // namespace android
