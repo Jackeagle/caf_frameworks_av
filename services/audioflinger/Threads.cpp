@@ -1210,7 +1210,8 @@ sp<AudioFlinger::PlaybackThread::Track> AudioFlinger::PlaybackThread::createTrac
               ||((format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_AMR_WB)
               ||((format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_EVRC)
               ||((format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_EVRCB)
-              ||((format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_EVRCWB)) {
+              ||((format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_EVRCWB)
+              ||((format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_EVRCNW)) {
             if (sampleRate != mSampleRate || format != mFormat || channelMask != mChannelMask) {
                 ALOGE("createTrack_l() Bad parameter: sampleRate %u format %d, channelMask 0x%08x "
                         "for output %p with format %d",
