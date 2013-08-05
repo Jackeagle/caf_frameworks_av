@@ -47,6 +47,7 @@
 #include <OMX_QCOMExtns.h>
 #include <OMX_Component.h>
 #include <QOMX_AudioExtensions.h>
+#include "include/QCUtils.h"
 
 namespace android {
 
@@ -177,6 +178,8 @@ status_t ExtendedCodec::setVideoInputFormat(
         *compressionFormat = OMX_VIDEO_CodingWMV;
     } else if (!strcasecmp(MEDIA_MIMETYPE_CONTAINER_MPEG2, mime)){
         *compressionFormat = OMX_VIDEO_CodingMPEG2;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)){
+        *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingHevc;
     } else {
         retVal = BAD_VALUE;
     }
@@ -195,6 +198,8 @@ status_t ExtendedCodec::setVideoOutputFormat(
         *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingDivx;
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV, mime)){
         *compressionFormat = OMX_VIDEO_CodingWMV;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)){
+        *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingHevc;
     } else {
         retVal = BAD_VALUE;
     }
@@ -516,9 +521,11 @@ void ExtendedCodec::enableSmoothStreaming(
         const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
         const char* componentName) {
     *isEnabled = false;
-#ifndef ENABLE_DEFAULT_SMOOTHSTREAMING
-    return;
-#endif
+
+    if (!QCUtils::ShellProp::isSmoothStreamingEnabled()) {
+        return;
+    }
+
     //ignore non QC components
     if (strncmp(componentName, "OMX.qcom.", 9)) {
         return;
