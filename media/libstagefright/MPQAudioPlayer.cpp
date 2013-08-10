@@ -517,7 +517,8 @@ void *MPQAudioPlayer::extractorThreadWrapper(void *me) {
 void MPQAudioPlayer::extractorThreadEntry() {
     mExtractorMutex.lock();
     pid_t tid  = gettid();
-    androidSetThreadPriority(tid, ANDROID_PRIORITY_AUDIO);
+    androidSetThreadPriority(tid, mHasVideo ? ANDROID_PRIORITY_NORMAL :
+                                              ANDROID_PRIORITY_AUDIO);
     prctl(PR_SET_NAME, (unsigned long)"MPQ Audio DecodeThread", 0, 0, 0);
     ALOGV("extractorThreadEntry wait for signal \n");
 
@@ -629,6 +630,7 @@ size_t MPQAudioPlayer::fillBuffer(void *data, size_t size) {
 
     size_t size_done = 0;
     size_t size_remaining = size;
+    bool yield = !mIsFirstBuffer;
     if (!mFirstEncodedBuffer &&
         (mAudioFormat == AUDIO_FORMAT_WMA ||
          mAudioFormat == AUDIO_FORMAT_WMA_PRO ||
@@ -746,6 +748,9 @@ size_t MPQAudioPlayer::fillBuffer(void *data, size_t size) {
                                     mInputBuffer->range_length() - copy);
             size_done += copy;
             size_remaining -= copy;
+            if (mHasVideo && yield) {
+                sched_yield();
+            }
             if(size_remaining > 0)
                 continue;
         } else {
@@ -757,6 +762,10 @@ size_t MPQAudioPlayer::fillBuffer(void *data, size_t size) {
 
             mInputBuffer->set_range(mInputBuffer->range_offset(),
                                 mInputBuffer->range_length() - mInputBuffer->range_length());
+            if (mHasVideo && yield) {
+                sched_yield();
+            }
+
         }
         break;
     }
