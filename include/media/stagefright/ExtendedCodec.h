@@ -34,6 +34,7 @@
 #include <media/IOMX.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaSource.h>
+#include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AString.h>
 #include <utils/threads.h>
 
@@ -55,6 +56,9 @@ struct ExtendedCodec {
         kPortIndexInput  = 0,
         kPortIndexOutput = 1
     };
+
+    static status_t convertMetaDataToMessage(
+        const sp<MetaData> &meta, sp<AMessage> *format);
 
     static uint32_t getComponentQuirks (
             const MediaCodecList *list, size_t index);
@@ -89,8 +93,12 @@ struct ExtendedCodec {
             bool isEncoder,const char *mime);
 
     static void configureVideoCodec(
+            const sp<AMessage> &msg, sp<IOMX> OMXhandle,
+            const uint32_t flags, IOMX::node_id nodeID, const char* componentName );
+
+    static void configureVideoCodec(
             const sp<MetaData> &meta, sp<IOMX> OMXhandle,
-            const uint32_t flags, IOMX::node_id nodeID, char* componentName );
+            const uint32_t flags, IOMX::node_id nodeID, const char* componentName );
 
     static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
 
@@ -101,6 +109,7 @@ struct ExtendedCodec {
             const char* componentName);
 
 private:
+    static const char* getMsgKey(int key );
 
     static status_t setWMAFormat(
             const sp<MetaData> &meta, sp<IOMX> OMXhandle,

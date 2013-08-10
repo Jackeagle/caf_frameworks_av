@@ -30,9 +30,10 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "ExtendedCodec"
 #include <utils/Log.h>
-
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ABitReader.h>
+#include <media/stagefright/foundation/AMessage.h>
+#include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaCodecList.h>
 
@@ -50,6 +51,104 @@
 #include "include/QCUtils.h"
 
 namespace android {
+
+enum MetaKeyType{
+    INT32, INT64, STRING, DATA, CSD
+};
+
+struct MetaKeyEntry{
+    int MetaKey;
+    const char* MsgKey;
+    MetaKeyType KeyType;
+};
+
+static const MetaKeyEntry MetaKeyTable[] {
+   {kKeyBitRate              , "bitrate"                , INT32},
+   {kKeyAacCodecSpecificData , "aac-codec-specific-data", CSD},
+   {kKeyRawCodecSpecificData , "raw-codec-specific-data", CSD},
+   {kKeyDivXVersion          , "divx-version"           , INT32},  // int32_t
+   {kKeyDivXDrm              , "divx-drm"               , DATA},   // void *
+   {kKeyWMAEncodeOpt         , "wma-encode-opt"         , INT32},  // int32_t
+   {kKeyWMABlockAlign        , "wma-block-align"        , INT32},  // int32_t
+   {kKeyWMAVersion           , "wma-version"            , INT32},  // int32_t
+   {kKeyWMAAdvEncOpt1        , "wma-adv-enc-opt1"       , INT32},  // int16_t
+   {kKeyWMAAdvEncOpt2        , "wma-adv-enc-opt2"       , INT32},  // int32_t
+   {kKeyWMAFormatTag         , "wma-format-tag"         , INT64},  // int64_t
+   {kKeyWMABitspersample     , "wma-bits-per-sample"    , INT64},  // int64_t
+   {kKeyWMAVirPktSize        , "wma-vir-pkt-size"       , INT64},  // int64_t
+   {kKeyWMAChannelMask       , "wma-channel-mask"       , INT32},  // int32_t
+
+   {kKeyFileFormat           , "file-format"            , STRING},  // cstring
+
+   {kkeyAacFormatAdif        , "aac-format-adif"        , INT32},  // bool (int32_t)
+   {kkeyAacFormatLtp         , "aac-format-ltp"         , INT32},
+
+   //DTS subtype
+   {kKeyDTSSubtype           , "dts-subtype"            , INT32},  // int32_t
+
+   //Extractor sets this
+   {kKeyUseArbitraryMode     , "use-arbitrary-mode"     , INT32},  // bool (int32_t)
+   {kKeySmoothStreaming      , "smooth-streaming"       , INT32},  // bool (int32_t)
+   {kKeyHFR                  , "hfr"                    , INT32},  // int32_t
+
+   {kKeySampleRate           , "sample-rate"            , INT32},
+   {kKeyChannelCount         , "channel-count"          , INT32},
+};
+
+const char* ExtendedCodec::getMsgKey(int key) {
+    static const size_t numMetaKeys =
+                     sizeof(MetaKeyTable) / sizeof(MetaKeyTable[0]);
+    size_t i;
+    for (i = 0; i < numMetaKeys; ++i) {
+        if (key == MetaKeyTable[i].MetaKey) {
+            return MetaKeyTable[i].MsgKey;
+        }
+    }
+    return "unknown";
+}
+
+status_t ExtendedCodec::convertMetaDataToMessage(
+        const sp<MetaData> &meta, sp<AMessage> *format) {
+    const char * str_val;
+    int32_t int32_val;
+    int64_t int64_val;
+    uint32_t data_type;
+    const void * data;
+    size_t size;
+    static const size_t numMetaKeys =
+                     sizeof(MetaKeyTable) / sizeof(MetaKeyTable[0]);
+    size_t i;
+    for (i = 0; i < numMetaKeys; ++i) {
+        if (MetaKeyTable[i].KeyType == INT32 &&
+            meta->findInt32(MetaKeyTable[i].MetaKey, &int32_val)) {
+            ALOGV("found metakey %s of type int32", MetaKeyTable[i].MsgKey);
+            format->get()->setInt32(MetaKeyTable[i].MsgKey, int32_val);
+        }
+        else if (MetaKeyTable[i].KeyType == INT64 &&
+                 meta->findInt64(MetaKeyTable[i].MetaKey, &int64_val)) {
+            ALOGV("found metakey %s of type int64", MetaKeyTable[i].MsgKey);
+            format->get()->setInt64(MetaKeyTable[i].MsgKey, int64_val);
+        }
+        else if (MetaKeyTable[i].KeyType == STRING &&
+                 meta->findCString(MetaKeyTable[i].MetaKey, &str_val)) {
+            ALOGV("found metakey %s of type string", MetaKeyTable[i].MsgKey);
+            format->get()->setString(MetaKeyTable[i].MsgKey, str_val);
+        }
+        else if ( (MetaKeyTable[i].KeyType == DATA ||
+                   MetaKeyTable[i].KeyType == CSD) &&
+                   meta->findData(MetaKeyTable[i].MetaKey, &data_type, &data, &size)) {
+            ALOGV("found metakey %s of type data", MetaKeyTable[i].MsgKey);
+            sp<ABuffer> buffer = new ABuffer(size);
+            memcpy(buffer->data(), data, size);
+            if (MetaKeyTable[i].KeyType == CSD) {
+                buffer->meta()->setInt32("csd", true);
+                buffer->meta()->setInt64("timeUs", 0);
+            }
+            format->get()->setBuffer(MetaKeyTable[i].MsgKey, buffer);
+        }
+    }
+    return OK;
+}
 
 uint32_t ExtendedCodec::getComponentQuirks(
         const MediaCodecList *list, size_t index) {
@@ -282,14 +381,23 @@ status_t ExtendedCodec::handleSupportedAudioFormats(int format, AString* meta) {
 
 void ExtendedCodec::configureVideoCodec(
         const sp<MetaData> &meta, sp<IOMX> OMXhandle,
-        const uint32_t flags, IOMX::node_id nodeID, char* componentName ) {
+        const uint32_t flags, IOMX::node_id nodeID, const char* componentName ) {
+    sp<AMessage> msg = new AMessage();
+    msg->clear();
+    convertMetaDataToMessage(meta, &msg);
+    configureVideoCodec(msg, OMXhandle, flags, nodeID, componentName);
+}
+
+void ExtendedCodec::configureVideoCodec(
+        const sp<AMessage> &msg, sp<IOMX> OMXhandle,
+        const uint32_t flags, IOMX::node_id nodeID, const char* componentName ) {
     if (strncmp(componentName, "OMX.qcom.", 9)) {
         //do nothing for non QC component
         return;
     }
 
     int32_t arbitraryMode = 0;
-    bool success = meta->findInt32(kKeyUseArbitraryMode, &arbitraryMode);
+    bool success = msg->findInt32(getMsgKey(kKeyUseArbitraryMode), &arbitraryMode);
     bool useFrameByFrameMode = true; //default option
     if (success && arbitraryMode) {
         useFrameByFrameMode = false;
@@ -310,10 +418,14 @@ void ExtendedCodec::configureVideoCodec(
     }
 
     // Enable timestamp reordering only for AVI/mpeg4 and vc1 clips
-    const char *fileFormat;
-    success = meta->findCString(kKeyFileFormat, &fileFormat);
+    AString fileFormat;
+    const char *fileFormatCStr = NULL;
+    success = msg->findString(getMsgKey(kKeyFileFormat), &fileFormat);
+    if (success) {
+        fileFormatCStr = fileFormat.c_str();
+    }
     if (!strcmp(componentName, "OMX.qcom.video.decoder.vc1") ||
-        (success && !strncmp(fileFormat, "video/avi", 9))) {
+        (fileFormatCStr!= NULL && !strncmp(fileFormatCStr, "video/avi", 9))) {
         ALOGI("Enabling timestamp reordering");
         QOMX_INDEXTIMESTAMPREORDER reorder;
         InitOMXParams(&reorder);
@@ -836,6 +948,10 @@ void ExtendedCodec::setAC3Format(
 #else //ENABLE_QC_AV_ENHANCEMENTS
 
 namespace android {
+    status_t ExtendedCodec::convertMetaDataToMessage(
+            const sp<MetaData> &meta, sp<AMessage> *format) {
+        return OK;
+    }
 
     uint32_t ExtendedCodec::getComponentQuirks (
             const MediaCodecList *list, size_t index) {
@@ -911,8 +1027,13 @@ namespace android {
     }
 
     void ExtendedCodec::configureVideoCodec(
+        const sp<AMessage> &msg,  sp<IOMX> OMXhandle,
+        const uint32_t flags, IOMX::node_id nodeID, const char* componentName ) {
+    }
+
+    void ExtendedCodec::configureVideoCodec(
         const sp<MetaData> &meta, sp<IOMX> OMXhandle,
-        const uint32_t flags, IOMX::node_id nodeID, char* componentName ) {
+        const uint32_t flags, IOMX::node_id nodeID, const char* componentName ) {
     }
 
     void ExtendedCodec::enableSmoothStreaming(
