@@ -50,6 +50,9 @@
 #include <media/stagefright/MediaDebug.h>
 #include <media/stagefright/MediaDefs.h>
 
+#define MIN_BITERATE_AAC 24000
+#define MAX_BITERATE_AAC 192000
+
 namespace android {
 
 struct QCUtilityClass
@@ -95,6 +98,8 @@ struct QCUtilityClass
     //helper function for MPEG4 Extractor to check for AC3/EAC3 contents
     static void helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer, sp<MetaData> &format,
                                                    size_t size);
+
+    static bool UseQCHWAACEncoder(audio_encoder Encoder,int32_t Channel,int32_t BitRate, int32_t SampleRate);
 
 };
 
