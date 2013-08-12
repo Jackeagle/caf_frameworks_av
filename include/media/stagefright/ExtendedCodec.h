@@ -100,6 +100,8 @@ struct ExtendedCodec {
             const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
             const char* componentName);
 
+    static bool useHWAACDecoder(const char *mime);
+
 private:
 
     static status_t setWMAFormat(

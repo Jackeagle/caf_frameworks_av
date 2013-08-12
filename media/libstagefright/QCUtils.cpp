@@ -425,6 +425,33 @@ sp<MediaExtractor> QCUtils::MediaExtractor_CreateIfNeeded(sp<MediaExtractor> def
 
 }
 
+void QCUtils::helper_addMediaCodec(Vector<MediaCodecList::CodecInfo> &mCodecInfos,
+                                          KeyedVector<AString, size_t> &mTypes,
+                                          bool encoder, const char *name,
+                                          const char *type, uint32_t quirks) {
+    mCodecInfos.push();
+    MediaCodecList::CodecInfo *info = &mCodecInfos.editItemAt(mCodecInfos.size() - 1);
+    info->mName = name;
+    info->mIsEncoder = encoder;
+    ssize_t index = mTypes.indexOfKey(type);
+    uint32_t bit = mTypes.valueAt(index);
+    info->mTypes |= 1ul << bit;
+    info->mQuirks = quirks;
+}
+
+uint32_t QCUtils::helper_getCodecSpecificQuirks(KeyedVector<AString, size_t> &mCodecQuirks,
+                                                       Vector<AString> quirks) {
+    size_t i = 0, numQuirks = quirks.size();
+    uint32_t bit = 0, value = 0;
+    for (i = 0; i < numQuirks; i++)
+    {
+        ssize_t index = mCodecQuirks.indexOfKey(quirks.itemAt(i));
+        bit = mCodecQuirks.valueAt(index);
+        value |= 1ul << bit;
+    }
+    return value;
+}
+
 bool QCUtils::isAVCProfileSupported(int32_t  profile){
    if(profile == OMX_VIDEO_AVCProfileMain || profile == OMX_VIDEO_AVCProfileHigh || profile == OMX_VIDEO_AVCProfileBaseline){
       return true;
@@ -455,8 +482,29 @@ bool QCUtils::checkIsThumbNailMode(const uint32_t flags, char* componentName) {
     return isInThumbnailMode;
 }
 
+void QCUtils::helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer,
+                                                        sp<MetaData> &format,
+                                                        size_t size) {
+    bool mMakeBigEndian = false;
+    const char *mime;
+
+    if (format->findCString(kKeyMIMEType, &mime)
+            && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3) ||
+            !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3))) {
+        mMakeBigEndian = true;
+    }
+    if (mMakeBigEndian && *((uint8_t *)buffer->data())==0x0b &&
+            *((uint8_t *)buffer->data()+1)==0x77 ) {
+        size_t count = 0;
+        for(count=0;count<size;count+=2) { // size is always even bytes in ac3/ec3 read
+            uint8_t tmp = *((uint8_t *)buffer->data() + count);
+            *((uint8_t *)buffer->data() + count) = *((uint8_t *)buffer->data()+count+1);
+            *((uint8_t *)buffer->data() + count+1) = tmp;
+        }
+    }
 }
 
+}
 #else //ENABLE_QC_AV_ENHANCEMENTS
 
 namespace android {
@@ -518,6 +566,17 @@ sp<MediaExtractor> QCUtils::MediaExtractor_CreateIfNeeded(sp<MediaExtractor> def
                    return defaultExt;
 }
 
+void QCUtils::helper_addMediaCodec(Vector<MediaCodecList::CodecInfo> &mCodecInfos,
+                                          KeyedVector<AString, size_t> &mTypes,
+                                          bool encoder, const char *name,
+                                          const char *type, uint32_t quirks) {
+}
+
+uint32_t QCUtils::helper_getCodecSpecificQuirks(KeyedVector<AString, size_t> &mCodecQuirks,
+                                                       Vector<AString> quirks) {
+    return 0;
+}
+
 bool QCUtils::isAVCProfileSupported(int32_t  profile){
      return false;
 }
@@ -528,6 +587,11 @@ void QCUtils::updateNativeWindowBufferGeometry(ANativeWindow* anw,
 
 bool QCUtils::checkIsThumbNailMode(const uint32_t flags, char* componentName) {
     return false;
+}
+
+void QCUtils::helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer,
+                                                        sp<MetaData> &format,
+                                                        size_t size) {
 }
 
 }
