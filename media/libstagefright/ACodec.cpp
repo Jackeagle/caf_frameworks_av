@@ -1003,6 +1003,10 @@ status_t ACodec::configureCodec(
             } else {
                 err = setupVideoDecoder(mime, width, height);
             }
+            if (err == OK) {
+                const char* componentName = mComponentName.c_str();
+                ExtendedCodec::configureVideoCodec(msg, mOMX, 0, mNode, componentName);
+            }
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
         int32_t numChannels, sampleRate;
