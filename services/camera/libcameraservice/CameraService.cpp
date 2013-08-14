@@ -401,6 +401,7 @@ CameraService::Client::Client(const sp<CameraService>& cameraService,
     mServicePid = servicePid;
     mDestructionStarted = false;
     mBurstCnt = 0;
+    mLongshotEnabled = false;
 
     cameraService->setCameraBusy(cameraId);
     cameraService->loadSound();
