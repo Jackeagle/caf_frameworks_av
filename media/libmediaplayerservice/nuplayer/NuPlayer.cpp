@@ -726,7 +726,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             processDeferredActions();
 
-            mStats->logFpsSummary();
+            mStats->logFpsSummary(false);
             break;
         }
 

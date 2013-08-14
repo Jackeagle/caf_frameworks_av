@@ -54,7 +54,7 @@ class NuPlayerStats : public RefBase {
     void recordOnTime(int64_t ts, int64_t clock, int64_t delta);
     void logSyncLoss();
     void logFps();
-    void logFpsSummary();
+    void logFpsSummary(bool bPlaying = true);
     static int64_t getTimeOfDayUs();
     void incrementTotalRenderingFrames();
     void notifyBufferingEvent();
@@ -88,6 +88,7 @@ class NuPlayerStats : public RefBase {
     bool mBufferingEvent;
     bool mAudioEOS;
     bool mVideoEOS;
+    bool mPlaying;
     int64_t mPauseTimeUs;
     int64_t mLastSeekTimeUs;
 };

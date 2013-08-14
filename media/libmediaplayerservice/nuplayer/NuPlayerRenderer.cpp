@@ -683,6 +683,7 @@ void NuPlayer::Renderer::onPause() {
         positionUs = (nowUs - mAnchorTimeRealUs) + mAnchorTimeMediaUs;
     }
     mStats->logPause(positionUs);
+    mStats->logFpsSummary(false);
 }
 
 void NuPlayer::Renderer::onResume() {
@@ -703,6 +704,7 @@ void NuPlayer::Renderer::onResume() {
     if (!mVideoQueue.empty()) {
         postDrainVideoQueue();
     }
+    mStats->logFpsSummary();
 }
 
 void NuPlayer::Renderer::registerStats(sp<NuPlayerStats> stats) {

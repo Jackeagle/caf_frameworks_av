@@ -65,6 +65,7 @@ NuPlayerStats::NuPlayerStats() {
       mTotalRenderingFrames = 0;
       mVideoEOS = false;
       mAudioEOS = false;
+      mPlaying = true;
       mLastSeekTimeUs = 0;
       mPauseTimeUs = 0;
   }
@@ -105,9 +106,9 @@ void NuPlayerStats::logStatistics() {
     if(mStatistics) {
         Mutex::Autolock autoLock(mStatsLock);
 
-        ALOGW("Number of total frames: %llu\n",mTotalFrames);
-        ALOGW("Number of frames dropped: %lld\n",mNumVideoFramesDropped);
-        ALOGW("Number of frames rendered: %llu\n",mTotalRenderingFrames);
+        ALOGW("Total Video Frames Decoded(%llu)",mTotalFrames);
+        ALOGW("Total Video Frames Rendered(%lld)", mTotalRenderingFrames);
+        ALOGW("numVideoFramesDropped(%llu)", mNumVideoFramesDropped);
     }
 }
 
@@ -154,10 +155,10 @@ void NuPlayerStats::recordOnTime(int64_t ts, int64_t clock, int64_t delta) {
 void NuPlayerStats::logSyncLoss() {
     if(mStatistics) {
         Mutex::Autolock autoLock(mStatsLock);
-        ALOGW("Number of times AV Sync Losses = %u\n", mNumTimesSyncLoss);
-        ALOGW("Max Video Ahead time delta = %u\n", -mMaxEarlyDelta/1000);
-        ALOGW("Max Video Behind time delta = %u\n", mMaxLateDelta/1000);
-        ALOGW("Max Time sync loss = %u\n",mMaxTimeSyncLoss/1000);
+        ALOGW("Number of times AV Sync Lost(%u)", mNumTimesSyncLoss);
+        ALOGW("Max Video Ahead Time Delta(%u)", -mMaxEarlyDelta/1000);
+        ALOGW("Max Video Behind Time Delta(%u)", mMaxLateDelta/1000);
+        ALOGW("Max Time Sync Loss(%u)",mMaxTimeSyncLoss/1000);
     }
 }
 
@@ -180,19 +181,20 @@ void NuPlayerStats::logFps() {
     }
 }
 
-void NuPlayerStats::logFpsSummary() {
+void NuPlayerStats::logFpsSummary(bool bPlaying) {
     if (mStatistics) {
+        mPlaying = bPlaying;
         ALOGW("=========================================================\n");
         logStatistics();
-        logSyncLoss();
         {
             Mutex::Autolock autoLock(mStatsLock);
-            ALOGW("Average Frames Per Second=%.4f", (mTotalTime == 0)? 0.0 : ((double)(mTotalRenderingFrames-1)*1E6)/((double)mTotalTime));
+            ALOGW("Average Frames Per Second(%.4f)", (mTotalTime == 0)? 0.0 : ((double)(mTotalRenderingFrames-1)*1E6)/((double)mTotalTime));
         }
-        ALOGW("Last Seek To Time=%lld ms", mLastSeekTimeUs/1000);
-        ALOGW("Last Paused Time=%lld ms", mPauseTimeUs/1000);
-        ALOGW("EOS=%d", mVideoEOS);
-        ALOGW("Playing=%d", !(mAudioEOS & mVideoEOS));
+        ALOGW("Last Seek To Time(%lld ms)", mLastSeekTimeUs/1000);
+        ALOGW("Last Paused Time(%lld ms)", mPauseTimeUs/1000);
+        logSyncLoss();
+        ALOGW("EOS(%d)", mVideoEOS);
+        ALOGW("PLAYING(%d)", mPlaying);
         ALOGW("=========================================================\n");
     }
 }
