@@ -264,6 +264,9 @@ private:
     //Fallback to Ittiam Software Decoder
     bool mIsIttiamDecoderRequired;
 
+    /* This is used to set decoder to frame-by-frame mode */
+    bool mFrameAssemblyOneFrame;
+
     DISALLOW_EVIL_CONSTRUCTORS(ACodec);
 };
 
