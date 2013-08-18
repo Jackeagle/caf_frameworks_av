@@ -147,7 +147,8 @@ AudioFlinger::AudioFlinger()
       mMasterMute(false),
       mNextUniqueId(1),
       mMode(AUDIO_MODE_INVALID),
-      mBtNrecIsOff(false)
+      mBtNrecIsOff(false),
+      mAllChainsLocked(false)
 {
     getpid_cached = getpid();
     char value[PROPERTY_VALUE_MAX];
