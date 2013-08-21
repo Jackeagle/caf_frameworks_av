@@ -873,7 +873,7 @@ int64_t TunnelPlayer::getRealTimeUs() {
     if (mAudioSink != NULL) {
         mLatencyUs = ((uint64_t)mAudioSink->latency()) * 1000;
     }
-    return mPositionTimeRealUs - mLatencyUs;
+    return (mPositionTimeRealUs < mLatencyUs) ? 0 : (mPositionTimeRealUs - mLatencyUs);
 }
 
 void TunnelPlayer::getPlayedTimeFromDSP_l(int64_t* timeStamp ) {
