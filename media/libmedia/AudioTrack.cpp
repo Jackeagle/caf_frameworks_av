@@ -409,7 +409,7 @@ uint32_t AudioTrack::latency() const
         uint32_t newLatency = 0;
         AudioSystem::getLatency(mOutput, mStreamType, &afLatency);
         newLatency = afLatency + (1000*mCblk->frameCount) / mSampleRate;
-        ALOGD("latency() mLatency = %d, newLatency = %d", mLatency, newLatency);
+        ALOGV("latency() mLatency = %d, newLatency = %d", mLatency, newLatency);
         return newLatency;
     }
     return mLatency;
