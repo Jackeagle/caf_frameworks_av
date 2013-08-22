@@ -28,6 +28,15 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+#include "QCMetaData.h"
+#include <QCMediaDefs.h>
+#include <QCMetaData.h>
+#include <QOMX_AudioExtensions.h>
+#include <OMX_QCOMExtns.h>
+#endif
+#include "include/avc_utils.h"
+
 namespace android {
 
 uint16_t U16_AT(const uint8_t *ptr) {
@@ -123,6 +132,69 @@ status_t convertMetaDataToMessage(
         if (meta->findInt32(kKeyIsADTS, &isADTS)) {
             msg->setInt32("is-adts", true);
         }
+
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+        uint32_t type;
+        const void *data;
+        size_t size;
+
+        if (meta->findData(kKeyAacCodecSpecificData, &type, &data, &size)) {
+            if (size > 0 && data != NULL) {
+                sp<ABuffer> buffer = new ABuffer(size);
+                if (buffer != NULL) {
+                    memcpy(buffer->data(), data, size);
+                    buffer->meta()->setInt32("csd", true);
+                    buffer->meta()->setInt64("timeUs", 0);
+                    msg->setBuffer("csd-0", buffer);
+                }
+                else {
+                    ALOGE("kKeyAacCodecSpecificData ABuffer Allocation failed");
+                }
+            }
+            else {
+                ALOGE("Not a valid data pointer or size == 0");
+            }
+       }
+
+        int32_t keyWMAVersion;
+        if (meta->findInt32(kKeyWMAVersion, &keyWMAVersion)) {
+             msg->setInt32("WMA-Version", keyWMAVersion);
+        }
+        int32_t bitRate;
+        int32_t encodeOptions;
+        int32_t blockAlign;
+        int32_t bitspersample;
+        int32_t formattag;
+        int32_t advencopt1;
+        int32_t advencopt2;
+        int32_t VirtualPktSize;
+
+        if (meta->findInt32(kKeyWMABitspersample, &bitspersample)) {
+             msg->setInt32("bsps", bitspersample);
+        }
+        if (meta->findInt32(kKeyWMAFormatTag, &formattag)) {
+             msg->setInt32("fmtt", formattag);
+        }
+        if (meta->findInt32(kKeyWMAAdvEncOpt1, &advencopt1)) {
+             msg->setInt32("ade1", advencopt1);
+        }
+
+        if (meta->findInt32(kKeyWMAAdvEncOpt2, &advencopt2)) {
+             msg->setInt32("ade2", advencopt2);
+        }
+        if (meta->findInt32(kKeyWMAVirPktSize, &VirtualPktSize)) {
+             msg->setInt32("vpks", VirtualPktSize);
+        }
+        if (meta->findInt32(kKeyBitRate, &bitRate)) {
+             msg->setInt32("brte", bitRate);
+        }
+        if (meta->findInt32(kKeyWMAEncodeOpt, &encodeOptions)) {
+             msg->setInt32("eopt", encodeOptions);
+        }
+        if (meta->findInt32(kKeyWMABlockAlign, &blockAlign)) {
+             msg->setInt32("blka", blockAlign);
+        }
+#endif
     }
 
     int32_t maxInputSize;
