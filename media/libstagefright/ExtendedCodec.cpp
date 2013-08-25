@@ -30,6 +30,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "ExtendedCodec"
 #include <utils/Log.h>
+#include <cutils/properties.h>
 
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/MediaDefs.h>
@@ -46,6 +47,7 @@
 #include <OMX_QCOMExtns.h>
 #include <OMX_Component.h>
 #include <QOMX_AudioExtensions.h>
+#include "include/QCUtils.h"
 
 namespace android {
 
@@ -60,8 +62,9 @@ uint32_t ExtendedCodec::getComponentQuirks(
     return quirks;
 }
 
-void ExtendedCodec::overrideComponentName(
-        uint32_t quirks, const sp<MetaData> &meta, const char* componentName) {
+const char* ExtendedCodec::overrideComponentName(
+        uint32_t quirks, const sp<MetaData> &meta) {
+    const char* componentName = NULL;
     if(quirks & kRequiresWMAProComponent)
     {
        int32_t version = 0;
@@ -69,11 +72,12 @@ void ExtendedCodec::overrideComponentName(
        if(version==kTypeWMA) {
           componentName = "OMX.qcom.audio.decoder.wma";
        } else if(version==kTypeWMAPro) {
-          componentName= "OMX.qcom.audio.decoder.wma10Pro";
+          componentName = "OMX.qcom.audio.decoder.wma10Pro";
        } else if(version==kTypeWMALossLess) {
-          componentName= "OMX.qcom.audio.decoder.wmaLossLess";
+          componentName = "OMX.qcom.audio.decoder.wmaLossLess";
        }
     }
+    return componentName;
 }
 
 template<class T>
@@ -142,7 +146,9 @@ status_t ExtendedCodec::setAudioFormat(
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-        setAC3Format(numChannels, sampleRate, OMXhandle, nodeID);
+        /* Commenting follwoing call as AC3 soft decoder does not
+         need it and it causes issue with playback*/
+        //setAC3Format(numChannels, sampleRate, OMXhandle, nodeID);
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_EVRC, mime)) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
@@ -172,6 +178,8 @@ status_t ExtendedCodec::setVideoInputFormat(
         *compressionFormat = OMX_VIDEO_CodingWMV;
     } else if (!strcasecmp(MEDIA_MIMETYPE_CONTAINER_MPEG2, mime)){
         *compressionFormat = OMX_VIDEO_CodingMPEG2;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)){
+        *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingHevc;
     } else {
         retVal = BAD_VALUE;
     }
@@ -190,6 +198,8 @@ status_t ExtendedCodec::setVideoOutputFormat(
         *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingDivx;
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV, mime)){
         *compressionFormat = OMX_VIDEO_CodingWMV;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)){
+        *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingHevc;
     } else {
         retVal = BAD_VALUE;
     }
@@ -278,16 +288,14 @@ void ExtendedCodec::configureVideoCodec(
         return;
     }
 
-    int32_t arbitraryMode = 1;
+    int32_t arbitraryMode = 0;
     bool success = meta->findInt32(kKeyUseArbitraryMode, &arbitraryMode);
-    bool useArbitraryMode = true;
-    if (success) {
-        useArbitraryMode = arbitraryMode ? true : false;
+    bool useFrameByFrameMode = true; //default option
+    if (success && arbitraryMode) {
+        useFrameByFrameMode = false;
     }
 
-    if (useArbitraryMode) {
-        ALOGI("Decoder should be in arbitrary mode");
-    } else{
+    if (useFrameByFrameMode) {
         ALOGI("Enable frame by frame mode");
         OMX_QCOM_PARAM_PORTDEFINITIONTYPE portFmt;
         portFmt.nPortIndex = kPortIndexInput;
@@ -297,6 +305,8 @@ void ExtendedCodec::configureVideoCodec(
         if(err != OK) {
             ALOGW("Failed to set frame packing format on component");
         }
+    } else {
+        ALOGI("Decoder should be in arbitrary mode");
     }
 
     // Enable timestamp reordering only for AVI/mpeg4 and vc1 clips
@@ -341,6 +351,32 @@ void ExtendedCodec::configureVideoCodec(
         }
         ALOGI("Thumbnail mode enabled.");
     }
+}
+
+void ExtendedCodec::enableSmoothStreaming(
+        const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
+        const char* componentName) {
+    *isEnabled = false;
+
+    if (!QCUtils::ShellProp::isSmoothStreamingEnabled()) {
+        return;
+    }
+
+    //ignore non QC components
+    if (strncmp(componentName, "OMX.qcom.", 9)) {
+        return;
+    }
+    status_t err = omx->setParameter(
+            nodeID,
+            (OMX_INDEXTYPE)OMX_QcomIndexParamEnableSmoothStreaming,
+            &err, sizeof(status_t));
+    if (err != OK) {
+        ALOGE("Failed to enable Smoothstreaming!");
+        return;
+    }
+    *isEnabled = true;
+    ALOGI("Smoothstreaming Enabled");
+    return;
 }
 
 //private methods
@@ -631,6 +667,18 @@ void ExtendedCodec::setAC3Format(
     CHECK_EQ(err, (status_t)OK);
 }
 
+bool ExtendedCodec::useHWAACDecoder(const char *mime) {
+    char value[PROPERTY_VALUE_MAX] = {0};
+    int aaccodectype = 0;
+    aaccodectype = property_get("media.aaccodectype", value, NULL);
+    if (aaccodectype && !strncmp("0", value, 1) &&
+        !strncmp(mime, MEDIA_MIMETYPE_AUDIO_AAC,sizeof(MEDIA_MIMETYPE_AUDIO_AAC))) {
+        ALOGI("Using Hardware AAC Decoder");
+        return true;
+    }
+    return false;
+}
+
 } //namespace android
 
 #else //ENABLE_QC_AV_ENHANCEMENTS
@@ -672,9 +720,9 @@ namespace android {
         return UNKNOWN_ERROR;
     }
 
-    void ExtendedCodec::overrideComponentName (
-            uint32_t quirks, const sp<MetaData> &meta,
-            const char* componentName) {
+    const char* ExtendedCodec::overrideComponentName (
+            uint32_t quirks, const sp<MetaData> &meta) {
+        return NULL;
     }
 
     void ExtendedCodec::getRawCodecSpecificData(
@@ -713,6 +761,17 @@ namespace android {
     void ExtendedCodec::configureVideoCodec(
         const sp<MetaData> &meta, sp<IOMX> OMXhandle,
         const uint32_t flags, IOMX::node_id nodeID, char* componentName ) {
+    }
+
+    bool ExtendedCodec::useHWAACDecoder(const char *mime) {
+        return false;
+    }
+
+    void ExtendedCodec::enableSmoothStreaming(
+            const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
+            const char* componentName) {
+        *isEnabled = false;
+        return;
     }
 
 } //namespace android
