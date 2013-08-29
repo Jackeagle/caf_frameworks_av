@@ -143,6 +143,8 @@ private:
         TEXTPLAYER_INITIALIZED  = 0x20000,
 
         SLOW_DECODER_HACK   = 0x40000,
+
+        NO_AVSYNC   = 0x80000,
     };
 
     mutable Mutex mLock;
