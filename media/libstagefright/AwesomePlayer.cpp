@@ -1986,6 +1986,21 @@ void AwesomePlayer::onVideoEvent() {
             status_t err = mVideoSource->read(&mVideoBuffer, &options);
             options.clearSeekTo();
 
+            int width = 0;
+            int height = 0;
+            sp<MetaData> meta = mVideoSource->getFormat();
+            CHECK(meta->findInt32(kKeyWidth, &width));
+            CHECK(meta->findInt32(kKeyHeight, &height));
+
+            char mDeviceName[100];
+            property_get("ro.board.platform",mDeviceName,"0");
+
+            if( !strncmp(mDeviceName, "msm8610", 7) && (height*width) >= (720*1280) && mStats.mConsecutiveFramesDropped >=5 && !(mFlags & NO_AVSYNC))
+            {
+                ALOGE("DISABLED AVSync as there are 5 consecutive frame drops");
+                modifyFlags(NO_AVSYNC,SET);
+            }
+
             if(err == -EAGAIN) {
                 mReadRetry = true;
                 postVideoEvent_l(-1);
@@ -2160,13 +2175,19 @@ void AwesomePlayer::onVideoEvent() {
             }
         }
 
+        if (latenessUs < 40000 && (mFlags & NO_AVSYNC))
+        {
+            ALOGE("ENABLED AVSync as the video frames are intime with audio");
+            modifyFlags(NO_AVSYNC,CLEAR);
+        }
+
         if (latenessUs > 40000) {
             // We're more than 40ms late.
             ALOGV("we're late by %lld us (%.2f secs)",
                  latenessUs, latenessUs / 1E6);
 
-            if (!(mFlags & SLOW_DECODER_HACK)
-                    || mSinceLastDropped > FRAME_DROP_FREQ)
+            if ((!(mFlags & SLOW_DECODER_HACK)
+                    || (mSinceLastDropped > FRAME_DROP_FREQ)) && !(mFlags & NO_AVSYNC))
             {
                 ALOGV("we're late by %lld us (%.2f secs) dropping "
                      "one after %d frames",
