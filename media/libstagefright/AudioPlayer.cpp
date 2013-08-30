@@ -278,12 +278,19 @@ void AudioPlayer::pause(bool playPendingSamples) {
 
         mPinnedTimeUs = ALooper::GetNowUs();
     }
-    mSourcePaused = true;
+    CHECK(mSource != NULL);
+    if (mSource->pause() == OK) {
+        mSourcePaused = true;
+    }
 }
 
 void AudioPlayer::resume() {
     CHECK(mStarted);
-    mSourcePaused = false;
+    CHECK(mSource != NULL);
+    if (mSourcePaused == true) {
+        mSourcePaused = false;
+        mSource->start();
+    }
 
     if (mAudioSink.get() != NULL) {
         mAudioSink->start();
