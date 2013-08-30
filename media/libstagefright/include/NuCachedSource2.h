@@ -38,6 +38,9 @@ struct NuCachedSource2 : public DataSource {
     virtual ssize_t readAt(off64_t offset, void *data, size_t size);
 
     virtual status_t getSize(off64_t *size);
+
+    virtual status_t getCurrentOffset(off64_t *size);
+
     virtual uint32_t flags();
 
     virtual sp<DecryptHandle> DrmInitialization(const char* mime);
@@ -63,6 +66,10 @@ struct NuCachedSource2 : public DataSource {
             KeyedVector<String8, String8> *headers,
             String8 *cacheConfig,
             bool *disconnectAtHighwatermark);
+
+    virtual ssize_t readAtInternal(off64_t offset, void *data, size_t size, int32_t isNonBlocking);
+
+    virtual void enableNonBlockingRead(bool flag);
 
 protected:
     virtual ~NuCachedSource2();
@@ -114,6 +121,10 @@ private:
     int64_t mKeepAliveIntervalUs;
 
     bool mDisconnectAtHighwatermark;
+
+    bool mIsDownloadComplete;
+
+    bool mIsNonBlockingMode;
 
     void onMessageReceived(const sp<AMessage> &msg);
     void onFetch();

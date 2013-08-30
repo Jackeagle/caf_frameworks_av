@@ -237,6 +237,14 @@ private:
     // a video encoder.
     List<int64_t> mDecodingTimeList;
 
+    /* Dynamic Port Reconfig support */
+    typedef enum {
+        BUFFER_WITH_CLIENT = 0x1,
+        FILLED_BUFFERS_PRESENT = 0x2,
+    } DeferReason;
+
+    int32_t mDeferReason;
+
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
              bool isEncoder, const char *mime, const char *componentName,
@@ -261,7 +269,7 @@ private:
             OMX_VIDEO_CODINGTYPE compressionFormat,
             OMX_COLOR_FORMATTYPE colorFormat);
 
-    void setVideoInputFormat(
+    status_t setVideoInputFormat(
             const char *mime, const sp<MetaData>& meta);
 
     status_t setupBitRate(int32_t bitRate);
@@ -361,6 +369,7 @@ private:
             unsigned *profile, unsigned *level);
 
     status_t stopOmxComponent_l();
+    status_t flushBuffersOnError(void);
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
@@ -368,6 +377,17 @@ private:
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
 
     bool mNumBFrames;
+    status_t releaseMediaBuffersOn(OMX_U32 portIndex);
+    bool mInSmoothStreamingMode;
+    size_t countOutputBuffers(BufferStatus);
+
+    bool mSignalledReadTryAgain;
+    bool mReturnedRetry;
+    int64_t mLastSeekTimeUs;
+    ReadOptions::SeekMode mLastSeekMode;
+
+
+    bool hasDisabledPorts();
 };
 
 struct CodecCapabilities {

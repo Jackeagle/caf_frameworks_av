@@ -194,7 +194,9 @@ NuCachedSource2::NuCachedSource2(
       mHighwaterThresholdBytes(kDefaultHighWaterThreshold),
       mLowwaterThresholdBytes(kDefaultLowWaterThreshold),
       mKeepAliveIntervalUs(kDefaultKeepAliveIntervalUs),
-      mDisconnectAtHighwatermark(disconnectAtHighwatermark) {
+      mDisconnectAtHighwatermark(disconnectAtHighwatermark),
+      mIsDownloadComplete(false),
+      mIsNonBlockingMode(false) {
     // We are NOT going to support disconnect-at-highwatermark indefinitely
     // and we are not guaranteeing support for client-specified cache
     // parameters. Both of these are temporary measures to solve a specific
@@ -227,6 +229,10 @@ NuCachedSource2::~NuCachedSource2() {
     mCache = NULL;
 }
 
+void NuCachedSource2::enableNonBlockingRead(bool flag) {
+    mIsNonBlockingMode = flag;
+}
+
 status_t NuCachedSource2::getEstimatedBandwidthKbps(int32_t *kbps) {
     if (mSource->flags() & kIsHTTPBasedSource) {
         HTTPBase* source = static_cast<HTTPBase *>(mSource.get());
@@ -248,13 +254,19 @@ status_t NuCachedSource2::initCheck() const {
 }
 
 status_t NuCachedSource2::getSize(off64_t *size) {
-    return mSource->getSize(size);
+
+    status_t ret = mSource->getSize(size);
+    return ret;
+}
+
+status_t NuCachedSource2::getCurrentOffset(off64_t *size) {
+    return mSource->getCurrentOffset(size);
 }
 
 uint32_t NuCachedSource2::flags() {
     // Remove HTTP related flags since NuCachedSource2 is not HTTP-based.
     uint32_t flags = mSource->flags() & ~(kWantsPrefetching | kIsHTTPBasedSource);
-    return (flags | kIsCachingDataSource);
+    return (flags | kIsCachingDataSource | kSupportNonBlockingRead);
 }
 
 void NuCachedSource2::onMessageReceived(const sp<AMessage> &msg) {
@@ -353,6 +365,7 @@ void NuCachedSource2::onFetch() {
     if (mFinalStatus != OK && mNumRetriesLeft == 0) {
         ALOGV("EOS reached, done prefetching for now");
         mFetching = false;
+        mIsDownloadComplete = true;
     }
 
     bool keepAlive =
@@ -395,7 +408,11 @@ void NuCachedSource2::onFetch() {
             delayUs = 0;
         }
     } else {
-        delayUs = 100000ll;
+        if(mIsDownloadComplete) {
+            return;
+        } else {
+            delayUs = 100000ll;
+        }
     }
 
     (new AMessage(kWhatFetchMore, mReflector->id()))->post(delayUs);
@@ -413,9 +430,12 @@ void NuCachedSource2::onRead(const sp<AMessage> &msg) {
     size_t size;
     CHECK(msg->findSize("size", &size));
 
+    int32_t isNonBlocking;
+    CHECK(msg->findInt32("isnonblocking", &isNonBlocking));
+
     ssize_t result = readInternal(offset, data, size);
 
-    if (result == -EAGAIN) {
+    if (result == -EAGAIN && !isNonBlocking) {
         msg->post(50000);
         return;
     }
@@ -462,6 +482,11 @@ void NuCachedSource2::restartPrefetcherIfNecessary_l(
 }
 
 ssize_t NuCachedSource2::readAt(off64_t offset, void *data, size_t size) {
+    return readAtInternal(offset, data, size, mIsNonBlockingMode);
+}
+
+ssize_t NuCachedSource2::readAtInternal(off64_t offset, void *data, size_t size, int32_t isNonBlocking) {
+
     Mutex::Autolock autoSerializer(mSerializer);
 
     ALOGV("readAt offset %lld, size %d", offset, size);
@@ -484,6 +509,7 @@ ssize_t NuCachedSource2::readAt(off64_t offset, void *data, size_t size) {
     msg->setInt64("offset", offset);
     msg->setPointer("data", data);
     msg->setSize("size", size);
+    msg->setInt32("isnonblocking", isNonBlocking);
 
     CHECK(mAsyncResult == NULL);
     msg->post();
@@ -541,6 +567,10 @@ ssize_t NuCachedSource2::readInternal(off64_t offset, void *data, size_t size) {
         restartPrefetcherIfNecessary_l(
                 false, // ignoreLowWaterThreshold
                 true); // force
+    }
+    if (mFetching && mIsDownloadComplete) {
+        mIsDownloadComplete = false;
+        (new AMessage(kWhatFetchMore, mReflector->id()))->post();
     }
 
     if (offset < mCacheOffset
@@ -610,6 +640,10 @@ void NuCachedSource2::resumeFetchingIfNecessary() {
     Mutex::Autolock autoLock(mLock);
 
     restartPrefetcherIfNecessary_l(true /* ignore low water threshold */);
+    if(mFetching && mIsDownloadComplete) {
+        mIsDownloadComplete = false;
+        (new AMessage(kWhatFetchMore, mReflector->id()))->post();
+    }
 }
 
 sp<DecryptHandle> NuCachedSource2::DrmInitialization(const char* mime) {

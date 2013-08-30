@@ -15,6 +15,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -35,13 +54,18 @@
 #include <media/stagefright/NativeWindowWrapper.h>
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/OMXCodec.h>
+#include <media/stagefright/ExtendedCodec.h>
 
 #include <media/hardware/HardwareAPI.h>
 
 #include <OMX_Component.h>
 
 #include "include/avc_utils.h"
+#include "include/QCUtils.h"
 
+#ifdef DOLBY_UDC
+ #include <QCMediaDefs.h>
+#endif //DOLBY_UDC
 namespace android {
 
 template<class T>
@@ -366,7 +390,8 @@ ACodec::ACodec()
       mEncoderDelay(0),
       mEncoderPadding(0),
       mChannelMaskPresent(false),
-      mChannelMask(0) {
+      mChannelMask(0),
+      mInSmoothStreamingMode(false) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -635,6 +660,14 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
+    err = mNativeWindow.get()->perform(mNativeWindow.get(),
+                             NATIVE_WINDOW_SET_BUFFERS_SIZE, def.nBufferSize);
+    if (err != 0) {
+        ALOGE("native_window_set_buffers_size failed: %s (%d)", strerror(-err),
+                -err);
+        return err;
+    }
+
     ALOGV("[%s] Allocating %lu buffers from a native window of size %lu on "
          "output port",
          mComponentName.c_str(), def.nBufferCountActual, def.nBufferSize);
@@ -653,7 +686,6 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         info.mStatus = BufferInfo::OWNED_BY_US;
         info.mData = new ABuffer(NULL /* data */, def.nBufferSize /* capacity */);
         info.mGraphicBuffer = graphicBuffer;
-        mBuffers[kPortIndexOutput].push(info);
 
         IOMX::buffer_id bufferId;
         err = mOMX->useGraphicBuffer(mNode, kPortIndexOutput, graphicBuffer,
@@ -664,6 +696,7 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
             break;
         }
 
+        mBuffers[kPortIndexOutput].push(info);
         mBuffers[kPortIndexOutput].editItemAt(i).mBufferID = bufferId;
 
         ALOGV("[%s] Registered graphic buffer with ID %p (pointer = %p)",
@@ -832,6 +865,12 @@ status_t ACodec::setComponentRole(
             "audio_decoder.g711mlaw", "audio_encoder.g711mlaw" },
         { MEDIA_MIMETYPE_AUDIO_G711_ALAW,
             "audio_decoder.g711alaw", "audio_encoder.g711alaw" },
+#ifdef DOLBY_UDC
+        { MEDIA_MIMETYPE_AUDIO_AC3,
+            "audio_decoder.ac3", NULL },
+        { MEDIA_MIMETYPE_AUDIO_EAC3,
+            "audio_decoder.eac3", NULL },
+#endif // DOLBY_UDC
         { MEDIA_MIMETYPE_VIDEO_AVC,
             "video_decoder.avc", "video_encoder.avc" },
         { MEDIA_MIMETYPE_VIDEO_MPEG4,
@@ -1554,6 +1593,9 @@ status_t ACodec::setupVideoDecoder(
         return err;
     }
 
+    ExtendedCodec::enableSmoothStreaming(
+            mOMX, mNode, &mInSmoothStreamingMode, mComponentName.c_str());
+
     return OK;
 }
 
@@ -2236,7 +2278,7 @@ void ACodec::processDeferredMessages() {
     }
 }
 
-void ACodec::sendFormatChange() {
+void ACodec::sendFormatChange(const sp<AMessage> &reply) {
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kWhatOutputFormatChanged);
 
@@ -2301,14 +2343,12 @@ void ACodec::sendFormatChange() {
                         rect.nTop + rect.nHeight - 1);
 
                 if (mNativeWindow != NULL) {
-                    android_native_rect_t crop;
-                    crop.left = rect.nLeft;
-                    crop.top = rect.nTop;
-                    crop.right = rect.nLeft + rect.nWidth;
-                    crop.bottom = rect.nTop + rect.nHeight;
-
-                    CHECK_EQ(0, native_window_set_crop(
-                                mNativeWindow.get(), &crop));
+                    reply->setRect(
+                            "crop",
+                            rect.nLeft,
+                            rect.nTop,
+                            rect.nLeft + rect.nWidth,
+                            rect.nTop + rect.nHeight);
                 }
             }
             break;
@@ -3064,8 +3104,11 @@ bool ACodec::BaseState::onOMXFillBufferDone(
                 break;
             }
 
+            sp<AMessage> reply =
+                new AMessage(kWhatOutputBufferDrained, mCodec->id());
+
             if (!mCodec->mSentFormat) {
-                mCodec->sendFormatChange();
+                mCodec->sendFormatChange(reply);
             }
 
             info->mData->setRange(rangeOffset, rangeLength);
@@ -3087,9 +3130,6 @@ bool ACodec::BaseState::onOMXFillBufferDone(
             notify->setPointer("buffer-id", info->mBufferID);
             notify->setBuffer("buffer", info->mData);
             notify->setInt32("flags", flags);
-
-            sp<AMessage> reply =
-                new AMessage(kWhatOutputBufferDrained, mCodec->id());
 
             reply->setPointer("buffer-id", info->mBufferID);
 
@@ -3133,6 +3173,13 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
     BufferInfo *info =
         mCodec->findBufferByID(kPortIndexOutput, bufferID, &index);
     CHECK_EQ((int)info->mStatus, (int)BufferInfo::OWNED_BY_DOWNSTREAM);
+
+    android_native_rect_t crop;
+    if (msg->findRect("crop",
+            &crop.left, &crop.top, &crop.right, &crop.bottom)) {
+        CHECK_EQ(0, native_window_set_crop(
+                mCodec->mNativeWindow.get(), &crop));
+    }
 
     int32_t render;
     if (mCodec->mNativeWindow != NULL

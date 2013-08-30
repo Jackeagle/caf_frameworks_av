@@ -30,8 +30,10 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "ExtendedCodec"
 #include <utils/Log.h>
+#include <cutils/properties.h>
 
 #include <media/stagefright/foundation/ADebug.h>
+#include <media/stagefright/foundation/ABitReader.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaCodecList.h>
 
@@ -46,6 +48,7 @@
 #include <OMX_QCOMExtns.h>
 #include <OMX_Component.h>
 #include <QOMX_AudioExtensions.h>
+#include "include/QCUtils.h"
 
 namespace android {
 
@@ -60,8 +63,9 @@ uint32_t ExtendedCodec::getComponentQuirks(
     return quirks;
 }
 
-void ExtendedCodec::overrideComponentName(
-        uint32_t quirks, const sp<MetaData> &meta, const char* componentName) {
+const char* ExtendedCodec::overrideComponentName(
+        uint32_t quirks, const sp<MetaData> &meta) {
+    const char* componentName = NULL;
     if(quirks & kRequiresWMAProComponent)
     {
        int32_t version = 0;
@@ -69,11 +73,12 @@ void ExtendedCodec::overrideComponentName(
        if(version==kTypeWMA) {
           componentName = "OMX.qcom.audio.decoder.wma";
        } else if(version==kTypeWMAPro) {
-          componentName= "OMX.qcom.audio.decoder.wma10Pro";
+          componentName = "OMX.qcom.audio.decoder.wma10Pro";
        } else if(version==kTypeWMALossLess) {
-          componentName= "OMX.qcom.audio.decoder.wmaLossLess";
+          componentName = "OMX.qcom.audio.decoder.wmaLossLess";
        }
     }
+    return componentName;
 }
 
 template<class T>
@@ -142,7 +147,9 @@ status_t ExtendedCodec::setAudioFormat(
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-        setAC3Format(numChannels, sampleRate, OMXhandle, nodeID);
+        /* Commenting follwoing call as AC3 soft decoder does not
+         need it and it causes issue with playback*/
+        //setAC3Format(numChannels, sampleRate, OMXhandle, nodeID);
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_EVRC, mime)) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
@@ -172,6 +179,8 @@ status_t ExtendedCodec::setVideoInputFormat(
         *compressionFormat = OMX_VIDEO_CodingWMV;
     } else if (!strcasecmp(MEDIA_MIMETYPE_CONTAINER_MPEG2, mime)){
         *compressionFormat = OMX_VIDEO_CodingMPEG2;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)){
+        *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingHevc;
     } else {
         retVal = BAD_VALUE;
     }
@@ -190,6 +199,8 @@ status_t ExtendedCodec::setVideoOutputFormat(
         *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingDivx;
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV, mime)){
         *compressionFormat = OMX_VIDEO_CodingWMV;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)){
+        *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingHevc;
     } else {
         retVal = BAD_VALUE;
     }
@@ -278,16 +289,14 @@ void ExtendedCodec::configureVideoCodec(
         return;
     }
 
-    int32_t arbitraryMode = 1;
+    int32_t arbitraryMode = 0;
     bool success = meta->findInt32(kKeyUseArbitraryMode, &arbitraryMode);
-    bool useArbitraryMode = true;
-    if (success) {
-        useArbitraryMode = arbitraryMode ? true : false;
+    bool useFrameByFrameMode = true; //default option
+    if (success && arbitraryMode) {
+        useFrameByFrameMode = false;
     }
 
-    if (useArbitraryMode) {
-        ALOGI("Decoder should be in arbitrary mode");
-    } else{
+    if (useFrameByFrameMode) {
         ALOGI("Enable frame by frame mode");
         OMX_QCOM_PARAM_PORTDEFINITIONTYPE portFmt;
         portFmt.nPortIndex = kPortIndexInput;
@@ -297,6 +306,8 @@ void ExtendedCodec::configureVideoCodec(
         if(err != OK) {
             ALOGW("Failed to set frame packing format on component");
         }
+    } else {
+        ALOGI("Decoder should be in arbitrary mode");
     }
 
     // Enable timestamp reordering only for AVI/mpeg4 and vc1 clips
@@ -341,6 +352,196 @@ void ExtendedCodec::configureVideoCodec(
         }
         ALOGI("Thumbnail mode enabled.");
     }
+}
+
+bool ExtendedCodec::checkDPFromCodecSpecificData(const uint8_t *data, size_t size)
+{
+    bool retVal = false;
+    size_t offset = 0, start_code_offset = -1;
+    int VOL_START_CODE = 0x20;
+    const char StartCode[]="\x00\x00\x01";
+    size_t max_header_size = 28;
+
+    if (!data && (((size < 4) || (size > max_header_size)))) {
+        return retVal;
+    }
+
+    while (offset < size - 3) {
+           if ((data[offset + 3] & 0xf0) == VOL_START_CODE) {
+                if (!memcmp(&data[offset], StartCode, 3)) {
+                    start_code_offset = offset;
+                    break;
+                 }
+            }
+            offset++;
+    }
+    if (start_code_offset > 0) {
+        retVal = checkDPFromVOLHeader((const uint8_t*) &data[start_code_offset],
+                                       size);
+    }
+
+    return retVal;
+}
+
+bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
+{
+    bool retVal = false;
+    size_t min_header_size = 5;
+    size_t max_header_size = 28;
+
+    if (!data && (size < min_header_size)) {
+        return false;
+    }
+
+    ABitReader br(&data[4], size);
+    br.skipBits(1);  // random_accessible_vol
+
+    unsigned video_object_type_indication = br.getBits(8);
+
+    if (video_object_type_indication == 0x12u) {
+        return false;
+    }
+
+    unsigned video_object_layer_verid = 1;
+    unsigned video_object_layer_priority;
+    if (br.getBits(1)) {
+        video_object_layer_verid = br.getBits(4);
+        video_object_layer_priority = br.getBits(3);
+    }
+    unsigned aspect_ratio_info = br.getBits(4);
+    if (aspect_ratio_info == 0x0f /* extended PAR */) {
+        br.skipBits(8);  // par_width
+        br.skipBits(8);  // par_height
+    }
+
+    if (br.getBits(1)) {  // vol_control_parameters
+        br.skipBits(2);  // chroma_format
+        br.skipBits(1);  // low_delay
+        if (br.getBits(1)) {  // vbv_parameters
+            br.skipBits(15);  // first_half_bit_rate
+            br.skipBits(1);  // marker_bit
+            br.skipBits(15);  // latter_half_bit_rate
+            br.skipBits(1);  // marker_bit
+            br.skipBits(15);  // first_half_vbv_buffer_size
+            br.skipBits(1);  // marker_bit
+            br.skipBits(3);  // latter_half_vbv_buffer_size
+            br.skipBits(11);  // first_half_vbv_occupancy
+            br.skipBits(1);  // marker_bit
+            br.skipBits(15);  // latter_half_vbv_occupancy
+            br.skipBits(1);  // marker_bit
+        }
+    }
+
+    unsigned video_object_layer_shape = br.getBits(2);
+    if (video_object_layer_shape != 0x00u /* rectangular */) {
+        return false;
+    }
+
+    br.skipBits(1);  // marker_bit
+
+    unsigned vop_time_increment_resolution = br.getBits(16);
+    br.skipBits(1);  // marker_bit
+
+    if (br.getBits(1)) {  // fixed_vop_rate
+        // range [0..vop_time_increment_resolution)
+
+        // vop_time_increment_resolution
+        // 2 => 0..1, 1 bit
+        // 3 => 0..2, 2 bits
+        // 4 => 0..3, 2 bits
+        // 5 => 0..4, 3 bits
+        // ...
+
+        if (vop_time_increment_resolution <= 0u) {
+            return BAD_VALUE;
+        }
+        --vop_time_increment_resolution;
+
+        unsigned numBits = 0;
+        while (vop_time_increment_resolution > 0) {
+            ++numBits;
+            vop_time_increment_resolution >>= 1;
+        }
+
+        br.skipBits(numBits);  // fixed_vop_time_increment
+    }
+
+    br.skipBits(1);  // marker_bit
+    unsigned video_object_layer_width = br.getBits(13);
+    br.skipBits(1);  // marker_bit
+    unsigned video_object_layer_height = br.getBits(13);
+    br.skipBits(1);  // marker_bit
+
+    unsigned interlaced = br.getBits(1);
+    unsigned obmc_disable = br.getBits(1);
+    unsigned sprite_enable = 0;
+    if (video_object_layer_verid == 1) {
+        sprite_enable = br.getBits(1);
+    } else {
+        sprite_enable = br.getBits(2);
+    }
+
+    unsigned not_8_bit = br.getBits(1);
+    if (not_8_bit) {
+        unsigned quant_precision = br.getBits(4);
+        unsigned bits_per_pixel = br.getBits(4);
+    }
+
+    unsigned quant_type = br.getBits(1);
+    if (quant_type) {
+        unsigned load_intra_quant_mat = br.getBits(1);
+        if (load_intra_quant_mat) {
+            unsigned intra_quant_mat = 1;
+            for (int i=0; i<64 && intra_quant_mat; i++) {
+                 intra_quant_mat = br.getBits(8);
+            }
+        }
+        unsigned load_nonintra_quant_mat = br.getBits(1);
+        if (load_nonintra_quant_mat) {
+            unsigned nonintra_quant_mat = 1;
+            for (int i=0; i<64 && nonintra_quant_mat; i++) {
+                 nonintra_quant_mat = br.getBits(8);
+            }
+        }
+    } /*quant_type*/
+
+    if (video_object_layer_verid != 1) {
+        unsigned quarter_sample = br.getBits(1);
+    }
+
+    unsigned complexity_estimation_disable = br.getBits(1);
+    unsigned resync_marker_disable = br.getBits(1);
+    unsigned data_partitioned = br.getBits(1);
+    if (data_partitioned) {
+        retVal = true;
+    }
+    return retVal;
+}
+
+void ExtendedCodec::enableSmoothStreaming(
+        const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
+        const char* componentName) {
+    *isEnabled = false;
+
+    if (!QCUtils::ShellProp::isSmoothStreamingEnabled()) {
+        return;
+    }
+
+    //ignore non QC components
+    if (strncmp(componentName, "OMX.qcom.", 9)) {
+        return;
+    }
+    status_t err = omx->setParameter(
+            nodeID,
+            (OMX_INDEXTYPE)OMX_QcomIndexParamEnableSmoothStreaming,
+            &err, sizeof(status_t));
+    if (err != OK) {
+        ALOGE("Failed to enable Smoothstreaming!");
+        return;
+    }
+    *isEnabled = true;
+    ALOGI("Smoothstreaming Enabled");
+    return;
 }
 
 //private methods
@@ -631,6 +832,18 @@ void ExtendedCodec::setAC3Format(
     CHECK_EQ(err, (status_t)OK);
 }
 
+bool ExtendedCodec::useHWAACDecoder(const char *mime) {
+    char value[PROPERTY_VALUE_MAX] = {0};
+    int aaccodectype = 0;
+    aaccodectype = property_get("media.aaccodectype", value, NULL);
+    if (aaccodectype && !strncmp("0", value, 1) &&
+        !strncmp(mime, MEDIA_MIMETYPE_AUDIO_AAC,sizeof(MEDIA_MIMETYPE_AUDIO_AAC))) {
+        ALOGI("Using Hardware AAC Decoder");
+        return true;
+    }
+    return false;
+}
+
 } //namespace android
 
 #else //ENABLE_QC_AV_ENHANCEMENTS
@@ -672,9 +885,9 @@ namespace android {
         return UNKNOWN_ERROR;
     }
 
-    void ExtendedCodec::overrideComponentName (
-            uint32_t quirks, const sp<MetaData> &meta,
-            const char* componentName) {
+    const char* ExtendedCodec::overrideComponentName (
+            uint32_t quirks, const sp<MetaData> &meta) {
+        return NULL;
     }
 
     void ExtendedCodec::getRawCodecSpecificData(
@@ -713,6 +926,17 @@ namespace android {
     void ExtendedCodec::configureVideoCodec(
         const sp<MetaData> &meta, sp<IOMX> OMXhandle,
         const uint32_t flags, IOMX::node_id nodeID, char* componentName ) {
+    }
+
+    bool ExtendedCodec::useHWAACDecoder(const char *mime) {
+        return false;
+    }
+
+    void ExtendedCodec::enableSmoothStreaming(
+            const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
+            const char* componentName) {
+        *isEnabled = false;
+        return;
     }
 
 } //namespace android

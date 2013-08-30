@@ -105,6 +105,9 @@ struct AwesomePlayer {
     void printFileName(int fd);
     status_t dump(int fd, const Vector<String16> &args) const;
 
+    status_t suspend();
+    status_t resume();
+
 private:
     friend struct AwesomeEvent;
     friend struct PreviewPlayer;
@@ -140,6 +143,8 @@ private:
         TEXTPLAYER_INITIALIZED  = 0x20000,
 
         SLOW_DECODER_HACK   = 0x40000,
+
+        NO_AVSYNC   = 0x80000,
     };
 
     mutable Mutex mLock;
@@ -203,6 +208,7 @@ private:
     bool mWatchForAudioSeekComplete;
     bool mWatchForAudioEOS;
     static int mTunnelAliveAP;
+    bool mIsFirstFrameAfterResume;
 
     sp<TimedEventQueue::Event> mVideoEvent;
     bool mVideoEventPending;
@@ -237,6 +243,7 @@ private:
     sp<DecryptHandle> mDecryptHandle;
 
     int64_t mLastVideoTimeUs;
+    int64_t mFrameDurationUs;
     TimedTextDriver *mTextDriver;
 
     sp<WVMExtractor> mWVMExtractor;
@@ -355,6 +362,8 @@ private:
         int64_t mSeekDelayStartUs;
     } mStats;
 
+    bool mBufferingDone;
+
     status_t setVideoScalingMode(int32_t mode);
     status_t setVideoScalingMode_l(int32_t mode);
     status_t getTrackInfo(Parcel* reply) const;
@@ -372,6 +381,8 @@ private:
     bool mIsTunnelAudio;
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
+
+    bool mReadRetry;
 };
 
 }  // namespace android
