@@ -15,6 +15,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -42,6 +61,7 @@
 #include <utils/String8.h>
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
+#include "include/QCUtils.h"
 #endif
 
 namespace android {
@@ -192,6 +212,11 @@ MPEG4DataSource::MPEG4DataSource(const sp<DataSource> &source)
       mCachedOffset(0),
       mCachedSize(0),
       mCache(NULL) {
+      #ifdef DOLBY_UDC
+      #if defined (DEBUG_LOG_DDP_DECODER_EXTRA)
+      ALOGE("@DDP MPEG4DataSource::MPEG4DataSource");
+      #endif
+      #endif //DOLBY_UDC
 }
 
 MPEG4DataSource::~MPEG4DataSource() {
@@ -299,6 +324,11 @@ static void hexdump(const void *_data, size_t size) {
 }
 
 static const char *FourCC2MIME(uint32_t fourcc) {
+    #ifdef DOLBY_UDC
+    #if defined (DEBUG_LOG_DDP_DECODER_EXTRA)
+    ALOGE("@DDP FourCC2MIME");
+    #endif
+    #endif //DOLBY_UDC
     switch (fourcc) {
         case FOURCC('m', 'p', '4', 'a'):
             return MEDIA_MIMETYPE_AUDIO_AAC;
@@ -347,6 +377,11 @@ static const char *FourCC2MIME(uint32_t fourcc) {
 
         default:
             CHECK(!"should not be here.");
+            #ifdef DOLBY_UDC
+            #if defined (DEBUG_LOG_DDP_DECODER_EXTRA)
+            ALOGE("@DDP FourCC2Mime default (not found)");
+            #endif
+            #endif //DOLBY_UDC
             return NULL;
     }
 }
@@ -377,6 +412,11 @@ MPEG4Extractor::MPEG4Extractor(const sp<DataSource> &source)
       mFileMetaData(new MetaData),
       mFirstSINF(NULL),
       mIsDrm(false) {
+      #ifdef DOLBY_UDC
+      #if defined (DEBUG_LOG_DDP_DECODER_EXTRA)
+      ALOGE("@DDP MPEG4Extractor::MPEG4Extractor");
+      #endif
+      #endif //DOLBY_UDC
 }
 
 MPEG4Extractor::~MPEG4Extractor() {
@@ -473,14 +513,14 @@ sp<MetaData> MPEG4Extractor::getTrackMetaData(
                 }
             } else {
                 uint32_t sampleIndex;
-                uint32_t sampleTime;
+                uint64_t sampleTime;
                 if (track->sampleTable->findThumbnailSample(&sampleIndex) == OK
                         && track->sampleTable->getMetaDataForSample(
                             sampleIndex, NULL /* offset */, NULL /* size */,
                             &sampleTime) == OK) {
                     track->meta->setInt64(
                             kKeyThumbnailTime,
-                            ((int64_t)sampleTime * 1000000) / track->timescale);
+                            (sampleTime * 1000000) / track->timescale);
                 }
             }
         }
@@ -848,6 +888,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
         case FOURCC('i', 'l', 's', 't'):
         case FOURCC('s', 'i', 'n', 'f'):
         case FOURCC('s', 'c', 'h', 'i'):
+        case FOURCC('e', 'd', 't', 's'):
         {
             if (chunk_type == FOURCC('s', 't', 'b', 'l')) {
                 ALOGV("sampleTable chunk is %d bytes long.", (size_t)chunk_size);
@@ -1041,6 +1082,93 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 return ERROR_IO;
             }
             mPssh.push_back(pssh);
+        }
+
+        case FOURCC('e', 'l', 's', 't' ):
+        {
+            if (chunk_data_size < 4){
+                return ERROR_MALFORMED;
+            }
+
+            uint8_t version;
+            if (mDataSource->readAt(data_offset, &version, 1) < 1){
+                return ERROR_IO;
+            }
+
+            uint8_t buffer[8];
+            if (mDataSource->readAt(data_offset,
+                buffer,
+                sizeof(buffer)) < (ssize_t)sizeof(buffer)) {
+                return ERROR_IO;
+            }
+
+            uint32_t entry_count = U32_AT(&buffer[4]);
+            int64_t timeUs = 0;
+
+            if( version == 1 ){
+                uint8_t buffer[8 + entry_count * 20];
+                if (mDataSource->readAt(data_offset,
+                    buffer,
+                    sizeof(buffer)) < (ssize_t)sizeof(buffer)) {
+                    return ERROR_IO;
+                }
+
+                int64_t mvhdTimeScale = 0;
+                mFileMetaData->findInt64( kKeyEditOffset, &mvhdTimeScale );
+
+                uint64_t segment_duration[entry_count];
+                int64_t media_time[entry_count];
+                for (uint32_t i = 0; i < entry_count; i++ ){
+                    segment_duration[i] = U64_AT(&buffer[8 + i * 20]);
+                    media_time[i] = U64_AT(&buffer[8 + 8 + i * 20]);
+
+                    if( media_time[i] == -1 ){
+                        if( mvhdTimeScale != 0 ){
+                            int64_t editTime = (int64_t)(segment_duration[i] * 1000000 )/mvhdTimeScale;
+                            mLastTrack->meta->setInt64( kKeyEditOffset, editTime );
+                            if (mLastTrack->meta->findInt64(kKeyDuration,&timeUs))
+                            {
+                                mLastTrack->meta->setInt64(kKeyDuration,(editTime + timeUs));
+                            }
+                        }
+                    }
+                }
+
+                int16_t media_rate_integer;
+                int16_t media_rate_fraction = 0;
+            }
+            else { //version == 0
+                uint8_t buffer[8 + entry_count * 12];
+                if (mDataSource->readAt(data_offset,
+                    buffer,
+                    sizeof(buffer)) < (ssize_t)sizeof(buffer)) {
+                    return ERROR_IO;
+                }
+
+                uint32_t segment_duration[entry_count];
+                int32_t media_time[entry_count];
+
+                int32_t mvhdTimeScale = 0;
+                mFileMetaData->findInt32( kKeyEditOffset, &mvhdTimeScale );
+
+                for (uint32_t i = 0; i < entry_count; i++ ){
+                    segment_duration[i] = U32_AT(&buffer[8 + i * 12]);
+                    media_time[i] = U32_AT(&buffer[8 + 4 + i * 20]);
+
+                    if( media_time[i] == -1 ){
+                        if( mvhdTimeScale != 0 ){
+                            int64_t editTime = (int64_t)(segment_duration[i] * 1000000 )/mvhdTimeScale;
+                            mLastTrack->meta->setInt64( kKeyEditOffset, editTime );
+                            if (mLastTrack->meta->findInt64(kKeyDuration,&timeUs))
+                            {
+                                mLastTrack->meta->setInt64(kKeyDuration,(editTime + timeUs));
+                            }
+                        }
+                    }
+                }
+                int16_t media_rate_integer;
+                int16_t media_rate_fraction = 0;
+            }
 
             *offset += chunk_size;
             break;
@@ -1100,6 +1228,11 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             }
             mLastTrack->meta->setInt64(
                     kKeyDuration, (duration * 1000000) / mLastTrack->timescale);
+            int64_t timeUs = 0;
+            if (mLastTrack->meta->findInt64( kKeyEditOffset, &timeUs))
+            {
+                mLastTrack->meta->setInt64(kKeyDuration,(duration * 1000000) / mLastTrack->timescale + timeUs);
+            }
 
             uint8_t lang[2];
             off64_t lang_offset;
@@ -1221,6 +1354,11 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 mLastTrack->meta->setCString(kKeyMIMEType, FourCC2MIME(chunk_type));
                 AdjustChannelsAndRate(chunk_type, &num_channels, &sample_rate);
             }
+            #ifdef DOLBY_UDC
+            #if defined (DEBUG_LOG_DDP_DECODER_EXTRA)
+            ALOGE("@DDP FourCC:'%s'", FourCC2MIME(chunk_type));
+            #endif
+            #endif //DOLBY_UDC
             ALOGV("*** coding='%s' %d channels, size %d, rate %d\n",
                    chunk, num_channels, sample_size, sample_rate);
             mLastTrack->meta->setInt32(kKeyChannelCount, num_channels);
@@ -1621,11 +1759,11 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
 
         case FOURCC('m', 'v', 'h', 'd'):
         {
-            if (chunk_data_size < 12) {
+            if (chunk_data_size < 12) { //increase to 16?
                 return ERROR_MALFORMED;
             }
 
-            uint8_t header[12];
+            uint8_t header[16];
             if (mDataSource->readAt(
                         data_offset, header, sizeof(header))
                     < (ssize_t)sizeof(header)) {
@@ -1635,10 +1773,14 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             int64_t creationTime;
             if (header[0] == 1) {
                 creationTime = U64_AT(&header[4]);
+                mFileMetaData->setInt64(kKeyEditOffset, 0 );
             } else if (header[0] != 0) {
                 return ERROR_MALFORMED;
             } else {
                 creationTime = U32_AT(&header[4]);
+                int32_t mvTimeScale = U32_AT(&header[12]);
+
+                mFileMetaData->setInt32(kKeyEditOffset, mvTimeScale );
             }
 
             String8 s;
@@ -2370,6 +2512,11 @@ MPEG4Source::MPEG4Source(
       mBuffer(NULL),
       mWantsNALFragments(false),
       mSrcBuffer(NULL) {
+      #ifdef DOLBY_UDC
+      #if defined (DEBUG_LOG_DDP_DECODER_EXTRA)
+      ALOGE("@DDP MPEG4Source::MPEG4Source");
+      #endif
+      #endif //DOLBY_UDC
 
     mFormat->findInt32(kKeyCryptoMode, &mCryptoMode);
     mDefaultIVSize = 0;
@@ -3069,7 +3216,7 @@ status_t MPEG4Source::read(
                     sampleIndex, &syncSampleIndex, findFlags);
         }
 
-        uint32_t sampleTime;
+        uint64_t sampleTime;
         if (err == OK) {
             err = mSampleTable->getMetaDataForSample(
                     sampleIndex, NULL, NULL, &sampleTime);
@@ -3093,7 +3240,7 @@ status_t MPEG4Source::read(
         }
 
 #if 0
-        uint32_t syncSampleTime;
+        uint64_t syncSampleTime;
         CHECK_EQ(OK, mSampleTable->getMetaDataForSample(
                     syncSampleIndex, NULL, NULL, &syncSampleTime));
 
@@ -3115,7 +3262,7 @@ status_t MPEG4Source::read(
 
     off64_t offset;
     size_t size;
-    uint32_t cts;
+    uint64_t cts;
     bool isSyncSample;
     bool newBuffer = false;
     if (mBuffer == NULL) {
@@ -3148,12 +3295,15 @@ status_t MPEG4Source::read(
 
                 return ERROR_IO;
             }
-
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+            //for AC3/EAC3 detection
+            QCUtils::helper_mpeg4extractor_checkAC3EAC3(mBuffer, mFormat, size);
+#endif
             CHECK(mBuffer != NULL);
             mBuffer->set_range(0, size);
             mBuffer->meta_data()->clear();
             mBuffer->meta_data()->setInt64(
-                    kKeyTime, ((int64_t)cts * 1000000) / mTimescale);
+                    kKeyTime, (cts * 1000000) / mTimescale);
 
             if (targetSampleTimeUs >= 0) {
                 mBuffer->meta_data()->setInt64(
@@ -3275,7 +3425,7 @@ status_t MPEG4Source::read(
 
         mBuffer->meta_data()->clear();
         mBuffer->meta_data()->setInt64(
-                kKeyTime, ((int64_t)cts * 1000000) / mTimescale);
+                kKeyTime, (cts * 1000000) / mTimescale);
 
         if (targetSampleTimeUs >= 0) {
             mBuffer->meta_data()->setInt64(

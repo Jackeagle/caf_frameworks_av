@@ -148,8 +148,11 @@ static VideoFrame *extractVideoFrameWithCodecFlags(
     // XXX:
     // Once all vendors support OMX_COLOR_FormatYUV420Planar, we can
     // remove this check and always set the decoder output color format
-    if (isYUV420PlanarSupported(client, trackMeta)) {
-        format->setInt32(kKeyColorFormat, OMX_COLOR_FormatYUV420Planar);
+    // skip this check for software decoders
+    if (!(flags & OMXCodec::kSoftwareCodecsOnly)) {
+        if (isYUV420PlanarSupported(client, trackMeta)) {
+            format->setInt32(kKeyColorFormat, OMX_COLOR_FormatYUV420Planar);
+        }
     }
 
     sp<MediaSource> decoder =
@@ -382,7 +385,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
 
     VideoFrame *frame =
         extractVideoFrameWithCodecFlags(
-                &mClient, trackMeta, source, OMXCodec::kPreferSoftwareCodecs,
+                &mClient, trackMeta, source, OMXCodec::kSoftwareCodecsOnly,
                 timeUs, option);
 
     if (frame == NULL) {
@@ -471,7 +474,13 @@ void StagefrightMetadataRetriever::parseMetaData() {
         const char *value;
         if (meta->findCString(kMap[i].from, &value)) {
             mMetaData.add(kMap[i].to, String8(value));
+            continue;
         }
+        //For some wma clips, Artist info exists in Author bytes instead of Artist byte byte
+        //Put the Author into Artist in this case
+        if((kMap[i].from == kKeyArtist) &&
+                meta->findCString(kKeyAuthor, &value))
+            mMetaData.add(kMap[i].to, String8(value));
     }
 
     const void *data;

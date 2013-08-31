@@ -40,6 +40,7 @@ public:
         kStreamedFromLocalHost = 2,
         kIsCachingDataSource   = 4,
         kIsHTTPBasedSource     = 8,
+        kSupportNonBlockingRead = 16,
     };
 
     static sp<DataSource> CreateFromURI(
@@ -60,6 +61,8 @@ public:
 
     // May return ERROR_UNSUPPORTED.
     virtual status_t getSize(off64_t *size);
+
+    virtual status_t getCurrentOffset(off64_t *size);
 
     virtual uint32_t flags() {
         return 0;

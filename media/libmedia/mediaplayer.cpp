@@ -298,6 +298,9 @@ status_t MediaPlayer::start()
             }
         }
         return ret;
+    } else if ( (mPlayer != 0) && ( mCurrentState & MEDIA_PLAYER_SUSPENDED ) ) {
+        ALOGV("start while suspended, so ignore this start");
+        return NO_ERROR;
     }
     ALOGE("start called in state %d", mCurrentState);
     return INVALID_OPERATION;
@@ -394,7 +397,7 @@ status_t MediaPlayer::getCurrentPosition(int *msec)
 status_t MediaPlayer::getDuration_l(int *msec)
 {
     ALOGV("getDuration_l");
-    bool isValidState = (mCurrentState & (MEDIA_PLAYER_PREPARED | MEDIA_PLAYER_STARTED | MEDIA_PLAYER_PAUSED | MEDIA_PLAYER_STOPPED | MEDIA_PLAYER_PLAYBACK_COMPLETE));
+    bool isValidState = (mCurrentState & (MEDIA_PLAYER_PREPARED | MEDIA_PLAYER_STARTED | MEDIA_PLAYER_PAUSED | MEDIA_PLAYER_STOPPED | MEDIA_PLAYER_PLAYBACK_COMPLETE | MEDIA_PLAYER_SUSPENDED));
     if (mPlayer != 0 && isValidState) {
         int durationMs;
         status_t ret = mPlayer->getDuration(&durationMs);
@@ -423,7 +426,7 @@ status_t MediaPlayer::getDuration(int *msec)
 status_t MediaPlayer::seekTo_l(int msec)
 {
     ALOGV("seekTo %d", msec);
-    if ((mPlayer != 0) && ( mCurrentState & ( MEDIA_PLAYER_STARTED | MEDIA_PLAYER_PREPARED | MEDIA_PLAYER_PAUSED |  MEDIA_PLAYER_PLAYBACK_COMPLETE) ) ) {
+    if ((mPlayer != 0) && ( mCurrentState & ( MEDIA_PLAYER_STARTED | MEDIA_PLAYER_PREPARED | MEDIA_PLAYER_PAUSED |  MEDIA_PLAYER_PLAYBACK_COMPLETE | MEDIA_PLAYER_SUSPENDED) ) ) {
         if ( msec < 0 ) {
             ALOGW("Attempt to seek to invalid position: %d", msec);
             msec = 0;
@@ -683,7 +686,7 @@ void MediaPlayer::notify(int msg, int ext1, int ext2, const Parcel *obj)
     }
 
     // Allows calls from JNI in idle state to notify errors
-    if (!(msg == MEDIA_ERROR && mCurrentState == MEDIA_PLAYER_IDLE) && mPlayer == 0) {
+    if (!((msg == MEDIA_ERROR || msg == MEDIA_QOE) && mCurrentState == MEDIA_PLAYER_IDLE) && mPlayer == 0) {
         ALOGV("notify(%d, %d, %d) callback on disconnected mediaplayer", msg, ext1, ext2);
         if (locked) mLock.unlock();   // release the lock when done.
         return;
@@ -756,6 +759,9 @@ void MediaPlayer::notify(int msg, int ext1, int ext2, const Parcel *obj)
     case MEDIA_TIMED_TEXT:
         ALOGV("Received timed text message");
         break;
+    case MEDIA_QOE:
+        ALOGV("Received QOE Message for event : %d",ext2);
+        break;
     default:
         ALOGV("unrecognized message: (%d, %d, %d)", msg, ext1, ext2);
         break;
@@ -823,6 +829,54 @@ status_t MediaPlayer::updateProxyConfig(
     }
 
     return INVALID_OPERATION;
+}
+
+status_t MediaPlayer::suspend() {
+    ALOGV("MediaPlayer::suspend()");
+    Mutex::Autolock _l(mLock);
+    if (mPlayer == NULL) {
+        ALOGE("mPlayer = NULL");
+        return NO_INIT;
+    }
+
+    bool isValidState = (mCurrentState & (MEDIA_PLAYER_PREPARED | MEDIA_PLAYER_STARTED | MEDIA_PLAYER_PAUSED | MEDIA_PLAYER_STOPPED | MEDIA_PLAYER_PLAYBACK_COMPLETE | MEDIA_PLAYER_SUSPENDED));
+    if (!isValidState) {
+        ALOGE("suspend while in a invalid state = %d", mCurrentState);
+        return UNKNOWN_ERROR;
+    }
+
+    status_t ret = mPlayer->suspend();
+
+    if (OK != ret) {
+        ALOGE("MediaPlayer::suspend() return with error ret = %d", ret);
+        return ret;
+    }
+    mCurrentState = MEDIA_PLAYER_SUSPENDED;
+    return OK;
+}
+
+status_t MediaPlayer::resume() {
+    ALOGV("MediaPlayer::resume()");
+    Mutex::Autolock _l(mLock);
+    if (mPlayer == NULL) {
+        ALOGE("mPlayer == NULL");
+        return NO_INIT;
+    }
+
+    bool isValidState = (mCurrentState == MEDIA_PLAYER_SUSPENDED);
+    if (!isValidState) {
+        ALOGE("resume while in a invalid state = %d", mCurrentState);
+        return UNKNOWN_ERROR;
+    }
+
+    status_t ret = mPlayer->resume();
+
+    if (OK != ret) {
+        ALOGE("MediaPlayer::resume() return with error ret = %d", ret);
+        return ret;
+    }
+    mCurrentState = MEDIA_PLAYER_PREPARED;
+    return OK;
 }
 
 }; // namespace android
