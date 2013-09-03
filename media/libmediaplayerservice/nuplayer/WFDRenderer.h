@@ -38,6 +38,10 @@ namespace android {
 */
 #define WFD_RENDERER_AVSYNC_WINDOW 250000
 
+#define WFD_RENDERER_AV_CLOCK_ADJUST_INTERVAL   (1 * 1000000ll)   //(1 sec)
+
+#define WFD_ENABLE_AV_CLOCK_CORRECTION 1
+
 struct ABuffer;
 
 struct NuPlayer::WFDRenderer : public NuPlayer::Renderer {
@@ -62,6 +66,7 @@ struct NuPlayer::WFDRenderer : public NuPlayer::Renderer {
 
     void setBaseMediaTime(int64_t ts, bool bForceReset = false);
 
+    void trackAVClock(int64_t nDelay = 0);
     enum {
         kWhatEOS                = 'eos ',
         kWhatFlushComplete      = 'fluC',
@@ -83,6 +88,7 @@ private:
         kWhatAudioSinkChanged   = 'auSC',
         kWhatPause              = 'paus',
         kWhatResume             = 'resm',
+        kWhatClockAdjust        = 'scaj',
     };
 
     struct QueueEntry {
@@ -123,6 +129,15 @@ private:
     bool mWasPaused; // if paused then store the info
     bool mWFDAudioTimeMaster;
 
+    int mNumVideoFramesClockCorrection;
+    int mNumAudioFramesClockCorrection;
+
+    int64_t mVideoDelayInUs;
+    int64_t mAudioDelayInUs;
+
+    bool mPostAVCorrection;
+    bool mChkAVCorrection;
+
     int64_t mLastPositionUpdateUs;
     int64_t mVideoLateByUs;
     int64_t mAudioLateByUs;
@@ -155,6 +170,7 @@ private:
     bool wfdDropBufferWhileFlushing(bool audio, const sp<AMessage> &msg);
     void wfdSyncQueuesDone();
     int64_t wfdGetMediaTime(bool audio);
+    void wfdOnClockAdjust(const sp<AMessage> &msg);
 
     // for qualcomm statistics profiling
   public:
