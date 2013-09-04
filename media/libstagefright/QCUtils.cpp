@@ -531,8 +531,8 @@ void QCUtils::setArbitraryModeIfInterlaced(
 int32_t QCUtils::checkIsInterlace(sp<MetaData> &meta) {
     int32_t isInterlaceFormat = 0;
 
-    if(!meta->findInt32(kKeyInterlace, &isInterlaceFormat)) {
-        ALOGW("interlace format not detected");
+    if(meta->findInt32(kKeyInterlace, &isInterlaceFormat)) {
+        ALOGI("interlace format detected");
     }
 
     return isInterlaceFormat;
