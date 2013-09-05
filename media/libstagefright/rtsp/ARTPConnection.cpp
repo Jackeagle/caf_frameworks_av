@@ -24,6 +24,7 @@
 #include "ARTPSource.h"
 #include "ASessionDescription.h"
 
+#include <cutils/properties.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -36,6 +37,8 @@
 namespace android {
 
 static const size_t kMaxUDPSize = 1500;
+static const unsigned kDefaultRtpPortRangeStart = 15550;
+static const unsigned kDefaultRtpPortRangeEnd = 65535;
 
 static uint16_t u16at(const uint8_t *data) {
     return data[0] << 8 | data[1];
@@ -117,10 +120,18 @@ void ARTPConnection::MakePortPair(
 
     bumpSocketBufferSize(*rtcpSocket);
 
-    unsigned start = (rand() * 1000)/ RAND_MAX + 15550;
+    unsigned portRangeStart = 0;
+    unsigned portRangeEnd = 0;
+    parseRtpPortRangeFromSystemProperty(&portRangeStart, &portRangeEnd);
+    unsigned start = (unsigned)((int64_t)rand() * (portRangeEnd - portRangeStart)
+            / 10 / RAND_MAX) + portRangeStart;
     start &= ~1;
+    if (start < portRangeStart) {
+        start += 2;
+    }
+    ALOGV("Test rtp port in range [%u, %u]", start, portRangeEnd);
 
-    for (unsigned port = start; port < 65536; port += 2) {
+    for (unsigned port = start; port <= portRangeEnd; port += 2) {
         struct sockaddr_in addr;
         memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
         addr.sin_family = AF_INET;
@@ -136,6 +147,7 @@ void ARTPConnection::MakePortPair(
 
         if (bind(*rtcpSocket,
                  (const struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            ALOGV("RTCP port: %u", port + 1);
             *rtpPort = port;
             return;
         }
@@ -669,6 +681,32 @@ void ARTPConnection::onInjectPacket(const sp<AMessage> &msg) {
     } else {
         err = parseRTCP(s, buffer);
     }
+}
+
+void ARTPConnection::parseRtpPortRangeFromSystemProperty(unsigned *start, unsigned *end) {
+    char value[PROPERTY_VALUE_MAX];
+    if (!property_get("persist.env.media.rtp-ports", value, NULL)) {
+        ALOGV("Cannot get property of persist.env.media.rtp-ports");
+        *start = kDefaultRtpPortRangeStart;
+        *end = kDefaultRtpPortRangeEnd;
+        return;
+    }
+
+    if (sscanf(value, "%d/%d", start, end) != 2) {
+        ALOGE("Failed to parse rtp port range from '%s'.", value);
+        *start = kDefaultRtpPortRangeStart;
+        *end = kDefaultRtpPortRangeEnd;
+        return;
+    }
+
+    if (*start > *end || *start < kDefaultRtpPortRangeStart || *end > kDefaultRtpPortRangeEnd) {
+        ALOGE("Illegal rtp port start/end specified, reverting to defaults.");
+        *start = kDefaultRtpPortRangeStart;
+        *end = kDefaultRtpPortRangeEnd;
+        return;
+    }
+
+    ALOGV("rtp port_start = %u, port_end = %u", *start, *end);
 }
 
 }  // namespace android
