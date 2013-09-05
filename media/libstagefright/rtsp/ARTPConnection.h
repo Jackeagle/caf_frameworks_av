@@ -89,6 +89,8 @@ private:
 
     void postPollEvent();
 
+    static void parseRtpPortRangeFromSystemProperty(unsigned *start, unsigned *end);
+
     DISALLOW_EVIL_CONSTRUCTORS(ARTPConnection);
 };
 
