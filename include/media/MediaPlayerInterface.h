@@ -51,6 +51,7 @@ enum player_type {
     // argument to the 'test:' url in the setDataSource call.
     TEST_PLAYER = 5,
     MPQ_PLAYER = 6,
+    TV_PLAYER = 7,
 
     AAH_RX_PLAYER = 100,
     AAH_TX_PLAYER = 101,
