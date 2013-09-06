@@ -61,6 +61,7 @@ NuPlayer::NuPlayer()
       mVideoIsAVC(false),
       mAudioEOS(false),
       mVideoEOS(false),
+      mDontSendFramesToRenderer(0),
       mScanSourcesPending(false),
       mScanSourcesGeneration(0),
       mPollDurationGeneration(0),
@@ -135,6 +136,9 @@ void NuPlayer::setDataSource(
            source = LoadCreateSource(url, headers, mUIDValid, mUID, true);
            if (source != NULL) {
               mWFDSinkSession = true;
+              //find  from URL if AVSYNC is disabled then dont create wfdrenderer
+              getValueforKey(url, "disableAVsync=", &mDontSendFramesToRenderer);
+              ALOGE("Nuplayer : disableAVsync = %d",mDontSendFramesToRenderer);
            }
     }
 #endif //QCOM_WFD_SINK
@@ -532,7 +536,17 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 mRenderer->queueEOS(audio, UNKNOWN_ERROR);
             } else if (what == ACodec::kWhatDrainThisBuffer) {
-                renderBuffer(audio, codecRequest);
+                if ( mWFDSinkSession &&
+                     mDontSendFramesToRenderer) {
+                   ///send the frames from here itself to the NativeWindow
+                   ALOGE("AVSync disabled, send frames to native window");
+                   sp<AMessage>reply;
+                   CHECK(codecRequest->findMessage("reply",&reply));
+                   reply->setInt32("render",true);
+                   reply->post();
+                } else {
+                   renderBuffer(audio, codecRequest);
+                }
             } else {
                 ALOGV("Unhandled codec notification %d.", what);
             }
@@ -818,7 +832,11 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
 #ifdef QCOM_WFD_SINK
      if (mWFDSinkSession && audio)
      {
-         (*decoder)->setSink(mAudioSink, mRenderer);
+         if(mDontSendFramesToRenderer) {
+           (*decoder)->setSink(mAudioSink, NULL);
+         } else {
+           (*decoder)->setSink(mAudioSink, mRenderer);
+         }
          (*decoder)->configure(format,true);
      }
      else
@@ -1173,6 +1191,31 @@ void NuPlayer::schedulePollDuration() {
 
 void NuPlayer::cancelPollDuration() {
     ++mPollDurationGeneration;
+}
+
+bool NuPlayer::getValueforKey(const char *pUrl, const char* pKey, int *Val)
+{
+     int startIndex = 0;
+     int endIndx = 0;
+     char *pMetaInfo = strstr(pUrl, pKey);
+
+     if(!pMetaInfo) {
+       ALOGE("Get key value creation failed");
+        return false;
+     }
+
+     startIndex = strlen(pKey);
+    *Val = 0;
+    while(pMetaInfo[startIndex] != '/' && pMetaInfo[startIndex] != '/0') {
+       if(pMetaInfo[startIndex] >= '0' && pMetaInfo[startIndex] <= '9') {
+           *Val = *Val * 10 + ((int)pMetaInfo[startIndex] - (int)'0');
+       }else {
+           break;
+       }
+       ++startIndex;
+    }
+
+    return true;
 }
 
 }  // namespace android
