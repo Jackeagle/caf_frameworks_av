@@ -229,6 +229,7 @@ private:
     void reset();
     status_t schedPauseTimeOut();
     status_t stopAudioSink();
+    bool seekTooClose(int64_t time_us);
 
     TunnelPlayer(const TunnelPlayer &);
     TunnelPlayer &operator=(const TunnelPlayer &);
