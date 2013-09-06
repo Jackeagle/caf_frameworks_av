@@ -72,6 +72,7 @@
 #include "include/avc_utils.h"
 
 #include "include/QCUtils.h"
+#include "include/ResourceManager.h"
 
 namespace android {
 
@@ -582,6 +583,13 @@ status_t OMXCodec::parseAVCCodecSpecificData(
 status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
     ALOGV("configureCodec protected=%d",
          (mFlags & kEnableGrallocUsageProtected) ? 1 : 0);
+
+    status_t err = OK;
+    err =  ResourceManager::AudioConcurrencyInfo::findUseCaseAndSetParameter(
+            mMIME, mComponentName, !mIsEncoder, mUseCase, mUseCaseFlag, mFlags);
+    if(err != OK) {
+        return err;
+    }
 
     if (!(mFlags & kIgnoreCodecSpecificData)) {
         uint32_t type;
@@ -1581,6 +1589,9 @@ OMXCodec::OMXCodec(
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
 
+    mUseCase =  "";
+    mUseCaseFlag = false;
+
     setComponentRole();
 }
 
@@ -1703,6 +1714,8 @@ OMXCodec::~OMXCodec() {
     setState(DEAD);
 
     clearCodecSpecificData();
+
+    ResourceManager::AudioConcurrencyInfo::resetParameter(mUseCase, mUseCaseFlag, mFlags);
 
     free(mComponentName);
     mComponentName = NULL;
@@ -4969,6 +4982,17 @@ status_t OMXCodec::pause() {
        return OK;
    }
 
+}
+
+status_t OMXCodec::updateConcurrencyParam(bool pauseflag) {
+
+    Mutex::Autolock autoLock(mLock);
+    status_t err = OK;
+
+    err = ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
+        mUseCase, mUseCaseFlag, pauseflag, mFlags);
+
+    return err;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
