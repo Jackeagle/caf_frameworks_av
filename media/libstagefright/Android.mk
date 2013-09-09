@@ -23,6 +23,7 @@ include $(CLEAR_VARS)
 ifeq ($(BOARD_USES_ALSA_AUDIO),true)
     ifeq ($(USE_TUNNEL_MODE),true)
         LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+        LOCAL_CFLAGS += -DUSE_LPA_MODE
     endif
     ifeq ($(TUNNEL_MODE_SUPPORTS_AMRWB),true)
         LOCAL_CFLAGS += -DTUNNEL_MODE_SUPPORTS_AMRWB
@@ -31,6 +32,12 @@ ifeq ($(BOARD_USES_ALSA_AUDIO),true)
         LOCAL_CFLAGS += -DNO_TUNNEL_MODE_FOR_MULTICHANNEL
     endif
 endif
+
+# RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+LOCAL_CFLAGS += -DRESOURCE_MANAGER
+endif
+# RESOURCE MANAGER
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
@@ -94,6 +101,7 @@ LOCAL_SRC_FILES:=                         \
         mp4/TrackFragment.cpp             \
         ExtendedExtractor.cpp             \
         QCUtils.cpp                       \
+        ResourceManager.cpp             \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
@@ -125,6 +133,7 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz \
+        libaudioparameter \
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
