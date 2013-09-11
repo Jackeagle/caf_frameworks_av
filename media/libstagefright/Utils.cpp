@@ -27,6 +27,7 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include <media/stagefright/ExtendedCodec.h>
 
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
 #include "QCMetaData.h"
@@ -274,17 +275,9 @@ status_t convertMetaDataToMessage(
         buffer->meta()->setInt32("csd", true);
         buffer->meta()->setInt64("timeUs", 0);
         msg->setBuffer("csd-1", buffer);
-#ifdef ENABLE_QC_AV_ENHANCEMENTS
-    } else if(meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
-        sp<ABuffer> buffer = new ABuffer(size);
-        memcpy(buffer->data(), data, size);
-
-        buffer->meta()->setInt32("csd", true);
-        buffer->meta()->setInt64("timeUs", 0);
-        msg->setBuffer("csd-0", buffer);
-#endif
     }
 
+    ExtendedCodec::convertMetaDataToMessage(meta, &msg);
     *format = msg;
 
     return OK;
