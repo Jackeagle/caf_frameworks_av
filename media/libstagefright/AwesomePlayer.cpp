@@ -238,6 +238,7 @@ AwesomePlayer::AwesomePlayer()
     mUseCaseFlag = false;
     reset();
     mIsTunnelAudio = false;
+    mLateAVSyncMargin = QCUtils::ShellProp::getMaxAVSyncLateMargin();
 }
 
 AwesomePlayer::~AwesomePlayer() {
@@ -2170,13 +2171,13 @@ void AwesomePlayer::onVideoEvent() {
             }
         }
 
-        if (latenessUs < 40000 && (mFlags & NO_AVSYNC))
+        if (latenessUs < mLateAVSyncMargin && (mFlags & NO_AVSYNC))
         {
             ALOGE("ENABLED AVSync as the video frames are intime with audio");
             modifyFlags(NO_AVSYNC,CLEAR);
         }
 
-        if (latenessUs > 40000) {
+        if (latenessUs > mLateAVSyncMargin) {
             // We're more than 40ms late.
             ALOGV("we're late by %lld us (%.2f secs)",
                  latenessUs, latenessUs / 1E6);
