@@ -220,6 +220,8 @@ public:
     bool findData(uint32_t key, uint32_t *type,
                   const void **data, size_t *size) const;
 
+    size_t getSize() const { return mItems.size(); }
+
     void dumpToLog() const;
 
 protected:
