@@ -99,6 +99,12 @@ status_t NuMediaExtractor::setDataSource(
     }
 
     sp<MetaData> fileMeta = mImpl->getMetaData();
+    if (fileMeta == NULL || fileMeta->getSize() == 0) {
+        ALOGE("failed to get meta data");
+        mImpl.clear();
+        mImpl = NULL;
+        return ERROR_UNSUPPORTED;
+    }
     const char *containerMime;
     if (fileMeta != NULL
             && fileMeta->findCString(kKeyMIMEType, &containerMime)

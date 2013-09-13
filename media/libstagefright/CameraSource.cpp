@@ -168,6 +168,7 @@ CameraSource::CameraSource(
       mNumFramesReceived(0),
       mLastFrameTimestampUs(0),
       mStarted(false),
+      mStopped(false),
       mNumFramesEncoded(0),
       mTimeBetweenFrameCaptureUs(0),
       mFirstFrameTimeUs(0),
@@ -588,6 +589,12 @@ void CameraSource::startCameraRecording() {
     // will connect to the camera in ICameraRecordingProxy::startRecording.
     int64_t token = IPCThreadState::self()->clearCallingIdentity();
     if (mNumInputBuffers > 0) {
+        if(mStopped){
+            ALOGV("re-start: reconnect()");
+            mCamera->reconnect();
+            mCamera->lock();
+            mStopped = false;
+        }
         status_t err = mCamera->sendCommand(
             CAMERA_CMD_SET_VIDEO_BUFFER_COUNT, mNumInputBuffers, 0);
 
@@ -601,7 +608,7 @@ void CameraSource::startCameraRecording() {
 
     if (mCameraFlags & FLAGS_HOT_CAMERA) {
         mCamera->unlock();
-        mCamera.clear();
+        //mCamera.clear(); //here, we can't clear this sp<Camera> object, we will use this Camera object to reconnect again when restarted!!need to check again for reconnect method
         CHECK_EQ((status_t)OK,
             mCameraRecordingProxy->startRecording(new ProxyListener(this)));
     } else {
@@ -632,12 +639,14 @@ status_t CameraSource::start(MetaData *meta) {
         int64_t startTimeUs;
         if (meta->findInt64(kKeyTime, &startTimeUs)) {
             mStartTimeUs = startTimeUs;
+            ALOGV("CameraSource start from system time = %lld",mStartTimeUs);
         }
 
         int32_t nBuffers;
         if (meta->findInt32(kKeyNumBuffers, &nBuffers)) {
             CHECK_GT(nBuffers, 0);
             mNumInputBuffers = nBuffers;
+            ALOGV("input buffer count is %d",mNumInputBuffers);
         }
     }
 
@@ -678,10 +687,11 @@ void CameraSource::releaseCamera() {
     mCameraFlags = 0;
 }
 
-status_t CameraSource::reset() {
-    ALOGD("reset: E");
+status_t CameraSource::stop() {
+    ALOGV("stop: E");
     Mutex::Autolock autoLock(mLock);
     mStarted = false;
+    mStopped = true;
     mFrameAvailableCondition.signal();
 
     int64_t token;
@@ -690,7 +700,12 @@ status_t CameraSource::reset() {
         token = IPCThreadState::self()->clearCallingIdentity();
         isTokenValid = true;
     }
+
+    stopCameraRecording();
+    //releaseCamera();  //shouldn't release the Camera object here cause we may restarted again
+
     releaseQueuedFrames();
+
     while (!mFramesBeingEncoded.empty()) {
         if (NO_ERROR !=
             mFrameCompleteCondition.waitRelative(mLock,
@@ -699,8 +714,7 @@ status_t CameraSource::reset() {
                 mFramesBeingEncoded.size());
         }
     }
-    stopCameraRecording();
-    releaseCamera();
+
     if (isTokenValid) {
         IPCThreadState::self()->restoreCallingIdentity(token);
     }
@@ -716,7 +730,60 @@ status_t CameraSource::reset() {
     }
 
     CHECK_EQ(mNumFramesReceived, mNumFramesEncoded + mNumFramesDropped);
-    ALOGD("reset: X");
+
+    //clear the counters
+    mNumFramesReceived = 0;
+    mNumFramesEncoded = 0;
+    mNumFramesDropped = 0;
+
+    ALOGV("stop: X");
+    return OK;
+}
+
+status_t CameraSource::reset() {
+    ALOGV("reset: E");
+    Mutex::Autolock autoLock(mLock);
+    mStarted = false;
+    mFrameAvailableCondition.signal();
+
+    int64_t token;
+    bool isTokenValid = false;
+    if (mCamera != 0) {
+        token = IPCThreadState::self()->clearCallingIdentity();
+        isTokenValid = true;
+    }
+
+    stopCameraRecording();
+    releaseCamera();
+
+    releaseQueuedFrames();
+
+    while (!mFramesBeingEncoded.empty()) {
+        if (NO_ERROR !=
+            mFrameCompleteCondition.waitRelative(mLock,
+                    mTimeBetweenFrameCaptureUs * 1000LL + CAMERA_SOURCE_TIMEOUT_NS)) {
+            ALOGW("Timed out waiting for outstanding frames being encoded: %d",
+                mFramesBeingEncoded.size());
+        }
+    }
+
+    if (isTokenValid) {
+        IPCThreadState::self()->restoreCallingIdentity(token);
+    }
+
+    if (mCollectStats) {
+        ALOGI("Frames received/encoded/dropped: %d/%d/%d in %lld us",
+                mNumFramesReceived, mNumFramesEncoded, mNumFramesDropped,
+                mLastFrameTimestampUs - mFirstFrameTimeUs);
+    }
+
+    if (mNumGlitches > 0) {
+        ALOGW("%d long delays between neighboring video frames", mNumGlitches);
+    }
+
+    CHECK_EQ(mNumFramesReceived, mNumFramesEncoded + mNumFramesDropped);
+
+    ALOGV("reset: X");
     return OK;
 }
 
@@ -733,11 +800,16 @@ void CameraSource::releaseRecordingFrame(const sp<IMemory>& frame) {
 
 void CameraSource::releaseQueuedFrames() {
     List<sp<IMemory> >::iterator it;
+    List<int64_t >::iterator itt;
     while (!mFramesReceived.empty()) {
         it = mFramesReceived.begin();
         releaseRecordingFrame(*it);
         mFramesReceived.erase(it);
         ++mNumFramesDropped;
+    }
+    while (!mFrameTimes.empty()) {
+        itt = mFrameTimes.begin();
+        mFrameTimes.erase(itt);
     }
 }
 
