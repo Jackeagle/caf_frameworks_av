@@ -940,7 +940,9 @@ void AudioPolicyService::AudioCommandThread::insertCommand_l(AudioCommand *comma
             } else {
                 data2->mKeyValuePairs = param2.toString();
             }
-            time = command2->mTime;
+            if (!strcmp(data2->mKeyValuePairs.string(), data->mKeyValuePairs.string())){
+                time = command2->mTime;
+            }
         } break;
 
         case SET_VOLUME: {
