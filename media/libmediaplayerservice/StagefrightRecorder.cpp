@@ -20,7 +20,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "StagefrightRecorder"
 #include <utils/Log.h>
-
+#include <media/AudioParameter.h>
 #include "StagefrightRecorder.h"
 
 #include <binder/IPCThreadState.h>
@@ -47,6 +47,7 @@
 #include <camera/ICamera.h>
 #include <camera/CameraParameters.h>
 #include <gui/Surface.h>
+#include <utils/String8.h>
 
 #include <utils/Errors.h>
 #include <sys/types.h>
@@ -54,6 +55,7 @@
 #include <unistd.h>
 
 #include "QCUtils.h"
+#include "ResourceManager.h"
 
 #include <system/audio.h>
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
@@ -84,11 +86,18 @@ StagefrightRecorder::StagefrightRecorder()
       mCaptureTimeLapse(false) {
 
     ALOGV("Constructor");
+
+    mUseCase = "";
+    mUseCaseFlag =  false;
+
     reset();
 }
 
 StagefrightRecorder::~StagefrightRecorder() {
     ALOGV("Destructor");
+
+    ResourceManager::AudioConcurrencyInfo::resetParameter(mUseCase, mUseCaseFlag);
+
     stop();
 }
 
@@ -864,6 +873,53 @@ status_t StagefrightRecorder::start() {
 }
 
 sp<MediaSource> StagefrightRecorder::createAudioSource() {
+    bool tunneledSource = false;
+    const char *tunnelMime;
+    {
+        AudioParameter param;
+        String8 key("tunneled-input-formats");
+        param.add( key, String8("get") );
+        String8 valueStr = AudioSystem::getParameters( 0, param.toString());
+        AudioParameter result(valueStr);
+        int value;
+        if ( mAudioEncoder == AUDIO_ENCODER_AMR_NB &&
+            result.getInt(String8("AMR"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_AMR_NB;
+        }
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+        else if ( mAudioEncoder == AUDIO_ENCODER_QCELP &&
+            result.getInt(String8("QCELP"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_QCELP;
+        }
+        else if ( mAudioEncoder == AUDIO_ENCODER_EVRC &&
+            result.getInt(String8("EVRC"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_EVRC;
+        }
+#endif
+        else if ( mAudioEncoder == AUDIO_ENCODER_AMR_WB &&
+            result.getInt(String8("AWB"),value) == NO_ERROR ) {
+            tunneledSource = true;
+            tunnelMime = MEDIA_MIMETYPE_AUDIO_AMR_WB;
+        }
+    }
+
+    if ( tunneledSource ) {
+        ALOGD("tunnel recording");
+        sp<AudioSource> audioSource = NULL;
+        sp<MetaData> meta = new MetaData;
+        meta->setInt32(kKeyChannelCount, mAudioChannels);
+        meta->setInt32(kKeySampleRate, mSampleRate);
+        meta->setInt32(kKeyBitRate, mAudioBitRate);
+        if (mAudioTimeScale > 0) {
+            meta->setInt32(kKeyTimeScale, mAudioTimeScale);
+        }
+        meta->setCString( kKeyMIMEType, tunnelMime );
+        audioSource = new AudioSource( mAudioSource, meta);
+        return audioSource->initCheck( ) == OK ? audioSource : NULL;
+    }
     sp<AudioSource> audioSource =
         new AudioSource(
                 mAudioSource,
@@ -903,12 +959,14 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
             encMeta->setInt32(kKeyAACProfile, OMX_AUDIO_AACObjectELD);
             break;
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
+#ifndef RESOURCE_MANAGER
         case AUDIO_ENCODER_EVRC:
             mime = MEDIA_MIMETYPE_AUDIO_EVRC;
             break;
         case AUDIO_ENCODER_QCELP:
             mime = MEDIA_MIMETYPE_AUDIO_QCELP;
             break;
+#endif
 #endif
 
         default:
@@ -931,14 +989,35 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
 
     OMXClient client;
     CHECK_EQ(client.connect(), (status_t)OK);
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+    sp<MediaSource> audioEncoder;
+    if (QCUtils::UseQCHWAACEncoder(mAudioEncoder,mAudioChannels,mAudioBitRate,mSampleRate)) {
+        //use hw aac encoder
+        ALOGV("use QCOM HW AAC encoder");
+        audioEncoder = OMXCodec::Create(client.interface(), encMeta,
+            true /* createEncoder */, audioSource,"OMX.qcom.audio.encoder.aac",OMXCodec::kHardwareCodecsOnly );
+    } else {
+        audioEncoder = OMXCodec::Create(client.interface(), encMeta,
+            true /* createEncoder */, audioSource);
+    }
+#else
     sp<MediaSource> audioEncoder =
         OMXCodec::Create(client.interface(), encMeta,
                          true /* createEncoder */, audioSource);
+#endif
     // If encoder could not be created (as in LPCM), then
     // use the AudioSource directly as the MediaSource.
     if (audioEncoder == NULL) {
         ALOGD("No encoder is needed, use the AudioSource directly as the MediaSource for LPCM format");
         audioEncoder = audioSource;
+
+        mUseCase = "USECASE_PCM_RECORDING";
+        status_t err = OK;
+        err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
+                 mUseCase, mUseCaseFlag);
+        if(err != OK) {
+            return NULL;
+        }
     }
     if (mAudioSourceNode != NULL) {
         mAudioSourceNode.clear();

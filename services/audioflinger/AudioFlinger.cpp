@@ -147,7 +147,8 @@ AudioFlinger::AudioFlinger()
       mMasterMute(false),
       mNextUniqueId(1),
       mMode(AUDIO_MODE_INVALID),
-      mBtNrecIsOff(false)
+      mBtNrecIsOff(false),
+      mAllChainsLocked(false)
 {
     getpid_cached = getpid();
     char value[PROPERTY_VALUE_MAX];
@@ -629,11 +630,11 @@ Exit:
 
 void AudioFlinger::deleteEffectSession()
 {
+    Mutex::Autolock _l(mLock);
     ALOGV("deleteSession");
     // -2 is invalid session ID
     mLPASessionId = -2;
     if (mLPAEffectChain != NULL) {
-        mLPAEffectChain->lock();
         mLPAEffectChain->setLPAFlag(false);
         size_t i, numEffects = mLPAEffectChain->getNumEffects();
         for(i = 0; i < numEffects; i++) {
@@ -646,7 +647,6 @@ void AudioFlinger::deleteEffectSession()
             }
             effect->configure();
         }
-        mLPAEffectChain->unlock();
         mLPAEffectChain.clear();
         mLPAEffectChain = NULL;
     }
@@ -1445,13 +1445,21 @@ sp<IAudioRecord> AudioFlinger::openRecord(
     RecordThread *thread;
     size_t inFrameCount;
     int lSessionId;
+    size_t inputBufferSize = 0;
+    uint32_t channelCount = popcount(channelMask);
 
     // check calling permissions
     if (!recordingAllowed()) {
         lStatus = PERMISSION_DENIED;
         goto Exit;
     }
-
+    // Check that audio input stream accepts requested audio parameters
+    inputBufferSize = getInputBufferSize(sampleRate, format, channelCount);
+    if (inputBufferSize == 0) {
+        lStatus = BAD_VALUE;
+        ALOGE("Bad audio input parameters: sampling rate %u, format %d, channels %d",  sampleRate, format, channelCount);
+        goto Exit;
+    }
     // add client to list
     { // scope for mLock
         Mutex::Autolock _l(mLock);
@@ -1473,6 +1481,39 @@ sp<IAudioRecord> AudioFlinger::openRecord(
                 *sessionId = lSessionId;
             }
         }
+        // frameCount must be a multiple of input buffer size
+        // Change for Codec type
+        uint8_t channelCount = popcount(channelMask);
+        if ((audio_source_t)((int16_t)flags) == AUDIO_SOURCE_VOICE_COMMUNICATION) {
+             inFrameCount = inputBufferSize/channelCount/sizeof(short);
+        } else {
+            if ((format == AUDIO_FORMAT_PCM_16_BIT) ||
+                (format == AUDIO_FORMAT_PCM_8_BIT))
+            {
+              inFrameCount = inputBufferSize/channelCount/sizeof(short);
+            }
+            else if (format == AUDIO_FORMAT_AMR_NB)
+            {
+              inFrameCount = inputBufferSize/channelCount/AMR_FRAMESIZE;
+            }
+            else if (format == AUDIO_FORMAT_EVRC)
+            {
+              inFrameCount = inputBufferSize/channelCount/EVRC_FRAMESIZE;
+            }
+            else if (format == AUDIO_FORMAT_QCELP)
+            {
+              inFrameCount = inputBufferSize/channelCount/QCELP_FRAMESIZE;
+            }
+            else if (format == AUDIO_FORMAT_AAC)
+            {
+              inFrameCount = inputBufferSize/AAC_FRAMESIZE;
+            }
+            else if (format == AUDIO_FORMAT_AMR_WB)
+            {
+              inFrameCount = inputBufferSize/channelCount/AMR_WB_FRAMESIZE;
+            }
+        }
+        frameCount = ((frameCount - 1)/inFrameCount + 1) * inFrameCount;
         // create new record track.
         // The record track uses one track in mHardwareMixerThread by convention.
         recordTrack = thread->createRecordTrack_l(client, sampleRate, format, channelMask,
@@ -1812,15 +1853,22 @@ status_t AudioFlinger::suspendOutput(audio_io_handle_t output)
 {
     Mutex::Autolock _l(mLock);
     PlaybackThread *thread = checkPlaybackThread_l(output);
-
-    if (thread == NULL) {
-        return BAD_VALUE;
+    if(thread != NULL) {
+        ALOGW("suspendOutput() %d", output);
+        thread->suspend();
+        return NO_ERROR;
     }
-
-    ALOGV("suspendOutput() %d", output);
-    thread->suspend();
-
-    return NO_ERROR;
+#ifdef RESOURCE_MANAGER
+    AudioSessionDescriptor *desc = NULL;
+    if (!mDirectAudioTracks.isEmpty()) {
+        desc = mDirectAudioTracks.valueFor(output);
+        if(desc && ((DirectAudioTrack*)desc->trackRefPtr)) {
+            ALOGV("No Suspend for valid  direct track should be already paused  ");
+        }
+       return NO_ERROR;
+    }
+#endif
+    return BAD_VALUE;
 }
 
 status_t AudioFlinger::restoreOutput(audio_io_handle_t output)
@@ -1828,15 +1876,23 @@ status_t AudioFlinger::restoreOutput(audio_io_handle_t output)
     Mutex::Autolock _l(mLock);
     PlaybackThread *thread = checkPlaybackThread_l(output);
 
-    if (thread == NULL) {
-        return BAD_VALUE;
+    if (thread != NULL) {
+        ALOGW("restoreOutput() %d", output);
+        thread->restore();
+        return NO_ERROR;
     }
 
-    ALOGV("restoreOutput() %d", output);
-
-    thread->restore();
-
-    return NO_ERROR;
+#ifdef RESOURCE_MANAGER
+    AudioSessionDescriptor *desc = NULL;
+    if (!mDirectAudioTracks.isEmpty()) {
+        desc = mDirectAudioTracks.valueFor(output);
+        if (desc != NULL) {
+            ALOGV("No Resume for valid  direct track should be already paused  ");
+        }
+       return NO_ERROR;
+    }
+#endif
+    return BAD_VALUE;
 }
 
 audio_io_handle_t AudioFlinger::openInput(audio_module_handle_t module,

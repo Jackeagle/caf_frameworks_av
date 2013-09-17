@@ -15,6 +15,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -35,12 +54,19 @@
 #include <media/stagefright/NativeWindowWrapper.h>
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/OMXCodec.h>
+#include <media/stagefright/ExtendedCodec.h>
 
 #include <media/hardware/HardwareAPI.h>
 
 #include <OMX_Component.h>
 
 #include "include/avc_utils.h"
+#include "include/QCUtils.h"
+
+#ifdef DOLBY_UDC
+ #include <QCMediaDefs.h>
+#endif //DOLBY_UDC
+#include "include/ResourceManager.h"
 
 namespace android {
 
@@ -366,7 +392,12 @@ ACodec::ACodec()
       mEncoderDelay(0),
       mEncoderPadding(0),
       mChannelMaskPresent(false),
-      mChannelMask(0) {
+      mChannelMask(0),
+      mInSmoothStreamingMode(false) {
+
+    mUseCase = "";
+    mUseCaseFlag = false;
+
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -387,6 +418,7 @@ ACodec::ACodec()
 }
 
 ACodec::~ACodec() {
+
 }
 
 void ACodec::setNotificationMessage(const sp<AMessage> &msg) {
@@ -446,6 +478,12 @@ void ACodec::initiateShutdown(bool keepComponentAllocated) {
 
 void ACodec::signalRequestIDRFrame() {
     (new AMessage(kWhatRequestIDRFrame, id()))->post();
+}
+
+void ACodec::signalConcurrencyParam(bool streamPaused) {
+    sp<AMessage> msg = new AMessage(kWhatConcurrencyParam, id());
+    msg->setInt32("streamPaused", streamPaused);
+    msg->post();
 }
 
 status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
@@ -832,6 +870,12 @@ status_t ACodec::setComponentRole(
             "audio_decoder.g711mlaw", "audio_encoder.g711mlaw" },
         { MEDIA_MIMETYPE_AUDIO_G711_ALAW,
             "audio_decoder.g711alaw", "audio_encoder.g711alaw" },
+#ifdef DOLBY_UDC
+        { MEDIA_MIMETYPE_AUDIO_AC3,
+            "audio_decoder.ac3", NULL },
+        { MEDIA_MIMETYPE_AUDIO_EAC3,
+            "audio_decoder.eac3", NULL },
+#endif // DOLBY_UDC
         { MEDIA_MIMETYPE_VIDEO_AVC,
             "video_decoder.avc", "video_encoder.avc" },
         { MEDIA_MIMETYPE_VIDEO_MPEG4,
@@ -1554,6 +1598,9 @@ status_t ACodec::setupVideoDecoder(
         return err;
     }
 
+    ExtendedCodec::enableSmoothStreaming(
+            mOMX, mNode, &mInSmoothStreamingMode, mComponentName.c_str());
+
     return OK;
 }
 
@@ -2236,7 +2283,7 @@ void ACodec::processDeferredMessages() {
     }
 }
 
-void ACodec::sendFormatChange() {
+void ACodec::sendFormatChange(const sp<AMessage> &reply) {
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kWhatOutputFormatChanged);
 
@@ -2301,14 +2348,12 @@ void ACodec::sendFormatChange() {
                         rect.nTop + rect.nHeight - 1);
 
                 if (mNativeWindow != NULL) {
-                    android_native_rect_t crop;
-                    crop.left = rect.nLeft;
-                    crop.top = rect.nTop;
-                    crop.right = rect.nLeft + rect.nWidth;
-                    crop.bottom = rect.nTop + rect.nHeight;
-
-                    CHECK_EQ(0, native_window_set_crop(
-                                mNativeWindow.get(), &crop));
+                    reply->setRect(
+                            "crop",
+                            rect.nLeft,
+                            rect.nTop,
+                            rect.nLeft + rect.nWidth,
+                            rect.nTop + rect.nHeight);
                 }
             }
             break;
@@ -2662,6 +2707,16 @@ bool ACodec::BaseState::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatConcurrencyParam:
+        {
+            status_t err = OK;
+            err = ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
+                    msg, mCodec->mUseCase,  mCodec->mUseCaseFlag);
+            if(err != OK) {
+                    mCodec->signalError(OMX_ErrorUndefined, INVALID_OPERATION);
+            }
+            break;
+        }
         default:
             return false;
     }
@@ -3064,8 +3119,11 @@ bool ACodec::BaseState::onOMXFillBufferDone(
                 break;
             }
 
+            sp<AMessage> reply =
+                new AMessage(kWhatOutputBufferDrained, mCodec->id());
+
             if (!mCodec->mSentFormat) {
-                mCodec->sendFormatChange();
+                mCodec->sendFormatChange(reply);
             }
 
             info->mData->setRange(rangeOffset, rangeLength);
@@ -3087,9 +3145,6 @@ bool ACodec::BaseState::onOMXFillBufferDone(
             notify->setPointer("buffer-id", info->mBufferID);
             notify->setBuffer("buffer", info->mData);
             notify->setInt32("flags", flags);
-
-            sp<AMessage> reply =
-                new AMessage(kWhatOutputBufferDrained, mCodec->id());
 
             reply->setPointer("buffer-id", info->mBufferID);
 
@@ -3133,6 +3188,13 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
     BufferInfo *info =
         mCodec->findBufferByID(kPortIndexOutput, bufferID, &index);
     CHECK_EQ((int)info->mStatus, (int)BufferInfo::OWNED_BY_DOWNSTREAM);
+
+    android_native_rect_t crop;
+    if (msg->findRect("crop",
+            &crop.left, &crop.top, &crop.right, &crop.bottom)) {
+        CHECK_EQ(0, native_window_set_crop(
+                mCodec->mNativeWindow.get(), &crop));
+    }
 
     int32_t render;
     if (mCodec->mNativeWindow != NULL
@@ -3223,6 +3285,10 @@ void ACodec::UninitializedState::stateEntered() {
     mCodec->mQuirks = 0;
     mCodec->mFlags = 0;
     mCodec->mComponentName.clear();
+
+    ResourceManager::AudioConcurrencyInfo::resetParameter(
+        mCodec->mUseCase, mCodec->mUseCaseFlag);
+
 }
 
 bool ACodec::UninitializedState::onMessageReceived(const sp<AMessage> &msg) {
@@ -3306,8 +3372,9 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
 
     AString mime;
-
+    int32_t encoder = 0;
     AString componentName;
+
     uint32_t quirks = 0;
     if (msg->findString("componentName", &componentName)) {
         ssize_t index = matchingCodecs.add();
@@ -3321,7 +3388,6 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     } else {
         CHECK(msg->findString("mime", &mime));
 
-        int32_t encoder;
         if (!msg->findInt32("encoder", &encoder)) {
             encoder = false;
         }
@@ -3348,11 +3414,18 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         status_t err = omx->allocateNode(componentName.c_str(), observer, &node);
         androidSetThreadPriority(tid, prevPriority);
 
+        if(err == OK) {
+            err = ResourceManager::AudioConcurrencyInfo::findUseCaseAndSetParameter(
+                mime.c_str(), componentName.c_str(), !encoder, mCodec->mUseCase, mCodec->mUseCaseFlag);
+        }
+
         if (err == OK) {
             break;
         }
-
-        node = NULL;
+        if(node != NULL) {
+            CHECK_EQ(omx->freeNode(node), (status_t)OK);
+            node = NULL;
+        }
     }
 
     if (node == NULL) {

@@ -47,6 +47,7 @@
 #include <system/audio_policy.h>
 
 #include <audio_utils/primitives.h>
+#include "TrackUtils.h"
 
 namespace android {
 // ---------------------------------------------------------------------------
@@ -171,6 +172,10 @@ AudioTrack::AudioTrack(
 AudioTrack::~AudioTrack()
 {
     ALOGV_IF(mSharedBuffer != 0, "Destructor sharedBuffer: %p", mSharedBuffer->pointer());
+    if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
+            mStreamType, mFormat, mFlags, false/*sesion active*/)) {
+        ALOGE("Reset concurency param failed");
+    }
 
     if (mStatus == NO_ERROR) {
         // Make sure that callback function exits in the case where
@@ -261,6 +266,9 @@ status_t AudioTrack::set(
         return BAD_VALUE;
     }
 
+    //Force fast flag for ringtone/enforce audible/alarm/notification/system sound
+    TrackUtils::setFastFlag(streamType, flags);
+
     // force direct flag if format is not linear PCM
     if (!audio_is_linear_pcm(format)) {
         flags = (audio_output_flags_t)
@@ -272,15 +280,6 @@ status_t AudioTrack::set(
         flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
     }
 
-    if ((streamType == AUDIO_STREAM_VOICE_CALL)
-         && (channelMask == AUDIO_CHANNEL_OUT_MONO)
-         && ((sampleRate == 8000 || sampleRate == 16000)))
-    {
-        ALOGD("Turn on Direct Output for VOIP RX");
-        flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
-    }
-
-
     if (!audio_is_output_channel(channelMask)) {
         ALOGE("Invalid channel mask %#x", channelMask);
         return BAD_VALUE;
@@ -289,12 +288,30 @@ status_t AudioTrack::set(
     uint32_t channelCount = popcount(channelMask);
     mChannelCount = channelCount;
 
-    if (audio_is_linear_pcm(format)) {
-        mFrameSize = channelCount * audio_bytes_per_sample(format);
-        mFrameSizeAF = channelCount * sizeof(int16_t);
+    if ((streamType == AUDIO_STREAM_VOICE_CALL)
+         && (channelCount == 1)
+         && ((sampleRate == 8000 || sampleRate == 16000)))
+    {
+        ALOGD("Turn on Direct Output for VOIP RX");
+        flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
+    }
+
+    if ((audio_stream_type_t)streamType == AUDIO_STREAM_VOICE_CALL) {
+        if (audio_is_linear_pcm(format)) {
+            mFrameSize = channelCount * audio_bytes_per_sample(format);
+            mFrameSizeAF = channelCount * sizeof(int16_t);
+        } else {
+            mFrameSize = sizeof(uint16_t);
+            mFrameSizeAF = sizeof(uint16_t);
+        }
     } else {
-        mFrameSize = sizeof(uint8_t);
-        mFrameSizeAF = sizeof(uint8_t);
+        if (audio_is_linear_pcm(format)) {
+            mFrameSize = channelCount * audio_bytes_per_sample(format);
+            mFrameSizeAF = channelCount * sizeof(int16_t);
+        } else {
+            mFrameSize = sizeof(uint8_t);
+            mFrameSizeAF = sizeof(uint8_t);
+        }
     }
 
     audio_io_handle_t output = AudioSystem::getOutput(
@@ -348,7 +365,6 @@ status_t AudioTrack::set(
         mAudioTrackThread = new AudioTrackThread(*this, threadCanCallJava);
         mAudioTrackThread->run("AudioTrack", ANDROID_PRIORITY_AUDIO, 0 /*stack*/);
     }
-
     // create the IAudioTrack
     status_t status = createTrack_l(streamType,
                                   sampleRate,
@@ -383,6 +399,12 @@ status_t AudioTrack::set(
     mNewPosition = 0;
     mUpdatePeriod = 0;
     mFlushed = false;
+
+    if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
+            mStreamType, mFormat, mFlags, true/*sesion active*/)) {
+        ALOGE("Set concurency param failed");
+        return INVALID_OPERATION;
+    }
     return NO_ERROR;
 }
 
@@ -1655,5 +1677,4 @@ void AudioTrack::AudioTrackThread::resume()
         mMyCond.signal();
     }
 }
-
 }; // namespace android

@@ -92,6 +92,12 @@ struct ExtendedCodec {
             const sp<MetaData> &meta, sp<IOMX> OMXhandle,
             const uint32_t flags, IOMX::node_id nodeID, char* componentName );
 
+    static void enableSmoothStreaming(
+            const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
+            const char* componentName);
+
+    static bool useHWAACDecoder(const char *mime);
+
 private:
 
     static status_t setWMAFormat(

@@ -67,6 +67,9 @@ struct ACodec : public AHierarchicalStateMachine {
 
     void signalRequestIDRFrame();
 
+    //Signal the ResourceManager about pause/resume
+    void signalConcurrencyParam(bool streamPaused);
+
     struct PortDescription : public RefBase {
         size_t countBuffers();
         IOMX::buffer_id bufferIDAt(size_t index) const;
@@ -116,6 +119,7 @@ private:
         kWhatStart                   = 'star',
         kWhatRequestIDRFrame         = 'ridr',
         kWhatSetParameters           = 'setP',
+        kWhatConcurrencyParam        = 'conP',
     };
 
     enum {
@@ -194,6 +198,12 @@ private:
 
     bool mChannelMaskPresent;
     int32_t mChannelMask;
+
+    bool mInSmoothStreamingMode;
+
+    //Variables for ACodec to maintain the usecase and its state.
+    String8 mUseCase;
+    bool mUseCaseFlag;
 
     status_t setCyclicIntraMacroblockRefresh(const sp<AMessage> &msg, int32_t mode);
     status_t allocateBuffersOnPort(OMX_U32 portIndex);
@@ -278,7 +288,7 @@ private:
     void deferMessage(const sp<AMessage> &msg);
     void processDeferredMessages();
 
-    void sendFormatChange();
+    void sendFormatChange(const sp<AMessage> &reply);
 
     void signalError(
             OMX_ERRORTYPE error = OMX_ErrorUndefined,

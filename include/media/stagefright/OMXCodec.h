@@ -63,6 +63,13 @@ struct OMXCodec : public MediaSource,
 
         // Secure decoding mode
         kUseSecureInputBuffers = 256,
+
+        // Flag added to tell codec that playback is LPA/ULL. This is to ignore
+        // setting the usecase as it will be already set from Player.
+        kInLPAMode = 32768,
+        kULL = 65536,
+        kInTunnelMode = 131072
+
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
@@ -85,6 +92,8 @@ struct OMXCodec : public MediaSource,
             MediaBuffer **buffer, const ReadOptions *options = NULL);
 
     virtual status_t pause();
+
+    virtual status_t updateConcurrencyParam(bool pauseflag);
 
     // from MediaBufferObserver
     virtual void signalBufferReturned(MediaBuffer *buffer);
@@ -144,6 +153,9 @@ private:
         EXECUTING_TO_IDLE,
         IDLE_TO_LOADED,
         RECONFIGURING,
+        PAUSING,
+        FLUSHING,
+        PAUSED,
         ERROR
     };
 
@@ -222,6 +234,9 @@ private:
 
     bool mPaused;
 
+    String8 mUseCase;
+    bool mUseCaseFlag;
+
     sp<ANativeWindow> mNativeWindow;
 
     // The index in each of the mPortBuffers arrays of the buffer that will be
@@ -261,7 +276,7 @@ private:
             OMX_VIDEO_CODINGTYPE compressionFormat,
             OMX_COLOR_FORMATTYPE colorFormat);
 
-    void setVideoInputFormat(
+    status_t setVideoInputFormat(
             const char *mime, const sp<MetaData>& meta);
 
     status_t setupBitRate(int32_t bitRate);
@@ -368,6 +383,7 @@ private:
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
 
     bool mNumBFrames;
+    bool mInSmoothStreamingMode;
 };
 
 struct CodecCapabilities {

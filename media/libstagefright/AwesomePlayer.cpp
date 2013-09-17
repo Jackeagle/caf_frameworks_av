@@ -54,6 +54,9 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/OMXCodec.h>
 #include "include/QCUtils.h"
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+#include <QCMediaDefs.h>
+#endif
 
 #include <gui/IGraphicBufferProducer.h>
 #include <gui/Surface.h>
@@ -62,10 +65,10 @@
 
 #include <cutils/properties.h>
 
+#include "include/ResourceManager.h"
+
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
-#define LPA_MIN_DURATION_USEC_ALLOWED 30000000
-#define LPA_MIN_DURATION_USEC_DEFAULT 60000000
 
 namespace android {
 
@@ -227,6 +230,8 @@ AwesomePlayer::AwesomePlayer()
 
     mAudioStatusEventPending = false;
 
+    mUseCase = "";
+    mUseCaseFlag = false;
     reset();
     mIsTunnelAudio = false;
 }
@@ -234,6 +239,11 @@ AwesomePlayer::AwesomePlayer()
 AwesomePlayer::~AwesomePlayer() {
     if (mQueueStarted) {
         mQueue.stop();
+    }
+
+    status_t err = ResourceManager::AudioConcurrencyInfo::resetParameter(mUseCase, mUseCaseFlag);
+    if(err != OK) {
+        ALOGE("resetConcurrencyParameters failed = %d", err);
     }
 
     reset();
@@ -955,7 +965,6 @@ status_t AwesomePlayer::play() {
 }
 
 status_t AwesomePlayer::play_l() {
-    int tunnelObjectsAlive = 0;
     modifyFlags(SEEK_PREVIEW, CLEAR);
 
     if (mFlags & PLAYING) {
@@ -970,6 +979,13 @@ status_t AwesomePlayer::play_l() {
         }
     }
 
+    if(mFlags & PAUSE) {
+        modifyFlags(PAUSE, CLEAR);
+        status_t err = updateConcurrencyParam(false);
+        if(err != OK) {
+            return err;
+        }
+    }
     modifyFlags(PLAYING, SET);
     modifyFlags(FIRST_FRAME, SET);
 
@@ -1032,46 +1048,17 @@ status_t AwesomePlayer::play_l() {
                         mAudioPlayer = NULL;
                     }
                 }
-                tunnelObjectsAlive = (TunnelPlayer::mTunnelObjectsAlive);
 #endif
-                int32_t nchannels = 0;
-                if(mAudioTrack != NULL) {
-                    sp<MetaData> format = mAudioTrack->getFormat();
-                    if(format != NULL) {
-                        format->findInt32( kKeyChannelCount, &nchannels );
-                        ALOGV("nchannels %d;LPA will be skipped if nchannels is > 2 or nchannels == 0",nchannels);
-                    }
-                }
-                char lpaDecode[PROPERTY_VALUE_MAX];
-                uint32_t minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-                char minUserDefDuration[PROPERTY_VALUE_MAX];
-                property_get("lpa.decode",lpaDecode,"0");
-                property_get("lpa.min_duration",minUserDefDuration,"LPA_MIN_DURATION_USEC_DEFAULT");
-                minDurationForLPA = atoi(minUserDefDuration);
-                if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
-                    if(mAudioPlayer == NULL) {
-                        ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
-                        minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-                    }
-                }
-                if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) &&
-#ifdef USE_TUNNEL_MODE
-                   (tunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
-#endif
-                   (nchannels && (nchannels <= 2)))
-                {
-                    ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::mObjectsAlive);
-                    if ( mDurationUs > minDurationForLPA
-                         && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
-                         && LPAPlayer::mObjectsAlive == 0 && mVideoSource == NULL) {
-                        ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
-                        bool initCheck =  false;
-                        mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
-                        if(!initCheck) {
-                             ALOGE("deleting Tunnel Player - initCheck failed");
-                             delete mAudioPlayer;
-                             mAudioPlayer = NULL;
-                        }
+                if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
+                                        mAudioPlayer, mAudioSink, mDurationUs,
+                                        mUseCase, mUseCaseFlag ) ==  true) {
+                    ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
+                    bool initCheck =  false;
+                    mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
+                    if(!initCheck) {
+                         ALOGE("deleting Tunnel Player - initCheck failed");
+                         delete mAudioPlayer;
+                         mAudioPlayer = NULL;
                     }
                 }
                 if(mAudioPlayer == NULL) {
@@ -1324,8 +1311,10 @@ status_t AwesomePlayer::pause() {
 }
 
 status_t AwesomePlayer::pause_l(bool at_eos) {
+
+    status_t err = OK;
     if (!(mFlags & PLAYING)) {
-        return OK;
+        return err;
     }
 
     cancelPlayerEvents(true /* keepNotifications */);
@@ -1371,7 +1360,10 @@ status_t AwesomePlayer::pause_l(bool at_eos) {
 
     addBatteryData(params);
 
-    return OK;
+    modifyFlags(PAUSE, SET);
+    err = updateConcurrencyParam(true);
+
+    return err;
 }
 
 bool AwesomePlayer::isPlaying() const {
@@ -1536,6 +1528,16 @@ status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
     }
 
     if (!(mFlags & PLAYING)) {
+
+        if(!(mFlags & PAUSE)) {
+            ALOGV("set pause in seek. Initial case when codec created and\
+                    paused when music app is launched");
+            modifyFlags(PAUSE, SET);
+            status_t err = updateConcurrencyParam(true);
+            if(err != OK) {
+                return err;
+            }
+        }
         ALOGV("seeking while paused, sending SEEK_COMPLETE notification"
              " immediately.");
 
@@ -1587,6 +1589,9 @@ status_t AwesomePlayer::initAudioDecoder() {
     ATRACE_CALL();
 
     sp<MetaData> meta = mAudioTrack->getFormat();
+
+    uint32_t flags = 0;
+    status_t err = OK;
 
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
@@ -1640,8 +1645,10 @@ status_t AwesomePlayer::initAudioDecoder() {
     else
        ALOGD("Normal Audio Playback");
 #endif
-
     checkTunnelExceptions();
+
+    ResourceManager::AudioConcurrencyInfo::setULLStream(mAudioSink, flags);
+
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
              (mIsTunnelAudio
@@ -1650,6 +1657,13 @@ status_t AwesomePlayer::initAudioDecoder() {
 #endif
     )) {
         ALOGD("Set Audio Track as Audio Source");
+
+        err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
+               mUseCase, mUseCaseFlag, flags, mime);
+        if(err != OK) {
+            return err;
+        }
+
         if(mIsTunnelAudio) {
             mTunnelAliveAP++;
         }
@@ -1658,27 +1672,10 @@ status_t AwesomePlayer::initAudioDecoder() {
         // For LPA Playback use the decoder without OMX layer
         char *matchComponentName = NULL;
         int64_t durationUs;
-        uint32_t flags = 0;
-        char lpaDecode[128];
-        uint32_t minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-        char minUserDefDuration[PROPERTY_VALUE_MAX];
-        property_get("lpa.decode",lpaDecode,"0");
-        property_get("lpa.min_duration",minUserDefDuration,"LPA_MIN_DURATION_USEC_DEFAULT");
-        minDurationForLPA = atoi(minUserDefDuration);
-        if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
-            ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
-            minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-        }
-        if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
-            Mutex::Autolock autoLock(mMiscStateLock);
-            if (mDurationUs < 0 || durationUs > mDurationUs) {
-                mDurationUs = durationUs;
-            }
-        }
-        if ( mDurationUs > minDurationForLPA
-             && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
-             && LPAPlayer::mObjectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)
-             && (nchannels && (nchannels <= 2)) ) {
+
+        if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
+                mAudioPlayer, mAudioSink, mDurationUs,
+                mUseCase, mUseCaseFlag) == true) {
             char nonOMXDecoder[128];
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
                 ALOGD("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
@@ -1696,6 +1693,7 @@ status_t AwesomePlayer::initAudioDecoder() {
                 }
             }
             flags |= OMXCodec::kSoftwareCodecsOnly;
+            flags |=  OMXCodec::kInLPAMode;
         }
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
@@ -1849,6 +1847,12 @@ status_t AwesomePlayer::initVideoDecoder(uint32_t flags) {
 
 void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
     ATRACE_CALL();
+    if (mSeeking != NO_SEEK)
+    {
+        Mutex::Autolock autoLock(mStatsLock);
+        mStats.mLastSeekToTimeMs = mSeekTimeUs/1000;
+        printStats();
+    }
 
     if (mSeeking == SEEK_VIDEO_ONLY) {
         mSeeking = NO_SEEK;
@@ -3055,6 +3059,10 @@ bool AwesomePlayer::inSupportedTunnelFormats(const char * mime) {
     const char * tunnelFormats [ ] = {
         MEDIA_MIMETYPE_AUDIO_MPEG,
         MEDIA_MIMETYPE_AUDIO_AAC,
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+        MEDIA_MIMETYPE_AUDIO_AC3,
+        MEDIA_MIMETYPE_AUDIO_EAC3,
+#endif
 #ifdef TUNNEL_MODE_SUPPORTS_AMRWB
         MEDIA_MIMETYPE_AUDIO_AMR_WB,
     #ifdef ENABLE_QC_AV_ENHANCEMENTS
@@ -3084,6 +3092,10 @@ bool AwesomePlayer::inSupportedTunnelFormats(const char * mime) {
 
 void AwesomePlayer::checkTunnelExceptions()
 {
+
+    if(!mIsTunnelAudio) {
+        return;
+    }
     /* exception 1: No streaming */
     if (isStreamingHTTP()) {
         ALOGV("Streaming, force disable tunnel mode playback");
@@ -3106,8 +3118,16 @@ void AwesomePlayer::checkTunnelExceptions()
     }
 
     /* exception 3: use tunnel player only for AUDIO_STREAM_MUSIC */
-    if (mAudioSink->streamType() != AUDIO_STREAM_MUSIC ) {
+    if(!ResourceManager::isStreamMusic(mAudioSink)) {
         ALOGV("Use tunnel player only for AUDIO_STREAM_MUSIC");
+        mIsTunnelAudio = false;
+        return;
+    }
+
+    status_t err = OK;
+    err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
+            mUseCase, mUseCaseFlag, OMXCodec::kInTunnelMode);
+    if(err != OK) {
         mIsTunnelAudio = false;
         return;
     }
@@ -3115,10 +3135,21 @@ void AwesomePlayer::checkTunnelExceptions()
     /* below exceptions are only for av content */
     if (mVideoTrack == NULL) return;
 
+    sp<MetaData> metaData = mVideoTrack->getFormat();
+    const char * mime;
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+    if(metaData->findCString(kKeyMIMEType, &mime) &&
+            !strncmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC,
+            strlen(MEDIA_MIMETYPE_VIDEO_HEVC))) {
+        ALOGV("No Tunnel mode audio for HEVC video");
+        mIsTunnelAudio = false;
+        return;
+    }
+#endif
     /* exception 3: No avi having video + mp3 */
     if (mExtractor == NULL) return;
 
-    sp<MetaData> metaData = mExtractor->getMetaData();
+    metaData = mExtractor->getMetaData();
     const char * container;
 
     /*only proceed for avi content.*/
@@ -3127,7 +3158,6 @@ void AwesomePlayer::checkTunnelExceptions()
         return;
     }
 
-    const char * mime;
     metaData = mAudioTrack->getFormat();
     /*disable for av content having mp3*/
     if (metaData->findCString(kKeyMIMEType, &mime) &&
@@ -3183,5 +3213,38 @@ inline int64_t AwesomePlayer::getTimeOfDayUs() {
     gettimeofday(&tv, NULL);
 
     return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+}
+
+// Function to set concurrency param on pause/resume.
+// The API call ResourceManager for  LPA/Tunnel/PCM
+// For streams with decoders, OMXCodec is informed about
+// pause /resume and  OMXCodec updates ResourceManager.
+bool AwesomePlayer::updateConcurrencyParam(bool pauseFlag)  {
+
+    status_t err = OK;
+    ALOGV("updateConcurrencyInfoParam  = %d", pauseFlag);
+
+    err = ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
+            mUseCase, mUseCaseFlag, pauseFlag);
+    if(err != OK) {
+        return err;
+    }
+
+    if(mVideoSource != NULL) {
+        err = mVideoSource->updateConcurrencyParam(pauseFlag);
+        if(err != OK) {
+            ALOGE("Video updateConcurrencyInfoParam failed\
+                    pauseFlag =%d , err = %d", pauseFlag, err);
+         }
+    }
+
+    if(mAudioSource != NULL) {
+        err =  mAudioSource->updateConcurrencyParam(pauseFlag);
+        if(err != OK) {
+            ALOGE("Audio - updateConcurrencyInfoParam failed\
+                    pauseFlag =%d , err = %d", pauseFlag, err);
+        }
+    }
+    return err;
 }
 }  // namespace android

@@ -6,6 +6,12 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 
+# RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+LOCAL_CFLAGS += -DRESOURCE_MANAGER
+endif
+# RESOURCE MANAGER
+
 LOCAL_SRC_FILES:=               \
     ActivityManager.cpp         \
     Crypto.cpp                  \
@@ -42,6 +48,7 @@ LOCAL_SHARED_LIBRARIES :=       \
 LOCAL_STATIC_LIBRARIES :=       \
     libstagefright_nuplayer     \
     libstagefright_rtsp         \
+    libmedia_helper             \
 
 LOCAL_C_INCLUDES :=                                                 \
     $(call include-path-for, graphics corecg)                       \
