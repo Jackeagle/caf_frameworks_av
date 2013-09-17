@@ -280,8 +280,23 @@ void NuPlayer::WFDRenderer::wfdPostDrainAudioQueue(int64_t delayUs) {
              mWasPaused = false;
         }
 
-        if (mRefAudioMediaTimeUs <0)
-            mRefAudioMediaTimeUs = mediaTimeUs;
+        if (mRefAudioMediaTimeUs < 0)
+        {
+           if (mediaTimeUs == 0 && entry.mBuffer->size() == 2)
+           {
+              //if codec config frame then do not set the mRefAudioMediaTimeUs
+              ALOGE("Audio Codec config frame, hence no need set size %d, mRefAudioMediaTimeUs %d",
+                     entry.mBuffer->size(),mRefAudioMediaTimeUs);
+           }
+           else
+           {
+              mRefAudioMediaTimeUs = mediaTimeUs;
+              ALOGE("Setting mRefAudioMediaTimeUs %d, size %d",
+                     mRefAudioMediaTimeUs, entry.mBuffer->size());
+
+           }
+
+       }
         mAnchorTimeMediaUs = mediaTimeUs - mRefAudioMediaTimeUs;
         mAnchorTimeRealUs = wfdGetMediaTime(true);
 
@@ -505,7 +520,9 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
             }
            else
             {
-              mRefVideoMediaTime = mRefAudioMediaTimeUs;
+              if (mRefAudioMediaTimeUs >= 0) {
+                mRefVideoMediaTime = mRefAudioMediaTimeUs;
+              }
             }
 
             int64_t realTimeUs = mediaTimeUs - mRefVideoMediaTime;
