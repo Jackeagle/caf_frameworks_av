@@ -111,6 +111,7 @@ private:
     bool mAudioEOS;
     bool mVideoEOS;
 
+    int mDontSendFramesToRenderer;
     bool mScanSourcesPending;
     int32_t mScanSourcesGeneration;
 
@@ -171,6 +172,7 @@ private:
     void cancelPollDuration();
 
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
+    bool getValueforKey(const char *pUrl, const char* pKey, int *Val);
 };
 
 }  // namespace android
