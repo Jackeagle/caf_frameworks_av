@@ -56,6 +56,13 @@ struct NuPlayer::Source : public RefBase {
     virtual uint32_t flags() const = 0;
     virtual sp<MetaData> getFormatMeta(bool audio);
 
+    virtual void pause() {
+        ALOGE("Pause called on Wrong DataSource.. Please check !!!");
+    }
+
+    virtual void resume() {
+        ALOGE("Resume called on Wrong DataSource.. Please check !!!");
+    }
 protected:
     virtual ~Source() {}
 

@@ -700,6 +700,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         {
             CHECK(mRenderer != NULL);
             mRenderer->pause();
+#ifdef QCOM_WFD_SINK
+            if(mWFDSinkSession) {
+              CHECK(mSource != NULL);
+              mSource->pause();
+            }
+#endif
             break;
         }
 
@@ -707,6 +713,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         {
             CHECK(mRenderer != NULL);
             mRenderer->resume();
+#ifdef QCOM_WFD_SINK
+            if(mWFDSinkSession) {
+              CHECK(mSource != NULL);
+              mSource->resume();
+             }
+#endif
             break;
         }
 
