@@ -389,7 +389,7 @@ bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
 {
     bool retVal = false;
     size_t min_header_size = 5;
-    size_t max_header_size = 28;
+    size_t max_header_size = 46;
 
     if (!data && (size < min_header_size)) {
         return false;
@@ -401,6 +401,8 @@ bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
     unsigned video_object_type_indication = br.getBits(8);
 
     if (video_object_type_indication == 0x12u) {
+        ALOGE("checkDPFromVOLHeader: video_object_type_indication:%d\n",
+               video_object_type_indication);
         return false;
     }
 
@@ -409,9 +411,12 @@ bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
     if (br.getBits(1)) {
         video_object_layer_verid = br.getBits(4);
         video_object_layer_priority = br.getBits(3);
+        ALOGD("checkDPFromVOLHeader: video_object_layer_verid:%d\n",
+               video_object_layer_verid);
     }
     unsigned aspect_ratio_info = br.getBits(4);
     if (aspect_ratio_info == 0x0f /* extended PAR */) {
+        ALOGD("checkDPFromVOLHeader: extended PAR\n");
         br.skipBits(8);  // par_width
         br.skipBits(8);  // par_height
     }
@@ -436,6 +441,8 @@ bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
 
     unsigned video_object_layer_shape = br.getBits(2);
     if (video_object_layer_shape != 0x00u /* rectangular */) {
+        ALOGD("checkDPFromVOLHeader: video_object_layer_shape:%x\n",
+               video_object_layer_shape);
         return false;
     }
 
@@ -482,13 +489,39 @@ bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
     } else {
         sprite_enable = br.getBits(2);
     }
-
+    if (sprite_enable == 0x1 || sprite_enable == 0x2) {
+        if (sprite_enable != 0x2) {
+            int sprite_width=br.getBits(13); //sprite_width
+            ALOGD("ExtendedCodec: sprite_width:%d\n", sprite_width);
+            br.getBits(1) ; //marker
+            br.getBits(13);
+            br.getBits(1);
+            br.getBits(13);
+            br.getBits(1);
+            br.getBits(13);
+            br.getBits(1);
+        }
+        br.getBits(6);
+        br.getBits(2);
+        br.getBits(1);
+        if (sprite_enable != 0x2) {
+            br.getBits(1);
+        }
+    }
+    if (video_object_layer_verid != 1 &&
+        video_object_layer_shape != 0x0u) {
+        br.getBits(1);
+    }
     unsigned not_8_bit = br.getBits(1);
     if (not_8_bit) {
         unsigned quant_precision = br.getBits(4);
         unsigned bits_per_pixel = br.getBits(4);
     }
-
+    if (video_object_layer_shape == 0x3) {
+        br.getBits(1);
+        br.getBits(1);
+        br.getBits(1);
+    }
     unsigned quant_type = br.getBits(1);
     if (quant_type) {
         unsigned load_intra_quant_mat = br.getBits(1);
@@ -506,17 +539,18 @@ bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
             }
         }
     } /*quant_type*/
-
     if (video_object_layer_verid != 1) {
         unsigned quarter_sample = br.getBits(1);
+        ALOGD("checkDPFromVOLHeader: quarter_sample:%d\n",
+               quarter_sample);
     }
-
     unsigned complexity_estimation_disable = br.getBits(1);
     unsigned resync_marker_disable = br.getBits(1);
     unsigned data_partitioned = br.getBits(1);
     if (data_partitioned) {
         retVal = true;
     }
+    ALOGD("checkDPFromVOLHeader: DP:%d\n", data_partitioned);
     return retVal;
 }
 
