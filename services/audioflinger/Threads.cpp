@@ -3986,7 +3986,7 @@ bool AudioFlinger::RecordThread::threadLoop()
                                 }
                             }
                         }
-                        if (framesOut && mFrameCount == mRsmpInIndex) {
+                        if (framesOut && (mFrameCount == mRsmpInIndex)) {
                             void *readInto;
                             int InputBytes;
                             if (( framesOut != mFrameCount) &&
@@ -4008,9 +4008,7 @@ bool AudioFlinger::RecordThread::threadLoop()
                             }
                             mBytesRead = mInput->stream->read(mInput->stream, readInto,
                                     InputBytes);
-                            if( mBytesRead >= 0 ){
-                                  buffer.frameCount = mBytesRead/mFrameSize;
-                            }
+
                             if (mBytesRead <= 0) {
                                 if ((mBytesRead < 0) && (mActiveTrack->mState == TrackBase::ACTIVE))
                                 {
