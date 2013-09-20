@@ -25,6 +25,9 @@ ifeq ($(BOARD_USES_ALSA_AUDIO),true)
         LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
         LOCAL_CFLAGS += -DUSE_LPA_MODE
     endif
+    ifeq ($(USE_LPA_MODE),true)
+        LOCAL_CFLAGS += -DUSE_LPA_MODE
+    endif
     ifeq ($(TUNNEL_MODE_SUPPORTS_AMRWB),true)
         LOCAL_CFLAGS += -DTUNNEL_MODE_SUPPORTS_AMRWB
     endif
