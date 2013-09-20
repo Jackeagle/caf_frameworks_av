@@ -52,6 +52,7 @@ LOCAL_SRC_FILES:=                         \
         CameraSourceTimeLapse.cpp         \
         DataSource.cpp                    \
         DRMExtractor.cpp                  \
+        DTSUtils.cpp                      \
         ESDS.cpp                          \
         ExtendedWriter.cpp                \
         FileSource.cpp                    \
