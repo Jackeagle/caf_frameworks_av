@@ -252,10 +252,12 @@ private:
     bool mOutputPortSettingsChangedPending;
     sp<SkipCutBuffer> mSkipCutBuffer;
 
+    uint32_t mNumClientBuffers;
     MediaBuffer *mLeftOverBuffer;
 
     Mutex mLock;
     Condition mAsyncCompletion;
+    Condition mBufferCompletion;
 
     bool mPaused;
 #ifdef DOLBY_UDC
