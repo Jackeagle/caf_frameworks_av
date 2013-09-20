@@ -1513,6 +1513,7 @@ OMXCodec::OMXCodec(
       mTargetTimeUs(-1),
       mOutputPortSettingsChangedPending(false),
       mSkipCutBuffer(NULL),
+      mNumClientBuffers(0),
       mLeftOverBuffer(NULL),
       mPaused(false),
       mNativeWindow(
@@ -3702,6 +3703,10 @@ status_t OMXCodec::stopOmxComponent_l() {
         mAsyncCompletion.wait(mLock);
     }
 
+    while (mNumClientBuffers) {
+        mBufferCompletion.wait(mLock);
+    }
+
     bool isError = false;
     switch (mState) {
         case LOADED:
@@ -3910,6 +3915,7 @@ status_t OMXCodec::read(
 
     BufferInfo *info = &mPortBuffers[kPortIndexOutput].editItemAt(index);
     CHECK_EQ((int)info->mStatus, (int)OWNED_BY_US);
+    mNumClientBuffers++;
     info->mStatus = OWNED_BY_CLIENT;
 
     info->mMediaBuffer->add_ref();
@@ -3932,7 +3938,9 @@ void OMXCodec::signalBufferReturned(MediaBuffer *buffer) {
             CHECK_EQ((int)mPortStatus[kPortIndexOutput], (int)ENABLED);
             CHECK_EQ((int)info->mStatus, (int)OWNED_BY_CLIENT);
 
+            mNumClientBuffers--;
             info->mStatus = OWNED_BY_US;
+            mBufferCompletion.signal();
 
             if (buffer->graphicBuffer() == 0) {
                 fillOutputBuffer(info);
