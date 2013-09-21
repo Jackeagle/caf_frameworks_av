@@ -1309,7 +1309,9 @@ status_t OMXCodec::setupMPEG4EncoderParameters(const sp<MetaData>& meta) {
     mpeg4type.eProfile = static_cast<OMX_VIDEO_MPEG4PROFILETYPE>(profileLevel.mProfile);
     mpeg4type.eLevel = static_cast<OMX_VIDEO_MPEG4LEVELTYPE>(profileLevel.mLevel);
 
-    QCUtils::setBFrames(mpeg4type, mNumBFrames);
+    if (!strncmp(mComponentName, "OMX.qcom.", 9)) {
+        QCUtils::setBFrames(mpeg4type, mNumBFrames);
+    }
     err = mOMX->setParameter(
             mNode, OMX_IndexParamVideoMpeg4, &mpeg4type, sizeof(mpeg4type));
     CHECK_EQ(err, (status_t)OK);
