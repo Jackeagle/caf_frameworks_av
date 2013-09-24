@@ -42,6 +42,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
 #include <gui/ISurfaceTexture.h>
+#include <NotifyPlaybackStates.h>
 
 #include "avc_utils.h"
 
@@ -447,6 +448,19 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                                 flags),
                              (status_t)OK);
                     mAudioSink->start();
+
+                    AString mime;
+                    CHECK(mSource->getFormat(true/*audio*/)->findString("mime", &mime));
+
+                    NotifyPlaybackStates::notify_playback_config_state(
+                                                                mAudioSink->getSessionId(),
+                                                                mAudioSink->streamType(),
+                                                                mime.c_str(), sampleRate,
+                                                                numChannels);
+                    NotifyPlaybackStates::notify_playback_state(
+                                                                mAudioSink->getSessionId(),
+                                                                mAudioSink->streamType(),
+                                                                true /* isPlaying */);
 
                     mRenderer->signalAudioSinkChanged();
                 } else {

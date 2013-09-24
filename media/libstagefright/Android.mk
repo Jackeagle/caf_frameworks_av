@@ -52,6 +52,7 @@ LOCAL_SRC_FILES:=                         \
         CameraSourceTimeLapse.cpp         \
         DataSource.cpp                    \
         DRMExtractor.cpp                  \
+        DTSUtils.cpp                      \
         ESDS.cpp                          \
         ExtendedWriter.cpp                \
         FileSource.cpp                    \
@@ -101,6 +102,7 @@ LOCAL_SRC_FILES:=                         \
         ExtendedExtractor.cpp             \
         FMA2DPWriter.cpp                  \
         QCUtilityClass.cpp                \
+        NotifyPlaybackStates.cpp        \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \

@@ -38,6 +38,7 @@
  */
 
 //#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0 // [DTS: TAPIOMXIL-4]
 #define LOG_TAG "OMXCodec"
 #include <utils/Log.h>
 
@@ -73,6 +74,8 @@
 #include "include/avc_utils.h"
 
 #include "include/QCUtilityClass.h"
+#include "include/DTSUtils.h" // [DTS: TAPIOMXIL-6]
+#include "include/OMX_Audio_DTS.h"
 namespace android {
 
 static const bool isSmoothStreamingEnabled = true;
@@ -381,9 +384,15 @@ sp<MediaSource> OMXCodec::Create(
         flags |= kUseSecureInputBuffers;
     }
 
+    ALOGV("OMXCodec::Create 1 %s", matchComponentName); // [DTS: TAPIOMXIL-4]
     const char *mime;
+    const char *mime_dts;                               // [DTS: TAPIOMXIL-4]
     bool success = meta->findCString(kKeyMIMEType, &mime);
     CHECK(success);
+    ALOGV("OMXCodec::Create 2 %s", mime);               // [DTS: TAPIOMXIL-4]
+    mime_dts = "audio/dts";                             // [DTS: TAPIOMXIL-4]
+
+
     Vector<CodecNameAndQuirks> matchingCodecs;
     findMatchingCodecs(
             mime, createEncoder, matchComponentName, flags, &matchingCodecs);
@@ -708,7 +717,16 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
 
         setRawAudioFormat(kPortIndexInput, sampleRate, numChannels);
-    } else {
+    }
+    // <-- [DTS: TAPIOMXIL-6]
+    else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_DTS, mMIME)) {
+        status_t err = DTSUtils::setupDecoder(mOMX, mNode);
+        if (err != OK) {
+            return err;
+        }
+    }
+    // [DTS: TAPIOMXIL-6] -->
+    else {
         status_t err = QCOMXCodec::setQCFormat(meta, mMIME, mOMX, mNode, this, mIsEncoder);
 
         if(OK != err) {
@@ -1619,6 +1637,8 @@ void OMXCodec::setComponentRole(
             "audio_decoder.raw", "audio_encoder.raw" },
         { MEDIA_MIMETYPE_AUDIO_FLAC,
             "audio_decoder.flac", "audio_encoder.flac" },
+        { MEDIA_MIMETYPE_AUDIO_DTS,
+            "audio_decoder.dts", NULL }, // [DTS: TAPIOMXIL-4]
         { MEDIA_MIMETYPE_VIDEO_DIVX,
             "video_decoder.divx", NULL },
         { MEDIA_MIMETYPE_AUDIO_AC3,
@@ -1693,6 +1713,8 @@ OMXCodec::~OMXCodec() {
 
 status_t OMXCodec::init() {
     // mLock is held.
+    ALOGV("(DTS)");
+    ALOGV("(DTS) +init()");
 
     CHECK_EQ((int)mState, (int)LOADED);
 
@@ -4876,10 +4898,17 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 // codecs appear to output stereo even if the input data is
                 // mono. If we know the codec lies about this information,
                 // use the actual number of channels instead.
+
+                // <-- [DTS: TAPIOMXIL-4]
+                int32_t actualChannels = (mQuirks & kDecoderLiesAboutNumberOfChannels)
+                        ? numChannels : params.nChannels;
+
+                ALOGV("** actualChannels == %d", actualChannels);
+
                 mOutputFormat->setInt32(
                         kKeyChannelCount,
-                        (mQuirks & kDecoderLiesAboutNumberOfChannels)
-                            ? numChannels : params.nChannels);
+                        actualChannels);
+                // [DTS: TAPIOMXIL-4] -->
 
                 mOutputFormat->setInt32(kKeySampleRate, params.nSamplingRate);
             } else if (audio_def->eEncoding == OMX_AUDIO_CodingAMR) {
@@ -4937,7 +4966,22 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 mOutputFormat->setInt32(kKeyChannelCount, numChannels);
                 mOutputFormat->setInt32(kKeySampleRate, sampleRate);
                 mOutputFormat->setInt32(kKeyBitRate, bitRate);
-            } else {
+            } else if (audio_def->eEncoding == OMX_AUDIO_CodingDTSHD) {
+                mOutputFormat->setCString(
+                        kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_DTS);
+                int32_t numChannels, sampleRate, bitRate;
+                inputFormat->findInt32(kKeyChannelCount, &numChannels);
+                inputFormat->findInt32(kKeySampleRate, &sampleRate);
+                inputFormat->findInt32(kKeyBitRate, &bitRate);
+                mOutputFormat->setInt32(kKeyChannelCount, numChannels);
+                mOutputFormat->setInt32(kKeySampleRate, sampleRate);
+                mOutputFormat->setInt32(kKeyBitRate, bitRate);
+                status_t result;
+                OMX_AUDIO_PARAM_DTSDECTYPE myDtsDecParam;
+                result = mOMX->getParameter(mNode, (OMX_INDEXTYPE)OMX_IndexParamAudioDTSDec,
+                                           &myDtsDecParam, sizeof(myDtsDecParam));
+                mOutputFormat->setInt32(kKeyHPXProcessed, myDtsDecParam.nRepTypes == 4);
+             } else {
                 AString mimeType;
                 if(OK == QCOMXCodec::checkQCFormats(audio_def->eEncoding, &mimeType)) {
                     mOutputFormat->setCString(
