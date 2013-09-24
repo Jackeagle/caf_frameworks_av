@@ -78,8 +78,6 @@ sp<MediaPlayerBase> createAAH_RXPlayer();
 }
 
 class MPQ_PlayerClient;
-class TVPlayer;
-typedef android::MediaPlayerBase* (*createTVPlayer_t)(void);
 
 namespace {
 using android::media::Metadata;
@@ -643,9 +641,6 @@ player_type getPlayerType(const char* url)
     if (!strncasecmp("mpq", url, 3))
         return MPQ_PLAYER;
 
-    if (!strncasecmp("tv://", url, strlen("tv://")))
-            return TV_PLAYER;
-
     return getDefaultPlayerType();
 }
 
@@ -692,9 +687,6 @@ static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
 {
     void *handle;
     CreateMPQ_PlayerClientFunc funcHandle;
-    void* libHandle;
-    createTVPlayer_t createTVPlayer;
-
     sp<MediaPlayerBase> p;
     switch (playerType) {
         case SONIVOX_PLAYER:
@@ -728,12 +720,6 @@ static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
             funcHandle = (CreateMPQ_PlayerClientFunc)dlsym(handle , "_ZN16MPQ_PlayerClient22CreateMPQ_PlayerClientEv");
             p = (MediaPlayerBase*)funcHandle();
             break;
-        case TV_PLAYER:
-            ALOGV(" create TV Player");
-            libHandle = dlopen("libtvplayer.so", RTLD_NOW);
-            createTVPlayer = (createTVPlayer_t)dlsym(libHandle , "_Z14createTVPlayerv");
-            p = createTVPlayer();
-                break;
         default:
             ALOGE("Unknown player type: %d", playerType);
             return NULL;
