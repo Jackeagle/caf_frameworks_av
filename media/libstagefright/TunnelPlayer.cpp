@@ -1000,9 +1000,13 @@ void TunnelPlayer::updateHpxPreProcessedState()
 {
     sp<MetaData> format = mSource->getFormat();
     const char *mime;
-    bool isHpxPreprocessed = false;
-    bool success = format->findCString(kKeyMIMEType, &mime);
-    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)) {
+    const char *decoderComponent;
+    int hpxProcessed;
+    bool success = format->findCString(kKeyDecoderComponent, &decoderComponent);
+    if (success && strstr(decoderComponent, "dts")) {
+        CHECK(format->findInt32(kKeyHPXProcessed, &hpxProcessed));
+        ALOGV("updateHpxPreProcessedState: hpxProcessed: %d", hpxProcessed);
+        bool isHpxPreprocessed = hpxProcessed ? true : false;
         if (mIsHpxPreprocessed != isHpxPreprocessed) {
             mIsHpxPreprocessed = isHpxPreprocessed;
             NotifyPlaybackStates::notify_hpx_preprocessed_state(mSessionId,

@@ -28,7 +28,7 @@
 
 
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "NotifyPlaybackStates"
 
 #include <utils/Log.h>
