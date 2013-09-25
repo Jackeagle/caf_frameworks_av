@@ -56,24 +56,18 @@
 #include <media/stagefright/OMXCodec.h>
 #include <media/stagefright/ExtendedCodec.h>
 
-#include <media/stagefright/MetaData.h>
-
-#ifdef ENABLE_QC_AV_ENHANCEMENTS
-#include <QCMetaData.h>
-#include <QOMX_AudioExtensions.h>
-#include <OMX_QCOMExtns.h>
-#endif
-
 #include <media/hardware/HardwareAPI.h>
 
 #include <OMX_Component.h>
-
+#include <media/stagefright/ExtendedCodec.h>
 #include "include/avc_utils.h"
 #include "include/QCUtils.h"
 
 #ifdef DOLBY_UDC
  #include <QCMediaDefs.h>
 #endif //DOLBY_UDC
+#include "include/ResourceManager.h"
+
 namespace android {
 
 template<class T>
@@ -400,6 +394,10 @@ ACodec::ACodec()
       mChannelMaskPresent(false),
       mChannelMask(0),
       mInSmoothStreamingMode(false) {
+
+    mUseCase = "";
+    mUseCaseFlag = false;
+
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -420,6 +418,7 @@ ACodec::ACodec()
 }
 
 ACodec::~ACodec() {
+
 }
 
 void ACodec::setNotificationMessage(const sp<AMessage> &msg) {
@@ -479,6 +478,12 @@ void ACodec::initiateShutdown(bool keepComponentAllocated) {
 
 void ACodec::signalRequestIDRFrame() {
     (new AMessage(kWhatRequestIDRFrame, id()))->post();
+}
+
+void ACodec::signalConcurrencyParam(bool streamPaused) {
+    sp<AMessage> msg = new AMessage(kWhatConcurrencyParam, id());
+    msg->setInt32("streamPaused", streamPaused);
+    msg->post();
 }
 
 status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
@@ -898,7 +903,7 @@ status_t ACodec::setComponentRole(
     }
 
     if (i == kNumMimeToRole) {
-        return ERROR_UNSUPPORTED;
+        return ExtendedCodec::setSupportedRole(mOMX, mNode, isEncoder, mime);
     }
 
     const char *role =
@@ -937,100 +942,6 @@ status_t ACodec::configureCodec(
     }
 
     mIsEncoder = encoder;
-
-#ifdef ENABLE_QC_AV_ENHANCEMENTS
-    if (!strncasecmp(mime, "audio/x-ms-wma", sizeof("audio/x-ms-wma"))) {
-        if (mIsEncoder) {
-            ALOGE("WMA encoding not supported");
-            return ERROR_UNSUPPORTED;
-        } else {
-            int32_t version;
-            OMX_AUDIO_PARAM_WMATYPE paramWMA;
-            QOMX_AUDIO_PARAM_WMA10PROTYPE paramWMA10;
-            CHECK(msg->findInt32("WMA-Version", &version));
-            int32_t numChannels;
-            int32_t bitRate;
-            int32_t sampleRate;
-            int32_t encodeOptions;
-            int32_t blockAlign;
-            int32_t bitspersample;
-            int32_t formattag;
-            int32_t advencopt1;
-            int32_t advencopt2;
-            int32_t VirtualPktSize;
-            if(version==kTypeWMAPro || version==kTypeWMALossLess) {
-                CHECK(msg->findInt32("bsps", &bitspersample));
-                CHECK(msg->findInt32("fmtt", &formattag));
-                CHECK(msg->findInt32("ade1",&advencopt1));
-                CHECK(msg->findInt32("ade2",&advencopt2));
-                CHECK(msg->findInt32("vpks",&VirtualPktSize));
-            }
-            if(version==kTypeWMA) {
-                InitOMXParams(&paramWMA);
-                paramWMA.nPortIndex = kPortIndexInput;
-            } else if(version==kTypeWMAPro || version==kTypeWMALossLess) {
-                InitOMXParams(&paramWMA10);
-                paramWMA10.nPortIndex = kPortIndexInput;
-            }
-            CHECK(msg->findInt32("channel-count", &numChannels));
-            CHECK(msg->findInt32("sample-rate", &sampleRate));
-            CHECK(msg->findInt32("brte", &bitRate));
-            CHECK(msg->findInt32("eopt", &encodeOptions));
-            CHECK(msg->findInt32("blka", &blockAlign));
-            ALOGV("Channels: %d, SampleRate: %d, BitRate; %d"
-                   "EncodeOptions: %d, blockAlign: %d", numChannels,
-                   sampleRate, bitRate, encodeOptions, blockAlign);
-            if(sampleRate>48000 || numChannels>2){
-                ALOGE("Unsupported samplerate/channels");
-                return ERROR_UNSUPPORTED;
-            }
-            if(version==kTypeWMAPro || version==kTypeWMALossLess){
-                ALOGV("Bitspersample: %d, wmaformattag: %d,"
-                       "advencopt1: %d, advencopt2: %d VirtualPktSize %d", bitspersample,
-                       formattag, advencopt1, advencopt2, VirtualPktSize);
-            }
-            status_t err = OK;
-            OMX_INDEXTYPE index;
-            if(version==kTypeWMA) {
-                err = mOMX->getParameter(
-                    mNode,OMX_IndexParamAudioWma, &paramWMA, sizeof(paramWMA));
-            } else if(version==kTypeWMAPro || version==kTypeWMALossLess) {
-                mOMX->getExtensionIndex(mNode,"OMX.Qualcomm.index.audio.wma10Pro",&index);
-                err = mOMX->getParameter(
-                   mNode, index, &paramWMA10, sizeof(paramWMA10));
-            }
-            CHECK_EQ(err, (status_t)OK);
-            if(version==kTypeWMA) {
-                paramWMA.nChannels = numChannels;
-                paramWMA.nSamplingRate = sampleRate;
-                paramWMA.nEncodeOptions = encodeOptions;
-                paramWMA.nBitRate = bitRate;
-                paramWMA.nBlockAlign = blockAlign;
-                err = mOMX->setParameter(
-                    mNode, OMX_IndexParamAudioWma, &paramWMA, sizeof(paramWMA));
-            } else if(version==kTypeWMAPro || version==kTypeWMALossLess) {
-                paramWMA10.nChannels = numChannels;
-                paramWMA10.nSamplingRate = sampleRate;
-                paramWMA10.nEncodeOptions = encodeOptions;
-                paramWMA10.nBitRate = bitRate;
-                paramWMA10.nBlockAlign = blockAlign;
-                paramWMA10.advancedEncodeOpt = advencopt1;
-                paramWMA10.advancedEncodeOpt2 = advencopt2;
-                paramWMA10.formatTag = formattag;
-                paramWMA10.validBitsPerSample = bitspersample;
-                paramWMA10.nVirtualPktSize = VirtualPktSize;
-                err = mOMX->setParameter(
-                   mNode, index, &paramWMA10, sizeof(paramWMA10));
-            }
-            CHECK_EQ(err, (status_t)OK);
-            int32_t maxInputSize1;
-            if (msg->findInt32("max-input-size", &maxInputSize1)) {
-                setMinBufferSize(kPortIndexInput, (size_t)maxInputSize1);
-            }
-            return err;
-        }
-    }
-#endif
 
     status_t err = setComponentRole(encoder /* isEncoder */, mime);
 
@@ -1097,6 +1008,10 @@ status_t ACodec::configureCodec(
             } else {
                 err = setupVideoDecoder(mime, width, height);
             }
+        }
+        if (err == OK) {
+            const char* componentName = mComponentName.c_str();
+            ExtendedCodec::configureVideoDecoder(msg, mime, mOMX, 0, mNode, componentName);
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
         int32_t numChannels, sampleRate;
@@ -1180,6 +1095,19 @@ status_t ACodec::configureCodec(
         } else {
             err = setupRawAudioFormat(kPortIndexInput, sampleRate, numChannels);
         }
+    } else {
+        if (encoder) {
+            int32_t numChannels, sampleRate;
+            if (msg->findInt32("channel-count", &numChannels)
+                  && msg->findInt32("sample-rate", &sampleRate)) {
+                setupRawAudioFormat(kPortIndexInput, sampleRate, numChannels);
+            }
+       }
+       err = ExtendedCodec::setAudioFormat(
+                 msg, mime, mOMX, mNode, mIsEncoder);
+       if(err != OK) {
+           return err;
+       }
     }
 
     if (err != OK) {
@@ -1657,7 +1585,9 @@ status_t ACodec::setupVideoDecoder(
     status_t err = GetVideoCodingTypeFromMime(mime, &compressionFormat);
 
     if (err != OK) {
-        return err;
+        err = ExtendedCodec::setVideoOutputFormat(mime, &compressionFormat);
+        if (err != OK)
+            return err;
     }
 
     err = setVideoPortFormatType(
@@ -1783,7 +1713,11 @@ status_t ACodec::setupVideoEncoder(const char *mime, const sp<AMessage> &msg) {
     err = GetVideoCodingTypeFromMime(mime, &compressionFormat);
 
     if (err != OK) {
-        return err;
+        err = ExtendedCodec::setVideoInputFormat(mime, &compressionFormat);
+        if (err != OK) {
+            ALOGE("Not a supported video mime type: %s", mime);
+            return err;
+        }
     }
 
     err = setVideoPortFormatType(
@@ -2551,7 +2485,24 @@ void ACodec::sendFormatChange(const sp<AMessage> &reply) {
                 }
 
                 default:
+                {
+                    AString mimeType;
+                    status_t err = ExtendedCodec::handleSupportedAudioFormats(
+                        audioDef->eEncoding, &mimeType);
+                    if (err == OK) {
+                        int channelCount;
+                        err = ExtendedCodec::getSupportedAudioFormatInfo(
+                                      &mimeType,
+                                      mOMX,
+                                      mNode,
+                                      kPortIndexOutput,
+                                      &channelCount);
+                        notify->setString("mime", mimeType.c_str());
+                        notify->setInt32("channel-count", channelCount);
+                        break;
+                    }
                     TRESPASS();
+                }
             }
             break;
         }
@@ -2796,6 +2747,16 @@ bool ACodec::BaseState::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatConcurrencyParam:
+        {
+            status_t err = OK;
+            err = ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
+                    msg, mCodec->mUseCase,  mCodec->mUseCaseFlag);
+            if(err != OK) {
+                    mCodec->signalError(OMX_ErrorUndefined, INVALID_OPERATION);
+            }
+            break;
+        }
         default:
             return false;
     }
@@ -3364,6 +3325,10 @@ void ACodec::UninitializedState::stateEntered() {
     mCodec->mQuirks = 0;
     mCodec->mFlags = 0;
     mCodec->mComponentName.clear();
+
+    ResourceManager::AudioConcurrencyInfo::resetParameter(
+        mCodec->mUseCase, mCodec->mUseCaseFlag);
+
 }
 
 bool ACodec::UninitializedState::onMessageReceived(const sp<AMessage> &msg) {
@@ -3447,31 +3412,10 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
 
     AString mime;
-    uint32_t quirks = 0;
-    msg->findString("mime", &mime);
-
-    if(!(strncmp(mime.c_str(),"audio/x-ms-wma",sizeof("audio/x-ms-wma")))){
-        mCodec->mQuirks = quirks;
-        mCodec->mOMX = omx;
-
-        mCodec->mPortEOS[kPortIndexInput] =
-            mCodec->mPortEOS[kPortIndexOutput] = false;
-
-        mCodec->mInputEOSResult = OK;
-
-        {
-            sp<AMessage> notify = mCodec->mNotify->dup();
-            notify->setInt32("what", ACodec::kWhatComponentAllocated);
-            notify->setString("componentName", mCodec->mComponentName.c_str());
-            notify->post();
-        }
-
-        mCodec->changeState(mCodec->mLoadedState);
-
-        return true;
-    }
-
+    int32_t encoder = 0;
     AString componentName;
+
+    uint32_t quirks = 0;
     if (msg->findString("componentName", &componentName)) {
         ssize_t index = matchingCodecs.add();
         OMXCodec::CodecNameAndQuirks *entry = &matchingCodecs.editItemAt(index);
@@ -3484,7 +3428,6 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     } else {
         CHECK(msg->findString("mime", &mime));
 
-        int32_t encoder;
         if (!msg->findInt32("encoder", &encoder)) {
             encoder = false;
         }
@@ -3504,6 +3447,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
             ++matchIndex) {
         componentName = matchingCodecs.itemAt(matchIndex).mName.string();
         quirks = matchingCodecs.itemAt(matchIndex).mQuirks;
+        ExtendedCodec::overrideComponentName(quirks, msg, &componentName);
 
         pid_t tid = androidGetTid();
         int prevPriority = androidGetThreadPriority(tid);
@@ -3511,11 +3455,18 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         status_t err = omx->allocateNode(componentName.c_str(), observer, &node);
         androidSetThreadPriority(tid, prevPriority);
 
+        if(err == OK) {
+            err = ResourceManager::AudioConcurrencyInfo::findUseCaseAndSetParameter(
+                mime.c_str(), componentName.c_str(), !encoder, mCodec->mUseCase, mCodec->mUseCaseFlag);
+        }
+
         if (err == OK) {
             break;
         }
-
-        node = NULL;
+        if(node != NULL) {
+            CHECK_EQ(omx->freeNode(node), (status_t)OK);
+            node = NULL;
+        }
     }
 
     if (node == NULL) {
@@ -3650,93 +3601,11 @@ bool ACodec::LoadedState::onConfigureComponent(
         const sp<AMessage> &msg) {
     ALOGV("onConfigureComponent");
 
+    CHECK(mCodec->mNode != NULL);
+
     AString mime;
     CHECK(msg->findString("mime", &mime));
 
-#ifdef ENABLE_QC_AV_ENHANCEMENTS
-    if (!strncasecmp(mime.c_str(), "audio/x-ms-wma", sizeof("audio/x-ms-wma"))){
-        OMXClient client;
-        CHECK_EQ(client.connect(), (status_t)OK);
-        sp<IOMX> omx = client.interface();
-        Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
-        AString componentName;
-        uint32_t quirks = 0;
-        int32_t version = -1;
-
-        msg->findInt32("WMA-Version", &version);
-        if(kTypeWMA == version){
-            componentName = "OMX.qcom.audio.decoder.wma";
-        } else if(kTypeWMAPro == version){
-            componentName = "OMX.qcom.audio.decoder.wma10Pro";
-        } else if(kTypeWMALossLess == version){
-            componentName = "OMX.qcom.audio.decoder.wmaLossLess";
-        } else {
-            mCodec->signalError(OMX_ErrorComponentNotFound);
-            return false;
-        }
-
-        int32_t encoder;
-        if (!msg->findInt32("encoder", &encoder)) {
-            encoder = false;
-        }
-
-        OMXCodec::findMatchingCodecs(
-                mime.c_str(),
-                encoder, // createEncoder
-                componentName.c_str(),  // matchComponentName
-                0,     // flags
-                &matchingCodecs);
-
-        sp<CodecObserver> observer = new CodecObserver;
-        IOMX::node_id node = NULL;
-
-        for (size_t matchIndex = 0; matchIndex < matchingCodecs.size();
-            ++matchIndex) {
-            componentName = matchingCodecs.itemAt(matchIndex).mName.string();
-            quirks = matchingCodecs.itemAt(matchIndex).mQuirks;
-
-            pid_t tid = androidGetTid();
-            int prevPriority = androidGetThreadPriority(tid);
-            androidSetThreadPriority(tid, ANDROID_PRIORITY_FOREGROUND);
-            status_t err = omx->allocateNode(componentName.c_str(), observer, &node);
-            androidSetThreadPriority(tid, prevPriority);
-
-            if (err == OK) {
-                break;
-            }
-            node = NULL;
-        }
-        if (node == NULL) {
-            if (!mime.empty()) {
-                ALOGE("Unable to instantiate a decoder for type '%s'.",
-                     mime.c_str());
-            } else {
-                ALOGE("Unable to instantiate decoder '%s'.", componentName.c_str());
-            }
-
-            mCodec->signalError(OMX_ErrorComponentNotFound);
-            return false;
-        }
-        sp<AMessage> notify = new AMessage(kWhatOMXMessage, mCodec->id());
-        observer->setNotificationMessage(notify);
-
-        mCodec->mComponentName = componentName;
-        mCodec->mFlags = 0;
-
-        if (componentName.endsWith(".secure")) {
-            mCodec->mFlags |= kFlagIsSecure;
-        }
-
-        mCodec->mQuirks = quirks;
-        mCodec->mOMX = omx;
-        mCodec->mNode = node;
-
-        mCodec->mPortEOS[kPortIndexInput] =
-        mCodec->mPortEOS[kPortIndexOutput] = false;
-    }
-
-    CHECK(mCodec->mNode != NULL);
-#endif
     status_t err = mCodec->configureCodec(mime.c_str(), msg);
 
     if (err != OK) {

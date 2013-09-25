@@ -44,12 +44,16 @@
 
 #include "include/QCUtils.h"
 
+static const int64_t kDefaultAVSyncLateMargin =  40000;
+static const int64_t kMaxAVSyncLateMargin     = 250000;
+
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
 
 #include <QCMetaData.h>
 #include <QCMediaDefs.h>
 
 #include "include/ExtendedExtractor.h"
+#include "include/avc_utils.h"
 
 namespace android {
 
@@ -200,6 +204,34 @@ void QCUtils::ShellProp::setEncoderprofile(
             ALOGW("No custom profile support for other codecs");
             break;
     }
+}
+
+int64_t QCUtils::ShellProp::getMaxAVSyncLateMargin() {
+    int64_t maxAVSyncRange = kDefaultAVSyncLateMargin;
+
+    char av_sync_late_margin[PROPERTY_VALUE_MAX];
+    //get value in ms and convert to uc
+    property_get("media.sf.set.late.margin", av_sync_late_margin, "0");
+    int64_t newLateMargin = atoi(av_sync_late_margin)* 1000;
+
+    if(newLateMargin > maxAVSyncRange) {
+        if( newLateMargin > kMaxAVSyncLateMargin ) {
+            //limit max late to kMaxAVSyncLateMargin
+            maxAVSyncRange = kMaxAVSyncLateMargin;
+            ALOGW("Range provide (%dms) is out of valid range, resetting to 250ms",
+                   newLateMargin/1000);
+        } else {
+            //set range is > kDefaultAVSyncLateMargin  and <= kMaxAVSyncLateMargin ms
+            maxAVSyncRange = newLateMargin;
+            ALOGW("setting new AV sync Range (%dms)",newLateMargin/1000);
+        }
+    } else {
+       if(newLateMargin > 0) {
+           ALOGW("Range set (%dms) is less than default, reseting value to default 40ms",
+                  newLateMargin/1000);
+       }
+    }
+    return maxAVSyncRange;
 }
 
 bool QCUtils::ShellProp::isSmoothStreamingEnabled() {
@@ -482,6 +514,7 @@ bool QCUtils::checkIsThumbNailMode(const uint32_t flags, char* componentName) {
     return isInThumbnailMode;
 }
 
+
 void QCUtils::helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer,
                                                         sp<MetaData> &format,
                                                         size_t size) {
@@ -502,6 +535,38 @@ void QCUtils::helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer,
             *((uint8_t *)buffer->data() + count+1) = tmp;
         }
     }
+}
+
+void QCUtils::setArbitraryModeIfInterlaced(
+        const uint8_t *ptr, const sp<MetaData> &meta) {
+
+    if (ptr == NULL) {
+        return;
+    }
+    uint16_t spsSize = (((uint16_t)ptr[6]) << 8) + (uint16_t)(ptr[7]);
+    int32_t width = 0, height = 0, isInterlaced = 0;
+    const uint8_t *spsStart = &ptr[8];
+
+    sp<ABuffer> seqParamSet = new ABuffer(spsSize);
+    memcpy(seqParamSet->data(), spsStart, spsSize);
+    FindAVCDimensions(seqParamSet, &width, &height, NULL, NULL, &isInterlaced);
+
+    ALOGV("height is %d, width is %d, isInterlaced is %d\n", height, width, isInterlaced);
+    if (isInterlaced) {
+        meta->setInt32(kKeyUseArbitraryMode, 1);
+        meta->setInt32(kKeyInterlace, 1);
+    }
+    return;
+}
+
+int32_t QCUtils::checkIsInterlace(sp<MetaData> &meta) {
+    int32_t isInterlaceFormat = 0;
+
+    if(meta->findInt32(kKeyInterlace, &isInterlaceFormat)) {
+        ALOGI("interlace format detected");
+    }
+
+    return isInterlaceFormat;
 }
 
 }
@@ -540,6 +605,10 @@ bool QCUtils::ShellProp::isAudioDisabled() {
 
 void QCUtils::ShellProp::setEncoderprofile(
         video_encoder &videoEncoder, int32_t &videoEncoderProfile) {
+}
+
+int64_t QCUtils::ShellProp::getMaxAVSyncLateMargin() {
+     return kDefaultAVSyncLateMargin;
 }
 
 bool QCUtils::ShellProp::isSmoothStreamingEnabled() {
@@ -592,6 +661,14 @@ bool QCUtils::checkIsThumbNailMode(const uint32_t flags, char* componentName) {
 void QCUtils::helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer,
                                                         sp<MetaData> &format,
                                                         size_t size) {
+}
+
+void QCUtils::setArbitraryModeIfInterlaced(
+        const uint8_t *ptr, const sp<MetaData> &meta) {
+}
+
+int32_t QCUtils::checkIsInterlace(sp<MetaData> &meta) {
+    return false;
 }
 
 }
