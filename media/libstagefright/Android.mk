@@ -103,19 +103,16 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
-<<<<<<< HEAD
         $(TOP)/hardware/qcom/display/libgralloc \
 	$(TOP)/hardware/qcom/media/mm-core/inc \
 	$(TOP)/system/core/include \
 	$(TOP)/frameworks/av/media/libmediaplayerservice \
 	$(TOP)/frameworks/native/include/binder \
 	$(TOP)/frameworks/av/media/libstagefright/include \
-	$(TOP)/frameworks/av/media/libstagefright/utils
-=======
+	$(TOP)/frameworks/av/media/libstagefright/utils \
         $(TOP)/hardware/qcom/media/mm-core/inc \
         $(TOP)/hardware/qcom/display/libgralloc \
         $(TOP)/hardware/qcom/display/libqdutils
->>>>>>> f8621a9... libstagefright: Set frame info metadata to display buffers
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
