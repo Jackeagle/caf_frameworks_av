@@ -140,6 +140,7 @@ private:
         TEXTPLAYER_INITIALIZED  = 0x20000,
 
         SLOW_DECODER_HACK   = 0x40000,
+        PAUSE               = 0x80000,
     };
 
     mutable Mutex mLock;
@@ -220,6 +221,9 @@ private:
     bool mIsAsyncPrepare;
     status_t mPrepareResult;
     status_t mStreamDoneStatus;
+
+    String8 mUseCase;
+    bool mUseCaseFlag;
 
     void postVideoEvent_l(int64_t delayUs = -1);
     void postBufferingEvent_l();
@@ -312,6 +316,7 @@ private:
     void printStats();
     int64_t getTimeOfDayUs();
     bool mStatistics;
+    int64_t mLateAVSyncMargin;
 
     struct TrackStat {
         String8 mMIME;
@@ -369,6 +374,9 @@ private:
     size_t countTracks() const;
 
     bool inSupportedTunnelFormats(const char * mime);
+
+    bool updateConcurrencyParam(bool pauseFlag);
+
     //Flag to check if tunnel mode audio is enabled
     bool mIsTunnelAudio;
     AwesomePlayer(const AwesomePlayer &);

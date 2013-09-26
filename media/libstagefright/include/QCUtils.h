@@ -104,6 +104,8 @@ struct QCUtils {
                 int32_t &videoEncoderProfile);
 
         static bool isSmoothStreamingEnabled();
+
+        static int64_t getMaxAVSyncLateMargin();
     };
 
     //set B frames for MPEG4
@@ -140,6 +142,10 @@ struct QCUtils {
     static void helper_mpeg4extractor_checkAC3EAC3(MediaBuffer *buffer, sp<MetaData> &format,
                                                    size_t size);
 
+    static void setArbitraryModeIfInterlaced(
+            const uint8_t *ptr, const sp<MetaData> &meta);
+
+    static int32_t checkIsInterlace(sp<MetaData> &meta);
 };
 
 }

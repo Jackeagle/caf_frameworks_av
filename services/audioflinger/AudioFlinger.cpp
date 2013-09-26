@@ -15,6 +15,25 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
+**
+** This file was modified by Dolby Laboratories, Inc. The portions of the
+** code that are surrounded by "DOLBY..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2012-2013 Dolby Laboratories, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
+**
 */
 
 
@@ -93,6 +112,10 @@ static const char kHardwareLockedString[] = "Hardware lock is taken\n";
 
 
 nsecs_t AudioFlinger::mStandbyTimeInNsecs = kDefaultStandbyTimeInNsecs;
+#ifdef DOLBY_DAP_QDSP
+bool AudioFlinger::gMixerTracksActive = false;
+bool AudioFlinger::gDirectOutputTrackActive = false;
+#endif //DOLBY_DAP_QDSP
 
 uint32_t AudioFlinger::mScreenState;
 
@@ -630,11 +653,11 @@ Exit:
 
 void AudioFlinger::deleteEffectSession()
 {
+    Mutex::Autolock _l(mLock);
     ALOGV("deleteSession");
     // -2 is invalid session ID
     mLPASessionId = -2;
     if (mLPAEffectChain != NULL) {
-        mLPAEffectChain->lock();
         mLPAEffectChain->setLPAFlag(false);
         size_t i, numEffects = mLPAEffectChain->getNumEffects();
         for(i = 0; i < numEffects; i++) {
@@ -647,7 +670,6 @@ void AudioFlinger::deleteEffectSession()
             }
             effect->configure();
         }
-        mLPAEffectChain->unlock();
         mLPAEffectChain.clear();
         mLPAEffectChain = NULL;
     }
@@ -916,6 +938,14 @@ status_t AudioFlinger::setStreamVolume(audio_stream_type_t stream, float value,
                 desc->stream->set_volume(desc->stream,
                                          desc->mVolumeLeft * mStreamTypes[stream].volume,
                                          desc->mVolumeRight* mStreamTypes[stream].volume);
+#ifdef DOLBY_DAP_QDSP
+               uint32_t volume[2];
+               volume[0] = (uint32_t)(desc->mVolumeLeft * desc->mVolumeScale * (1 << 24));
+               volume[1] = (uint32_t)(desc->mVolumeRight * desc->mVolumeScale * (1 << 24));
+               if (!gMixerTracksActive && !gDirectOutputTrackActive) {
+                   setPregain(volume);
+               }
+#endif // DOLBY_DAP_QDSP
                 return NO_ERROR;
             }
         }
@@ -1854,15 +1884,22 @@ status_t AudioFlinger::suspendOutput(audio_io_handle_t output)
 {
     Mutex::Autolock _l(mLock);
     PlaybackThread *thread = checkPlaybackThread_l(output);
-
-    if (thread == NULL) {
-        return BAD_VALUE;
+    if(thread != NULL) {
+        ALOGW("suspendOutput() %d", output);
+        thread->suspend();
+        return NO_ERROR;
     }
-
-    ALOGV("suspendOutput() %d", output);
-    thread->suspend();
-
-    return NO_ERROR;
+#ifdef RESOURCE_MANAGER
+    AudioSessionDescriptor *desc = NULL;
+    if (!mDirectAudioTracks.isEmpty()) {
+        desc = mDirectAudioTracks.valueFor(output);
+        if(desc && ((DirectAudioTrack*)desc->trackRefPtr)) {
+            ALOGV("No Suspend for valid  direct track should be already paused  ");
+        }
+       return NO_ERROR;
+    }
+#endif
+    return BAD_VALUE;
 }
 
 status_t AudioFlinger::restoreOutput(audio_io_handle_t output)
@@ -1870,15 +1907,23 @@ status_t AudioFlinger::restoreOutput(audio_io_handle_t output)
     Mutex::Autolock _l(mLock);
     PlaybackThread *thread = checkPlaybackThread_l(output);
 
-    if (thread == NULL) {
-        return BAD_VALUE;
+    if (thread != NULL) {
+        ALOGW("restoreOutput() %d", output);
+        thread->restore();
+        return NO_ERROR;
     }
 
-    ALOGV("restoreOutput() %d", output);
-
-    thread->restore();
-
-    return NO_ERROR;
+#ifdef RESOURCE_MANAGER
+    AudioSessionDescriptor *desc = NULL;
+    if (!mDirectAudioTracks.isEmpty()) {
+        desc = mDirectAudioTracks.valueFor(output);
+        if (desc != NULL) {
+            ALOGV("No Resume for valid  direct track should be already paused  ");
+        }
+       return NO_ERROR;
+    }
+#endif
+    return BAD_VALUE;
 }
 
 audio_io_handle_t AudioFlinger::openInput(audio_module_handle_t module,

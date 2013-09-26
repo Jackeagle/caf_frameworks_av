@@ -34,6 +34,8 @@
 
 #include <private/media/AudioTrackShared.h>
 
+#include "TrackUtils.h"
+
 namespace android {
 // ---------------------------------------------------------------------------
 
@@ -104,6 +106,11 @@ AudioRecord::AudioRecord(
 
 AudioRecord::~AudioRecord()
 {
+
+    if(TrackUtils::SetConcurrencyParameterForRemoteRecordSession(
+            mInputSource, mFormat, mSampleRate, mChannelCount, false)) {
+        ALOGE("SetConcurrencyParameterforRemoteRecordSession -  false returned error");
+    }
     if (mStatus == NO_ERROR) {
         // Make sure that callback function exits in the case where
         // it is looping on buffer empty condition in obtainBuffer().
@@ -140,7 +147,7 @@ status_t AudioRecord::set(
     }
     size_t frameCount = frameCountInt;
 
-    ALOGV("set(): sampleRate %u, channelMask %#x, frameCount %u", sampleRate, channelMask,
+    ALOGV("set(): inputSource = %d, sampleRate %u, channelMask %#x, frameCount %u", inputSource, sampleRate, channelMask,
             frameCount);
 
     AutoMutex lock(mLock);
@@ -356,6 +363,12 @@ status_t AudioRecord::start(AudioSystem::sync_event_t event, int triggerSession)
 {
     status_t ret = NO_ERROR;
     sp<AudioRecordThread> t = mAudioRecordThread;
+
+    if(TrackUtils::SetConcurrencyParameterForRemoteRecordSession(
+            mInputSource, mFormat, mSampleRate, mChannelCount, true)) {
+        ALOGE("SetConcurrencyParameterforRemoteRecordSession true - returned error");
+        return INVALID_OPERATION;
+    }
 
     ALOGV("start, sync event %d trigger session %d", event, triggerSession);
 
