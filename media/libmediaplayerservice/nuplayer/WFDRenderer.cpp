@@ -564,8 +564,8 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
                                               ((-(mVideoDelayInUs) > -(mLocalAudioDelayInUs)) ?
                                                   mLocalAudioDelayInUs                        :
                                                   mVideoDelayInUs));
-                            /* Now set the base timie, but just to make sure there delayUs during
-                               because of ajusting it to eact delay dosen't go to +ve, adjust the
+                            /* Now set the base timie, but just to make sure the delayUs
+                               because of ajusting it to eact delay doesn't go to +ve. Adjust the
                                new offset calculated with AV_CLOCK_ADJUST_LATENCY_BY, just to
                                make sure next time when delay is caluculated it will be in -ve */
                             setBaseMediaTime((mAVclockCorrectionTS - AV_CLOCK_ADJUST_LATENCY_BY) , true);
@@ -595,12 +595,11 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
                 }
                 else
                 {
-                    /*  Make sure to increment count on when the cosecutinve delay > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT
-                        and if the count is reached AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME no need
-                        to increment as we might have to correct the clock now. If when delay during
-                        this period once again becomes < AV_CLOCK_ADJUST_DELAY_SATURATION_POINT ,
-                        mNumVideoFramesClockCorrection will be reseted and once agin it will start
-                        incrementing
+                    /*  Make sure to increment count when the cosecutinve delay > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT
+                        and if the count is reached AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME no need to increment as we
+                        might have to correct the clock now. when delay during this period
+                        becomes < AV_CLOCK_ADJUST_DELAY_SATURATION_POINT, mNumVideoFramesClockCorrection will be reseted
+                        and it will start incrementing
                      */
                     mNumVideoFramesClockCorrection++;
                 }
@@ -613,9 +612,9 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
             /* To post the AV Correction logic to trigger after 4/5 secs */
             if (mPostAVCorrection)
             {
-              ALOGE("@@@@:: wfdPostDrainVideoQueue Post AV Clock correction after 5 sec");
+              ALOGE("@@@@:: wfdPostDrainVideoQueue Post AV Clock correction after 2.5 sec");
               /* When AV correction logic to be triggered */
-              trackAVClock(WFD_RENDERER_AV_CLOCK_ADJUST_INTERVAL * 5);
+              trackAVClock(WFD_RENDERER_AV_CLOCK_ADJUST_INTERVAL * 2.5);
               mPostAVCorrection = false;
             }
 #endif
