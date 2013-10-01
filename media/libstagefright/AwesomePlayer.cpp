@@ -33,7 +33,6 @@
 #include "include/ThrottledSource.h"
 #include "include/MPEG2TSExtractor.h"
 #include "include/WVMExtractor.h"
-#include <QCMediaDefs.h>
 
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
@@ -2545,11 +2544,13 @@ status_t AwesomePlayer::finishSetDataSource_l() {
 
                         CHECK_GE(metaDataSize, 0ll);
                         ALOGV("metaDataSize = %lld bytes", metaDataSize);
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
                         if (!strcasecmp(sniffedMIME.c_str(), MEDIA_MIMETYPE_CONTAINER_QCMPEG4)) {
                             if(mCachedSource->flags() && DataSource::kSupportNonBlockingRead) {
                                 mCachedSource->enableNonBlockingRead(true);
                             }
                         }
+#endif
                     }
 
                     usleep(200000);
