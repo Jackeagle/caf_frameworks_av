@@ -196,6 +196,9 @@ typedef enum
 enum
 {
     OMX_IndexParamAudioDTSDec   = OMX_IndexVendorStartUnused + 0x1,     /**< reference: OMX_AUDIO_PARAM_DTSDECTYPE */
+#ifndef NOCODEFOR_CDEC_DSEC
+    OMX_IndexParamAudioDTSDecKey = OMX_IndexVendorStartUnused + 0x2,
+#endif /* #ifndef NOCODEFOR_CDEC_DSEC */
 };
 
 
