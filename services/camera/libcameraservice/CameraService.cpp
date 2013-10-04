@@ -1974,10 +1974,7 @@ status_t CameraService::BasicClient::startCameraOps() {
               __FUNCTION__, String8(mClientPackageName).string(), mClientUid);
     }
 
-    mAppOpsManager.startWatchingMode(AppOpsManager::OP_CAMERA,
-            mClientPackageName, mOpsCallback);
-    res = mAppOpsManager.startOp(AppOpsManager::OP_CAMERA,
-            mClientUid, mClientPackageName);
+    res = AppOpsManager::MODE_ALLOWED;
 
     if (res == AppOpsManager::MODE_ERRORED) {
         ALOGI("Camera %d: Access for \"%s\" has been revoked",
@@ -2010,9 +2007,6 @@ status_t CameraService::BasicClient::finishCameraOps() {
 
     // Check if startCameraOps succeeded, and if so, finish the camera op
     if (mOpsActive) {
-        // Notify app ops that the camera is available again
-        mAppOpsManager.finishOp(AppOpsManager::OP_CAMERA, mClientUid,
-                mClientPackageName);
         mOpsActive = false;
 
         auto rejected = {ICameraServiceListener::STATUS_NOT_PRESENT,
@@ -2029,10 +2023,6 @@ status_t CameraService::BasicClient::finishCameraOps() {
         // Notify flashlight that a camera device is closed.
         mCameraService->mFlashlight->deviceClosed(
                 String8::format("%d", mCameraId));
-    }
-    // Always stop watching, even if no camera op is active
-    if (mOpsCallback != NULL) {
-        mAppOpsManager.stopWatchingMode(mOpsCallback);
     }
     mOpsCallback.clear();
 
@@ -2051,8 +2041,7 @@ void CameraService::BasicClient::opChanged(int32_t op, const String16& packageNa
     }
 
     int32_t res;
-    res = mAppOpsManager.checkOp(AppOpsManager::OP_CAMERA,
-            mClientUid, mClientPackageName);
+    res = AppOpsManager::MODE_ALLOWED;
     ALOGV("checkOp returns: %d, %s ", res,
             res == AppOpsManager::MODE_ALLOWED ? "ALLOWED" :
             res == AppOpsManager::MODE_IGNORED ? "IGNORED" :
