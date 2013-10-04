@@ -844,10 +844,7 @@ status_t CameraService::BasicClient::startCameraOps() {
               __FUNCTION__, String8(mClientPackageName).string(), mClientUid);
     }
 
-    mAppOpsManager.startWatchingMode(AppOpsManager::OP_CAMERA,
-            mClientPackageName, mOpsCallback);
-    res = mAppOpsManager.startOp(AppOpsManager::OP_CAMERA,
-            mClientUid, mClientPackageName);
+    res = AppOpsManager::MODE_ALLOWED;
 
     if (res != AppOpsManager::MODE_ALLOWED) {
         ALOGI("Camera %d: Access for \"%s\" has been revoked",
@@ -860,11 +857,8 @@ status_t CameraService::BasicClient::startCameraOps() {
 
 status_t CameraService::BasicClient::finishCameraOps() {
     if (mOpsActive) {
-        mAppOpsManager.finishOp(AppOpsManager::OP_CAMERA, mClientUid,
-                mClientPackageName);
         mOpsActive = false;
     }
-    mAppOpsManager.stopWatchingMode(mOpsCallback);
     mOpsCallback.clear();
 
     return OK;
@@ -880,8 +874,7 @@ void CameraService::BasicClient::opChanged(int32_t op, const String16& packageNa
     }
 
     int32_t res;
-    res = mAppOpsManager.checkOp(AppOpsManager::OP_CAMERA,
-            mClientUid, mClientPackageName);
+    res = AppOpsManager::MODE_ALLOWED;
     ALOGV("checkOp returns: %d, %s ", res,
             res == AppOpsManager::MODE_ALLOWED ? "ALLOWED" :
             res == AppOpsManager::MODE_IGNORED ? "IGNORED" :
