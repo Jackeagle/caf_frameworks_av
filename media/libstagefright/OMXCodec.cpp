@@ -1141,6 +1141,7 @@ status_t OMXCodec::setupErrorCorrectionParameters() {
     errorCorrectionType.nResynchMarkerSpacing = 256;
     errorCorrectionType.bEnableDataPartitioning = OMX_FALSE;
     errorCorrectionType.bEnableRVLC = OMX_FALSE;
+    ExtendedCodec::overrideErrorCorrectionParameters(errorCorrectionType);
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamVideoErrorCorrection,
