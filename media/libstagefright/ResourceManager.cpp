@@ -391,9 +391,14 @@ status_t ResourceManager::AudioConcurrencyInfo::setParameter(String8 useCase, bo
     } else {
        param.add(useCase, String8("false"));
     }
-    int64_t token = IPCThreadState::self()->clearCallingIdentity();
-    err = AudioSystem::setParameters(0, param.toString());
-    IPCThreadState::self()->restoreCallingIdentity(token);
+    const sp<IResourceManagerService>& service(getResourceManagerService());
+    if (service == 0) {
+        ALOGE(" ResourceManager::setParameter: ERROR Could not get ResourceManagerService ");
+        err = INVALID_OPERATION;
+    }
+    else {
+        err = service->setParam(param.toString());
+    }
     if(!err) {
        ALOGD("setParameter success for usecase = %s",useCase.string());
     } else if(err == INVALID_OPERATION) {
@@ -562,5 +567,10 @@ void ResourceManager::AudioConcurrencyInfo::setULLStream(
         uint32_t &flags) {
     return;
 }
+
+void ResourceManager::died() {
+    //TODO:: Handle death notifier from resourcemanager  service
+}
+
 #endif
 }
