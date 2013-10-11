@@ -767,8 +767,9 @@ M4OSA_ERR VideoEditor3gpReader_setOption(M4OSA_Context context,
     /* Check function parameters */
     M4OSA_DEBUG_IF1((M4OSA_NULL == pC), M4ERR_PARAMETER,
         "invalid context pointer");
-    M4OSA_DEBUG_IF1((M4OSA_NULL == pValue), M4ERR_PARAMETER,
-        "invalid value pointer");
+    /*remove this check, because this function can be called with pValue=NULL*/
+    /*M4OSA_DEBUG_IF1((M4OSA_NULL == pValue), M4ERR_PARAMETER,
+        "invalid value pointer");*/
 
     ALOGV("VideoEditor3gpReader_setOption begin %d",optionId);
 
@@ -1656,6 +1657,7 @@ M4OSA_ERR VideoEditor3gpReader_getNextStreamHandler(M4OSA_Context context,
             }
             else {
                 ALOGV("VideoEditor3gpReader_getNextStream NO video stream");
+                pC->mCurrTrack++; //Increment current track to get the next track
                 return M4ERR_READER_UNKNOWN_STREAM_TYPE;
             }
 
@@ -1806,6 +1808,7 @@ M4OSA_ERR VideoEditor3gpReader_getNextStreamHandler(M4OSA_Context context,
                 }
             } else {
                 ALOGV("VideoEditor3gpReader_getNextStream mStreamType: none ");
+                pC->mCurrTrack++; //Increment current track to get the next track
                 return M4ERR_READER_UNKNOWN_STREAM_TYPE;
             }
         } else {
