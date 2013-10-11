@@ -46,4 +46,11 @@ ifeq ($(QCOM_LISTEN_FEATURE),true)
   LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-listen
 endif
 
+# RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+  LOCAL_CFLAGS += -DRESOURCE_MANAGER
+  LOCAL_C_INCLUDES +=  frameworks/av/media/libmedia
+endif
+# RESOURCE MANAGER
+
 include $(BUILD_EXECUTABLE)

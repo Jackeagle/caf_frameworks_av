@@ -38,6 +38,9 @@
 #include "ListenService.h"
 #endif
 #include <dlfcn.h>
+#ifdef RESOURCE_MANAGER
+#include "ResourceManagerService.h"
+#endif
 
 using namespace android;
 
@@ -156,6 +159,10 @@ int main(int argc, char** argv)
       }
    }
         AudioPolicyService::instantiate();
+#ifdef RESOURCE_MANAGER
+        ALOGI(" ResourceManagerService instantiated");
+        ResourceManagerService::instantiate();
+#endif
         registerExtensions();
         ProcessState::self()->startThreadPool();
         IPCThreadState::self()->joinThreadPool();

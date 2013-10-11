@@ -36,9 +36,23 @@
 #include <media/stagefright/AudioPlayer.h>
 #include <media/stagefright/foundation/AMessage.h>
 
+#ifdef RESOURCE_MANAGER
+#include <IResourceManagerService.h>
+#include <IResourceManagerDeathNotifier.h>
+#endif
+
 namespace android {
 
+#ifdef RESOURCE_MANAGER
+
+struct ResourceManager : public BnResourceManagerService,
+                            public virtual IResourceManagerDeathNotifier {
+#else
 struct ResourceManager {
+#endif
+
+    //IResourceManagerDeathNotifier
+    void   died();
 
     struct AudioConcurrencyInfo {
 

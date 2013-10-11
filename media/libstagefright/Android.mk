@@ -36,11 +36,6 @@ ifeq ($(BOARD_USES_ALSA_AUDIO),true)
     endif
 endif
 
-# RESOURCE MANAGER
-ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
-LOCAL_CFLAGS += -DRESOURCE_MANAGER
-endif
-# RESOURCE MANAGER
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
@@ -194,6 +189,13 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
        LOCAL_SRC_FILES  += QCMediaDefs.cpp
        LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
 endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS
+
+# RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+  LOCAL_CFLAGS += -DRESOURCE_MANAGER
+  LOCAL_C_INCLUDES +=  frameworks/av/media/libmedia
+endif
+# RESOURCE MANAGER
 
 include $(BUILD_SHARED_LIBRARY)
 
