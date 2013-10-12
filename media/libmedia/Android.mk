@@ -65,7 +65,7 @@ LOCAL_SRC_FILES:= \
 LOCAL_SHARED_LIBRARIES := \
 	libui libcutils libutils libbinder libsonivox libicuuc libexpat \
         libcamera_client libstagefright_foundation \
-        libgui libdl libaudioutils libmedia_native
+        libgui libdl libaudioutils libmedia_native libaudioparameter
 
 LOCAL_WHOLE_STATIC_LIBRARY := libmedia_helper
 
