@@ -92,6 +92,7 @@ AudioPlayer::AudioPlayer(
       mPositionTimeMediaUs(-1),
       mPositionTimeRealUs(-1),
       mSeeking(false),
+      mSeekTimeUs(0),
       mReachedEOS(false),
       mFinalStatus(OK),
       mStarted(false),
@@ -788,11 +789,7 @@ int64_t AudioPlayer::getMediaTimeUs() {
     Mutex::Autolock autoLock(mLock);
 
     if (mPositionTimeMediaUs < 0 || mPositionTimeRealUs < 0) {
-        if (mSeeking) {
-            return mSeekTimeUs;
-        }
-
-        return 0;
+        return mSeekTimeUs;
     }
 
     int64_t realTimeOffset = getRealTimeUsLocked() - mPositionTimeRealUs;
