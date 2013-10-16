@@ -2918,6 +2918,7 @@ void OMXCodec::onCmdComplete(OMX_COMMANDTYPE cmd, OMX_U32 data) {
 
                 if (mPortStatus[kPortIndexInput] == ENABLED
                     && mPortStatus[kPortIndexOutput] == ENABLED) {
+                    setState(EXECUTING);
                     CODEC_LOGV("Finished flushing both ports, now continuing from"
                          " seek-time.");
 
@@ -3683,7 +3684,7 @@ status_t OMXCodec::waitForBufferFilled_l() {
         return mBufferFilled.wait(mLock);
     }
 
-    if ((mState == EXECUTING) && (mSignalledReadTryAgain == true)) {
+    if ((mState == EXECUTING || mState == FLUSHING) && (mSignalledReadTryAgain == true)) {
         return -EAGAIN;
     }
 
@@ -3695,7 +3696,7 @@ status_t OMXCodec::waitForBufferFilled_l() {
         err = OK;
     }
 
-    if ((err == OK) && (mSignalledReadTryAgain == true) && (mState == EXECUTING)) {
+    if ((err == OK) && (mSignalledReadTryAgain == true) && (mState == EXECUTING || mState == FLUSHING)) {
         return -EAGAIN;
     }
 
@@ -4274,14 +4275,12 @@ status_t OMXCodec::read(
     Mutex::Autolock autoLock(mLock);
 
     if (mState != EXECUTING && mState != RECONFIGURING) {
+        if(mState == FLUSHING) {
+            mReturnedRetry = true;
+            return -EAGAIN;
+        }
         mReturnedRetry = false;
         return UNKNOWN_ERROR;
-    }
-
-    //Flushing state
-    if (mState == EXECUTING && hasDisabledPorts()){
-        mReturnedRetry = true;
-        return -EAGAIN;
     }
 
     bool seeking = false;
@@ -4407,10 +4406,6 @@ status_t OMXCodec::read(
         return UNKNOWN_ERROR;
     }
 
-    if (seeking) {
-        CHECK_EQ((int)mState, (int)FLUSHING);
-        setState(EXECUTING);
-    }
 
     if (mFilledBuffers.empty()) {
         if (mOutputPortSettingsChangedPending) {
