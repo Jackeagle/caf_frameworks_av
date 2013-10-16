@@ -27,7 +27,7 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
-
+#include <media/stagefright/MediaDefs.h>
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
 #include "QCMetaData.h"
 #endif
@@ -276,12 +276,38 @@ status_t convertMetaDataToMessage(
         msg->setBuffer("csd-1", buffer);
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
     } else if(meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
-        sp<ABuffer> buffer = new ABuffer(size);
-        memcpy(buffer->data(), data, size);
+        if (strcasecmp( mime, MEDIA_MIMETYPE_VIDEO_AVC))
+         {
+            sp<ABuffer> buffer = new ABuffer(size);
+            memcpy(buffer->data(), data, size);
 
-        buffer->meta()->setInt32("csd", true);
-        buffer->meta()->setInt64("timeUs", 0);
-        msg->setBuffer("csd-0", buffer);
+            buffer->meta()->setInt32("csd", true);
+            buffer->meta()->setInt64("timeUs", 0);
+            msg->setBuffer("csd-0", buffer);
+        }
+       else
+        {
+            const uint8_t *ptr = (const uint8_t *)data;
+            CHECK(size >= 8);
+            int seqLength, picLength;
+            for(int i=4;i<size-4;i++)
+              {
+                 if((*(ptr+i)==0)&&(*(ptr+i+1)==0)&&(*(ptr+i+2)==0)&&(*(ptr+i+3)==1))
+                 seqLength=i;
+              }
+            sp<ABuffer> buffer = new ABuffer(seqLength);
+            memcpy(buffer->data(), data, seqLength);
+            buffer->meta()->setInt32("csd", true);
+            buffer->meta()->setInt64("timeUs", 0);
+            msg->setBuffer("csd-0", buffer);
+
+            picLength=size-seqLength;
+            sp<ABuffer> buffer1 = new ABuffer(picLength);
+            memcpy(buffer1->data(), data+seqLength, picLength);
+            buffer1->meta()->setInt32("csd", true);
+            buffer1->meta()->setInt64("timeUs", 0);
+            msg->setBuffer("csd-1", buffer1);
+        }
 #endif
     }
 
