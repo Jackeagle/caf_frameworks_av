@@ -637,7 +637,8 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             ALOGV("OMXCodec::configureCodec found kKeyRawCodecSpecificData of size %d\n", size);
             if (!strncmp(mComponentName, "OMX.qcom.video.decoder.mpeg4",
                          sizeof("OMX.qcom.video.decoder.mpeg4"))) {
-                bool isDP = ExtendedCodec::checkDPFromCodecSpecificData((const uint8_t*)data, size);
+                bool isDP = ExtendedCodec::checkDPFromCodecSpecificData((const uint8_t*)data, size,
+                            QCUtils::checkIsThumbNailMode(mFlags, mComponentName));
                 if (isDP) {
                     ALOGE("H/W Decode Error: Data Partitioned bit set in the Header");
                     return BAD_VALUE;

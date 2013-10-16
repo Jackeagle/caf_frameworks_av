@@ -354,7 +354,7 @@ void ExtendedCodec::configureVideoCodec(
     }
 }
 
-bool ExtendedCodec::checkDPFromCodecSpecificData(const uint8_t *data, size_t size)
+bool ExtendedCodec::checkDPFromCodecSpecificData(const uint8_t *data, size_t size, bool thumbnail)
 {
     bool retVal = false;
     size_t offset = 0, start_code_offset = 0;
@@ -379,13 +379,13 @@ bool ExtendedCodec::checkDPFromCodecSpecificData(const uint8_t *data, size_t siz
     }
     if (isStartCode) {
         retVal = checkDPFromVOLHeader((const uint8_t*) &data[start_code_offset],
-                                       size);
+                                       size, thumbnail);
     }
 
     return retVal;
 }
 
-bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
+bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size, bool thumbnail)
 {
     bool retVal = false;
     size_t min_header_size = 5;
@@ -488,6 +488,10 @@ bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size)
         sprite_enable = br.getBits(1);
     } else {
         sprite_enable = br.getBits(2);
+    }
+    if (!thumbnail && sprite_enable == 0x2) {
+        ALOGD("ExtendedCodec: can't support GMC");
+        return true;
     }
     if (sprite_enable == 0x1 || sprite_enable == 0x2) {
         if (sprite_enable != 0x2) {

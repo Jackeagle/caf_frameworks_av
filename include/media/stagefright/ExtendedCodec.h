@@ -92,9 +92,9 @@ struct ExtendedCodec {
             const sp<MetaData> &meta, sp<IOMX> OMXhandle,
             const uint32_t flags, IOMX::node_id nodeID, char* componentName );
 
-    static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
+    static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size, bool thumbnail);
 
-    static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
+    static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size, bool thumbnail);
 
     static void enableSmoothStreaming(
             const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
