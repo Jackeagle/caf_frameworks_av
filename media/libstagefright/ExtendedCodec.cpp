@@ -137,15 +137,43 @@ status_t ExtendedCodec::convertMetaDataToMessage(
         }
         else if ( (MetaKeyTable[i].KeyType == DATA ||
                    MetaKeyTable[i].KeyType == CSD) &&
-                   meta->findData(MetaKeyTable[i].MetaKey, &data_type, &data, &size)) {
+              meta->findData(MetaKeyTable[i].MetaKey, &data_type, &data, &size)) {
             ALOGV("found metakey %s of type data", MetaKeyTable[i].MsgKey);
-            sp<ABuffer> buffer = new ABuffer(size);
-            memcpy(buffer->data(), data, size);
             if (MetaKeyTable[i].KeyType == CSD) {
-                buffer->meta()->setInt32("csd", true);
-                buffer->meta()->setInt64("timeUs", 0);
+                const char *mime;
+                CHECK(meta->findCString(kKeyMIMEType, &mime));
+                if (strcasecmp( mime, MEDIA_MIMETYPE_VIDEO_AVC)) {
+                    sp<ABuffer> buffer = new ABuffer(size);
+                    memcpy(buffer->data(), data, size);
+                    buffer->meta()->setInt32("csd", true);
+                    buffer->meta()->setInt64("timeUs", 0);
+                    format->get()->setBuffer("csd-0", buffer);
+                } else {
+                    const uint8_t *ptr = (const uint8_t *)data;
+                    CHECK(size >= 8);
+                    int seqLength, picLength;
+                    for(int i=4;i<size-4;i++)
+                    {
+                        if((*(ptr+i)==0)&&(*(ptr+i+1)==0)&&(*(ptr+i+2)==0)&&(*(ptr+i+3)==1))
+                            seqLength=i;
+                    }
+                    sp<ABuffer> buffer = new ABuffer(seqLength);
+                    memcpy(buffer->data(), data, seqLength);
+                    buffer->meta()->setInt32("csd", true);
+                    buffer->meta()->setInt64("timeUs", 0);
+                    format->get()->setBuffer("csd-0", buffer);
+                    picLength=size-seqLength;
+                    sp<ABuffer> buffer1 = new ABuffer(picLength);
+                    memcpy(buffer1->data(), data+seqLength, picLength);
+                    buffer1->meta()->setInt32("csd", true);
+                    buffer1->meta()->setInt64("timeUs", 0);
+                    format->get()->setBuffer("csd-1", buffer1);
+                }
+            } else {
+                sp<ABuffer> buffer = new ABuffer(size);
+                memcpy(buffer->data(), data, size);
+                format->get()->setBuffer(MetaKeyTable[i].MsgKey, buffer);
             }
-            format->get()->setBuffer(MetaKeyTable[i].MsgKey, buffer);
         }
     }
     return OK;
