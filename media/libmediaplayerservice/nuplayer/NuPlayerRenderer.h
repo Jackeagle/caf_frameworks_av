@@ -105,10 +105,6 @@ private:
     int64_t mLastPositionUpdateUs;
     int64_t mVideoLateByUs;
 
-    int mSessionId;
-    int mStreamType;
-    bool mIsHpxPreprocessed;
-
     bool onDrainAudioQueue();
     void postDrainAudioQueue(int64_t delayUs = 0);
 

@@ -281,20 +281,6 @@ static const char *FourCC2MIME(uint32_t fourcc) {
         case FOURCC('s', 'a', 'w', 'b'):
             return MEDIA_MIMETYPE_AUDIO_AMR_WB;
 
-        // <-- [DTS: TAPIOMXIL-4]
-        case FOURCC('d', 't', 's', 'c'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
-
-        case FOURCC('d', 't', 's', 'h'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
-
-        case FOURCC('d', 't', 's', 'l'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
-
-        case FOURCC('d', 't', 's', 'e'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
-        // [DTS: TAPIOMXIL-4] -->
-
         case FOURCC('m', 'p', '4', 'v'):
             return MEDIA_MIMETYPE_VIDEO_MPEG4;
 

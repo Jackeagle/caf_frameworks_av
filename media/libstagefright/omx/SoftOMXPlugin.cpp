@@ -76,7 +76,6 @@ static const struct {
     { "OMX.dolby.ac3.decoder", "ddpdec", "audio_decoder.ac3" },
     { "OMX.dolby.ec3.decoder", "ddpdec", "audio_decoder.eac3" },
 #endif // DOLBY_UDC
-    { "OMX.DTS.audio_decoder.dts", "dtsdec", "audio_decoder.dts" }, // [DTS: TAPIOMXIL-4]
 };
 
 static const size_t kNumComponents =

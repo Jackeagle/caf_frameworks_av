@@ -97,9 +97,6 @@ private:
     audio_format_t mFormat;
     bool mHasVideo;
     void clearPowerManager();
-    int mSessionId;
-    int mStreamType;
-    bool mIsHpxPreprocessed;
 
     class PMDeathRecipient : public IBinder::DeathRecipient {
         public:
@@ -221,7 +218,7 @@ private:
 
     void reset();
     bool seekTooClose(int64_t time_us);
-    void updateHpxPreProcessedState();
+
     TunnelPlayer(const TunnelPlayer &);
     TunnelPlayer &operator=(const TunnelPlayer &);
 };

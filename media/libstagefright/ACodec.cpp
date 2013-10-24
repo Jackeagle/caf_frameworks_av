@@ -57,7 +57,6 @@
 #include <OMX_Component.h>
 
 #include "include/avc_utils.h"
-#include "include/DTSUtils.h" // [DTS: TAPIOMXIL-6]
 #ifdef DOLBY_UDC
  #include <QCMediaDefs.h>
 #endif //DOLBY_UDC
@@ -861,9 +860,6 @@ status_t ACodec::setComponentRole(
             "audio_decoder.raw", "audio_encoder.raw" },
         { MEDIA_MIMETYPE_AUDIO_FLAC,
             "audio_decoder.flac", "audio_encoder.flac" },
-        { MEDIA_MIMETYPE_AUDIO_DTS,
-            "audio_decoder.dts", "audio_encoder.dts" }, // [DTS: TAPIOMXIL-4]
-
     };
 
     static const size_t kNumMimeToRole =
@@ -910,7 +906,6 @@ status_t ACodec::setComponentRole(
 
 status_t ACodec::configureCodec(
         const char *mime, const sp<AMessage> &msg) {
-    ALOGV("(DTS) configureCodec : mime = %s", mime); // [DTS: TAPIOMXIL-4]
     int32_t encoder;
     if (!msg->findInt32("encoder", &encoder)) {
         encoder = false;
@@ -921,7 +916,6 @@ status_t ACodec::configureCodec(
     status_t err = setComponentRole(encoder /* isEncoder */, mime);
 
     if (err != OK) {
-        ALOGV("(DTS) configureCodec returns error %d", err); // [DTS: TAPIOMXIL-4]
         return err;
     }
 
@@ -985,13 +979,7 @@ status_t ACodec::configureCodec(
                 err = setupVideoDecoder(mime, width, height);
             }
         }
-    }
-    // <-- [DTS: TAPIOMXIL-6]
-    else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)) {
-        err = DTSUtils::setupDecoder(mOMX, mNode);
-    }
-    // [DTS: TAPIOMXIL-6] -->
-    else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
         int32_t numChannels, sampleRate;
         if (!msg->findInt32("channel-count", &numChannels)
                 || !msg->findInt32("sample-rate", &sampleRate)) {

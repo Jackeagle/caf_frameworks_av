@@ -42,7 +42,6 @@
 #include <media/stagefright/MediaErrors.h>
 #include <QCMediaDefs.h>
 #include <hardware_legacy/power.h>
-#include "include/NotifyPlaybackStates.h"
 
 #include <linux/unistd.h>
 
@@ -118,10 +117,6 @@ mObserver(observer) {
     initCheck = true;
 
     //mDeathRecipient = new PMDeathRecipient(this);
-    mIsHpxPreprocessed = false;
-    mSessionId = mAudioSink->getSessionId();
-    mStreamType = mAudioSink->streamType();
-    NotifyPlaybackStates::create_state_notifier_node(mSessionId, mStreamType);
 }
 const int TunnelPlayer::getTunnelObjectsAliveMax() {
     char value[PROPERTY_VALUE_MAX];
@@ -200,8 +195,7 @@ TunnelPlayer::~TunnelPlayer() {
         binder->unlinkToDeath(mDeathRecipient);
     }
 
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, false /* isPlaying */);
-    NotifyPlaybackStates::remove_state_notifier_node(mSessionId, mStreamType);
+
 }
 
 void TunnelPlayer::getAudioFlinger() {
@@ -408,11 +402,6 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
     ALOGV("Waking up extractor thread");
     mExtractorCv.signal();
     mLock.unlock();
-
-    NotifyPlaybackStates::notify_playback_config_state(mSessionId, mStreamType,
-                                                         mime, mSampleRate,
-                                                         numChannels);
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, true /* isPlaying */);
     return OK;
 }
 
@@ -471,7 +460,6 @@ void TunnelPlayer::pause(bool playPendingSamples) {
         ALOGV("AudioSink pause");
         mAudioSink->pause();
     }
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, false /* isPlaying */);
 }
 
 void TunnelPlayer::resume() {
@@ -510,7 +498,6 @@ void TunnelPlayer::resume() {
         ALOGV("Audio sink start succeeded.");
         mExtractorCv.signal();
         ALOGV("Audio signalling extractor thread.");
-        NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, true /* isPlaying */);
     }
 }
 
@@ -796,7 +783,6 @@ size_t TunnelPlayer::fillBuffer(void *data, size_t size) {
 
                 mIsFirstBuffer = false;
             } else {
-                updateHpxPreProcessedState();
                 err = mSource->read(&mInputBuffer, &options);
             }
 
@@ -994,22 +980,6 @@ bool TunnelPlayer::seekTooClose(int64_t time_us) {
      */
     const int64_t deltaUs = 60000LL; /* 60-70ms on msm8974 */
     return (time_us > t1) && ((time_us - t1) <= deltaUs);
-}
-
-void TunnelPlayer::updateHpxPreProcessedState()
-{
-    sp<MetaData> format = mSource->getFormat();
-    const char *mime;
-    bool isHpxPreprocessed = false;
-    bool success = format->findCString(kKeyMIMEType, &mime);
-    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)) {
-        if (mIsHpxPreprocessed != isHpxPreprocessed) {
-            mIsHpxPreprocessed = isHpxPreprocessed;
-            NotifyPlaybackStates::notify_hpx_preprocessed_state(mSessionId,
-                                                                  mStreamType,
-                                                                  mIsHpxPreprocessed);
-        }
-    }
 }
 
 } //namespace android

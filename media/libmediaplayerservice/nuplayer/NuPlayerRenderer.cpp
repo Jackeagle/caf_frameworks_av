@@ -23,7 +23,6 @@
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
-#include <NotifyPlaybackStates.h>
 
 namespace android {
 
@@ -51,16 +50,9 @@ NuPlayer::Renderer::Renderer(
       mVideoRenderingStarted(false),
       mLastPositionUpdateUs(-1ll),
       mVideoLateByUs(0ll) {
-
-    mIsHpxPreprocessed = false;
-    mSessionId = mAudioSink->getSessionId();
-    mStreamType = mAudioSink->streamType();
-    NotifyPlaybackStates::create_state_notifier_node(mSessionId, mStreamType);
 }
 
 NuPlayer::Renderer::~Renderer() {
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, false /* isPlaying */);
-    NotifyPlaybackStates::remove_state_notifier_node(mSessionId, mStreamType);
 }
 
 void NuPlayer::Renderer::queueBuffer(
@@ -656,7 +648,6 @@ void NuPlayer::Renderer::onPause() {
           mAudioQueue.size(), mVideoQueue.size());
 
     mPaused = true;
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, false /* isPlaying */);
 }
 
 void NuPlayer::Renderer::onResume() {
@@ -677,7 +668,6 @@ void NuPlayer::Renderer::onResume() {
     if (!mVideoQueue.empty()) {
         postDrainVideoQueue();
     }
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, true /* isPlaying */);
 }
 
 }  // namespace android
