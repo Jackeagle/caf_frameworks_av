@@ -38,7 +38,7 @@
  */
 
 //#define LOG_NDEBUG 0
-//#define LOG_NDEBUG 0 // [DTS: TAPIOMXIL-4]
+#define LOG_NDEBUG 0 // [DTS: TAPIOMXIL-4]
 #define LOG_TAG "OMXCodec"
 #include <utils/Log.h>
 
@@ -3525,15 +3525,7 @@ void OMXCodec::fillOutputBuffer(BufferInfo *info) {
         setState(ERROR);
         return;
     }
-    
-    if(strstr(mComponentName, "dts")) {
-        OMX_AUDIO_PARAM_DTSDECTYPE myDtsDecParam;
-        mOMX->getParameter(mNode,
-                           (OMX_INDEXTYPE)OMX_IndexParamAudioDTSDec,
-                           &myDtsDecParam, sizeof(myDtsDecParam));
-        mOutputFormat->setInt32(kKeyHPXProcessed,
-                                (myDtsDecParam.nRepTypes == 4) ? true : false);
-    }
+
     info->mStatus = OWNED_BY_COMPONENT;
 }
 
@@ -4974,7 +4966,22 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 mOutputFormat->setInt32(kKeyChannelCount, numChannels);
                 mOutputFormat->setInt32(kKeySampleRate, sampleRate);
                 mOutputFormat->setInt32(kKeyBitRate, bitRate);
-            } else {
+            } else if (audio_def->eEncoding == OMX_AUDIO_CodingDTSHD) {
+                mOutputFormat->setCString(
+                        kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_DTS);
+                int32_t numChannels, sampleRate, bitRate;
+                inputFormat->findInt32(kKeyChannelCount, &numChannels);
+                inputFormat->findInt32(kKeySampleRate, &sampleRate);
+                inputFormat->findInt32(kKeyBitRate, &bitRate);
+                mOutputFormat->setInt32(kKeyChannelCount, numChannels);
+                mOutputFormat->setInt32(kKeySampleRate, sampleRate);
+                mOutputFormat->setInt32(kKeyBitRate, bitRate);
+                status_t result;
+                OMX_AUDIO_PARAM_DTSDECTYPE myDtsDecParam;
+                result = mOMX->getParameter(mNode, (OMX_INDEXTYPE)OMX_IndexParamAudioDTSDec,
+                                           &myDtsDecParam, sizeof(myDtsDecParam));
+                mOutputFormat->setInt32(kKeyHPXProcessed, myDtsDecParam.nRepTypes == 4);
+             } else {
                 AString mimeType;
                 if(OK == QCOMXCodec::checkQCFormats(audio_def->eEncoding, &mimeType)) {
                     mOutputFormat->setCString(
