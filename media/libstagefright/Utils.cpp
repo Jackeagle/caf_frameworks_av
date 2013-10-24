@@ -36,6 +36,7 @@
 
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMediaDefs.h"
+#include <QCMetaData.h>
 #endif
 
 namespace android {
@@ -490,6 +491,15 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     int32_t channelMask = 0;
     int32_t delaySamples = 0;
     int32_t paddingSamples = 0;
+#ifdef ENABLE_AV_ENHANCEMENTS
+    int32_t wmaFormatTag = 0;
+    int32_t wmaBlockAlign = 0;
+    int32_t wmaChannelMask = 0;
+    int32_t wmaBitsPerSample = 0;
+    int32_t wmaEncodeOpt = 0;
+    int32_t wmaEncodeOpt1 = 0;
+    int32_t wmaEncodeOpt2 = 0;
+#endif
 
     AudioParameter param = AudioParameter();
 
@@ -509,9 +519,43 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_PADDING_SAMPLES), paddingSamples);
     }
 
+#ifdef ENABLE_AV_ENHANCEMENTS
+    const char *mime;
+    bool success = meta->findCString(kKeyMIMEType, &mime);
+    CHECK(success);
+
+    if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)) {
+        /*WMA Specific Params */
+        if (meta->findInt32(kKeyWMABlockAlign, &wmaBlockAlign)) {
+            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_BLOCK_ALIGN), wmaBlockAlign);
+        }
+        if (meta->findInt32(kKeyWMAEncodeOpt, &wmaEncodeOpt)) {
+            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION), wmaEncodeOpt);
+        }
+        if (meta->findInt32(kKeyWMAFormatTag, &wmaFormatTag)) {
+            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_FORMAT_TAG), wmaFormatTag);
+        }
+        if (meta->findInt32(kKeyWMABitspersample, &wmaBitsPerSample)) {
+            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_BIT_PER_SAMPLE), wmaBitsPerSample);
+        }
+        if (meta->findInt32(kKeyWMAChannelMask, &wmaChannelMask)) {
+            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_CHANNEL_MASK), wmaChannelMask);
+        }
+        if (meta->findInt32(kKeyWMAAdvEncOpt1, &wmaEncodeOpt1)) {
+            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION1), wmaEncodeOpt1);
+        }
+        if (meta->findInt32(kKeyWMAAdvEncOpt2, &wmaEncodeOpt2)) {
+            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION2), wmaEncodeOpt2);
+        }
+    }
     ALOGV("sendMetaDataToHal: bitRate %d, sampleRate %d, chanMask %d,"
-          "delaySample %d, paddingSample %d", bitRate, sampleRate,
-          channelMask, delaySamples, paddingSamples);
+          "delaySample %d, paddingSample %d,wmaFormatTag %d,"
+          "wmaBlockAlign %d,wmaBitsPerSample %d ,wmaEncodeOpt %d,"
+          "wmaChannelMask %d, wmaEncodeOpt1 %d,wmaEncodeOpt2 %d",
+          sampleRate, bitRate, channelMask, delaySamples, paddingSamples,
+          wmaFormatTag, wmaBlockAlign,wmaBitsPerSample
+          wmaEncodeOpt,wmaChannelMask,wmaEncodeOpt1,wmaEncodeOpt2);
+#endif
 
     sink->setParameters(param.toString());
     return OK;
