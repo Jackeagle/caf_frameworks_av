@@ -156,7 +156,6 @@ enum {
     kKeyCryptoIV          = 'cryI',  // uint8_t[16]
     kKeyCryptoMode        = 'cryM',  // int32_t
     kKeyTunnelException   = 'Ntnl',
-    kKeyHPXProcessed      = 'hpxP'
 };
 
 enum {
