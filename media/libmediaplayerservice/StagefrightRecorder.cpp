@@ -23,6 +23,7 @@
 #include <media/AudioParameter.h>
 #include "StagefrightRecorder.h"
 
+#include <binder/AppOpsManager.h>
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
 
@@ -885,7 +886,15 @@ exit:
 
 sp<MediaSource> StagefrightRecorder::createAudioSource() {
     bool tunneledSource = false;
+    int32_t res;
     const char *tunnelMime;
+
+    //check permissions
+    res = mAppOpsManager.noteOp(AppOpsManager::OP_RECORD_AUDIO, mClientUid, mClientName);
+    if (res != AppOpsManager::MODE_ALLOWED) {
+        return NULL;
+    }
+
     {
         AudioParameter param;
         String8 key("tunneled-input-formats");
@@ -1642,6 +1651,7 @@ status_t StagefrightRecorder::setupVideoEncoder(
     if (mCaptureTimeLapse) {
         encoder_flags |= OMXCodec::kOnlySubmitOneInputBufferAtOneTime;
     }
+    encoder_flags |= QCUtils::getEncoderTypeFlags();
 
     sp<MediaSource> encoder = OMXCodec::Create(
             client.interface(), enc_meta,

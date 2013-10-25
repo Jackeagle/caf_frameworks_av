@@ -244,7 +244,10 @@ bool QCUtils::ShellProp::isSmoothStreamingEnabled() {
 }
 
 void QCUtils::setBFrames(
-        OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, bool &numBFrames) {
+        OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, bool &numBFrames, char* componentName) {
+    if (strncmp(componentName, "OMX.qcom.", 9) != 0) {
+        return;
+    }
     if (mpeg4type.eProfile > OMX_VIDEO_MPEG4ProfileSimple) {
         mpeg4type.nAllowedPictureTypes |= OMX_VIDEO_PictureTypeB;
         mpeg4type.nBFrames = 1;
@@ -256,7 +259,10 @@ void QCUtils::setBFrames(
 
 void QCUtils::setBFrames(
         OMX_VIDEO_PARAM_AVCTYPE &h264type, bool &numBFrames,
-        int32_t iFramesInterval, int32_t frameRate) {
+        int32_t iFramesInterval, int32_t frameRate, char* componentName) {
+    if (strncmp(componentName, "OMX.qcom.", 9) != 0) {
+        return;
+    }
     OMX_U32 val = 0;
     if (iFramesInterval < 0) {
         val =  0xFFFFFFFF;
@@ -569,6 +575,17 @@ int32_t QCUtils::checkIsInterlace(sp<MetaData> &meta) {
     return isInterlaceFormat;
 }
 
+int32_t QCUtils::getEncoderTypeFlags() {
+    int32_t flags = 0;
+
+    char mDeviceName[100];
+    property_get("ro.board.platform",mDeviceName,"0");
+    if (!strncmp(mDeviceName, "msm8610", 7)) {
+        flags |= OMXCodec::kHardwareCodecsOnly;
+    }
+    return flags;
+}
+
 }
 #else //ENABLE_QC_AV_ENHANCEMENTS
 
@@ -616,12 +633,12 @@ bool QCUtils::ShellProp::isSmoothStreamingEnabled() {
 }
 
 void QCUtils::setBFrames(
-        OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, bool &numBFrames) {
+        OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, bool &numBFrames, char* componentName) {
 }
 
 void QCUtils::setBFrames(
         OMX_VIDEO_PARAM_AVCTYPE &h264type, bool &numBFrames,
-        int32_t iFramesInterval, int32_t frameRate) {
+        int32_t iFramesInterval, int32_t frameRate, char* componentName) {
 }
 
 bool QCUtils::UseQCHWAACEncoder(audio_encoder Encoder,int32_t Channel,
@@ -669,6 +686,10 @@ void QCUtils::setArbitraryModeIfInterlaced(
 
 int32_t QCUtils::checkIsInterlace(sp<MetaData> &meta) {
     return false;
+}
+
+int32_t QCUtils::getEncoderTypeFlags() {
+    return 0;
 }
 
 }
