@@ -15,6 +15,25 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
+**
+** This file was modified by Dolby Laboratories, Inc. The portions of the
+** code that are surrounded by "DOLBY..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2012-2013 Dolby Laboratories, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
+**
 */
 
 
@@ -93,6 +112,10 @@ static const char kHardwareLockedString[] = "Hardware lock is taken\n";
 
 
 nsecs_t AudioFlinger::mStandbyTimeInNsecs = kDefaultStandbyTimeInNsecs;
+#ifdef DOLBY_DAP_QDSP
+bool AudioFlinger::gMixerTracksActive = false;
+bool AudioFlinger::gDirectOutputTrackActive = false;
+#endif //DOLBY_DAP_QDSP
 
 uint32_t AudioFlinger::mScreenState;
 
@@ -715,6 +738,13 @@ size_t AudioFlinger::frameCount(audio_io_handle_t output) const
 uint32_t AudioFlinger::latency(audio_io_handle_t output) const
 {
     Mutex::Autolock _l(mLock);
+    if (!mDirectAudioTracks.isEmpty()) {
+        AudioSessionDescriptor *desc = mDirectAudioTracks.valueFor(output);
+        if(desc != NULL) {
+            return desc->stream->get_latency(desc->stream);
+        }
+    }
+
     PlaybackThread *thread = checkPlaybackThread_l(output);
     if (thread == NULL) {
         ALOGW("latency(): no playback thread found for output handle %d", output);
@@ -915,6 +945,14 @@ status_t AudioFlinger::setStreamVolume(audio_stream_type_t stream, float value,
                 desc->stream->set_volume(desc->stream,
                                          desc->mVolumeLeft * mStreamTypes[stream].volume,
                                          desc->mVolumeRight* mStreamTypes[stream].volume);
+#ifdef DOLBY_DAP_QDSP
+               uint32_t volume[2];
+               volume[0] = (uint32_t)(desc->mVolumeLeft * desc->mVolumeScale * (1 << 24));
+               volume[1] = (uint32_t)(desc->mVolumeRight * desc->mVolumeScale * (1 << 24));
+               if (!gMixerTracksActive && !gDirectOutputTrackActive) {
+                   setPregain(volume);
+               }
+#endif // DOLBY_DAP_QDSP
                 return NO_ERROR;
             }
         }
@@ -1091,6 +1129,8 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
 #ifdef SRS_PROCESSING
                 ALOGV("setParameters:: routing change to device %d", device);
                 POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(desc->trackRefPtr, param, device);
+                if(desc->flag & AUDIO_OUTPUT_FLAG_TUNNEL)
+                    audioConfigChanged_l(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
 #endif
                 if(mLPAEffectChain != NULL){
                     mLPAEffectChain->setDevice_l(device);

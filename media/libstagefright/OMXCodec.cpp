@@ -1317,7 +1317,7 @@ status_t OMXCodec::setupMPEG4EncoderParameters(const sp<MetaData>& meta) {
     mpeg4type.eProfile = static_cast<OMX_VIDEO_MPEG4PROFILETYPE>(profileLevel.mProfile);
     mpeg4type.eLevel = static_cast<OMX_VIDEO_MPEG4LEVELTYPE>(profileLevel.mLevel);
 
-    QCUtils::setBFrames(mpeg4type, mNumBFrames);
+    QCUtils::setBFrames(mpeg4type, mNumBFrames, mComponentName);
     err = mOMX->setParameter(
             mNode, OMX_IndexParamVideoMpeg4, &mpeg4type, sizeof(mpeg4type));
     CHECK_EQ(err, (status_t)OK);
@@ -1386,7 +1386,7 @@ status_t OMXCodec::setupAVCEncoderParameters(const sp<MetaData>& meta) {
         h264type.nCabacInitIdc = 0;
     }
 
-    QCUtils::setBFrames(h264type, mNumBFrames, iFramesInterval, frameRate);
+    QCUtils::setBFrames(h264type, mNumBFrames, iFramesInterval, frameRate, mComponentName);
     if (h264type.nBFrames != 0) {
         h264type.nAllowedPictureTypes |= OMX_VIDEO_PictureTypeB;
     }
@@ -2905,6 +2905,7 @@ void OMXCodec::onCmdComplete(OMX_COMMANDTYPE cmd, OMX_U32 data) {
 
                 if (mPortStatus[kPortIndexInput] == ENABLED
                     && mPortStatus[kPortIndexOutput] == ENABLED) {
+                    setState(EXECUTING);
                     CODEC_LOGV("Finished flushing both ports, now continuing from"
                          " seek-time.");
 
@@ -3670,7 +3671,7 @@ status_t OMXCodec::waitForBufferFilled_l() {
         return mBufferFilled.wait(mLock);
     }
 
-    if ((mState == EXECUTING) && (mSignalledReadTryAgain == true)) {
+    if ((mState == EXECUTING || mState == FLUSHING) && (mSignalledReadTryAgain == true)) {
         return -EAGAIN;
     }
 
@@ -3682,7 +3683,7 @@ status_t OMXCodec::waitForBufferFilled_l() {
         err = OK;
     }
 
-    if ((err == OK) && (mSignalledReadTryAgain == true) && (mState == EXECUTING)) {
+    if ((err == OK) && (mSignalledReadTryAgain == true) && (mState == EXECUTING || mState == FLUSHING)) {
         return -EAGAIN;
     }
 
@@ -4270,14 +4271,12 @@ status_t OMXCodec::read(
     Mutex::Autolock autoLock(mLock);
 
     if (mState != EXECUTING && mState != RECONFIGURING) {
+        if(mState == FLUSHING) {
+            mReturnedRetry = true;
+            return -EAGAIN;
+        }
         mReturnedRetry = false;
         return UNKNOWN_ERROR;
-    }
-
-    //Flushing state
-    if (mState == EXECUTING && hasDisabledPorts()){
-        mReturnedRetry = true;
-        return -EAGAIN;
     }
 
     bool seeking = false;
@@ -4403,10 +4402,6 @@ status_t OMXCodec::read(
         return UNKNOWN_ERROR;
     }
 
-    if (seeking) {
-        CHECK_EQ((int)mState, (int)FLUSHING);
-        setState(EXECUTING);
-    }
 
     if (mFilledBuffers.empty()) {
         if (mOutputPortSettingsChangedPending) {

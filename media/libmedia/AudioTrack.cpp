@@ -31,6 +31,7 @@
 
 #include <private/media/AudioTrackShared.h>
 
+#include <media/AudioParameter.h>
 #include <media/AudioSystem.h>
 #include <media/AudioTrack.h>
 
@@ -292,8 +293,15 @@ status_t AudioTrack::set(
          && (channelCount == 1)
          && ((sampleRate == 8000 || sampleRate == 16000)))
     {
-        ALOGD("Turn on Direct Output for VOIP RX");
-        flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
+        String8 valueStr = AudioSystem::getParameters((audio_io_handle_t)0,String8("VOIP_STREAM"));
+        AudioParameter result(valueStr);
+        int value;
+        if (result.getInt(String8("VOIP_STREAM"),value) == NO_ERROR) {
+            if(!value) {
+                ALOGD("Turn on Direct Output for VOIP RX");
+                flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
+            }
+        }
     }
 
     if ((audio_stream_type_t)streamType == AUDIO_STREAM_VOICE_CALL) {
@@ -334,6 +342,8 @@ status_t AudioTrack::set(
     mAuxEffectId = 0;
     mFlags = flags;
     mCbf = cbf;
+    mOutput = output;
+    mSampleRate = sampleRate;
 
     if (flags & AUDIO_OUTPUT_FLAG_LPA || flags & AUDIO_OUTPUT_FLAG_TUNNEL) {
         ALOGV("Creating Direct Track");
@@ -409,6 +419,23 @@ status_t AudioTrack::set(
 }
 
 // -------------------------------------------------------------------------
+
+uint32_t AudioTrack::latency() const
+{
+    if(mAudioDirectOutput != -1) {
+        return mAudioFlinger->latency(mAudioDirectOutput);
+    } else if (mOutput != 0) {
+        uint32_t afLatency = 0;
+        uint32_t newLatency = 0;
+        AudioSystem::getLatency(mOutput, mStreamType, &afLatency);
+        if(0 != mSampleRate){
+            newLatency = afLatency + (1000*mCblk->frameCount_) / mSampleRate;
+        }
+        ALOGD("latency() mLatency = %d, newLatency = %d", mLatency, newLatency);
+        return newLatency;
+    }
+    return mLatency;
+}
 
 void AudioTrack::start()
 {
@@ -1605,7 +1632,9 @@ status_t AudioTrack::dump(int fd, const Vector<String16>& args) const
     result.append(buffer);
     snprintf(buffer, 255, "  sample rate(%u), status(%d)\n", mSampleRate, mStatus);
     result.append(buffer);
-    snprintf(buffer, 255, "  active(%d), latency (%d)\n", mActive, mLatency);
+    uint32_t afLatency = 0;
+    AudioSystem::getLatency(mOutput, mStreamType, &afLatency);
+    snprintf(buffer, 255, "  active(%d), latency (%d)\n", mActive, afLatency + (1000*mCblk->frameCount_) / mSampleRate);
     result.append(buffer);
     ::write(fd, result.string(), result.size());
     return NO_ERROR;
