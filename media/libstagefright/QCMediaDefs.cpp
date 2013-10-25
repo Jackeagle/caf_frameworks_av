@@ -45,7 +45,6 @@ const char *MEDIA_MIMETYPE_VIDEO_DIVX4 = "video/divx4";
 const char *MEDIA_MIMETYPE_CONTAINER_MPEG2 = "video/mp2";
 
 const char *MEDIA_MIMETYPE_CONTAINER_3G2 = "video/3g2";
-const char *MEDIA_MIMETYPE_AUDIO_DTS = "audio/dts";
 
 const char *MEDIA_MIMETYPE_AUDIO_DTS_LBR = "audio/dts-lbr";
 const char *MEDIA_MIMETYPE_AUDIO_EAC3 = "audio/eac3";

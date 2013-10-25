@@ -12,6 +12,24 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ **
+ ** This file was modified by DTS, Inc. The portions of the
+ ** code that are surrounded by "DTS..." are copyrighted and
+ ** licensed separately, as follows:
+ **
+ **  (C) 2013 DTS, Inc.
+ **
+ ** Licensed under the Apache License, Version 2.0 (the "License");
+ ** you may not use this file except in compliance with the License.
+ ** You may obtain a copy of the License at
+ **
+ **    http://www.apache.org/licenses/LICENSE-2.0
+ **
+ ** Unless required by applicable law or agreed to in writing, software
+ ** distributed under the License is distributed on an "AS IS" BASIS,
+ ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ ** See the License for the specific language governing permissions and
+ ** limitations under the License
  *
  * This file was modified by Dolby Laboratories, Inc. The portions of the
  * code that are surrounded by "DOLBY..." are copyrighted and
@@ -60,6 +78,9 @@
 #ifdef DOLBY_UDC
  #include <QCMediaDefs.h>
 #endif //DOLBY_UDC
+#ifdef DTS_M6
+#include "include/DTSUtils.h"
+#endif
 namespace android {
 
 static const bool isSmoothStreamingEnabled = true;
@@ -860,6 +881,10 @@ status_t ACodec::setComponentRole(
             "audio_decoder.raw", "audio_encoder.raw" },
         { MEDIA_MIMETYPE_AUDIO_FLAC,
             "audio_decoder.flac", "audio_encoder.flac" },
+#ifdef DTS_M6
+        { MEDIA_MIMETYPE_AUDIO_DTS,
+            "audio_decoder.dts", "audio_encoder.dts" }, // [DTS: TAPIOMXIL-4]
+#endif
     };
 
     static const size_t kNumMimeToRole =
@@ -905,7 +930,7 @@ status_t ACodec::setComponentRole(
 }
 
 status_t ACodec::configureCodec(
-        const char *mime, const sp<AMessage> &msg) {
+    const char *mime, const sp<AMessage> &msg) {
     int32_t encoder;
     if (!msg->findInt32("encoder", &encoder)) {
         encoder = false;
@@ -979,7 +1004,13 @@ status_t ACodec::configureCodec(
                 err = setupVideoDecoder(mime, width, height);
             }
         }
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
+    }
+#ifdef DTS_M6
+    else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)) {
+        err = DTSUtils::setupDecoder(mOMX, mNode);
+	}
+#endif
+    else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
         int32_t numChannels, sampleRate;
         if (!msg->findInt32("channel-count", &numChannels)
                 || !msg->findInt32("sample-rate", &sampleRate)) {
