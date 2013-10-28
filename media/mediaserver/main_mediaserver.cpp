@@ -37,6 +37,9 @@
 #ifdef QCOM_LISTEN_FEATURE_ENABLE
 #include "ListenService.h"
 #endif
+#ifdef RESOURCE_MANAGER
+#include "ResourceManagerService.h"
+#endif
 
 using namespace android;
 
@@ -135,6 +138,10 @@ int main(int argc, char** argv)
         ListenService::instantiate();
 #endif
         AudioPolicyService::instantiate();
+#ifdef RESOURCE_MANAGER
+        ALOGI(" ResourceManagerService instantiated");
+        ResourceManagerService::instantiate();
+#endif
         registerExtensions();
         ProcessState::self()->startThreadPool();
         IPCThreadState::self()->joinThreadPool();
