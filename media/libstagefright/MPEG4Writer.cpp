@@ -351,6 +351,7 @@ MPEG4Writer::MPEG4Writer(const char *filename)
       mLatitudex10000(0),
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
+      mDropAllChunks(0),
       mStartTimeOffsetMs(-1) {
 
     mFd = open(filename, O_CREAT | O_LARGEFILE | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR);
@@ -376,6 +377,7 @@ MPEG4Writer::MPEG4Writer(int fd)
       mLatitudex10000(0),
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
+      mDropAllChunks(0),
       mStartTimeOffsetMs(-1) {
 }
 
@@ -1547,6 +1549,12 @@ void MPEG4Writer::bufferChunk(const Chunk& chunk) {
 
         if (chunk.mTrack == it->mTrack) {  // Found owner
             it->mChunks.push_back(chunk);
+            //check if the list reaches abnormal length, if yes, notify App
+            ALOGV("this list length = %u", it->mChunks.size());
+            if(it->mChunks.size() > 10){
+                notify(MEDIA_RECORDER_EVENT_INFO, MEDIA_RECORDER_INFO_FILE_WRITER_SPEED_NOT_CATCHUP, 0);
+            }
+            //
             mChunkReadyCondition.signal();
             return;
         }
@@ -1563,13 +1571,15 @@ void MPEG4Writer::writeChunkToFile(Chunk* chunk) {
     while (!chunk->mSamples.empty()) {
         List<MediaBuffer *>::iterator it = chunk->mSamples.begin();
 
-        off64_t offset = chunk->mTrack->isAvc()
-                                ? addLengthPrefixedSample_l(*it)
-                                : addSample_l(*it);
+        if(!mDropAllChunks){
+            off64_t offset = chunk->mTrack->isAvc()
+                                    ? addLengthPrefixedSample_l(*it)
+                                    : addSample_l(*it);
 
-        if (isFirstSample) {
-            chunk->mTrack->addChunkOffset(offset);
-            isFirstSample = false;
+            if (isFirstSample) {
+                chunk->mTrack->addChunkOffset(offset);
+                isFirstSample = false;
+            }
         }
 
         (*it)->release();
@@ -1583,6 +1593,16 @@ void MPEG4Writer::writeAllChunks() {
     ALOGV("writeAllChunks");
     size_t outstandingChunks = 0;
     Chunk chunk;
+
+    for (List<ChunkInfo>::iterator it = mChunkInfos.begin();
+         it != mChunkInfos.end(); ++it) {
+        if (it->mChunks.size() > 5) {
+            mDropAllChunks = 1;
+            ALOGW("Warning: Drop rest chunks");
+            break;
+        }
+    }
+
     while (findChunkToWrite(&chunk)) {
         writeChunkToFile(&chunk);
         ++outstandingChunks;
