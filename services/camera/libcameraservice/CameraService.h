@@ -126,6 +126,8 @@ public:
         // CameraService's mClientLock should be acquired to access this.
         bool                            mDestructionStarted;
 
+        bool                            mLongshotEnabled;
+
         // these are initialized in the constructor.
         sp<CameraService>               mCameraService;  // immutable after constructor
         sp<ICameraClient>               mCameraClient;
