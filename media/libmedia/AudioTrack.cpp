@@ -293,13 +293,33 @@ status_t AudioTrack::set(
          && (channelCount == 1)
          && ((sampleRate == 8000 || sampleRate == 16000)))
     {
-        String8 valueStr = AudioSystem::getParameters((audio_io_handle_t)0,String8("VOIP_STREAM"));
-        AudioParameter result(valueStr);
-        int value;
-        if (result.getInt(String8("VOIP_STREAM"),value) == NO_ERROR) {
-            if(!value) {
-                ALOGD("Turn on Direct Output for VOIP RX");
-                flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
+        if (audio_is_linear_pcm(format)) {
+            String8 valueStr = AudioSystem::getParameters((audio_io_handle_t)0,
+                                                       String8("VOIP_STREAM"));
+            AudioParameter result(valueStr);
+            int value;
+            if (result.getInt(String8("VOIP_STREAM"),value) == NO_ERROR) {
+                if (!value) {
+                    ALOGD("Turn on Direct Output for VOIP RX for pcm format");
+
+                    flags = (audio_output_flags_t)(flags |
+                                                   AUDIO_OUTPUT_FLAG_VOIP_RX |
+                                                   AUDIO_OUTPUT_FLAG_DIRECT);
+                }
+            }
+        } else {
+            String8 valueStr = AudioSystem::getParameters((audio_io_handle_t)0,
+                                                      String8("VOIP2_STREAM"));
+            AudioParameter result(valueStr);
+            int value;
+            if (result.getInt(String8("VOIP2_STREAM"),value) == NO_ERROR) {
+                if (!value) {
+                    ALOGD("Turn on Direct Output for VOIP RX for non pcm format");
+
+                    flags = (audio_output_flags_t)(flags |
+                                                   AUDIO_OUTPUT_FLAG_VOIP_RX |
+                                                   AUDIO_OUTPUT_FLAG_DIRECT);
+                }
             }
         }
     }
