@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -169,10 +171,15 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer(ExtendedExtractor::Sniff);
 
     char value[PROPERTY_VALUE_MAX];
+// DRM Change -- START
+#if 0
     if (property_get("drm.service.enabled", value, NULL)
             && (!strcmp(value, "1") || !strcasecmp(value, "true"))) {
         RegisterSniffer(SniffDRM);
     }
+#endif
+    RegisterSniffer(SniffDRM);
+// DRM Change -- END
 }
 
 // static

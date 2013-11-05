@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,6 +64,12 @@ static const char mime_type_audio_wav[]   = "audio/wav";
 static const char mime_type_video_mpeg4[] = "video/mpeg4";
 static const char mime_type_video_3gpp[]  = "video/3gpp";
 
+/* Drm changes - start */
+static const char mime_type_image_png[]   = "image/png";
+static const char mime_type_image_jpeg[]  = "image/jpeg";
+static const char mime_type_image_gif[]   = "image/gif";
+/* Drm changes - end */
+
 // Known mimetype groups
 static const char mime_group_audio[]       = "audio/";
 static const char mime_group_application[] = "application/";
@@ -106,6 +115,17 @@ static struct MimeTypeList mimeTypeList[] = {
     // 3gpp video mime types
     {MIMETYPE_VIDEO, "3gp",          sizeof("3gp")-1,         mime_type_video_3gpp},
 
+/* Drm changes - start */
+    // png image mime type
+    {MIMETYPE_IMAGE, "png",          sizeof("png")-1,         mime_type_image_png},
+
+    // jpeg image mime type
+    {MIMETYPE_IMAGE, "jpeg",         sizeof("jpeg")-1,        mime_type_image_jpeg},
+
+    // jpeg image mime type
+    {MIMETYPE_IMAGE, "gif",          sizeof("gif")-1,         mime_type_image_gif},
+/* Drm changes - end */
+
     // Must be last entry
     {MIMETYPE_LAST,  NULL,           0,                       NULL}
 };
@@ -131,7 +151,11 @@ String8 MimeTypeUtil::convertMimeType(String8& mimeType) {
     pMimeType = mimeType.string();
     if (NULL != pMimeType) {
         if ((0 == strncmp(pMimeType, mime_group_audio, (sizeof mime_group_audio) - 1)) ||
-            (0 == strncmp(pMimeType, mime_group_video, (sizeof mime_group_video) - 1))) {
+            (0 == strncmp(pMimeType, mime_group_video, (sizeof mime_group_video) - 1)) ||
+/* DRM Change -- START */
+            (0 == strncmp(pMimeType, mime_group_image, (sizeof mime_group_image) - 1)) ||
+            (0 == strncmp(pMimeType, "application/ogg", 15))) {
+/* DRM Change -- END */
             /* Check which group the mimetype is */
             pGroup = mimeGroup;
             while (MIMETYPE_LAST != pGroup->type) {

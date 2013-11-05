@@ -1,5 +1,8 @@
 /*
 **
+** Copyright (c) 2013, The Linux Foundation. All rights reserved.
+** Not a Contribution.
+**
 ** Copyright 2008, The Android Open Source Project
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +23,7 @@
 
 #include <media/MediaPlayerInterface.h>
 #include <libsonivox/eas.h>
+#include <drm/DrmManagerClient.h> // Drm change
 
 namespace android {
 
@@ -83,7 +87,12 @@ private:
     bool                mPaused;
     volatile bool       mRender;
     pid_t               mTid;
-
+// DRM changes start --
+    bool                mConsumeRights;
+    DrmManagerClient*   mDrmManagerClient;
+    sp<DecryptHandle>   mDecryptHandle;
+    int mFd;
+// DRM change end --
     class MidiFileThread : public Thread {
     public:
         MidiFileThread(MidiFile *midiPlayer) : mMidiFile(midiPlayer) {

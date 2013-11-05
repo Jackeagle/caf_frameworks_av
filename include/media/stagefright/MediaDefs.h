@@ -28,6 +28,14 @@ extern const char *MEDIA_MIMETYPE_IMAGE_JPEG;
 extern const char *MEDIA_MIMETYPE_VIDEO_VPX;
 extern const char *MEDIA_MIMETYPE_VIDEO_AVC;
 extern const char *MEDIA_MIMETYPE_VIDEO_MPEG4;
+/* DRM Change START */
+extern const char *MEDIA_MIMETYPE_AUDIO_M4A;
+extern const char *MEDIA_MIMETYPE_CONTAINER_M4V;
+extern const char *MEDIA_MIMETYPE_CONTAINER_MP4;
+extern const char *MEDIA_MIMETYPE_CONTAINER_M4V;
+extern const char *MEDIA_MIMETYPE_CONTAINER_3G2;
+/* DRM Change END */
+
 extern const char *MEDIA_MIMETYPE_VIDEO_H263;
 extern const char *MEDIA_MIMETYPE_VIDEO_MPEG2;
 extern const char *MEDIA_MIMETYPE_VIDEO_RAW;

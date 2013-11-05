@@ -214,6 +214,9 @@ AwesomePlayer::AwesomePlayer()
       mTextDriver(NULL),
       mIsFirstFrameAfterResume(false),
       mBufferingDone(false),
+      // DRM Change -- START
+      mConsumeRights(true),
+      // DRM Change -- END
       mReadRetry(false) {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
@@ -441,6 +444,12 @@ void AwesomePlayer::checkDrmStatus(const sp<DataSource>& dataSource) {
         if (RightsStatus::RIGHTS_VALID != mDecryptHandle->status) {
             notifyListener_l(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, ERROR_DRM_NO_LICENSE);
         }
+        // DRM Change -- START
+        else {
+            ALOGV("awesome: calling consumeRights,fd");
+            mConsumeRights = true;
+        }
+        // DRM Change -- END
     }
 }
 
@@ -962,7 +971,7 @@ void AwesomePlayer::onStreamDone() {
     } else {
         ALOGV("MEDIA_PLAYBACK_COMPLETE");
         notifyListener_l(MEDIA_PLAYBACK_COMPLETE);
-
+        mConsumeRights = true;// DRM Change
         pause_l(true /* at eos */);
 
         modifyFlags(AT_EOS, SET);
@@ -973,6 +982,14 @@ status_t AwesomePlayer::play() {
     ATRACE_CALL();
 
     Mutex::Autolock autoLock(mLock);
+
+    // DRM Changes- Start
+    if (mDrmManagerClient && mDecryptHandle != NULL && mConsumeRights) {
+        ALOGV("awesome: calling consumeRights,ap=[%p]", this);
+        mDrmManagerClient->consumeRights(mDecryptHandle, Action::PLAY, true);
+        mConsumeRights = false;
+    }
+    // DRM Chnages End
 
     modifyFlags(CACHE_UNDERRUN, CLEAR);
 
@@ -1321,6 +1338,11 @@ status_t AwesomePlayer::pause() {
     Mutex::Autolock autoLock(mLock);
 
     modifyFlags(CACHE_UNDERRUN, CLEAR);
+    // DRM Changes - Start
+    if (mDecryptHandle != NULL) {
+        mConsumeRights = false;
+    }
+    // DRM Changes - End
 
     return pause_l();
 }
@@ -1544,6 +1566,11 @@ status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
     }
 
     if (!(mFlags & PLAYING)) {
+        // DRM Changes - Start
+        if (mDecryptHandle != NULL) {
+            mConsumeRights = false;
+        }
+        // DRM Changes - End
 
         if(!(mFlags & PAUSE)) {
             ALOGV("set pause in seek. Initial case when codec created and\

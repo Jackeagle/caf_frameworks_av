@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -168,7 +171,7 @@ const String8 FwdLockEngine::FileSuffixes[] = {
 // make sure that lower-case letters are used.
 const String8 FwdLockEngine::MimeTypes[] = {
     String8("application/x-android-drm-fl"),
-    String8("application/vnd.oma.drm.message"),
+    //String8("application/vnd.oma.drm.message"),// DRM change
 };
 
 const String8 FwdLockEngine::Description("OMA V1 Forward Lock");

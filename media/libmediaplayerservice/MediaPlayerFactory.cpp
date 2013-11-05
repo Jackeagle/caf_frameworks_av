@@ -1,4 +1,6 @@
 /*
+** Copyright (c) 2013, The Linux Foundation. All rights reserved.
+** Not a Contribution.
 **
 ** Copyright 2012, The Android Open Source Project
 **
@@ -31,6 +33,10 @@
 #include "StagefrightPlayer.h"
 #include "nuplayer/NuPlayerDriver.h"
 #include <dlfcn.h>
+
+/* DRM Change -- START */
+#include <drm/DrmManagerClient.h>
+/* DRM Change -- END */
 
 namespace android {
 
@@ -271,6 +277,28 @@ class SonivoxPlayerFactory : public MediaPlayerFactory::IFactory {
                 }
             }
         }
+    /* DRM Change -- START */
+    char* extn =  strrchr(url, '.');
+    if ((extn != NULL) && (!strcasecmp(extn, ".dcf"))) {
+        DrmManagerClient* drmManagerClient = new DrmManagerClient();
+        if (drmManagerClient) {
+            const String8 str(url);
+            const String8 mimeType(drmManagerClient->getOriginalMimeType(str, 0));
+            ALOGV("mimeType for %s is ####%s####", url, mimeType.string());
+            delete drmManagerClient;
+            drmManagerClient = NULL;
+
+            if (!strcasecmp(mimeType.string(), "audio/imelody")
+                    || !strcasecmp(mimeType.string(), "audio/imy")
+                    || !strcasecmp(mimeType.string(), "audio/midi")
+                    || !strcasecmp(mimeType.string(), "audio/mid")
+                    || !strcasecmp(mimeType.string(), "audio/xmf")) {
+                ALOGV("playertype is SONIVOX_PLAYER for .dcf");
+                return kOurScore;
+            }
+        }
+    }
+    /* DRM Change -- END */
 
         return 0.0;
     }

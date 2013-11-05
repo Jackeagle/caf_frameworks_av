@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +16,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0 // Drm changed
 #define LOG_TAG "MediaExtractor"
 #include <utils/Log.h>
 
@@ -39,6 +41,7 @@
 #include <media/stagefright/MediaExtractor.h>
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
+#include <QCMediaDefs.h> // DRM Change
 
 #include "include/QCUtils.h"
 
@@ -95,7 +98,17 @@ sp<MediaExtractor> MediaExtractor::Create(
 
     MediaExtractor *ret = NULL;
     if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
-            || !strcasecmp(mime, "audio/mp4")) {
+            || !strcasecmp(mime, "audio/mp4")
+// DRM Change -- START.
+            || !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MP4)
+            || !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_M4V) //DRM
+            || !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_H263)  //DRM
+            || !strcasecmp(mime, "video/3g2") //DRM
+            || !strcasecmp(mime, "video/3gp2") //DRM
+            || !strcasecmp(mime, "video/3gpp2") //DRM
+            || !strcasecmp(mime,"video/3gpp")) {
+        ALOGV("Create:MPEG4Extractor");
+// DRM Change -- END
         ret = new MPEG4Extractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
         ret = new MP3Extractor(source, meta);
@@ -115,12 +128,16 @@ sp<MediaExtractor> MediaExtractor::Create(
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_WVM)) {
         // Return now.  WVExtractor should not have the DrmFlag set in the block below.
         return new WVMExtractor(source);
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC_ADTS)) {
+    // DRM Change -- START
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC_ADTS)
+            || (isDrm && (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_AAC)
+                    || !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_M4A)))) {
         ret = new AACExtractor(source, meta);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2PS)) {
         ret = new MPEG2PSExtractor(source);
     }
 
+    /*
     if (ret != NULL) {
        if (isDrm) {
            ret->setDrmFlag(true);
@@ -128,8 +145,19 @@ sp<MediaExtractor> MediaExtractor::Create(
            ret->setDrmFlag(false);
        }
     }
+    */
 
-    return QCUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
+    sp<MediaExtractor> mediaExtactor = NULL;
+    mediaExtactor = QCUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
+    if (mediaExtactor != NULL) {
+        if (isDrm) {
+            mediaExtactor->setDrmFlag(true);
+        } else {
+            mediaExtactor->setDrmFlag(false);
+        }
+    }
+    return mediaExtactor;
+    // DRM Change -- END
 }
 
 }  // namespace android
