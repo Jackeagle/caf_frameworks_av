@@ -168,6 +168,7 @@ enum media_recorder_info_type {
 
     MEDIA_RECORDER_INFO_MAX_DURATION_REACHED      = 800,
     MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED      = 801,
+    MEDIA_RECORDER_INFO_FILE_WRITER_SPEED_NOT_CATCHUP     =802,
 
     // All track related informtional events start here
     MEDIA_RECORDER_TRACK_INFO_LIST_START           = 1000,
