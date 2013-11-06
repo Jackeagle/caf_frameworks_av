@@ -369,6 +369,7 @@ private:
     } mStats;
 
     bool mBufferingDone;
+    bool mConsumeRights; // DRM Change
 
     status_t setVideoScalingMode(int32_t mode);
     status_t setVideoScalingMode_l(int32_t mode);

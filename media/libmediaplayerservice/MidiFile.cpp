@@ -1,5 +1,8 @@
 /* MidiFile.cpp
 **
+** Copyright (c) 2013, The Linux Foundation. All rights reserved.
+** Not a Contribution.
+**
 ** Copyright 2007, The Android Open Source Project
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,7 +59,11 @@ MidiFile::MidiFile() :
     mEasData(NULL), mEasHandle(NULL), mAudioBuffer(NULL),
     mPlayTime(-1), mDuration(-1), mState(EAS_STATE_ERROR),
     mStreamType(AUDIO_STREAM_MUSIC), mLoop(false), mExit(false),
-    mPaused(false), mRender(false), mTid(-1)
+    mPaused(false), mRender(false), mTid(-1),
+// DRM change START --
+    mConsumeRights(true),
+    mDrmManagerClient(NULL), mDecryptHandle(NULL), mFd(-1)
+// DRM change END --
 {
     ALOGV("constructor");
 
@@ -139,6 +146,21 @@ status_t MidiFile::setDataSource(
         return ERROR_OPEN_FAILED;
     }
 
+// DRM Change START ----
+     if (mDrmManagerClient == NULL) {
+        mDrmManagerClient = new DrmManagerClient();
+    }
+
+    if (mDrmManagerClient != NULL && mDecryptHandle == NULL) {
+        mFd = open(path, O_RDONLY);
+        mDecryptHandle = mDrmManagerClient->openDecryptSession(mFd, 0, 1);
+        /*if(mDrmManagerClient != NULL) {
+            mDrmManagerClient->consumeRights(mDecryptHandle, Action::PLAY, true);
+            mConsumeRights = false;
+        }*/
+    }
+// DRM Change END ---
+
     mState = EAS_STATE_OPEN;
     mPlayTime = 0;
     return NO_ERROR;
@@ -166,6 +188,21 @@ status_t MidiFile::setDataSource(int fd, int64_t offset, int64_t length)
         mState = EAS_STATE_ERROR;
         return ERROR_OPEN_FAILED;
     }
+
+// DRM Change START ----
+    if (mDrmManagerClient == NULL) {
+        mDrmManagerClient = new DrmManagerClient();
+    }
+
+    if (mDrmManagerClient != NULL && mDecryptHandle == NULL) {
+        mFd = dup(fd);
+        mDecryptHandle = mDrmManagerClient->openDecryptSession(mFd, 0, 1);
+        /*if(mDrmManagerClient != NULL) {
+            mDrmManagerClient->consumeRights(mDecryptHandle, Action::PLAY, true);
+            mConsumeRights = false;
+        }*/
+    }
+// DRM Change END ----
 
     mState = EAS_STATE_OPEN;
     mPlayTime = 0;
@@ -209,6 +246,16 @@ status_t MidiFile::start()
     if (!mEasHandle) {
         return ERROR_NOT_OPEN;
     }
+
+// DRM Change -- START
+    if (mConsumeRights) {
+        ALOGV("consumeRights for midi file");
+        if (mDrmManagerClient != NULL) {
+            mDrmManagerClient->consumeRights(mDecryptHandle, Action::PLAY, true);
+            mConsumeRights = false;
+        }
+    }
+// DRM Change -- END
 
     // resuming after pause?
     if (mPaused) {
@@ -368,6 +415,24 @@ status_t MidiFile::release()
         EAS_Shutdown(mEasData);
         mEasData = NULL;
     }
+
+// DRM change -- START
+    if (mDecryptHandle != NULL && mDrmManagerClient != NULL) {
+        // To release mDecryptHandle
+        ALOGV("calling closeDecryptSession in MidiFile destructor");
+        mDrmManagerClient->closeDecryptSession(mDecryptHandle);
+        mDecryptHandle = NULL;
+    }
+    if (mDrmManagerClient != NULL) {
+        delete mDrmManagerClient;
+        mDrmManagerClient = NULL;
+    }
+     if (mFd >= 0) {
+        close(mFd);
+        mFd = -1;
+    }
+// DRM change -- END
+
     return NO_ERROR;
 }
 

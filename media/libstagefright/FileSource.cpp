@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +15,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+// Drm change start
+//#define LOG_NDEBUG 0
+#define LOG_TAG "FILESOURCE"
+#include <utils/Log.h>
+// Drm change end
 
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/FileSource.h>
@@ -122,7 +130,47 @@ status_t FileSource::getSize(off64_t *size) {
         return NO_INIT;
     }
 
-    *size = mLength;
+/* DRM Change -- START */
+    // In JB length calculation has been done in constructor.
+    // For DRM file (.dcf), encrypted file length will not be the same as of decrypted data
+    // At the same time, every time decrypting the DRM file for getting size will hamper performance
+    if (mDecryptHandle != NULL) {
+        int len = -1;
+        if (mFd >= 0) {
+            len = lseek64(mFd, 0, SEEK_END);
+        } else {
+            ALOGE("getSize: Failed to open file from FD %d",mFd);
+        }
+        if (len == mLength) mLength = -1;
+    }
+
+    if (mDecryptHandle != NULL && DecryptApiType::CONTAINER_BASED
+// DRM Change for webm -- Start
+            == mDecryptHandle->decryptApiType && mLength < 0) {
+// DRM Change for webm -- End
+        unsigned char *data = new unsigned char[1024];
+        int totalSize = 0;
+        int bytes = 0;
+        int offset = 0;
+        do {
+            bytes = mDrmManagerClient->pread(mDecryptHandle, data, 1024, offset);
+            totalSize +=bytes;
+            offset += bytes;
+        } while (bytes > 0);
+        ALOGE("drm file size = %d", totalSize);
+        *size =  totalSize;
+        mLength = totalSize; //DRM change for webm
+        if (data != NULL) {
+            delete[] data;
+            data = NULL;
+        }
+        return OK;
+    }
+    if (mLength >= 0)
+        *size = mLength;
+
+    //*size = mLength;
+/* Drm Chg -- END*/
 
     return OK;
 }

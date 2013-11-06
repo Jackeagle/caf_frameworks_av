@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +44,13 @@ const char *MEDIA_MIMETYPE_AUDIO_FLAC = "audio/flac";
 const char *MEDIA_MIMETYPE_AUDIO_AAC_ADTS = "audio/aac-adts";
 const char *MEDIA_MIMETYPE_AUDIO_MSGSM = "audio/gsm";
 
-const char *MEDIA_MIMETYPE_CONTAINER_MPEG4 = "video/mp4";
+// DRM Canges -START
+const char *MEDIA_MIMETYPE_CONTAINER_MPEG4 = "video/mpeg4";
+const char *MEDIA_MIMETYPE_CONTAINER_MP4 = "video/mp4";
+const char *MEDIA_MIMETYPE_CONTAINER_M4V = "video/m4v";
+const char *MEDIA_MIMETYPE_AUDIO_M4A = "audio/m4a";
+//const char *MEDIA_MIMETYPE_CONTAINER_3G2 = "video/3g2";
+// DRM Canges - END
 const char *MEDIA_MIMETYPE_CONTAINER_WAV = "audio/x-wav";
 const char *MEDIA_MIMETYPE_CONTAINER_OGG = "application/ogg";
 const char *MEDIA_MIMETYPE_CONTAINER_MATROSKA = "video/x-matroska";

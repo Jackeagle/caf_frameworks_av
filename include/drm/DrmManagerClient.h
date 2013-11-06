@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,6 +74,8 @@ public:
      *     Handle for the decryption session
      */
     sp<DecryptHandle> openDecryptSession(int fd, off64_t offset, off64_t length, const char* mime);
+    // DRM Change -- backward compatibility
+    sp<DecryptHandle> openDecryptSession(int fd, off64_t offset, off64_t length);
 
     /**
      * Open the decrypt session to decrypt the given protected content
@@ -81,7 +86,8 @@ public:
      *     Handle for the decryption session
      */
     sp<DecryptHandle> openDecryptSession(const char* uri, const char* mime);
-
+    // DRM Change -- backward compatibility
+    sp<DecryptHandle> openDecryptSession(const char* uri);
     /**
      * Open the decrypt session to decrypt the given protected content
      *

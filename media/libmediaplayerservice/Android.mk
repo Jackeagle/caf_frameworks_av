@@ -44,6 +44,7 @@ LOCAL_SHARED_LIBRARIES :=       \
     libstagefright_wfd          \
     libutils                    \
     libvorbisidec               \
+    libdrmframework             \
 
 LOCAL_STATIC_LIBRARIES :=       \
     libstagefright_nuplayer     \

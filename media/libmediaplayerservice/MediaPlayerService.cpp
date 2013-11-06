@@ -1,4 +1,6 @@
 /*
+** Copyright (c) 2013, The Linux Foundation. All rights reserved.
+** Not a Contribution.
 **
 ** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
 ** Not a Contribution.
@@ -75,6 +77,10 @@
 #include <OMX.h>
 
 #include "Crypto.h"
+
+/* DRM Change -- START */
+#include <drm/DrmManagerClient.h>
+/* DRM Change -- END */
 #include "Drm.h"
 #include "HDCP.h"
 #include "HTTPBase.h"
@@ -418,6 +424,7 @@ status_t MediaPlayerService::dump(int fd, const Vector<String16>& args)
             while (!feof(f)) {
                 fgets(buffer, SIZE, f);
                 if (strstr(buffer, " /storage/") ||
+                    strstr(buffer, " /mnt/sdcard/") || // DRM Change
                     strstr(buffer, " /system/sounds/") ||
                     strstr(buffer, " /data/") ||
                     strstr(buffer, " /system/media/")) {
@@ -454,6 +461,7 @@ status_t MediaPlayerService::dump(int fd, const Vector<String16>& args)
                                     linkto[len] = 0;
                                 }
                                 if (strstr(linkto, "/storage/") == linkto ||
+                                    strstr(linkto, "/mnt/sdcard/") == linkto || // DRM Change
                                     strstr(linkto, "/system/sounds/") == linkto ||
                                     strstr(linkto, "/data/") == linkto ||
                                     strstr(linkto, "/system/media/") == linkto) {

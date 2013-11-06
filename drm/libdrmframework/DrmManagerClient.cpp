@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -115,6 +118,16 @@ DrmConvertedStatus* DrmManagerClient::closeConvertSession(int convertId) {
 status_t DrmManagerClient::getAllSupportInfo(int* length, DrmSupportInfo** drmSupportInfoArray) {
     return mDrmManagerClientImpl->getAllSupportInfo(mUniqueId, length, drmSupportInfoArray);
 }
+
+// DRM change -- Start
+sp<DecryptHandle> DrmManagerClient::openDecryptSession(int fd, off64_t offset, off64_t length) {
+    return mDrmManagerClientImpl->openDecryptSession(mUniqueId, fd, offset, length, NULL);
+}
+
+sp<DecryptHandle> DrmManagerClient::openDecryptSession(const char* uri) {
+    return mDrmManagerClientImpl->openDecryptSession(mUniqueId, uri, NULL);
+}
+// DRM change -- End
 
 sp<DecryptHandle> DrmManagerClient::openDecryptSession(
         int fd, off64_t offset, off64_t length, const char* mime) {
