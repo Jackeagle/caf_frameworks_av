@@ -225,7 +225,7 @@ MediaScanResult MediaScanner::doProcessDirectoryEntry(
         if (result == MEDIA_SCAN_RESULT_ERROR) {
             return MEDIA_SCAN_RESULT_ERROR;
         }
-    } else if (type == DT_REG) {
+    } else if (type == DT_REG || type == DT_LNK) {
         stat(path, &statbuf);
         status_t status = client.scanFile(path, statbuf.st_mtime, statbuf.st_size,
                 false /*isDirectory*/, noMedia);
