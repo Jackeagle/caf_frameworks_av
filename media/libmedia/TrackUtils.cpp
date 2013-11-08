@@ -185,18 +185,28 @@ status_t TrackUtils::setParameterForConcurrency(String8 useCase, bool value)
     } else {
        param.add(useCase, String8("false"));
     }
-    int64_t token = IPCThreadState::self()->clearCallingIdentity();
-    err = AudioSystem::setParameters(0, param.toString());
-    IPCThreadState::self()->restoreCallingIdentity(token);
+
+    const sp<IResourceManagerService>& service(getResourceManagerService());
+    if (service == 0) {
+        ALOGE("%s :: ERROR Could not get ResourceManagerService", __FUNCTION__);
+        return err;
+    }
+    err = service->setParam(param.toString());
+
     if(!err) {
        ALOGD("setParameter success for usecase = %s",useCase.string());
     } else if(err == INVALID_OPERATION) {
-        ALOGE("setParameter failed usecase = %s err = %d", useCase.string(),err );
-        ALOGE("Use case cannot be supported because of DSP limitation");
+       ALOGE("setParameter failed usecase = %s err = %d", useCase.string(),err );
+       ALOGE("Use case cannot be supported because of DSP limitation");
     } else {
-        ALOGE("setParameter failed with usecase = %s err = %d",  useCase.string(), err);
+       ALOGE("setParameter failed with usecase = %s err = %d",  useCase.string(), err);
     }
     return err;
+}
+
+void TrackUtils::died()
+{
+    //TODO:: Handle death notifier from service
 }
 
 #else
@@ -222,5 +232,9 @@ status_t TrackUtils::setParameterForConcurrency(String8 useCase, bool value)
     return OK;
 }
 
+void TrackUtils::died()
+{
+    //Do nothing
+}
 #endif
 }
