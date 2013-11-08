@@ -267,9 +267,6 @@ status_t AudioTrack::set(
         return BAD_VALUE;
     }
 
-    //Force fast flag for ringtone/enforce audible/alarm/notification/system sound
-    TrackUtils::setFastFlag(streamType, flags);
-
     // force direct flag if format is not linear PCM
     if (!audio_is_linear_pcm(format)) {
         flags = (audio_output_flags_t)
@@ -322,10 +319,14 @@ status_t AudioTrack::set(
         }
     }
 
+    //Check whether to force fast flag
+    audio_output_flags_t output_flags = flags;
+    TrackUtils::setFastFlag(streamType, output_flags);
+
     audio_io_handle_t output = AudioSystem::getOutput(
                                     streamType,
                                     sampleRate, format, channelMask,
-                                    flags);
+                                    output_flags);
 
     if (output == 0) {
         ALOGE("Could not get audio output for stream type %d", streamType);
@@ -428,8 +429,10 @@ uint32_t AudioTrack::latency() const
         uint32_t afLatency = 0;
         uint32_t newLatency = 0;
         AudioSystem::getLatency(mOutput, mStreamType, &afLatency);
-        if(0 != mSampleRate){
-            newLatency = afLatency + (1000*mCblk->frameCount_) / mSampleRate;
+        if(0 != mSampleRate) {
+            newLatency = (mCblk == NULL) ? afLatency : (afLatency + (1000*mCblk->frameCount_) / mSampleRate);
+        } else {
+            newLatency = afLatency;
         }
         ALOGD("latency() mLatency = %d, newLatency = %d", mLatency, newLatency);
         return newLatency;
@@ -1634,7 +1637,12 @@ status_t AudioTrack::dump(int fd, const Vector<String16>& args) const
     result.append(buffer);
     uint32_t afLatency = 0;
     AudioSystem::getLatency(mOutput, mStreamType, &afLatency);
-    snprintf(buffer, 255, "  active(%d), latency (%d)\n", mActive, afLatency + (1000*mCblk->frameCount_) / mSampleRate);
+    if(0 != mSampleRate) {
+        snprintf(buffer, 255, "  active(%d), latency (%d)\n", mActive,
+                (mCblk == NULL) ? afLatency : (afLatency + (1000*mCblk->frameCount_) / mSampleRate));
+    } else {
+        snprintf(buffer, 255, "  active(%d), latency (%d)\n", mActive, afLatency);
+    }
     result.append(buffer);
     ::write(fd, result.string(), result.size());
     return NO_ERROR;
