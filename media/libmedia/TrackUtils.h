@@ -34,9 +34,20 @@
 #include <utils/Errors.h>
 #include <sys/resource.h>
 
+#ifdef RESOURCE_MANAGER
+#include <IResourceManagerService.h>
+#include <IResourceManagerDeathNotifier.h>
+#endif
+
 namespace android {
 
-struct TrackUtils {
+#ifdef RESOURCE_MANAGER
+class TrackUtils : public BnResourceManagerService,
+                            public virtual IResourceManagerDeathNotifier {
+#else
+class TrackUtils {
+#endif
+public:
 
     static void setFastFlag(audio_stream_type_t &streamType,
             audio_output_flags_t &flags);
@@ -53,6 +64,10 @@ struct TrackUtils {
     static status_t setParameterForConcurrency(String8 useCase,
         bool value);
 
+    //IResourceManagerDeathNotifier
+    void   died();
+
+private:
     static Mutex mLock;
 
 };
