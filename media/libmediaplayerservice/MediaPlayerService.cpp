@@ -29,7 +29,7 @@
 #include <sys/time.h>
 #include <dirent.h>
 #include <unistd.h>
-
+#include <dlfcn.h>
 #include <string.h>
 
 #include <cutils/atomic.h>
@@ -223,11 +223,14 @@ MediaPlayerService::MediaPlayerService()
     mBatteryAudio.deviceOn[SPEAKER] = 1;
 
     MediaPlayerFactory::registerBuiltinFactories();
+    mHandle = NULL;
 }
 
 MediaPlayerService::~MediaPlayerService()
 {
     ALOGV("MediaPlayerService destroyed");
+    if(mHandle)
+     dlclose(mHandle);
 }
 
 sp<IMediaRecorder> MediaPlayerService::createMediaRecorder()
