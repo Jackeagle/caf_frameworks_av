@@ -514,6 +514,7 @@ void MPQAudioPlayer::reset() {
 
     if (mAudioSink.get()) {
         mAudioSink->pause();
+        mAudioSink->flush();
         ALOGV("Close the PCM Stream");
         mAudioSink->stop();
     }
