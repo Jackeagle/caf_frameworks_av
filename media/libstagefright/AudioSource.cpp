@@ -28,11 +28,16 @@
 #include <media/stagefright/foundation/ALooper.h>
 #include <cutils/properties.h>
 #include <stdlib.h>
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
+#endif
 #include <system/audio.h>
 #define DEFAULT_TUNNEL_BUFFER_COUNT 4
-namespace android {
 
+namespace android {
+// Treat time out as an error if we have not received any output
+// buffers after 1 seconds
+const static int64_t WaitLockEventTimeOutNs = 1000000000LL;
 static void AudioRecordCallbackFunction(int event, void *user, void *info) {
     AudioSource *source = (AudioSource *) user;
     switch (event) {
@@ -64,7 +69,7 @@ AudioSource::AudioSource(
     ALOGV("sampleRate: %d, channelCount: %d", sampleRate, channelCount);
     CHECK(channelCount == 1 || channelCount == 2 || channelCount == 6);
 
-    int minFrameCount;
+    size_t minFrameCount;
     status_t status = AudioRecord::getMinFrameCount(&minFrameCount,
                                            sampleRate,
                                            AUDIO_FORMAT_PCM_16_BIT,
@@ -134,6 +139,7 @@ AudioSource::AudioSource( audio_source_t inputSource, const sp<MetaData>& meta )
         frameSize = AMR_FRAMESIZE;
         mMaxBufferSize = AMR_FRAMESIZE*10;
     }
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
     else if ( !strcasecmp( mime, MEDIA_MIMETYPE_AUDIO_QCELP ) ) {
         mFormat = AUDIO_FORMAT_QCELP;
         frameSize = QCELP_FRAMESIZE;
@@ -144,6 +150,7 @@ AudioSource::AudioSource( audio_source_t inputSource, const sp<MetaData>& meta )
         frameSize = EVRC_FRAMESIZE;
         mMaxBufferSize = EVRC_FRAMESIZE*10;
     }
+#endif
     else if ( !strcasecmp( mime, MEDIA_MIMETYPE_AUDIO_AMR_WB ) ) {
         mFormat = AUDIO_FORMAT_AMR_WB;
         frameSize = AMR_WB_FRAMESIZE;
@@ -300,7 +307,9 @@ status_t AudioSource::read(
     }
 
     while (mStarted && mBuffersReceived.empty()) {
-        mFrameAvailableCondition.wait(mLock);
+       status_t err = mFrameAvailableCondition.waitRelative(mLock,WaitLockEventTimeOutNs);
+       if(err == -ETIMEDOUT)
+           return (status_t)err;
     }
     if (!mStarted) {
         return OK;

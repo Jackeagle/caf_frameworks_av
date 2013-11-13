@@ -1,4 +1,4 @@
-/*Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -34,24 +34,15 @@
 namespace android {
 
 class MediaExtractor;
-
-typedef MediaExtractor* (*MediaExtractorFactory)(const sp<DataSource> &source, const char* mime);
-
-static const char* MEDIA_CREATE_EXTRACTOR = "CreateExtractor";
-
-typedef bool (*ExtendedExtractorSniffers)(const sp<DataSource> &source, String8 *mimeType,
-                                          float *confidence,sp<AMessage> *meta);
-
-static const char* EXTENDED_EXTRACTOR_SNIFFERS = "SniffExtendedExtractor";
-
 class ExtendedExtractor
 {
 public:
-    static MediaExtractor* CreateExtractor(const sp<DataSource> &source, const char *mime);
+    static MediaExtractor* Create (
+            const sp<DataSource> &source, const char *mime);
+    static bool Sniff (
+            const sp<DataSource> &source, String8 *mimeType,
+            float *confidence,sp<AMessage> *meta);
 };
-
-bool SniffExtendedExtractor(const sp<DataSource> &source, String8 *mimeType,
-                               float *confidence,sp<AMessage> *meta);
 
 }  // namespace android
 

@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +17,10 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "MediaExtractor"
 #include <utils/Log.h>
-#include <cutils/properties.h>
 
 #include "include/AMRExtractor.h"
 #include "include/MP3Extractor.h"
 #include "include/MPEG4Extractor.h"
-#include "include/FragmentedMP4Extractor.h"
 #include "include/WAVExtractor.h"
 #include "include/OggExtractor.h"
 #include "include/MPEG2PSExtractor.h"
@@ -33,7 +30,7 @@
 #include "include/FLACExtractor.h"
 #include "include/AACExtractor.h"
 #include "include/ExtendedExtractor.h"
-#include "include/QCUtilityClass.h"
+
 #include "matroska/MatroskaExtractor.h"
 
 #include <media/stagefright/foundation/AMessage.h>
@@ -42,6 +39,8 @@
 #include <media/stagefright/MediaExtractor.h>
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
+
+#include "include/QCUtils.h"
 
 namespace android {
 
@@ -97,12 +96,7 @@ sp<MediaExtractor> MediaExtractor::Create(
     MediaExtractor *ret = NULL;
     if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
             || !strcasecmp(mime, "audio/mp4")) {
-        int fragmented = 0;
-        if (meta != NULL && meta->findInt32("fragmented", &fragmented) && fragmented) {
-            ret = new FragmentedMP4Extractor(source);
-        } else {
-            ret = new MPEG4Extractor(source);
-        }
+        ret = new MPEG4Extractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
         ret = new MP3Extractor(source, meta);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AMR_NB)
@@ -135,10 +129,7 @@ sp<MediaExtractor> MediaExtractor::Create(
        }
     }
 
-    //ret will get deleted within if replaced
-    return QCUtilityClass::helper_MediaExtractor_CreateIfNeeded(ret,
-                                                                 source,
-                                                                   mime);
+    return QCUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
 }
 
 }  // namespace android

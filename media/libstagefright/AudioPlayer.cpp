@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
  *
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -89,9 +92,11 @@ AudioPlayer::AudioPlayer(
       mPositionTimeMediaUs(-1),
       mPositionTimeRealUs(-1),
       mSeeking(false),
+      mSeekTimeUs(0),
       mReachedEOS(false),
       mFinalStatus(OK),
       mStarted(false),
+      mSourcePaused(false),
       mIsFirstBuffer(false),
       mFirstBufferResult(OK),
       mFirstBuffer(NULL),
@@ -128,6 +133,7 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
 
     status_t err;
     if (!sourceAlreadyStarted) {
+        mSourcePaused = false;
         err = mSource->start();
 
         if (err != OK) {
@@ -273,10 +279,19 @@ void AudioPlayer::pause(bool playPendingSamples) {
 
         mPinnedTimeUs = ALooper::GetNowUs();
     }
+    CHECK(mSource != NULL);
+    if (mSource->pause() == OK) {
+        mSourcePaused = true;
+    }
 }
 
 void AudioPlayer::resume() {
     CHECK(mStarted);
+    CHECK(mSource != NULL);
+    if (mSourcePaused == true) {
+        mSourcePaused = false;
+        mSource->start();
+    }
 
     if (mAudioSink.get() != NULL) {
         mAudioSink->start();
@@ -313,6 +328,7 @@ void AudioPlayer::reset() {
         mInputBuffer = NULL;
     }
 
+    mSourcePaused = false;
     mSource->stop();
 
     // The following hack is necessary to ensure that the OMX
@@ -393,8 +409,8 @@ void AudioPlayer::onPortSettingsChangedEvent() {
     ALOGV("Port Settings Changed!");
 
     status_t err = OK;
-	bool success;
-	sp<MetaData> format;
+    bool success;
+    sp<MetaData> format;
     Mutex::Autolock autoLock(mLock);
 
     if (!mPortSettingsChangedEventPending) {
@@ -599,6 +615,10 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                 mIsFirstBuffer = false;
             } else {
                 err = mSource->read(&mInputBuffer, &options);
+                if (err == OK && mInputBuffer == NULL && mSourcePaused) {
+                    ALOGV("mSourcePaused, return 0 from fillBuffer");
+                    return 0;
+                }
             }
 #ifdef DOLBY_UDC_MULTICHANNEL
             if (err == INFO_FORMAT_CHANGED) {
@@ -769,11 +789,7 @@ int64_t AudioPlayer::getMediaTimeUs() {
     Mutex::Autolock autoLock(mLock);
 
     if (mPositionTimeMediaUs < 0 || mPositionTimeRealUs < 0) {
-        if (mSeeking) {
-            return mSeekTimeUs;
-        }
-
-        return 0;
+        return mSeekTimeUs;
     }
 
     int64_t realTimeOffset = getRealTimeUsLocked() - mPositionTimeRealUs;

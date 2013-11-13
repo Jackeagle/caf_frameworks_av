@@ -30,7 +30,6 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MediaSource.h>
-#include "include/QCUtilityClass.h"
 #include <media/stagefright/Utils.h>
 #include <media/mediarecorder.h>
 #include <cutils/properties.h>
@@ -40,6 +39,8 @@
 #include <unistd.h>
 
 #include "include/ESDS.h"
+
+#include "include/QCUtils.h"
 
 namespace android {
 
@@ -214,7 +215,6 @@ private:
     int64_t mTrackDurationUs;
     int64_t mMaxChunkDurationUs;
 
-    bool mIsRealTimeRecording;
     int64_t mEstimatedTrackSizeBytes;
     int64_t mMdatSizeBytes;
     int32_t mTimeScale;
@@ -337,6 +337,7 @@ private:
 MPEG4Writer::MPEG4Writer(const char *filename)
     : mFd(-1),
       mInitCheck(NO_INIT),
+      mIsRealTimeRecording(true),
       mUse4ByteNalLength(true),
       mUse32BitOffset(true),
       mIsFileSizeLimitExplicitlyRequested(false),
@@ -346,7 +347,7 @@ MPEG4Writer::MPEG4Writer(const char *filename)
       mOffset(0),
       mMdatOffset(0),
       mEstimatedMoovBoxSize(0),
-      mInterleaveDurationUs(100000),
+      mInterleaveDurationUs(1000000),
       mLatitudex10000(0),
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
@@ -356,17 +357,12 @@ MPEG4Writer::MPEG4Writer(const char *filename)
     if (mFd >= 0) {
         mInitCheck = OK;
     }
-
-    char value[PROPERTY_VALUE_MAX];
-    if (property_get("persist.interleave.dur", value, NULL) &&
-        atoi(value) > 0) {
-        mInterleaveDurationUs = atoi(value);
-    }
 }
 
 MPEG4Writer::MPEG4Writer(int fd)
     : mFd(dup(fd)),
       mInitCheck(mFd < 0? NO_INIT: OK),
+      mIsRealTimeRecording(true),
       mUse4ByteNalLength(true),
       mUse32BitOffset(true),
       mIsFileSizeLimitExplicitlyRequested(false),
@@ -376,16 +372,11 @@ MPEG4Writer::MPEG4Writer(int fd)
       mOffset(0),
       mMdatOffset(0),
       mEstimatedMoovBoxSize(0),
-      mInterleaveDurationUs(100000),
+      mInterleaveDurationUs(1000000),
       mLatitudex10000(0),
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
       mStartTimeOffsetMs(-1) {
-    char value[PROPERTY_VALUE_MAX];
-    if (property_get("persist.interleave.dur", value, NULL) &&
-        atoi(value) > 0) {
-        mInterleaveDurationUs = atoi(value);
-    }
 }
 
 MPEG4Writer::~MPEG4Writer() {
@@ -441,6 +432,43 @@ status_t MPEG4Writer::addSource(const sp<MediaSource> &source) {
         ALOGE("Attempt to add source AFTER recording is started");
         return UNKNOWN_ERROR;
     }
+
+    // At most 2 tracks can be supported.
+    if (mTracks.size() >= 2) {
+        ALOGE("Too many tracks (%d) to add", mTracks.size());
+        return ERROR_UNSUPPORTED;
+    }
+
+    CHECK(source.get() != NULL);
+
+    // A track of type other than video or audio is not supported.
+    const char *mime;
+    sp<MetaData> meta = source->getFormat();
+    CHECK(meta->findCString(kKeyMIMEType, &mime));
+    bool isAudio = !strncasecmp(mime, "audio/", 6);
+    bool isVideo = !strncasecmp(mime, "video/", 6);
+    if (!isAudio && !isVideo) {
+        ALOGE("Track (%s) other than video or audio is not supported",
+            mime);
+        return ERROR_UNSUPPORTED;
+    }
+
+    // At this point, we know the track to be added is either
+    // video or audio. Thus, we only need to check whether it
+    // is an audio track or not (if it is not, then it must be
+    // a video track).
+
+    // No more than one video or one audio track is supported.
+    for (List<Track*>::iterator it = mTracks.begin();
+         it != mTracks.end(); ++it) {
+        if ((*it)->isAudio() == isAudio) {
+            ALOGE("%s track already exists", isAudio? "Audio": "Video");
+            return ERROR_UNSUPPORTED;
+        }
+    }
+
+    // This is the first track of either audio or video.
+    // Go ahead to add the track.
     Track *track = new Track(this, source, 1 + mTracks.size());
     mTracks.push_back(track);
 
@@ -448,6 +476,11 @@ status_t MPEG4Writer::addSource(const sp<MediaSource> &source) {
 }
 
 status_t MPEG4Writer::startTracks(MetaData *params) {
+    if (mTracks.empty()) {
+        ALOGE("No source added");
+        return INVALID_OPERATION;
+    }
+
     for (List<Track *>::iterator it = mTracks.begin();
          it != mTracks.end(); ++it) {
         status_t err = (*it)->start(params);
@@ -479,10 +512,10 @@ int64_t MPEG4Writer::estimateMoovBoxSize(int32_t bitRate) {
 
     // If the estimation is wrong, we will pay the price of wasting
     // some reserved space. This should not happen so often statistically.
-    static const int32_t factor = mUse32BitOffset? 1: 2;
     static const int64_t MIN_MOOV_BOX_SIZE = 3 * 1024;  // 3 KB
     static const int64_t MAX_MOOV_BOX_SIZE = (180 * 3000000 * 6LL / 8000);
     int64_t size = MIN_MOOV_BOX_SIZE;
+    int32_t factor = mUse32BitOffset? 1: 2;
 
     // Max file size limit is set
     if (mMaxFileSizeLimitBytes != 0 && mIsFileSizeLimitExplicitlyRequested) {
@@ -571,6 +604,11 @@ status_t MPEG4Writer::start(MetaData *param) {
         mUse4ByteNalLength = false;
     }
 
+    int32_t isRealTimeRecording;
+    if (param && param->findInt32(kKeyRealTimeRecording, &isRealTimeRecording)) {
+        mIsRealTimeRecording = isRealTimeRecording;
+    }
+
     mStartTimestampUs = -1;
 
     if (mStarted) {
@@ -591,13 +629,50 @@ status_t MPEG4Writer::start(MetaData *param) {
     /*
      * When the requested file size limit is small, the priority
      * is to meet the file size limit requirement, rather than
-     * to make the file streamable.
+     * to make the file streamable. mStreamableFile does not tell
+     * whether the actual recorded file is streamable or not.
      */
     mStreamableFile =
         (mMaxFileSizeLimitBytes != 0 &&
          mMaxFileSizeLimitBytes >= kMinStreamableFileSizeInBytes);
 
-    mWriteMoovBoxToMemory = mStreamableFile;
+    /*
+     * mWriteMoovBoxToMemory is true if the amount of data in moov box is
+     * smaller than the reserved free space at the beginning of a file, AND
+     * when the content of moov box is constructed. Note that video/audio
+     * frame data is always written to the file but not in the memory.
+     *
+     * Before stop()/reset() is called, mWriteMoovBoxToMemory is always
+     * false. When reset() is called at the end of a recording session,
+     * Moov box needs to be constructed.
+     *
+     * 1) Right before a moov box is constructed, mWriteMoovBoxToMemory
+     * to set to mStreamableFile so that if
+     * the file is intended to be streamable, it is set to true;
+     * otherwise, it is set to false. When the value is set to false,
+     * all the content of the moov box is written immediately to
+     * the end of the file. When the value is set to true, all the
+     * content of the moov box is written to an in-memory cache,
+     * mMoovBoxBuffer, util the following condition happens. Note
+     * that the size of the in-memory cache is the same as the
+     * reserved free space at the beginning of the file.
+     *
+     * 2) While the data of the moov box is written to an in-memory
+     * cache, the data size is checked against the reserved space.
+     * If the data size surpasses the reserved space, subsequent moov
+     * data could no longer be hold in the in-memory cache. This also
+     * indicates that the reserved space was too small. At this point,
+     * _all_ moov data must be written to the end of the file.
+     * mWriteMoovBoxToMemory must be set to false to direct the write
+     * to the file.
+     *
+     * 3) If the data size in moov box is smaller than the reserved
+     * space after moov box is completely constructed, the in-memory
+     * cache copy of the moov box is written to the reserved free
+     * space. Thus, immediately after the moov is completedly
+     * constructed, mWriteMoovBoxToMemory is always set to false.
+     */
+    mWriteMoovBoxToMemory = false;
     mMoovBoxBuffer = NULL;
     mMoovBoxBufferOffset = 0;
 
@@ -802,15 +877,25 @@ status_t MPEG4Writer::reset() {
     }
     lseek64(mFd, mOffset, SEEK_SET);
 
-    const off64_t moovOffset = mOffset;
-    mWriteMoovBoxToMemory = mStreamableFile;
-    mMoovBoxBuffer = (uint8_t *) malloc(mEstimatedMoovBoxSize);
+    // Construct moov box now
     mMoovBoxBufferOffset = 0;
-    CHECK(mMoovBoxBuffer != NULL);
+    mWriteMoovBoxToMemory = mStreamableFile;
+    if (mWriteMoovBoxToMemory) {
+        // There is no need to allocate in-memory cache
+        // for moov box if the file is not streamable.
+
+        mMoovBoxBuffer = (uint8_t *) malloc(mEstimatedMoovBoxSize);
+        CHECK(mMoovBoxBuffer != NULL);
+    }
     writeMoovBox(maxDurationUs);
 
-    mWriteMoovBoxToMemory = false;
-    if (mStreamableFile) {
+    // mWriteMoovBoxToMemory could be set to false in
+    // MPEG4Writer::write() method
+    if (mWriteMoovBoxToMemory) {
+        mWriteMoovBoxToMemory = false;
+        // Content of the moov box is saved in the cache, and the in-memory
+        // moov box needs to be written to the file in a single shot.
+
         CHECK_LE(mMoovBoxBufferOffset + 8, mEstimatedMoovBoxSize);
 
         // Moov box
@@ -822,13 +907,15 @@ status_t MPEG4Writer::reset() {
         lseek64(mFd, mOffset, SEEK_SET);
         writeInt32(mEstimatedMoovBoxSize - mMoovBoxBufferOffset);
         write("free", 4);
+    } else {
+        ALOGI("The mp4 file will not be streamable.");
+    }
 
-        // Free temp memory
+    // Free in-memory cache for moov box
+    if (mMoovBoxBuffer != NULL) {
         free(mMoovBoxBuffer);
         mMoovBoxBuffer = NULL;
         mMoovBoxBufferOffset = 0;
-    } else {
-        ALOGI("The mp4 file will not be streamable.");
     }
 
     CHECK(mBoxes.empty());
@@ -1010,23 +1097,28 @@ size_t MPEG4Writer::write(
 
     const size_t bytes = size * nmemb;
     if (mWriteMoovBoxToMemory) {
-        // This happens only when we write the moov box at the end of
-        // recording, not for each output video/audio frame we receive.
+
         off64_t moovBoxSize = 8 + mMoovBoxBufferOffset + bytes;
         if (moovBoxSize > mEstimatedMoovBoxSize) {
+            // The reserved moov box at the beginning of the file
+            // is not big enough. Moov box should be written to
+            // the end of the file from now on, but not to the
+            // in-memory cache.
+
+            // We write partial moov box that is in the memory to
+            // the file first.
             for (List<off64_t>::iterator it = mBoxes.begin();
                  it != mBoxes.end(); ++it) {
                 (*it) += mOffset;
             }
             lseek64(mFd, mOffset, SEEK_SET);
             ::write(mFd, mMoovBoxBuffer, mMoovBoxBufferOffset);
-            ::write(mFd, ptr, size * nmemb);
+            ::write(mFd, ptr, bytes);
             mOffset += (bytes + mMoovBoxBufferOffset);
-            free(mMoovBoxBuffer);
-            mMoovBoxBuffer = NULL;
-            mMoovBoxBufferOffset = 0;
+
+            // All subsequent moov box content will be written
+            // to the end of the file.
             mWriteMoovBoxToMemory = false;
-            mStreamableFile = false;
         } else {
             memcpy(mMoovBoxBuffer + mMoovBoxBufferOffset, ptr, bytes);
             mMoovBoxBufferOffset += bytes;
@@ -1561,12 +1653,18 @@ void MPEG4Writer::threadFunc() {
             mChunkReadyCondition.wait(mLock);
         }
 
-        // Actual write without holding the lock in order to
-        // reduce the blocking time for media track threads.
+        // In real time recording mode, write without holding the lock in order
+        // to reduce the blocking time for media track threads.
+        // Otherwise, hold the lock until the existing chunks get written to the
+        // file.
         if (chunkFound) {
-            mLock.unlock();
+            if (mIsRealTimeRecording) {
+                mLock.unlock();
+            }
             writeChunkToFile(&chunk);
-            mLock.lock();
+            if (mIsRealTimeRecording) {
+                mLock.lock();
+            }
         }
     }
 
@@ -1616,18 +1714,10 @@ status_t MPEG4Writer::Track::start(MetaData *params) {
         mRotation = rotationDegrees;
     }
 
-    mIsRealTimeRecording = true;
-    {
-        int32_t isNotRealTime;
-        if (params && params->findInt32(kKeyNotRealTime, &isNotRealTime)) {
-            mIsRealTimeRecording = (isNotRealTime == 0);
-        }
-    }
-
     initTrackingProgressStatus(params);
 
     sp<MetaData> meta = new MetaData;
-    if (mIsRealTimeRecording && mOwner->numTracks() > 1) {
+    if (mOwner->isRealTimeRecording() && mOwner->numTracks() > 1) {
         /*
          * This extra delay of accepting incoming audio/video signals
          * helps to align a/v start time at the beginning of a recording
@@ -2005,7 +2095,10 @@ status_t MPEG4Writer::Track::threadEntry() {
     } else {
         prctl(PR_SET_NAME, (unsigned long)"VideoTrackEncoding", 0, 0, 0);
     }
-    androidSetThreadPriority(0, ANDROID_PRIORITY_AUDIO);
+
+    if (mOwner->isRealTimeRecording()) {
+        androidSetThreadPriority(0, ANDROID_PRIORITY_AUDIO);
+    }
 
     sp<MetaData> meta_data;
 
@@ -2096,8 +2189,8 @@ status_t MPEG4Writer::Track::threadEntry() {
         meta_data->findInt32(kKeyIsSyncFrame, &isSync);
         CHECK(meta_data->findInt64(kKeyTime, &timestampUs));
 
-        if(!mIsAudio) {
-            QCUtilityClass::helper_MPEG4Writer_hfr(mMeta, timestampUs);
+        if (!mIsAudio) {
+            QCUtils::HFR::reCalculateTimeStamp(mMeta, timestampUs);
         }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2127,12 +2220,12 @@ status_t MPEG4Writer::Track::threadEntry() {
              */
             int64_t decodingTimeUs;
             CHECK(meta_data->findInt64(kKeyDecodingTime, &decodingTimeUs));
-            QCUtilityClass::helper_MPEG4Writer_hfr(mMeta, decodingTimeUs);
+            QCUtils::HFR::reCalculateTimeStamp(mMeta, decodingTimeUs);
 
             decodingTimeUs -= previousPausedDurationUs;
             cttsOffsetTimeUs =
-                    timestampUs + kMaxCttsOffsetTimeUs - decodingTimeUs;
-            CHECK_GE(cttsOffsetTimeUs, 0ll);
+                    timestampUs - decodingTimeUs;
+            CHECK_GE(kMaxCttsOffsetTimeUs, decodingTimeUs - timestampUs);
             timestampUs = decodingTimeUs;
             ALOGV("decoding time: %lld and ctts offset time: %lld",
                 timestampUs, cttsOffsetTimeUs);
@@ -2172,7 +2265,7 @@ status_t MPEG4Writer::Track::threadEntry() {
 
         }
 
-        if (mIsRealTimeRecording) {
+        if (mOwner->isRealTimeRecording()) {
             if (mIsAudio) {
                 updateDriftTime(meta_data);
             }
@@ -2458,6 +2551,10 @@ int64_t MPEG4Writer::getDriftTimeUs() {
     return mDriftTimeUs;
 }
 
+bool MPEG4Writer::isRealTimeRecording() const {
+    return mIsRealTimeRecording;
+}
+
 bool MPEG4Writer::useNalLengthFour() {
     return mUse4ByteNalLength;
 }
@@ -2580,7 +2677,8 @@ void MPEG4Writer::Track::writeVideoFourCCBox() {
     mOwner->writeInt32(0x480000);    // vert resolution
     mOwner->writeInt32(0);           // reserved
     mOwner->writeInt16(1);           // frame count
-    mOwner->write("                                ", 32);
+    mOwner->writeInt8(0);            // compressor string length
+    mOwner->write("                               ", 31);
     mOwner->writeInt16(0x18);        // depth
     mOwner->writeInt16(-1);          // predefined
 

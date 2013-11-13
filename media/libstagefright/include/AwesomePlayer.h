@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
  * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +38,7 @@ struct MediaBuffer;
 struct MediaExtractor;
 struct MediaSource;
 struct NuCachedSource2;
-struct ISurfaceTexture;
+struct IGraphicBufferProducer;
 
 class DrmManagerClinet;
 class DecryptHandle;
@@ -82,7 +83,7 @@ struct AwesomePlayer {
 
     bool isPlaying() const;
 
-    status_t setSurfaceTexture(const sp<ISurfaceTexture> &surfaceTexture);
+    status_t setSurfaceTexture(const sp<IGraphicBufferProducer> &bufferProducer);
     void setAudioSink(const sp<MediaPlayerBase::AudioSink> &audioSink);
     status_t setLooping(bool shouldLoop);
 
@@ -139,6 +140,7 @@ private:
         TEXTPLAYER_INITIALIZED  = 0x20000,
 
         SLOW_DECODER_HACK   = 0x40000,
+        PAUSE               = 0x80000,
     };
 
     mutable Mutex mLock;
@@ -219,6 +221,9 @@ private:
     bool mIsAsyncPrepare;
     status_t mPrepareResult;
     status_t mStreamDoneStatus;
+
+    String8 mUseCase;
+    bool mUseCaseFlag;
 
     void postVideoEvent_l(int64_t delayUs = -1);
     void postBufferingEvent_l();
@@ -303,15 +308,15 @@ private:
         ASSIGN
     };
     void modifyFlags(unsigned value, FlagMode mode);
+    void checkTunnelExceptions();
     void logFirstFrame();
     void logCatchUp(int64_t ts, int64_t clock, int64_t delta);
     void logLate(int64_t ts, int64_t clock, int64_t delta);
     void logOnTime(int64_t ts, int64_t clock, int64_t delta);
     void printStats();
     int64_t getTimeOfDayUs();
-    void checkTunnelExceptions();
-
     bool mStatistics;
+    int64_t mLateAVSyncMargin;
 
     struct TrackStat {
         String8 mMIME;
@@ -370,9 +375,10 @@ private:
 
     bool inSupportedTunnelFormats(const char * mime);
 
+    bool updateConcurrencyParam(bool pauseFlag);
+
     //Flag to check if tunnel mode audio is enabled
     bool mIsTunnelAudio;
-
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
 };

@@ -41,7 +41,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "jpeg.h"
 #include "SineSource.h"
@@ -50,6 +49,7 @@
 #include <binder/ProcessState.h>
 #include <media/IMediaPlayerService.h>
 #include <media/stagefright/foundation/ALooper.h>
+#include <media/stagefright/foundation/AMessage.h>
 #include "include/LiveSession.h"
 #include "include/NuCachedSource2.h"
 #include <media/stagefright/AudioPlayer.h>
@@ -72,7 +72,7 @@
 
 #include <fcntl.h>
 
-#include <gui/SurfaceTextureClient.h>
+#include <gui/Surface.h>
 #include <gui/SurfaceComposerClient.h>
 
 #ifdef DOLBY_UDC
@@ -546,7 +546,7 @@ static void writeSourcesToMP4(
     }
 
     sp<MetaData> params = new MetaData;
-    params->setInt32(kKeyNotRealTime, true);
+    params->setInt32(kKeyRealTimeRecording, false);
     CHECK_EQ(writer->start(params.get()), (status_t)OK);
 
     while (!writer->reachedEOS()) {
@@ -612,7 +612,7 @@ static void performSeekTest(const sp<MediaSource> &source) {
 }
 
 static void usage(const char *me) {
-    fprintf(stderr, "usage: %s\n", me);
+    fprintf(stderr, "usage: %s [options] [input_filename]\n", me);
     fprintf(stderr, "       -h(elp)\n");
     fprintf(stderr, "       -a(udio)\n");
     fprintf(stderr, "       -n repetitions\n");
@@ -630,8 +630,8 @@ static void usage(const char *me) {
                     "(video only)\n");
     fprintf(stderr, "       -S allocate buffers from a surface\n");
     fprintf(stderr, "       -T allocate buffers from a surface texture\n");
-    fprintf(stderr, "       -d(ump) filename (raw stream data to a file)\n");
-    fprintf(stderr, "       -D(ump) filename (decoded PCM data to a file)\n");
+    fprintf(stderr, "       -d(ump) output_filename (raw stream data to a file)\n");
+    fprintf(stderr, "       -D(ump) output_filename (decoded PCM data to a file)\n");
 }
 
 static void dumpCodecProfiles(const sp<IOMX>& omx, bool queryDecoders) {
@@ -849,7 +849,7 @@ int main(int argc, char **argv) {
         CHECK(service.get() != NULL);
 
         sp<IMediaMetadataRetriever> retriever =
-            service->createMetadataRetriever(getpid());
+            service->createMetadataRetriever();
 
         CHECK(retriever != NULL);
 
@@ -968,8 +968,8 @@ int main(int argc, char **argv) {
         } else {
             CHECK(useSurfaceTexAlloc);
 
-            sp<SurfaceTexture> texture = new SurfaceTexture(0 /* tex */);
-            gSurface = new SurfaceTextureClient(texture);
+            sp<GLConsumer> texture = new GLConsumer(0 /* tex */);
+            gSurface = new Surface(texture->getBufferQueue());
         }
 
         CHECK_EQ((status_t)OK,
@@ -1033,7 +1033,7 @@ int main(int argc, char **argv) {
                     looper = new ALooper;
                     looper->start();
                 }
-                liveSession = new LiveSession;
+                liveSession = new LiveSession(NULL /* notify */);
                 looper->registerHandler(liveSession);
 
                 liveSession->connect(uri.string());

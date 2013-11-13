@@ -21,21 +21,23 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 ifeq ($(BOARD_USES_ALSA_AUDIO),true)
-    ifeq ($(call is-chipset-in-board-platform,msm8960),true)
+    ifeq ($(USE_TUNNEL_MODE),true)
         LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+        LOCAL_CFLAGS += -DUSE_LPA_MODE
+    endif
+    ifeq ($(TUNNEL_MODE_SUPPORTS_AMRWB),true)
         LOCAL_CFLAGS += -DTUNNEL_MODE_SUPPORTS_AMRWB
     endif
-    ifeq ($(call is-chipset-in-board-platform,msm8974),true)
-        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
-    endif
-    ifeq ($(call is-chipset-in-board-platform,msm8226),true)
-        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
-    endif
-    ifeq ($(call is-chipset-in-board-platform,msm8610),true)
-        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+    ifeq ($(NO_TUNNEL_MODE_FOR_MULTICHANNEL),true)
         LOCAL_CFLAGS += -DNO_TUNNEL_MODE_FOR_MULTICHANNEL
     endif
 endif
+
+# RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+LOCAL_CFLAGS += -DRESOURCE_MANAGER
+endif
+# RESOURCE MANAGER
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
@@ -53,10 +55,8 @@ LOCAL_SRC_FILES:=                         \
         DataSource.cpp                    \
         DRMExtractor.cpp                  \
         ESDS.cpp                          \
-        ExtendedWriter.cpp                \
         FileSource.cpp                    \
         FLACExtractor.cpp                 \
-        FragmentedMP4Extractor.cpp        \
         HTTPBase.cpp                      \
         JPEGSource.cpp                    \
         LPAPlayerALSA.cpp                 \
@@ -64,20 +64,21 @@ LOCAL_SRC_FILES:=                         \
         MPEG2TSWriter.cpp                 \
         MPEG4Extractor.cpp                \
         MPEG4Writer.cpp                   \
+        MediaAdapter.cpp                  \
         MediaBuffer.cpp                   \
         MediaBufferGroup.cpp              \
         MediaCodec.cpp                    \
         MediaCodecList.cpp                \
         MediaDefs.cpp                     \
-        QCMediaDefs.cpp                   \
         MediaExtractor.cpp                \
+        MediaMuxer.cpp                    \
         MediaSource.cpp                   \
         MetaData.cpp                      \
         NuCachedSource2.cpp               \
         NuMediaExtractor.cpp              \
         OMXClient.cpp                     \
         OMXCodec.cpp                      \
-        QCOMXCodec.cpp                    \
+        ExtendedCodec.cpp                 \
         OggExtractor.cpp                  \
         SampleIterator.cpp                \
         SampleTable.cpp                   \
@@ -99,8 +100,8 @@ LOCAL_SRC_FILES:=                         \
         mp4/FragmentedMP4Parser.cpp       \
         mp4/TrackFragment.cpp             \
         ExtendedExtractor.cpp             \
-        FMA2DPWriter.cpp                  \
-        QCUtilityClass.cpp                \
+        QCUtils.cpp                       \
+        ResourceManager.cpp             \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
@@ -109,7 +110,6 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
-        $(TOP)/hardware/qcom/media/mm-core/inc
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -124,7 +124,6 @@ LOCAL_SHARED_LIBRARIES := \
         libicuuc \
         liblog \
         libmedia \
-        libmedia_native \
         libsonivox \
         libssl \
         libstagefright_omx \
@@ -134,6 +133,7 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz \
+        libaudioparameter \
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
@@ -142,6 +142,7 @@ LOCAL_STATIC_LIBRARIES := \
         libstagefright_matroska \
         libstagefright_timedtext \
         libvpx \
+        libwebm \
         libstagefright_mpeg2ts \
         libstagefright_httplive \
         libstagefright_id3 \
@@ -171,6 +172,14 @@ endif #DOLBY_UDC_MULTICHANNEL
 LOCAL_MODULE:= libstagefright
 
 LOCAL_MODULE_TAGS := optional
+
+
+ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
+       LOCAL_CFLAGS += -DENABLE_QC_AV_ENHANCEMENTS
+       LOCAL_SRC_FILES  += ExtendedWriter.cpp
+       LOCAL_SRC_FILES  += QCMediaDefs.cpp
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS
 
 include $(BUILD_SHARED_LIBRARY)
 

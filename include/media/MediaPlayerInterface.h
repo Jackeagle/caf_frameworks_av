@@ -1,8 +1,7 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
  * Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Not a Contribution, Apache license notifications and license are retained
- * for attribution purposes only.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +39,7 @@ namespace android {
 
 class Parcel;
 class Surface;
-class ISurfaceTexture;
+class IGraphicBufferProducer;
 
 template<typename T> class SortedVector;
 
@@ -138,9 +137,9 @@ public:
         return INVALID_OPERATION;
     }
 
-    // pass the buffered ISurfaceTexture to the media player service
+    // pass the buffered IGraphicBufferProducer to the media player service
     virtual status_t    setVideoSurfaceTexture(
-                                const sp<ISurfaceTexture>& surfaceTexture) = 0;
+                                const sp<IGraphicBufferProducer>& bufferProducer) = 0;
 
     virtual status_t    prepare() = 0;
     virtual status_t    prepareAsync() = 0;
@@ -202,6 +201,11 @@ public:
     }
 
     virtual status_t dump(int fd, const Vector<String16> &args) const {
+        return INVALID_OPERATION;
+    }
+
+    virtual status_t updateProxyConfig(
+            const char *host, int32_t port, const char *exclusionList) {
         return INVALID_OPERATION;
     }
 

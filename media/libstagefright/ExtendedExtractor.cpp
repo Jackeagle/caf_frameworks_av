@@ -1,4 +1,4 @@
-/*Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -30,76 +30,91 @@
 #define LOG_TAG "ExtendedExtractor"
 #include <utils/Log.h>
 #include <dlfcn.h>  // for dlopen/dlclose
-
 #include "include/ExtendedExtractor.h"
 
-static const char* EXTENDED_PARSER_LIB = "libExtendedExtractor.so";
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
 
 namespace android {
 
-void* ExtendedParserLib() {
-    static void* extendedParserLib = NULL;
-    static bool alreadyTriedToOpenParsers = false;
+static const char* EXTENDED_EXTRACTOR_LIB = "libExtendedExtractor.so";
+static const char* EXTENDED_EXTRACTOR_CREATE = "CreateExtractor";
+static const char* EXTENDED_EXTRACTOR_SNIFF = "SniffExtendedExtractor";
 
-    if(!alreadyTriedToOpenParsers) {
-        alreadyTriedToOpenParsers = true;
+typedef MediaExtractor* (*ExtendedExtractorCreate)
+                            (const sp<DataSource> &source, const char* mime);
 
-        extendedParserLib = ::dlopen(EXTENDED_PARSER_LIB, RTLD_LAZY);
+typedef bool (*ExtendedExtractorSniff)
+                 (const sp<DataSource> &source, String8 *mimeType,
+                 float *confidence,sp<AMessage> *meta);
 
-        if(extendedParserLib == NULL) {
-            ALOGV("Failed to open EXTENDED_PARSER_LIB, dlerror = %s \n", dlerror());
+static void* loadExtendedExtractorLib() {
+    static void* extendedExtractorLib = NULL;
+    static bool alreadyTriedToLoadLib = false;
+
+    if(!alreadyTriedToLoadLib) {
+        alreadyTriedToLoadLib = true;
+
+        extendedExtractorLib = ::dlopen(EXTENDED_EXTRACTOR_LIB, RTLD_LAZY);
+
+        if(extendedExtractorLib == NULL) {
+            ALOGV("Failed to load %s, dlerror = %s \n",
+                EXTENDED_EXTRACTOR_LIB, dlerror());
         }
     }
 
-    return extendedParserLib;
+    return extendedExtractorLib;
 }
 
-MediaExtractor* ExtendedExtractor::CreateExtractor(const sp<DataSource> &source, const char *mime) {
-    static MediaExtractorFactory mediaFactoryFunction = NULL;
-    static bool alreadyTriedToFindFactoryFunction = false;
-
+MediaExtractor* ExtendedExtractor::Create (
+        const sp<DataSource> &source, const char *mime) {
+    static ExtendedExtractorCreate create = NULL;
+    static bool alreadyTriedToFindCreateFunction = false;
     MediaExtractor* extractor = NULL;
 
-    if(!alreadyTriedToFindFactoryFunction) {
+    if (!alreadyTriedToFindCreateFunction) {
+        void *extendedExtractorLib = loadExtendedExtractorLib();
 
-        void *extendedParserLib = ExtendedParserLib();
-        if (extendedParserLib != NULL) {
-
-            mediaFactoryFunction = (MediaExtractorFactory) dlsym(extendedParserLib, MEDIA_CREATE_EXTRACTOR);
-            alreadyTriedToFindFactoryFunction = true;
+        if (extendedExtractorLib != NULL) {
+            create = (ExtendedExtractorCreate) dlsym (
+                    extendedExtractorLib, EXTENDED_EXTRACTOR_CREATE);
+            alreadyTriedToFindCreateFunction = true;
         }
     }
 
-    if(mediaFactoryFunction==NULL) {
-        ALOGE(" dlsym for ExtendedExtractor factory function failed, dlerror = %s \n", dlerror());
+    if (create == NULL) {
+        ALOGE ("Failed to find symbol : %s, dlerror = %s",
+            EXTENDED_EXTRACTOR_CREATE, dlerror());
         return NULL;
     }
 
-    extractor = mediaFactoryFunction(source, mime);
-    if(extractor==NULL) {
-        ALOGE(" ExtendedExtractor failed to instantiate extractor \n");
+    extractor = create (source, mime);
+    if (extractor == NULL) {
+        ALOGE("Failed to instantiate extractor \n");
     }
 
     return extractor;
 }
 
-bool SniffExtendedExtractor(const sp<DataSource> &source, String8 *mimeType,
-                            float *confidence,sp<AMessage> *meta) {
-    void *extendedParserLib = ExtendedParserLib();
+bool ExtendedExtractor::Sniff (
+        const sp<DataSource> &source, String8 *mimeType,
+        float *confidence,sp<AMessage> *meta) {
+    void *extendedExtractorLib = loadExtendedExtractorLib();
     bool retVal = false;
-    if (extendedParserLib != NULL) {
-       ExtendedExtractorSniffers extendedExtractorSniffers=
-           (ExtendedExtractorSniffers) dlsym(extendedParserLib, EXTENDED_EXTRACTOR_SNIFFERS);
 
-       if(extendedExtractorSniffers == NULL) {
-           ALOGE(" dlsym for extendedExtractorSniffers function failed, dlerror = %s \n", dlerror());
-           return retVal;
-       }
+    if (extendedExtractorLib != NULL) {
+       ExtendedExtractorSniff sniff = (ExtendedExtractorSniff) dlsym (
+               extendedExtractorLib, EXTENDED_EXTRACTOR_SNIFF);
 
-       retVal = extendedExtractorSniffers(source, mimeType, confidence, meta);
+        if (sniff == NULL) {
+            ALOGE ("Failed to find symbol : %s, dlerror = %s",
+                EXTENDED_EXTRACTOR_SNIFF, dlerror());
+            return retVal;
+        }
+
+       retVal = sniff (source, mimeType, confidence, meta);
 
        if(!retVal) {
-           ALOGV("ExtendedExtractor:: ExtendedExtractorSniffers  Failed");
+           ALOGV("Sniff Failed");
        }
     }
     return retVal;
@@ -107,4 +122,22 @@ bool SniffExtendedExtractor(const sp<DataSource> &source, String8 *mimeType,
 
 }  // namespace android
 
+#else //ENABLE_QC_AV_ENHANCEMENTS
+
+namespace android {
+
+MediaExtractor* ExtendedExtractor::Create (
+        const sp<DataSource> &source, const char *mime) {
+    return NULL;
+}
+bool ExtendedExtractor::Sniff (
+        const sp<DataSource> &source, String8 *mimeType,
+        float *confidence,sp<AMessage> *meta) {
+    *confidence = 0.0;
+    return false;
+}
+
+}  // namespace android
+
+#endif //ENABLE_QC_AV_ENHANCEMENTS
 

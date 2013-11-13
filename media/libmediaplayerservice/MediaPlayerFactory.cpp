@@ -101,7 +101,7 @@ void MediaPlayerFactory::unregisterFactory(player_type type) {
     }                                                   \
                                                         \
     if (0.0 == bestScore) {                             \
-        bestScore = getDefaultPlayerType();             \
+        ret = getDefaultPlayerType();                   \
     }                                                   \
                                                         \
     return ret;
@@ -207,13 +207,18 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
             return 0.0;
 
         if (!strncasecmp("http://", url, 7)
-                || !strncasecmp("https://", url, 8)) {
+                || !strncasecmp("https://", url, 8)
+                || !strncasecmp("file://", url, 7)) {
             size_t len = strlen(url);
             if (len >= 5 && !strcasecmp(".m3u8", &url[len - 5])) {
                 return kOurScore;
             }
 
             if (strstr(url,"m3u8")) {
+                return kOurScore;
+            }
+
+            if ((len >= 4 && !strcasecmp(".sdp", &url[len - 4])) || strstr(url, ".sdp?")) {
                 return kOurScore;
             }
         }
@@ -341,23 +346,25 @@ void MediaPlayerFactory::registerBuiltinFactories() {
     MediaPlayerFactory::IFactory* pFactory  = NULL;
     void* pFactoryLib = NULL;
     typedef MediaPlayerFactory::IFactory* (*CreateDASHDriverFn)();
-
+    ALOGE("calling dlopen on FACTORY_LIB");
     pFactoryLib = ::dlopen(FACTORY_LIB, RTLD_LAZY);
     if (pFactoryLib == NULL) {
-        ALOGE("Failed to open FACTORY_LIB Error : %s ",::dlerror());
+      ALOGE("Failed to open FACTORY_LIB Error : %s ",::dlerror());
     } else {
-        CreateDASHDriverFn pCreateFnPtr;
-        pCreateFnPtr = (CreateDASHDriverFn) dlsym(pFactoryLib, FACTORY_CREATE_FN);
-        if (pCreateFnPtr == NULL) {
-            ALOGE("Could not locate pCreateFnPtr");
+      CreateDASHDriverFn pCreateFnPtr;
+      ALOGE("calling dlsym on pFactoryLib for FACTORY_CREATE_FN ");
+      pCreateFnPtr = (CreateDASHDriverFn) dlsym(pFactoryLib, FACTORY_CREATE_FN);
+      if (pCreateFnPtr == NULL) {
+          ALOGE("Could not locate pCreateFnPtr");
+      } else {
+        pFactory = pCreateFnPtr();
+        if(pFactory == NULL) {
+          ALOGE("Failed to invoke CreateDASHDriverFn...");
         } else {
-            pFactory = pCreateFnPtr();
-            if(pFactory == NULL) {
-                ALOGE("Failed to invoke CreateDASHDriverFn...");
-            } else {
-                registerFactory_l(pFactory,DASH_PLAYER);
-            }
+          ALOGE("registering DASH Player factory...");
+          registerFactory_l(pFactory,DASH_PLAYER);
         }
+      }
     }
     sInitComplete = true;
 }

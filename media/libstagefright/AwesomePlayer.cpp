@@ -1,9 +1,8 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
  * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
- * Not a Contribution, Apache license notifications and license are retained
- * for attribution purposes only.
-
+ * Not a Contribution.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -54,19 +53,22 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/OMXCodec.h>
-#include "include/QCUtilityClass.h"
+#include "include/QCUtils.h"
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+#include <QCMediaDefs.h>
+#endif
 
-#include <gui/ISurfaceTexture.h>
-#include <gui/SurfaceTextureClient.h>
+#include <gui/IGraphicBufferProducer.h>
+#include <gui/Surface.h>
 
 #include <media/stagefright/foundation/AMessage.h>
 
 #include <cutils/properties.h>
 
+#include "include/ResourceManager.h"
+
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
-#define LPA_MIN_DURATION_USEC_ALLOWED 30000000
-#define LPA_MIN_DURATION_USEC_DEFAULT 60000000
 
 namespace android {
 
@@ -74,6 +76,9 @@ static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
 static int64_t kHighWaterMarkUs = 5000000ll;  // 5secs
 static const size_t kLowWaterMarkBytes = 40000;
 static const size_t kHighWaterMarkBytes = 200000;
+static const int64_t kInitFrameDurationUs = 16000;
+static const int64_t kScheduleLagGapUs = 1000;
+static const int64_t kDefaultEventDelayUs = 10000;
 int AwesomePlayer::mTunnelAliveAP = 0;
 
 struct AwesomeEvent : public TimedEventQueue::Event {
@@ -205,7 +210,7 @@ AwesomePlayer::AwesomePlayer()
       mVideoBuffer(NULL),
       mDecryptHandle(NULL),
       mLastVideoTimeUs(-1),
-      mFrameDurationUs(16000),
+      mFrameDurationUs(kInitFrameDurationUs),
       mTextDriver(NULL) {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
@@ -225,13 +230,21 @@ AwesomePlayer::AwesomePlayer()
 
     mAudioStatusEventPending = false;
 
+    mUseCase = "";
+    mUseCaseFlag = false;
     reset();
     mIsTunnelAudio = false;
+    mLateAVSyncMargin = QCUtils::ShellProp::getMaxAVSyncLateMargin();
 }
 
 AwesomePlayer::~AwesomePlayer() {
     if (mQueueStarted) {
         mQueue.stop();
+    }
+
+    status_t err = ResourceManager::AudioConcurrencyInfo::resetParameter(mUseCase, mUseCaseFlag);
+    if(err != OK) {
+        ALOGE("resetConcurrencyParameters failed = %d", err);
     }
 
     reset();
@@ -363,9 +376,9 @@ void AwesomePlayer::printFileName(int fd) {
     char symName[40] = {0};
     char fileName[256] = {0};
 
-    sprintf(symName, "/proc/%d/fd/%d", getpid(), fd);
+    snprintf(symName, sizeof(symName), "/proc/%d/fd/%d", getpid(), fd);
 
-    if (readlink( symName, fileName, 256) != -1 ) {
+    if (readlink( symName, fileName, (sizeof(fileName) - 1)) != -1 ) {
         ALOGD("printFileName fd(%d) -> %s", fd, fileName);
     }
 }
@@ -498,7 +511,7 @@ status_t AwesomePlayer::setDataSource_l(const sp<MediaExtractor> &extractor) {
                 stat->mMIME = mime.string();
             }
         } else if (!haveAudio && !strncasecmp(mime.string(), "audio/", 6) &&
-                    !QCUtilityClass::helper_Awesomeplayer_checkIfAudioDisable()) {
+                    !QCUtils::ShellProp::isAudioDisabled()) {
             setAudioSource(extractor->getTrack(i));
             haveAudio = true;
             mActiveAudioTrackIndex = i;
@@ -646,7 +659,7 @@ void AwesomePlayer::reset_l() {
 
     mBitrate = -1;
     mLastVideoTimeUs = -1;
-    mFrameDurationUs = 16000;
+    mFrameDurationUs = kInitFrameDurationUs;
     {
         Mutex::Autolock autoLock(mStatsLock);
         mStats.mFd = -1;
@@ -953,7 +966,6 @@ status_t AwesomePlayer::play() {
 }
 
 status_t AwesomePlayer::play_l() {
-    int tunnelObjectsAlive = 0;
     modifyFlags(SEEK_PREVIEW, CLEAR);
 
     if (mFlags & PLAYING) {
@@ -968,6 +980,13 @@ status_t AwesomePlayer::play_l() {
         }
     }
 
+    if(mFlags & PAUSE) {
+        modifyFlags(PAUSE, CLEAR);
+        status_t err = updateConcurrencyParam(false);
+        if(err != OK) {
+            return err;
+        }
+    }
     modifyFlags(PLAYING, SET);
     modifyFlags(FIRST_FRAME, SET);
 
@@ -1000,14 +1019,14 @@ status_t AwesomePlayer::play_l() {
 #ifdef USE_TUNNEL_MODE
                 // Create tunnel player if tunnel mode is enabled
                 ALOGW("Trying to create tunnel player mIsTunnelAudio %d, \
-                        LPAPlayer::objectsAlive %d, \
+                        LPAPlayer::mObjectsAlive %d, \
                         TunnelPlayer::mTunnelObjectsAlive = %d,\
                         (mAudioPlayer == NULL) %d",
                         mIsTunnelAudio, TunnelPlayer::mTunnelObjectsAlive,
-                        LPAPlayer::objectsAlive,(mAudioPlayer == NULL));
+                        LPAPlayer::mObjectsAlive,(mAudioPlayer == NULL));
 
                 if(mIsTunnelAudio && (mAudioPlayer == NULL) &&
-                        (LPAPlayer::objectsAlive == 0) &&
+                        (LPAPlayer::mObjectsAlive == 0) &&
                         (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax())) {
                     ALOGD("Tunnel player created for  mime %s duration %lld\n",\
                         mime, mDurationUs);
@@ -1030,46 +1049,17 @@ status_t AwesomePlayer::play_l() {
                         mAudioPlayer = NULL;
                     }
                 }
-                tunnelObjectsAlive = (TunnelPlayer::mTunnelObjectsAlive);
 #endif
-                int32_t nchannels = 0;
-                if(mAudioTrack != NULL) {
-                    sp<MetaData> format = mAudioTrack->getFormat();
-                    if(format != NULL) {
-                        format->findInt32( kKeyChannelCount, &nchannels );
-                        ALOGV("nchannels %d;LPA will be skipped if nchannels is > 2 or nchannels == 0",nchannels);
-                    }
-                }
-                char lpaDecode[PROPERTY_VALUE_MAX];
-                uint32_t minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-                char minUserDefDuration[PROPERTY_VALUE_MAX];
-                property_get("lpa.decode",lpaDecode,"0");
-                property_get("lpa.min_duration",minUserDefDuration,"LPA_MIN_DURATION_USEC_DEFAULT");
-                minDurationForLPA = atoi(minUserDefDuration);
-                if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
-                    if(mAudioPlayer == NULL) {
-                        ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
-                        minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-                    }
-                }
-                if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) &&
-#ifdef USE_TUNNEL_MODE
-                   (tunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
-#endif
-                   (nchannels && (nchannels <= 2)))
-                {
-                    ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::objectsAlive);
-                    if ( mDurationUs > minDurationForLPA
-                         && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
-                         && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL) {
-                        ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
-                        bool initCheck =  false;
-                        mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
-                        if(!initCheck) {
-                             ALOGE("deleting Tunnel Player - initCheck failed");
-                             delete mAudioPlayer;
-                             mAudioPlayer = NULL;
-                        }
+                if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
+                                        mAudioPlayer, mAudioSink, mDurationUs,
+                                        mUseCase, mUseCaseFlag ) ==  true) {
+                    ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
+                    bool initCheck =  false;
+                    mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
+                    if(!initCheck) {
+                         ALOGE("deleting Tunnel Player - initCheck failed");
+                         delete mAudioPlayer;
+                         mAudioPlayer = NULL;
                     }
                 }
                 if(mAudioPlayer == NULL) {
@@ -1322,8 +1312,10 @@ status_t AwesomePlayer::pause() {
 }
 
 status_t AwesomePlayer::pause_l(bool at_eos) {
+
+    status_t err = OK;
     if (!(mFlags & PLAYING)) {
-        return OK;
+        return err;
     }
 
     cancelPlayerEvents(true /* keepNotifications */);
@@ -1369,19 +1361,22 @@ status_t AwesomePlayer::pause_l(bool at_eos) {
 
     addBatteryData(params);
 
-    return OK;
+    modifyFlags(PAUSE, SET);
+    err = updateConcurrencyParam(true);
+
+    return err;
 }
 
 bool AwesomePlayer::isPlaying() const {
     return (mFlags & PLAYING) || (mFlags & CACHE_UNDERRUN);
 }
 
-status_t AwesomePlayer::setSurfaceTexture(const sp<ISurfaceTexture> &surfaceTexture) {
+status_t AwesomePlayer::setSurfaceTexture(const sp<IGraphicBufferProducer> &bufferProducer) {
     Mutex::Autolock autoLock(mLock);
 
     status_t err;
-    if (surfaceTexture != NULL) {
-        err = setNativeWindow_l(new SurfaceTextureClient(surfaceTexture));
+    if (bufferProducer != NULL) {
+        err = setNativeWindow_l(new Surface(bufferProducer));
     } else {
         err = setNativeWindow_l(NULL);
     }
@@ -1495,8 +1490,7 @@ status_t AwesomePlayer::getPosition(int64_t *positionUs) {
 status_t AwesomePlayer::seekTo(int64_t timeUs) {
     ATRACE_CALL();
 
-    if (((timeUs == 0) && (mExtractorFlags & MediaExtractor::CAN_SEEK_TO_ZERO)) ||
-        (mExtractorFlags & MediaExtractor::CAN_SEEK)) {
+    if (mExtractorFlags & MediaExtractor::CAN_SEEK) {
         Mutex::Autolock autoLock(mLock);
         return seekTo_l(timeUs);
     }
@@ -1535,6 +1529,16 @@ status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
     }
 
     if (!(mFlags & PLAYING)) {
+
+        if(!(mFlags & PAUSE)) {
+            ALOGV("set pause in seek. Initial case when codec created and\
+                    paused when music app is launched");
+            modifyFlags(PAUSE, SET);
+            status_t err = updateConcurrencyParam(true);
+            if(err != OK) {
+                return err;
+            }
+        }
         ALOGV("seeking while paused, sending SEEK_COMPLETE notification"
              " immediately.");
 
@@ -1586,6 +1590,9 @@ status_t AwesomePlayer::initAudioDecoder() {
     ATRACE_CALL();
 
     sp<MetaData> meta = mAudioTrack->getFormat();
+
+    uint32_t flags = 0;
+    status_t err = OK;
 
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
@@ -1639,8 +1646,10 @@ status_t AwesomePlayer::initAudioDecoder() {
     else
        ALOGD("Normal Audio Playback");
 #endif
-
     checkTunnelExceptions();
+
+    ResourceManager::AudioConcurrencyInfo::setULLStream(mAudioSink, flags);
+
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW) ||
              (mIsTunnelAudio
@@ -1649,6 +1658,13 @@ status_t AwesomePlayer::initAudioDecoder() {
 #endif
     )) {
         ALOGD("Set Audio Track as Audio Source");
+
+        err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
+               mUseCase, mUseCaseFlag, flags, mime);
+        if(err != OK) {
+            return err;
+        }
+
         if(mIsTunnelAudio) {
             mTunnelAliveAP++;
         }
@@ -1657,27 +1673,10 @@ status_t AwesomePlayer::initAudioDecoder() {
         // For LPA Playback use the decoder without OMX layer
         char *matchComponentName = NULL;
         int64_t durationUs;
-        uint32_t flags = 0;
-        char lpaDecode[128];
-        uint32_t minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-        char minUserDefDuration[PROPERTY_VALUE_MAX];
-        property_get("lpa.decode",lpaDecode,"0");
-        property_get("lpa.min_duration",minUserDefDuration,"LPA_MIN_DURATION_USEC_DEFAULT");
-        minDurationForLPA = atoi(minUserDefDuration);
-        if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
-            ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
-            minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
-        }
-        if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
-            Mutex::Autolock autoLock(mMiscStateLock);
-            if (mDurationUs < 0 || durationUs > mDurationUs) {
-                mDurationUs = durationUs;
-            }
-        }
-        if ( mDurationUs > minDurationForLPA
-             && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
-             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)
-             && (nchannels && (nchannels <= 2)) ) {
+
+        if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
+                mAudioPlayer, mAudioSink, mDurationUs,
+                mUseCase, mUseCaseFlag) == true) {
             char nonOMXDecoder[128];
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
                 ALOGD("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
@@ -1695,6 +1694,7 @@ status_t AwesomePlayer::initAudioDecoder() {
                 }
             }
             flags |= OMXCodec::kSoftwareCodecsOnly;
+            flags |=  OMXCodec::kInLPAMode;
         }
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
@@ -1848,6 +1848,12 @@ status_t AwesomePlayer::initVideoDecoder(uint32_t flags) {
 
 void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
     ATRACE_CALL();
+    if (mSeeking != NO_SEEK)
+    {
+        Mutex::Autolock autoLock(mStatsLock);
+        mStats.mLastSeekToTimeMs = mSeekTimeUs/1000;
+        printStats();
+    }
 
     if (mSeeking == SEEK_VIDEO_ONLY) {
         mSeeking = NO_SEEK;
@@ -1894,7 +1900,7 @@ void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
 void AwesomePlayer::onVideoEvent() {
     ATRACE_CALL();
     int64_t eventStartTimeUs = mSystemTimeSource.getRealTimeUs();
-    int64_t earlyGapUs = 1000; // gap for in case of event scheduling lag
+    int64_t earlyGapUs = kScheduleLagGapUs; // gap for in case of event scheduling lag
     Mutex::Autolock autoLock(mLock);
     if (!mVideoEventPending) {
         // The event has been cancelled in reset_l() but had already
@@ -2110,10 +2116,10 @@ void AwesomePlayer::onVideoEvent() {
             }
         }
 
-        if (latenessUs > 40000) {
+        if (latenessUs > mLateAVSyncMargin) {
             // We're more than 40ms late.
-            ALOGE("we're late by %lld us nowUs %lld, timeUs %lld",
-                  latenessUs, nowUs, timeUs);
+            ALOGV("we're late by %lld us (%.2f secs)",
+                 latenessUs, latenessUs / 1E6);
 
             if (!(mFlags & SLOW_DECODER_HACK)
                     || mSinceLastDropped > FRAME_DROP_FREQ)
@@ -2135,9 +2141,9 @@ void AwesomePlayer::onVideoEvent() {
                     }
                     if(!(mFlags & AT_EOS)) logLate(timeUs,nowUs,latenessUs);
                 }
-
-                int64_t delayUs = mFrameDurationUs -(mSystemTimeSource.getRealTimeUs() - eventStartTimeUs) - latenessUs - earlyGapUs;
-                delayUs = delayUs > 10000 ? 10000 : delayUs;
+                int64_t eventDurationUs = mSystemTimeSource.getRealTimeUs() - eventStartTimeUs;
+                int64_t delayUs = mFrameDurationUs - eventDurationUs - latenessUs - earlyGapUs;
+                delayUs = delayUs > kDefaultEventDelayUs ? kDefaultEventDelayUs : delayUs;
                 postVideoEvent_l(delayUs > 0 ? delayUs : 0);
                 return;
             }
@@ -2199,9 +2205,9 @@ void AwesomePlayer::onVideoEvent() {
         modifyFlags(SEEK_PREVIEW, CLEAR);
         return;
     }
-
-    int64_t delayUs = mFrameDurationUs - (mSystemTimeSource.getRealTimeUs() - eventStartTimeUs) - latenessUs - earlyGapUs;
-    delayUs = delayUs > 10000 ? 10000 : delayUs;
+    int64_t eventDurationUs = mSystemTimeSource.getRealTimeUs() - eventStartTimeUs;
+    int64_t delayUs = mFrameDurationUs - eventDurationUs - latenessUs - earlyGapUs;
+    delayUs = delayUs > kDefaultEventDelayUs ? kDefaultEventDelayUs : delayUs;
     postVideoEvent_l(delayUs > 0 ? delayUs : 0);
 }
 
@@ -2881,6 +2887,7 @@ status_t AwesomePlayer::setVideoScalingMode_l(int32_t mode) {
         if (err != OK) {
             ALOGW("Failed to set scaling mode: %d", err);
         }
+        return err;
     }
     return OK;
 }
@@ -3049,6 +3056,121 @@ void AwesomePlayer::modifyFlags(unsigned value, FlagMode mode) {
     }
 }
 
+bool AwesomePlayer::inSupportedTunnelFormats(const char * mime) {
+    const char * tunnelFormats [ ] = {
+        MEDIA_MIMETYPE_AUDIO_MPEG,
+        MEDIA_MIMETYPE_AUDIO_AAC,
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+        MEDIA_MIMETYPE_AUDIO_AC3,
+        MEDIA_MIMETYPE_AUDIO_EAC3,
+#endif
+#ifdef TUNNEL_MODE_SUPPORTS_AMRWB
+        MEDIA_MIMETYPE_AUDIO_AMR_WB,
+    #ifdef ENABLE_QC_AV_ENHANCEMENTS
+        MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS
+    #endif
+#endif
+    };
+
+    if (!mime) {
+        return false;
+    }
+
+    size_t len = sizeof(tunnelFormats)/sizeof(const char *);
+    for (size_t i = 0; i < len; i++) {
+        const char * tf = tunnelFormats[i];
+        if (!strncasecmp(mime, tf, strlen(tf))) {
+            if (strlen(mime) == strlen(tf)) { //to prevent a substring match
+                ALOGD("Tunnel playback supported for %s", tf);
+                return true;
+            }
+        }
+    }
+
+    ALOGW("Tunnel playback unsupported for %s", mime);
+    return false;
+}
+
+void AwesomePlayer::checkTunnelExceptions()
+{
+
+    if(!mIsTunnelAudio) {
+        return;
+    }
+    /* exception 1: No streaming */
+    if (isStreamingHTTP()) {
+        ALOGV("Streaming, force disable tunnel mode playback");
+        mIsTunnelAudio = false;
+        return;
+    }
+
+    CHECK(mAudioTrack != NULL);
+
+    /*
+     * exception 2: No AAC-LD content,
+     * hint given by setting kKeyTunnelException in the track meta
+     */
+    int32_t exception = 0;
+    if (mAudioTrack->getFormat()->findInt32(kKeyTunnelException, &exception) &&
+        exception) {
+        ALOGV("kKeyTunnelException set, disable tunnel mode");
+        mIsTunnelAudio = false;
+        return;
+    }
+
+    /* exception 3: use tunnel player only for AUDIO_STREAM_MUSIC */
+    if(!ResourceManager::isStreamMusic(mAudioSink)) {
+        ALOGV("Use tunnel player only for AUDIO_STREAM_MUSIC");
+        mIsTunnelAudio = false;
+        return;
+    }
+
+    status_t err = OK;
+    err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
+            mUseCase, mUseCaseFlag, OMXCodec::kInTunnelMode);
+    if(err != OK) {
+        mIsTunnelAudio = false;
+        return;
+    }
+
+    /* below exceptions are only for av content */
+    if (mVideoTrack == NULL) return;
+
+    sp<MetaData> metaData = mVideoTrack->getFormat();
+    const char * mime;
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+    if(metaData->findCString(kKeyMIMEType, &mime) &&
+            !strncmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC,
+            strlen(MEDIA_MIMETYPE_VIDEO_HEVC))) {
+        ALOGV("No Tunnel mode audio for HEVC video");
+        mIsTunnelAudio = false;
+        return;
+    }
+#endif
+    /* exception 3: No avi having video + mp3 */
+    if (mExtractor == NULL) return;
+
+    metaData = mExtractor->getMetaData();
+    const char * container;
+
+    /*only proceed for avi content.*/
+    if (!metaData->findCString(kKeyMIMEType, &container) ||
+        strcmp(container, MEDIA_MIMETYPE_CONTAINER_AVI)) {
+        return;
+    }
+
+    metaData = mAudioTrack->getFormat();
+    /*disable for av content having mp3*/
+    if (metaData->findCString(kKeyMIMEType, &mime) &&
+        !strcmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
+        ALOGV("Clip has AVI extractor and mp3 content, disable tunnel mode");
+        mIsTunnelAudio = false;
+        return;
+    }
+
+    return;
+}
+
 inline void AwesomePlayer::logFirstFrame() {
     mStats.mFirstFrameLatencyUs = getTimeOfDayUs()-mStats.mFirstFrameLatencyStartUs;
     mStats.mVeryFirstFrame = false;
@@ -3094,93 +3216,36 @@ inline int64_t AwesomePlayer::getTimeOfDayUs() {
     return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
-bool AwesomePlayer::inSupportedTunnelFormats(const char * mime) {
-    const char * tunnelFormats [ ] = {
-        MEDIA_MIMETYPE_AUDIO_MPEG,
-        MEDIA_MIMETYPE_AUDIO_AAC,
-        MEDIA_MIMETYPE_AUDIO_AC3,
-        MEDIA_MIMETYPE_AUDIO_EAC3,
-#ifdef TUNNEL_MODE_SUPPORTS_AMRWB
-        MEDIA_MIMETYPE_AUDIO_AMR_WB,
-        MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS
-#endif
-    };
+// Function to set concurrency param on pause/resume.
+// The API call ResourceManager for  LPA/Tunnel/PCM
+// For streams with decoders, OMXCodec is informed about
+// pause /resume and  OMXCodec updates ResourceManager.
+bool AwesomePlayer::updateConcurrencyParam(bool pauseFlag)  {
 
-    if (!mime) {
-        return false;
+    status_t err = OK;
+    ALOGV("updateConcurrencyInfoParam  = %d", pauseFlag);
+
+    err = ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
+            mUseCase, mUseCaseFlag, pauseFlag);
+    if(err != OK) {
+        return err;
     }
 
-    size_t len = sizeof(tunnelFormats)/sizeof(const char *);
-    for (size_t i = 0; i < len; i++) {
-        const char * tf = tunnelFormats[i];
-        if (!strncasecmp(mime, tf, strlen(tf))) {
-            if (strlen(mime) == strlen(tf)) { //to prevent a substring match
-                ALOGD("Tunnel playback supported for %s", tf);
-                return true;
-            }
+    if(mVideoSource != NULL) {
+        err = mVideoSource->updateConcurrencyParam(pauseFlag);
+        if(err != OK) {
+            ALOGE("Video updateConcurrencyInfoParam failed\
+                    pauseFlag =%d , err = %d", pauseFlag, err);
+         }
+    }
+
+    if(mAudioSource != NULL) {
+        err =  mAudioSource->updateConcurrencyParam(pauseFlag);
+        if(err != OK) {
+            ALOGE("Audio - updateConcurrencyInfoParam failed\
+                    pauseFlag =%d , err = %d", pauseFlag, err);
         }
     }
-
-    ALOGW("Tunnel playback unsupported for %s", mime);
-    return false;
+    return err;
 }
-
-void AwesomePlayer::checkTunnelExceptions()
-{
-    /* exception 1: No streaming */
-    if (isStreamingHTTP()) {
-        ALOGV("Streaming, force disable tunnel mode playback");
-        mIsTunnelAudio = false;
-        return;
-    }
-
-    CHECK(mAudioTrack != NULL);
-
-    /*
-     * exception 2: No AAC-LD content,
-     * hint given by setting kKeyTunnelException in the track meta
-     */
-    int32_t exception = 0;
-    if (mAudioTrack->getFormat()->findInt32(kKeyTunnelException, &exception) &&
-        exception) {
-        ALOGV("kKeyTunnelException set, disable tunnel mode");
-        mIsTunnelAudio = false;
-        return;
-    }
-
-    /* exception 3: use tunnel player only for AUDIO_STREAM_MUSIC */
-    if (mAudioSink->streamType() != AUDIO_STREAM_MUSIC ) {
-        ALOGV("Use tunnel player only for AUDIO_STREAM_MUSIC");
-        mIsTunnelAudio = false;
-        return;
-    }
-
-    /* below exceptions are only for av content */
-    if (mVideoTrack == NULL) return;
-
-    /* exception 3: No avi having video + mp3 */
-    if (mExtractor == NULL) return;
-
-    sp<MetaData> metaData = mExtractor->getMetaData();
-    const char * container;
-
-    /*only proceed for avi content.*/
-    if (!metaData->findCString(kKeyMIMEType, &container) ||
-        strcmp(container, MEDIA_MIMETYPE_CONTAINER_AVI)) {
-        return;
-    }
-
-    const char * mime;
-    metaData = mAudioTrack->getFormat();
-    /*disable for av content having mp3*/
-    if (metaData->findCString(kKeyMIMEType, &mime) &&
-        !strcmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
-        ALOGV("Clip has AVI extractor and mp3 content, disable tunnel mode");
-        mIsTunnelAudio = false;
-        return;
-    }
-
-    return;
-}
-
 }  // namespace android

@@ -1,9 +1,8 @@
 /*
- * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
- * Not a Contribution, Apache license notifications and license are retained
- * for attribution purposes only.
+ * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@
 #include <media/AudioParameter.h>
 #include "StagefrightRecorder.h"
 
+#include <binder/AppOpsManager.h>
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
 
@@ -35,7 +35,6 @@
 #include <media/stagefright/AACWriter.h>
 #include <media/stagefright/ExtendedWriter.h>
 #include <media/stagefright/WAVEWriter.h>
-#include <media/stagefright/FMA2DPWriter.h>
 #include <media/stagefright/CameraSource.h>
 #include <media/stagefright/CameraSourceTimeLapse.h>
 #include <media/stagefright/MPEG2TSWriter.h>
@@ -56,10 +55,13 @@
 #include <ctype.h>
 #include <unistd.h>
 
-#include <QCUtilityClass.h>
+#include "QCUtils.h"
+#include "ResourceManager.h"
 
 #include <system/audio.h>
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
+#endif
 
 #include "ARTPWriter.h"
 
@@ -81,14 +83,22 @@ StagefrightRecorder::StagefrightRecorder()
       mOutputFd(-1),
       mAudioSource(AUDIO_SOURCE_CNT),
       mVideoSource(VIDEO_SOURCE_LIST_END),
-      mStarted(false), mSurfaceMediaSource(NULL) {
+      mStarted(false), mSurfaceMediaSource(NULL),
+      mCaptureTimeLapse(false) {
 
     ALOGV("Constructor");
+
+    mUseCase = "";
+    mUseCaseFlag =  false;
+
     reset();
 }
 
 StagefrightRecorder::~StagefrightRecorder() {
     ALOGV("Destructor");
+
+    ResourceManager::AudioConcurrencyInfo::resetParameter(mUseCase, mUseCaseFlag);
+
     stop();
 }
 
@@ -100,7 +110,7 @@ status_t StagefrightRecorder::init() {
 // The client side of mediaserver asks it to creat a SurfaceMediaSource
 // and return a interface reference. The client side will use that
 // while encoding GL Frames
-sp<ISurfaceTexture> StagefrightRecorder::querySurfaceMediaSource() const {
+sp<IGraphicBufferProducer> StagefrightRecorder::querySurfaceMediaSource() const {
     ALOGV("Get SurfaceMediaSource");
     return mSurfaceMediaSource->getBufferQueue();
 }
@@ -113,7 +123,7 @@ status_t StagefrightRecorder::setAudioSource(audio_source_t as) {
         return BAD_VALUE;
     }
 
-    if(QCUtilityClass::helper_StagefrightRecoder_checkIfAudioDisable()) {
+    if (QCUtils::ShellProp::isAudioDisabled()) {
         return OK;
     }
 
@@ -168,7 +178,7 @@ status_t StagefrightRecorder::setAudioEncoder(audio_encoder ae) {
         return BAD_VALUE;
     }
 
-    if(QCUtilityClass::helper_StagefrightRecoder_checkIfAudioDisable()) {
+    if (QCUtils::ShellProp::isAudioDisabled()) {
         return OK;
     }
 
@@ -261,7 +271,7 @@ status_t StagefrightRecorder::setCamera(const sp<ICamera> &camera,
     return OK;
 }
 
-status_t StagefrightRecorder::setPreviewSurface(const sp<Surface> &surface) {
+status_t StagefrightRecorder::setPreviewSurface(const sp<IGraphicBufferProducer> &surface) {
     ALOGV("setPreviewSurface: %p", surface.get());
     mPreviewSurface = surface;
 
@@ -772,6 +782,12 @@ status_t StagefrightRecorder::setListener(const sp<IMediaRecorderClient> &listen
     return OK;
 }
 
+status_t StagefrightRecorder::setClientName(const String16& clientName) {
+    mClientName = clientName;
+
+    return OK;
+}
+
 status_t StagefrightRecorder::prepare() {
   ALOGV(" %s E", __func__ );
 
@@ -790,14 +806,14 @@ status_t StagefrightRecorder::prepare() {
 status_t StagefrightRecorder::start() {
     CHECK_GE(mOutputFd, 0);
 
+    // Get UID here for permission checking
+    mClientUid = IPCThreadState::self()->getCallingUid();
     if (mWriter != NULL) {
         ALOGE("File writer is not avaialble");
         return UNKNOWN_ERROR;
     }
 
     status_t status = OK;
-    if(AUDIO_SOURCE_FM_RX_A2DP == mAudioSource)
-        return startFMA2DPWriter();
 
     switch (mOutputFormat) {
         case OUTPUT_FORMAT_DEFAULT:
@@ -824,9 +840,11 @@ status_t StagefrightRecorder::start() {
             status = startMPEG2TSRecording();
             break;
 
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
         case OUTPUT_FORMAT_QCP:
             status = startExtendedRecording( );
             break;
+#endif
 
         case OUTPUT_FORMAT_WAVE:
             status = startWAVERecording( );
@@ -857,7 +875,15 @@ status_t StagefrightRecorder::start() {
 
 sp<MediaSource> StagefrightRecorder::createAudioSource() {
     bool tunneledSource = false;
+    int32_t res;
     const char *tunnelMime;
+
+    //check permissions
+    res = mAppOpsManager.noteOp(AppOpsManager::OP_RECORD_AUDIO, mClientUid, mClientName);
+    if (res != AppOpsManager::MODE_ALLOWED) {
+        return NULL;
+    }
+
     {
         AudioParameter param;
         String8 key("tunneled-input-formats");
@@ -870,6 +896,7 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
             tunneledSource = true;
             tunnelMime = MEDIA_MIMETYPE_AUDIO_AMR_NB;
         }
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
         else if ( mAudioEncoder == AUDIO_ENCODER_QCELP &&
             result.getInt(String8("QCELP"),value) == NO_ERROR ) {
             tunneledSource = true;
@@ -880,6 +907,7 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
             tunneledSource = true;
             tunnelMime = MEDIA_MIMETYPE_AUDIO_EVRC;
         }
+#endif
         else if ( mAudioEncoder == AUDIO_ENCODER_AMR_WB &&
             result.getInt(String8("AWB"),value) == NO_ERROR ) {
             tunneledSource = true;
@@ -888,6 +916,7 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
     }
 
     if ( tunneledSource ) {
+        ALOGD("tunnel recording");
         sp<AudioSource> audioSource = NULL;
         sp<MetaData> meta = new MetaData;
         meta->setInt32(kKeyChannelCount, mAudioChannels);
@@ -938,12 +967,16 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
             mime = MEDIA_MIMETYPE_AUDIO_AAC;
             encMeta->setInt32(kKeyAACProfile, OMX_AUDIO_AACObjectELD);
             break;
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
+#ifndef RESOURCE_MANAGER
         case AUDIO_ENCODER_EVRC:
             mime = MEDIA_MIMETYPE_AUDIO_EVRC;
             break;
         case AUDIO_ENCODER_QCELP:
             mime = MEDIA_MIMETYPE_AUDIO_QCELP;
             break;
+#endif
+#endif
 
         default:
             ALOGE("Unknown audio encoder: %d", mAudioEncoder);
@@ -965,8 +998,9 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
 
     OMXClient client;
     CHECK_EQ(client.connect(), (status_t)OK);
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
     sp<MediaSource> audioEncoder;
-    if (QCUtilityClass::UseQCHWAACEncoder(mAudioEncoder,mAudioChannels,mAudioBitRate,mSampleRate)) {
+    if (QCUtils::UseQCHWAACEncoder(mAudioEncoder,mAudioChannels,mAudioBitRate,mSampleRate)) {
         //use hw aac encoder
         ALOGV("use QCOM HW AAC encoder");
         audioEncoder = OMXCodec::Create(client.interface(), encMeta,
@@ -975,11 +1009,24 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
         audioEncoder = OMXCodec::Create(client.interface(), encMeta,
             true /* createEncoder */, audioSource);
     }
+#else
+    sp<MediaSource> audioEncoder =
+        OMXCodec::Create(client.interface(), encMeta,
+                         true /* createEncoder */, audioSource);
+#endif
     // If encoder could not be created (as in LPCM), then
     // use the AudioSource directly as the MediaSource.
     if (audioEncoder == NULL) {
         ALOGD("No encoder is needed, use the AudioSource directly as the MediaSource for LPCM format");
         audioEncoder = audioSource;
+
+        mUseCase = "USECASE_PCM_RECORDING";
+        status_t err = OK;
+        err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
+                 mUseCase, mUseCaseFlag);
+        if(err != OK) {
+            return NULL;
+        }
     }
     if (mAudioSourceNode != NULL) {
         mAudioSourceNode.clear();
@@ -1097,21 +1144,6 @@ status_t StagefrightRecorder::startRawAudioRecording() {
     mWriter->setListener(mListener);
     mWriter->start();
 
-    return OK;
-}
-
-status_t StagefrightRecorder::startFMA2DPWriter() {
-    /* FM soc outputs at 48k */
-    mSampleRate = 48000;
-    mAudioChannels = 2;
-
-    sp<MetaData> meta = new MetaData;
-    meta->setInt32(kKeyChannelCount, mAudioChannels);
-    meta->setInt32(kKeySampleRate, mSampleRate);
-
-    mWriter = new FMA2DPWriter();
-    mWriter->setListener(mListener);
-    mWriter->start(meta.get());
     return OK;
 }
 
@@ -1491,13 +1523,14 @@ status_t StagefrightRecorder::setupCameraSource(
         }
 
         mCameraSourceTimeLapse = CameraSourceTimeLapse::CreateFromCamera(
-                mCamera, mCameraProxy, mCameraId,
+                mCamera, mCameraProxy, mCameraId, mClientName, mClientUid,
                 videoSize, mFrameRate, mPreviewSurface,
                 mTimeBetweenTimeLapseFrameCaptureUs);
         *cameraSource = mCameraSourceTimeLapse;
     } else {
         *cameraSource = CameraSource::CreateFromCamera(
-                mCamera, mCameraProxy, mCameraId, videoSize, mFrameRate,
+                mCamera, mCameraProxy, mCameraId, mClientName, mClientUid,
+                videoSize, mFrameRate,
                 mPreviewSurface, true /*storeMetaDataInVideoBuffers*/);
     }
     mCamera.clear();
@@ -1578,15 +1611,13 @@ status_t StagefrightRecorder::setupVideoEncoder(
         enc_meta->setInt32(kKeyTimeScale, mVideoTimeScale);
     }
 
-    status_t retVal =
-             QCUtilityClass::helper_StageFrightRecoder_hfr(meta,enc_meta, mMaxFileDurationUs,
-                                                                  mFrameRate, mVideoEncoder);
+    status_t retVal = QCUtils::HFR::reCalculateFileDuration(
+            meta, enc_meta, mMaxFileDurationUs, mFrameRate, mVideoEncoder);
     if(retVal != OK) {
         return retVal;
     }
 
-    QCUtilityClass::helper_StagefrightRecoder_setUserprofile(mVideoEncoder,
-                                                             mVideoEncoderProfile);
+    QCUtils::ShellProp::setEncoderprofile(mVideoEncoder, mVideoEncoderProfile);
 
     if (mVideoEncoderProfile != -1) {
         enc_meta->setInt32(kKeyVideoProfile, mVideoEncoderProfile);
@@ -1609,6 +1640,7 @@ status_t StagefrightRecorder::setupVideoEncoder(
     if (mCaptureTimeLapse) {
         encoder_flags |= OMXCodec::kOnlySubmitOneInputBufferAtOneTime;
     }
+    encoder_flags |= QCUtils::getEncoderTypeFlags();
 
     sp<MediaSource> encoder = OMXCodec::Create(
             client.interface(), enc_meta,
@@ -1963,6 +1995,7 @@ status_t StagefrightRecorder::dump(
     return OK;
 }
 
+#ifdef ENABLE_QC_AV_ENHANCEMENTS
 status_t StagefrightRecorder::startExtendedRecording() {
     CHECK(mOutputFormat == OUTPUT_FORMAT_QCP);
 
@@ -2003,5 +2036,6 @@ status_t StagefrightRecorder::startExtendedRecording() {
 
     return OK;
 }
+#endif
 
 }  // namespace android

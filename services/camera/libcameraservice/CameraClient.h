@@ -24,6 +24,11 @@ namespace android {
 class MemoryHeapBase;
 class CameraHardwareInterface;
 
+/**
+ * Interface between android.hardware.Camera API and Camera HAL device for version
+ * CAMERA_DEVICE_API_VERSION_1_0.
+ */
+
 class CameraClient : public CameraService::Client
 {
 public:
@@ -33,7 +38,7 @@ public:
     virtual status_t        lock();
     virtual status_t        unlock();
     virtual status_t        setPreviewDisplay(const sp<Surface>& surface);
-    virtual status_t        setPreviewTexture(const sp<ISurfaceTexture>& surfaceTexture);
+    virtual status_t        setPreviewTexture(const sp<IGraphicBufferProducer>& bufferProducer);
     virtual void            setPreviewCallbackFlag(int flag);
     virtual status_t        startPreview();
     virtual void            stopPreview();
@@ -53,9 +58,11 @@ public:
     // Interface used by CameraService
     CameraClient(const sp<CameraService>& cameraService,
             const sp<ICameraClient>& cameraClient,
+            const String16& clientPackageName,
             int cameraId,
             int cameraFacing,
             int clientPid,
+            int clientUid,
             int servicePid);
     ~CameraClient();
 
@@ -124,7 +131,7 @@ private:
 
     // Ensures atomicity among the public methods
     mutable Mutex                   mLock;
-    // This is a binder of Surface or SurfaceTexture.
+    // This is a binder of Surface or Surface.
     sp<IBinder>                     mSurface;
     sp<ANativeWindow>               mPreviewWindow;
 

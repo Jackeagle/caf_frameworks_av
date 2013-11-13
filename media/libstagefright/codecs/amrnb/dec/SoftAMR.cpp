@@ -154,7 +154,7 @@ OMX_ERRORTYPE SoftAMR::internalGetParameter(
 
             amrParams->nChannels = 1;
             amrParams->eAMRDTXMode = OMX_AUDIO_AMRDTXModeOff;
-            amrParams->eAMRFrameFormat = OMX_AUDIO_AMRFrameFormatConformance;
+            amrParams->eAMRFrameFormat = OMX_AUDIO_AMRFrameFormatFSF;
 
             if (!isConfigured()) {
                 amrParams->nBitRate = 0;
@@ -436,6 +436,13 @@ void SoftAMR::onQueueFilled(OMX_U32 portIndex) {
 }
 
 void SoftAMR::onPortFlushCompleted(OMX_U32 portIndex) {
+        ALOGE("onPortFlushCompleted portindex %d, resetting frame ",portIndex);
+        if(portIndex == 0) {
+           if(mMode == MODE_NARROW)
+              Speech_Decode_Frame_reset(mState);
+           else
+              pvDecoder_AmrWb_Reset(mState, 0);
+        }
 }
 
 void SoftAMR::onPortEnableCompleted(OMX_U32 portIndex, bool enabled) {

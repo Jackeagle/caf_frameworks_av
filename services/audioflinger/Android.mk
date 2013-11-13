@@ -3,7 +3,7 @@
 # code that are surrounded by "DOLBY..." are copyrighted and
 # licensed separately, as follows:
 #
-#  (C) 2012 Dolby Laboratories, Inc.
+#  (C) 2012-2013 Dolby Laboratories, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,13 +32,22 @@ include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 
+# RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+LOCAL_CFLAGS += -DRESOURCE_MANAGER
+endif
+# RESOURCE MANAGER
+
 LOCAL_SRC_FILES:=               \
     AudioFlinger.cpp            \
+    Threads.cpp                 \
+    Tracks.cpp                  \
+    Effects.cpp                 \
     AudioMixer.cpp.arm          \
     AudioResampler.cpp.arm      \
     AudioPolicyService.cpp      \
     ServiceUtilities.cpp        \
-	AudioResamplerCubic.cpp.arm \
+    AudioResamplerCubic.cpp.arm \
     AudioResamplerSinc.cpp.arm
 
 LOCAL_SRC_FILES += StateQueue.cpp
@@ -50,15 +59,14 @@ LOCAL_C_INCLUDES := \
     $(call include-path-for, audio-effects) \
     $(call include-path-for, audio-utils)
 
-# FIXME keep libmedia_native but remove libmedia after split
 LOCAL_SHARED_LIBRARIES := \
     libaudioutils \
     libcommon_time_client \
     libcutils \
     libutils \
+    liblog \
     libbinder \
     libmedia \
-    libmedia_native \
     libnbaio \
     libhardware \
     libhardware_legacy \
@@ -92,23 +100,24 @@ LOCAL_CFLAGS += -DSTATE_QUEUE_INSTANTIATIONS='"StateQueueInstantiations.cpp"'
 
 LOCAL_CFLAGS += -UFAST_TRACKS_AT_NON_NATIVE_SAMPLE_RATE
 
-# uncomment for systrace
-# LOCAL_CFLAGS += -DATRACE_TAG=ATRACE_TAG_AUDIO
-
-# uncomment for dumpsys to write most recent audio output to .wav file
-# 47.5 seconds at 44.1 kHz, 8 megabytes
-# LOCAL_CFLAGS += -DTEE_SINK_FRAMES=0x200000
+# uncomment to allow tee sink debugging to be enabled by property
+# LOCAL_CFLAGS += -DTEE_SINK
 
 # uncomment to enable the audio watchdog
 # LOCAL_SRC_FILES += AudioWatchdog.cpp
 # LOCAL_CFLAGS += -DAUDIO_WATCHDOG
 
+# Define ANDROID_SMP appropriately. Used to get inline tracing fast-path.
+ifeq ($(TARGET_CPU_SMP),true)
+    LOCAL_CFLAGS += -DANDROID_SMP=1
+else
+    LOCAL_CFLAGS += -DANDROID_SMP=0
+endif
+
 ifdef DOLBY_DAP
-#ifdef DOLBY_DAP_DSP
     LOCAL_CFLAGS += -DDOLBY_DAP_QDSP
-#endif
-    LOCAL_CFLAGS += -DDOLBY_DAP
-endif # DOLBY_DAP END
+endif # DOLBY_END
+
 include $(BUILD_SHARED_LIBRARY)
 
 #
@@ -123,15 +132,15 @@ LOCAL_SRC_FILES:=               \
     AudioResamplerSinc.cpp.arm
 
 LOCAL_SHARED_LIBRARIES := \
-	libdl \
+    libdl \
     libcutils \
-    libutils
+    libutils \
+    liblog
 
 LOCAL_MODULE:= test-resample
 
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_EXECUTABLE)
-
 
 include $(call all-makefiles-under,$(LOCAL_PATH))

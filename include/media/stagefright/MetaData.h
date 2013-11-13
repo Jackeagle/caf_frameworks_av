@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
  *
+ * Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -35,6 +38,8 @@ enum {
     kKeyHeight            = 'heig',  // int32_t, image pixel
     kKeyDisplayWidth      = 'dWid',  // int32_t, display/presentation
     kKeyDisplayHeight     = 'dHgt',  // int32_t, display/presentation
+    kKeySARWidth          = 'sarW',  // int32_t, sampleAspectRatio width
+    kKeySARHeight         = 'sarH',  // int32_t, sampleAspectRatio height
 
     // a rectangle, if absent assumed to be (0, 0, width - 1, height - 1)
     kKeyCropRect          = 'crop',
@@ -110,7 +115,7 @@ enum {
     // kKeyTrackTimeStatus is used to track progress in elapsed time
     kKeyTrackTimeStatus   = 'tktm',  // int64_t
 
-    kKeyNotRealTime       = 'ntrt',  // bool (int32_t)
+    kKeyRealTimeRecording = 'rtrc',  // bool (int32_t)
     kKeyNumBuffers        = 'nbbf',  // int32_t
 
     // Ogg files can be tagged to be automatically looping...
@@ -155,7 +160,11 @@ enum {
     kKeyCryptoKey         = 'cryK',  // uint8_t[16]
     kKeyCryptoIV          = 'cryI',  // uint8_t[16]
     kKeyCryptoMode        = 'cryM',  // int32_t
-    kKeyTunnelException   = 'Ntnl',
+
+    kKeyCryptoDefaultIVSize = 'cryS',  // int32_t
+
+    kKeyPssh              = 'pssh',  // raw data
+    kKeyTunnelException   = 'Ntnl', // not tunnel
 };
 
 enum {
