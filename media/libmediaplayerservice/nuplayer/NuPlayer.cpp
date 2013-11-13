@@ -12,24 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2013 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  */
 
 //#define LOG_NDEBUG 0
@@ -60,9 +42,6 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
 #include <gui/ISurfaceTexture.h>
-#ifdef DTS_M6_NOTIFY
-#include <NotifyPlaybackStates.h>
-#endif
 
 #include "avc_utils.h"
 
@@ -469,18 +448,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                              (status_t)OK);
                     mAudioSink->start();
 
-#ifdef DTS_M6_NOTIFY
-                    AString mime;
-                    CHECK(mSource->getFormat(true/*audio*/)->findString("mime", &mime));
-                    NotifyPlaybackStates::notify_playback_state(
-                                                                mAudioSink->getSessionId(),
-                                                                mAudioSink->streamType(),
-                                                                mime.c_str(), sampleRate,
-                                                                numChannels,
-                                                                true ,
-                                                                false );
-                    mRenderer->setSessionMetaData(mime, sampleRate, numChannels, false/* isHPXProcessed */);
-#endif
                     mRenderer->signalAudioSinkChanged();
                 } else {
                     // video

@@ -16,24 +16,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2013 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  */
 
 //#define LOG_NDEBUG 0
@@ -60,9 +42,6 @@
 #include <media/stagefright/MediaErrors.h>
 #include <QCMediaDefs.h>
 #include <hardware_legacy/power.h>
-#ifdef DTS_M6_NOTIFY
-#include "include/NotifyPlaybackStates.h"
-#endif
 
 #include <linux/unistd.h>
 
@@ -138,12 +117,6 @@ mObserver(observer) {
     initCheck = true;
 
     //mDeathRecipient = new PMDeathRecipient(this);
-#ifdef DTS_M6_NOTIFY
-    mIsHpxPreprocessed = false;
-    mSessionId = mAudioSink->getSessionId();
-    mStreamType = mAudioSink->streamType();
-    NotifyPlaybackStates::create_state_notifier_node(mSessionId, mStreamType);
-#endif
 }
 const int TunnelPlayer::getTunnelObjectsAliveMax() {
     char value[PROPERTY_VALUE_MAX];
@@ -221,15 +194,8 @@ TunnelPlayer::~TunnelPlayer() {
         sp<IBinder> binder = mPowerManager->asBinder();
         binder->unlinkToDeath(mDeathRecipient);
     }
-#ifdef DTS_M6_NOTIFY
-	const char *mime = NULL;
-    if(mSource != NULL) {
-        sp<MetaData> format = mSource->getFormat();
-        CHECK(format->findCString(kKeyMIMEType, &mime));
-    }
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mime, mSampleRate, numChannels, false /* isPlaying */, mIsHpxPreprocessed);
-    NotifyPlaybackStates::remove_state_notifier_node(mSessionId, mStreamType);
-#endif
+
+
 }
 
 void TunnelPlayer::getAudioFlinger() {
@@ -436,10 +402,6 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
     ALOGV("Waking up extractor thread");
     mExtractorCv.signal();
     mLock.unlock();
-
-#ifdef DTS_M6_NOTIFY
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mime, mSampleRate, numChannels, true /* isPlaying */, mIsHpxPreprocessed);
-#endif
     return OK;
 }
 
@@ -498,14 +460,6 @@ void TunnelPlayer::pause(bool playPendingSamples) {
         ALOGV("AudioSink pause");
         mAudioSink->pause();
     }
-#ifdef DTS_M6_NOTIFY
-    const char *mime = NULL;
-    if(mSource != NULL) {
-        sp<MetaData> format = mSource->getFormat();
-        CHECK(format->findCString(kKeyMIMEType, &mime));
-    }
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mime, mSampleRate, numChannels, false/* isPlaying */, mIsHpxPreprocessed);
-#endif
 }
 
 void TunnelPlayer::resume() {
@@ -544,14 +498,6 @@ void TunnelPlayer::resume() {
         ALOGV("Audio sink start succeeded.");
         mExtractorCv.signal();
         ALOGV("Audio signalling extractor thread.");
-#ifdef DTS_M6_NOTIFY
-        const char *mime = NULL;
-        if(mSource != NULL) {
-            sp<MetaData> format = mSource->getFormat();
-            CHECK(format->findCString(kKeyMIMEType, &mime));
-        }
-        NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mime, mSampleRate, numChannels, true/* isPlaying */, mIsHpxPreprocessed);
-#endif
     }
 }
 
@@ -837,9 +783,6 @@ size_t TunnelPlayer::fillBuffer(void *data, size_t size) {
 
                 mIsFirstBuffer = false;
             } else {
-#ifdef DTS_M6_NOTIFY
-                updateHpxPreProcessedState();
-#endif
                 err = mSource->read(&mInputBuffer, &options);
             }
 
@@ -1038,31 +981,5 @@ bool TunnelPlayer::seekTooClose(int64_t time_us) {
     const int64_t deltaUs = 60000LL; /* 60-70ms on msm8974 */
     return (time_us > t1) && ((time_us - t1) <= deltaUs);
 }
-
-#ifdef DTS_M6_NOTIFY
-void TunnelPlayer::updateHpxPreProcessedState()
-{
-    char prop[PROPERTY_VALUE_MAX];
-    property_get("use.dts_m6_notify", prop, "0");
-    if (!strncmp("true", prop, sizeof("true")) || atoi(prop)) {
-        sp<MetaData> format = mSource->getFormat();
-        const char *mime = NULL;
-        const char *decoderComponent;
-        int hpxProcessed;
-        bool success = format->findCString(kKeyDecoderComponent, &decoderComponent);
-        if (success && strstr(decoderComponent, "dts")) {
-            CHECK(format->findInt32(kKeyHPXProcessed, &hpxProcessed));
-            CHECK(format->findCString(kKeyMIMEType, &mime));
-            ALOGV("updateHpxPreProcessedState: hpxProcessed: %d", hpxProcessed);
-            bool isHpxPreprocessed = hpxProcessed ? true : false;
-            if (mIsHpxPreprocessed != isHpxPreprocessed) {
-                mIsHpxPreprocessed = isHpxPreprocessed;
-                bool isPlaying = !mPaused;
-                NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mime, mSampleRate, numChannels, isPlaying, mIsHpxPreprocessed);
-            }
-        }
-    }
-}
-#endif
 
 } //namespace android
