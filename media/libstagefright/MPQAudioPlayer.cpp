@@ -292,6 +292,7 @@ status_t MPQAudioPlayer::start(bool sourceAlreadyStarted) {
         if (!sourceAlreadyStarted) {
             mSource->stop();
         }
+        mAudioSink.clear();
         ALOGE("Opening a routing session failed");
         return err;
     }
@@ -489,6 +490,7 @@ status_t MPQAudioPlayer::resumePlayback(int sessionId, bool bIgnorePendingSample
             (mA2DPEnabled ?  AUDIO_OUTPUT_FLAG_NONE : flags ));
         if(err != OK) {
             ALOGE("openSession - resume = %d",err);
+            mAudioSink.clear();
             return err;
         }
         acquireWakeLock();
@@ -515,24 +517,6 @@ void MPQAudioPlayer::reset() {
         ALOGV("Close the PCM Stream");
         mAudioSink->stop();
     }
-    mAudioSink = NULL;
-
-    if(mAudioSink.get()) {
-        mAudioSink->pause();
-        ALOGV("Close the PCM Stream");
-        mAudioSink->stop();
-        mAudioSink = NULL;
-    }
-
-    // Close the audiosink after all the threads exited to make sure
-    // there is no thread writing data to audio sink or applying effect
-    if(mAudioSink.get() != NULL) {
-        ALOGV("close session ++");
-        mAudioSink->close();
-        ALOGV("close session --");
-        mIsAudioRouted =  false;
-    }
-    mAudioSink.clear();
 
     if(mCodecSpecificData != NULL) {
        free(mCodecSpecificData);
@@ -550,7 +534,9 @@ void MPQAudioPlayer::reset() {
         mInputBuffer = NULL;
     }
 
-    mSource->stop();
+    if (mAudioSink.get())
+        mSource->stop();
+    mAudioSink.clear();
 
     // The following hack is necessary to ensure that the OMX
     // component is completely released by the time we may try
