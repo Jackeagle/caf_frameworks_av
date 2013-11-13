@@ -70,7 +70,7 @@ public:
     virtual void setSource(const sp<MediaSource> &source);
 
     // Return time in us.
-    virtual int64_t getRealTimeUs();
+    int64_t getRealTimeUs();
 
     virtual status_t start(bool sourceAlreadyStarted = false);
 
