@@ -675,8 +675,8 @@ void MPQAudioPlayer::extractorThreadEntry() {
                         memset(mLocalBuf, 0x0, AAC_AC3_BUFFER_SIZE);
                         mAudioSink->write(mLocalBuf, 0);
                     }
-                    mObserver->postAudioEOS( mPostEOSDelayUs);
                     mPostedEOS = true;
+                    mObserver->postAudioEOS( mPostEOSDelayUs);
                 }
             }
             continue;
