@@ -43,7 +43,7 @@ static bool FileHasAcceptableExtension(const char *extension) {
         ".mpeg", ".ogg", ".mid", ".smf", ".imy", ".wma", ".aac",
         ".wav", ".amr", ".midi", ".xmf", ".rtttl", ".rtx", ".ota",
         ".mkv", ".mka", ".webm", ".ts", ".fl", ".flac", ".mxmf",
-        ".avi", ".mpeg", ".mpg", ".awb", ".mpga"
+        ".avi", ".mpeg", ".mpg", ".awb", ".mpga", ".mp2"
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
         ,".qcp", ".ac3", ".dts", ".wmv", ".ec3"
 #endif
