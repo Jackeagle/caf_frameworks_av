@@ -83,13 +83,13 @@ mNumChannels(0),
 mFrameSize(0),
 mNumFramesPlayed(0),
 mIsAACFormatAdif(0),
+mCodecSpecificDataSize(0),
 mLatencyUs(0),
 mStarted(false),
 mAsyncReset(false),
 mPositionTimeMediaUs(-1),
 mPositionTimeRealUs(-1),
 mSeeking(false),
-mInternalSeeking(false),
 mPostedEOS(false),
 mReachedExtractorEOS(false),
 mFinalStatus(OK),
@@ -129,7 +129,7 @@ mObserver(observer) {
 
     mLocalBuf = NULL;
     mInputBufferSize =  0;
-
+    mCodecSpecificData = NULL;
     mFirstEncodedBuffer = false;
     mHasVideo = hasVideo;
     initCheck = true;
@@ -284,7 +284,10 @@ status_t MPQAudioPlayer::start(bool sourceAlreadyStarted) {
         this,
         (mA2DPEnabled ?  AUDIO_OUTPUT_FLAG_NONE : flags ));
     if (err != OK) {
-        //TODO: Release first buffer if it is being handled
+        if (mFirstBuffer != NULL) {
+            mFirstBuffer->release();
+            mFirstBuffer = NULL;
+        }
         if (!sourceAlreadyStarted) {
             mSource->stop();
         }
@@ -530,6 +533,11 @@ void MPQAudioPlayer::reset() {
     }
     mAudioSink.clear();
 
+    if(mCodecSpecificData != NULL) {
+       free(mCodecSpecificData);
+       mCodecSpecificData = NULL;
+    }
+
     if (mFirstBuffer != NULL) {
         mFirstBuffer->release();
         mFirstBuffer = NULL;
@@ -563,7 +571,6 @@ void MPQAudioPlayer::reset() {
     mPositionTimeRealUs = -1;
 
     mSeeking = false;
-    mInternalSeeking = false;
 
     mPostedEOS = false;
     mReachedExtractorEOS = false;
@@ -939,8 +946,14 @@ size_t MPQAudioPlayer::fillMS11InputBufferfromParser(void *data, size_t size) {
         {
             Mutex::Autolock autoLock(mLock);
 
-            if (mSeeking || mInternalSeeking) {
-
+            if (mSeeking) {
+                if (mIsFirstBuffer) {
+                   if (mFirstBuffer != NULL) {
+                       mFirstBuffer->release();
+                       mFirstBuffer = NULL;
+                   }
+                   mIsFirstBuffer = false;
+                }
                 MediaSource::ReadOptions::SeekMode seekMode;
                 seekMode = MediaSource::ReadOptions::SEEK_CLOSEST_SYNC;
                 options.setSeekTo(mSeekTimeUs, seekMode );
@@ -965,46 +978,25 @@ size_t MPQAudioPlayer::fillMS11InputBufferfromParser(void *data, size_t size) {
             status_t err = OK;
 
             if(!mFirstEncodedBuffer && ((mAudioFormat == AUDIO_FORMAT_AAC) || (mAudioFormat == AUDIO_FORMAT_AAC_ADIF))) {
-                uint32_t type;
-                const void *configData;
-                size_t configSize = 0;
-                   const void *codec_specific_data;
-                   size_t codec_specific_data_size = 0;
-                if (mSource->getFormat()->findData(kKeyESDS, &type, &configData, &configSize)) {
-                    ALOGV("GET ESDS - ");
-                    ESDS esds((const char *)configData, configSize);
-                    CHECK_EQ(esds.InitCheck(), (status_t)OK);
+              if(mCodecSpecificData != NULL)
+                 memcpy((char *)data,(const char *)mCodecSpecificData,mCodecSpecificDataSize);
 
-                   esds.getCodecSpecificInfo(
-                        &codec_specific_data, &codec_specific_data_size);
+               size_done = mCodecSpecificDataSize;
 
-                   memcpy((char *)data,(const char *)codec_specific_data, codec_specific_data_size);
-                size_done = codec_specific_data_size;
-                ALOGV("size_done = %d",size_done);
-                const char *configarr = (const char *)codec_specific_data;
-                for(size_t k = 0; k < size_done ; k++) {
-                ALOGV("Config data is 0x%x",configarr[k]);
-                }
-
-                }
-                else if (mSource->getFormat()->findData(kKeyAacCodecSpecificData, &type, &configData, &configSize)) {
-                    ALOGI("AAC");
-                    memcpy((char *)data,(const char *)configData, configSize);
-                size_done = configSize;
-                ALOGV("size_done = %d",size_done);
-                const char *configarr = (const char *)configData;
-                for(size_t k = 0; k < size_done ; k++) {
-                ALOGV("Config data is 0x%x",configarr[k]);
-                }
-
-                }
-                mFirstEncodedBuffer = true;
+               ALOGV("size_done = %d",size_done);
+               mFirstEncodedBuffer = true;
                 //TODO: Handle Error case if config data is zero
                 break;
             }
 
-            err = mSource->read(&mInputBuffer, &options);
-
+            if (mIsFirstBuffer) {
+                mInputBuffer = mFirstBuffer;
+                mFirstBuffer = NULL;
+                err = mFirstBufferResult;
+                mIsFirstBuffer = false;
+            } else {
+                err = mSource->read(&mInputBuffer, &options);
+            }
             CHECK((err == OK && mInputBuffer != NULL)
                   || (err != OK && mInputBuffer == NULL));
             {
@@ -1054,45 +1046,11 @@ size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
     size_t size_done = 0;
     size_t size_remaining = size;
     if (!mFirstEncodedBuffer && (mAudioFormat == AUDIO_FORMAT_WMA || mAudioFormat == AUDIO_FORMAT_WMA_PRO)) {
-        uint32_t type;
-        int configData[WMAPARAMSSIZE];
-        size_t configSize = WMAPARAMSSIZE * sizeof(int);
-        int value;
-        sp<MetaData> format = mSource->getFormat();
-        ALOGV("Extracting the WMA params");
+        if(mCodecSpecificData != NULL)
+           memcpy((char *)data,(const char *)mCodecSpecificData,mCodecSpecificDataSize);
 
-        if (format->findInt32(kKeyBitRate, &value))
-            configData[WMABITRATE] = value;
-        else configData[WMABITRATE] = 0;
-        if (format->findInt32(kKeyWMABlockAlign, &value))
-            configData[WMABLOCKALIGN] = value;
-        else configData[WMABLOCKALIGN] = 0;
-        if (format->findInt32(kKeyWMAEncodeOpt, &value))
-            configData[WMAENCODEOPTION] = value;
-        else configData[WMAENCODEOPTION] = 0;
+        size_done = mCodecSpecificDataSize;
 
-        if (format->findInt32(kKeyWMAFormatTag, &value))
-            configData[WMAFORMATTAG] = value;
-        else configData[WMAFORMATTAG] = 0;
-
-        if (format->findInt32(kKeyWMABitspersample, &value))
-            configData[WMABPS] = value;
-        else configData[WMABPS] = 0;
-
-        if (format->findInt32(kKeyWMAChannelMask, &value))
-            configData[WMACHANNELMASK] = value;
-        else configData[WMACHANNELMASK] = 0;
-
-        if (format->findInt32(kKeyWMAAdvEncOpt1, &value))
-            configData[WMAENCODEOPTION1] = value;
-        else configData[WMAENCODEOPTION1] = 0;
-
-        if (format->findInt32(kKeyWMAAdvEncOpt2, &value))
-            configData[WMAENCODEOPTION2] = value;
-        else configData[WMAENCODEOPTION2] = 0;
-
-        memcpy((char *)data,(const char *)configData, configSize);
-        size_done = configSize;
         ALOGV("size_done = %d",size_done);
         mFirstEncodedBuffer = true;
         return size_done;
@@ -1104,8 +1062,14 @@ size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
         {
             Mutex::Autolock autoLock(mLock);
 
-            if (mSeeking || mInternalSeeking) {
-
+            if (mSeeking) {
+                if (mIsFirstBuffer) {
+                   if (mFirstBuffer != NULL) {
+                       mFirstBuffer->release();
+                       mFirstBuffer = NULL;
+                   }
+                   mIsFirstBuffer = false;
+                }
                 MediaSource::ReadOptions::SeekMode seekMode;
                 seekMode = MediaSource::ReadOptions::SEEK_CLOSEST_SYNC;
                 options.setSeekTo(mSeekTimeUs, seekMode );
@@ -1119,17 +1083,22 @@ size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
                 size_remaining = size;
 
                 mSeeking = false;
-                if (mObserver && !mAsyncReset && !mInternalSeeking) {
+                if (mObserver && !mAsyncReset) {
                     ALOGD("fillBuffer: Posting audio seek complete event");
                     mObserver->postAudioSeekComplete();
                 }
-                mInternalSeeking = false;
             }
         }
         if (mInputBuffer == NULL) {
             status_t err;
-            err = mSource->read(&mInputBuffer, &options);
-
+            if (mIsFirstBuffer) {
+                mInputBuffer = mFirstBuffer;
+                mFirstBuffer = NULL;
+                err = mFirstBufferResult;
+                mIsFirstBuffer = false;
+            } else {
+                err = mSource->read(&mInputBuffer, &options);
+            }
             CHECK((err == OK && mInputBuffer != NULL)
                   || (err != OK && mInputBuffer == NULL));
             {
@@ -1329,11 +1298,6 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
         ALOGW("Sw Decoder");
         mAudioFormat = AUDIO_FORMAT_PCM_16_BIT;
         mDecoderType = ESoftwareDecoder;
-        err = checkForInfoFormatChanged();
-        if(err != OK) {
-           ALOGE("checkForInfoFormatChanged err = %d", err);
-           return err;
-        }
     }
     else if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_AC3)) {
         ALOGW("MS11 AC3");
@@ -1351,6 +1315,7 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
         mAudioFormat = AUDIO_FORMAT_AAC;
         if(mIsAACFormatAdif)
             mAudioFormat = AUDIO_FORMAT_AAC_ADIF;
+        updateConfigData();
     }
     else if (!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_WMA)) {
         ALOGW("Hw Decoder - WMA");
@@ -1361,6 +1326,7 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
         CHECK(format->findInt32(kKeyWMAVersion, &version));
         if(version==kTypeWMAPro || version==kTypeWMALossLess)
             mAudioFormat = AUDIO_FORMAT_WMA_PRO;
+        updateConfigData();
     }
     else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_DTS)) {
         ALOGE("### Hw Decoder - DTS");
@@ -1377,6 +1343,11 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
        ALOGW("invalid format ");
        err =  BAD_VALUE;
     }
+    err = checkForInfoFormatChanged();
+    if(err != OK) {
+       ALOGE("checkForInfoFormatChanged err = %d", err);
+       return err;
+     }
      return err;
 }
 
@@ -1438,5 +1409,97 @@ status_t MPQAudioPlayer::updateMetaDataInformation() {
     ALOGV("mDurationUs = %lld, %s",mDurationUs,mMimeType.string());
     return OK;
 }
+
+void MPQAudioPlayer::updateConfigData()
+{
+    if((mAudioFormat == AUDIO_FORMAT_AAC) ||
+        (mAudioFormat == AUDIO_FORMAT_AAC_ADIF)) {
+        uint32_t type;
+        const void *configData;
+        size_t configSize = 0;
+        const void *codec_specific_data;
+        size_t codec_specific_data_size = 0;
+        if (mSource->getFormat()->findData(kKeyESDS, &type, &configData,
+            &configSize)) {
+            ALOGV("GET ESDS - ");
+            ESDS esds((const char *)configData, configSize);
+            CHECK_EQ(esds.InitCheck(), (status_t)OK);
+            esds.getCodecSpecificInfo(&codec_specific_data,
+                                   &codec_specific_data_size);
+            mCodecSpecificDataSize = codec_specific_data_size;
+            mCodecSpecificData = (char *) malloc (mCodecSpecificDataSize);
+            if(mCodecSpecificData != NULL)
+                memcpy((char *)mCodecSpecificData,
+                    (const char *)codec_specific_data,mCodecSpecificDataSize);
+         } else if (mSource->getFormat()->findData(kKeyAacCodecSpecificData,
+                     &type, &configData, &configSize)) {
+              ALOGI("AAC");
+              mCodecSpecificDataSize = configSize;
+              mCodecSpecificData = (char *) malloc (mCodecSpecificDataSize);
+              if(mCodecSpecificData != NULL)
+                  memcpy((char *)mCodecSpecificData,
+                     (const char *)configData,mCodecSpecificDataSize);
+         }
+         if(mCodecSpecificData != NULL) {
+             const char *configarr = (const char *)mCodecSpecificData;
+             for(size_t k = 0; k < mCodecSpecificDataSize ; k++)
+                 ALOGV("Config data is 0x%x",configarr[k]);
+         }
+    } else if((mAudioFormat == AUDIO_FORMAT_WMA ||
+               mAudioFormat == AUDIO_FORMAT_WMA_PRO)) {
+        int configData[WMAPARAMSSIZE];
+        int value;
+        sp<MetaData> format = mSource->getFormat();
+        ALOGV("Extracting the WMA params");
+
+        if (format->findInt32(kKeyBitRate, &value))
+            configData[WMABITRATE] = value;
+        else
+            configData[WMABITRATE] = 0;
+        if (format->findInt32(kKeyWMABlockAlign, &value))
+            configData[WMABLOCKALIGN] = value;
+        else
+            configData[WMABLOCKALIGN] = 0;
+        if (format->findInt32(kKeyWMAEncodeOpt, &value))
+            configData[WMAENCODEOPTION] = value;
+        else
+            configData[WMAENCODEOPTION] = 0;
+
+        if (format->findInt32(kKeyWMAFormatTag, &value))
+            configData[WMAFORMATTAG] = value;
+        else
+            configData[WMAFORMATTAG] = 0;
+
+        if (format->findInt32(kKeyWMABitspersample, &value))
+            configData[WMABPS] = value;
+        else
+            configData[WMABPS] = 0;
+
+        if (format->findInt32(kKeyWMAChannelMask, &value))
+            configData[WMACHANNELMASK] = value;
+        else
+            configData[WMACHANNELMASK] = 0;
+
+        if (format->findInt32(kKeyWMAAdvEncOpt1, &value))
+            configData[WMAENCODEOPTION1] = value;
+        else
+            configData[WMAENCODEOPTION1] = 0;
+
+        if (format->findInt32(kKeyWMAAdvEncOpt2, &value))
+            configData[WMAENCODEOPTION2] = value;
+        else
+            configData[WMAENCODEOPTION2] = 0;
+
+        mCodecSpecificDataSize = WMAPARAMSSIZE * sizeof(int);
+        mCodecSpecificData = (char *) malloc (mCodecSpecificDataSize);
+        memcpy((char *)mCodecSpecificData, (const char *)configData,
+                mCodecSpecificDataSize);
+    } else {
+        ALOGW("Invalid Audio Format to update codec specifc data");
+    }
+    return;
+}
+
+
 
 } //namespace android
