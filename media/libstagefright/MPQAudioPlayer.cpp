@@ -1329,8 +1329,13 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
         updateConfigData();
     }
     else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_DTS)) {
-        ALOGE("### Hw Decoder - DTS");
+        ALOGW("Hw Decoder - DTS");
         mAudioFormat = AUDIO_FORMAT_DTS;
+        mDecoderType = EHardwareDecoder;
+    }
+    else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_DTS_LBR)) {
+        ALOGW("Hw Decoder - DTS-LBR");
+        mAudioFormat = AUDIO_FORMAT_DTS_LBR;
         mDecoderType = EHardwareDecoder;
     }
     else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_MPEG)) {
