@@ -63,6 +63,7 @@ static const char   mName[] = "MPQAudioPlayer";
 
 #define RENDER_LATENCY 24000
 #define AAC_AC3_BUFFER_SIZE 32768
+#define TUNNEL_BUFFER_METADATA_SIZE 64
 
 namespace android {
 
@@ -683,6 +684,8 @@ void MPQAudioPlayer::extractorThreadEntry() {
         else if (mDecoderType == EHardwareDecoder) {
             mExtractorMutex.lock();
             if (mReachedExtractorEOS || mIsPaused || mAsyncReset ) {
+                if (mReachedExtractorEOS)
+                    mAudioSink->write(mLocalBuf, 0);
                 ALOGV("extractorThreadEntry: mIsPaused %d\
                         mReachedExtractorEOS %d mAsyncReset %d ",\
                         mIsPaused, mReachedExtractorEOS, mAsyncReset);
@@ -703,7 +706,7 @@ void MPQAudioPlayer::extractorThreadEntry() {
             }
             mAudioSink->write(mLocalBuf, bytesToWrite);
             if (!mInputBufferSize) {
-                mInputBufferSize = mAudioSink->frameCount();
+                mInputBufferSize = mAudioSink->frameCount()-TUNNEL_BUFFER_METADATA_SIZE;
                 ALOGD("mInputBufferSize = %d",mInputBufferSize);
                 bufferAlloc(mInputBufferSize);
             }
@@ -1193,6 +1196,9 @@ void MPQAudioPlayer::requestAndWaitForExtractorThreadExit() {
 
     if (!mExtractorThreadAlive)
         return;
+    if (mIsPaused) {
+        mAudioSink->flush();
+    }
     ALOGD("mKillExtractorThread true");
     mKillExtractorThread = true;
     mExtractorCv.signal();
@@ -1269,7 +1275,7 @@ status_t MPQAudioPlayer::configurePCM() {
              ALOGV("getOutputSession-- ");
 
              if (mAudioFormat != AUDIO_FORMAT_WMA && mAudioFormat != AUDIO_FORMAT_WMA_PRO) {
-                 mInputBufferSize = mAudioSink->frameCount();
+                 mInputBufferSize = mAudioSink->frameCount() - TUNNEL_BUFFER_METADATA_SIZE;
                  ALOGD("mInputBufferSize = %d",mInputBufferSize);
                  bufferAlloc(mInputBufferSize);
              } else {
