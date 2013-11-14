@@ -198,7 +198,6 @@ private:
 
     //Pause variables
     bool mIsPaused;
-    bool mPlayPendingSamples;
     TimedEventQueue mQueue;
     bool mQueueStarted;
     sp<TimedEventQueue::Event>  mPauseEvent;
@@ -252,10 +251,6 @@ private:
     void updateConfigData();
 
     status_t seekPlayback();
-
-    status_t pausePlayback(bool bIgnorePendingSamples);
-
-    status_t resumePlayback(int sessionId, bool bIgnorePendingSamples);
 
     size_t fillBufferfromSoftwareDecoder(void *data, size_t size);
     size_t fillBufferfromParser(void *data, size_t size);
