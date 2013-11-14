@@ -173,9 +173,12 @@ AudioTrack::AudioTrack(
 AudioTrack::~AudioTrack()
 {
     ALOGV_IF(mSharedBuffer != 0, "Destructor sharedBuffer: %p", mSharedBuffer->pointer());
-    if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
-            mStreamType, mFormat, mFlags, false/*sesion active*/)) {
-        ALOGE("Reset concurency param failed");
+    TrackUtils::resetUseCasePcmPlayback(mResetPcm);
+    if (!mResetPcm) {
+        if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
+               mStreamType, mFormat, mFlags, false/*sesion active*/)) {
+           ALOGE("Reset concurency param failed");
+        }
     }
 
     if (mStatus == NO_ERROR) {
@@ -321,7 +324,7 @@ status_t AudioTrack::set(
 
     //Check whether to force fast flag
     audio_output_flags_t output_flags = flags;
-    TrackUtils::setFastFlag(streamType, output_flags);
+    mResetPcm = TrackUtils::setFastFlag(streamType, output_flags);
 
     audio_io_handle_t output = AudioSystem::getOutput(
                                     streamType,
@@ -410,11 +413,12 @@ status_t AudioTrack::set(
     mNewPosition = 0;
     mUpdatePeriod = 0;
     mFlushed = false;
-
-    if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
-            mStreamType, mFormat, mFlags, true/*sesion active*/)) {
-        ALOGE("Set concurency param failed");
-        return INVALID_OPERATION;
+    if (!mResetPcm) {
+        if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
+                mStreamType, mFormat, mFlags, true/*sesion active*/)) {
+           ALOGE("Set concurency param failed");
+           return INVALID_OPERATION;
+        }
     }
     return NO_ERROR;
 }
@@ -434,7 +438,6 @@ uint32_t AudioTrack::latency() const
         } else {
             newLatency = afLatency;
         }
-        ALOGD("latency() mLatency = %d, newLatency = %d", mLatency, newLatency);
         return newLatency;
     }
     return mLatency;
