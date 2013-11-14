@@ -305,10 +305,12 @@ status_t MPQAudioPlayer::start(bool sourceAlreadyStarted) {
     }
     mAudioSink->start();
     ALOGD(" MPQ Audio Driver Started");
+    mExtractorMutex.lock();
     mStarted = true;
 
     ALOGD("Waking up extractor thread");
     mExtractorCv.signal();
+    mExtractorMutex.unlock();
 
     return OK;
 }
