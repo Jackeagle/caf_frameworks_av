@@ -371,6 +371,7 @@ private:
     status_t applyRotation();
     status_t waitForBufferFilled_l();
 
+    status_t resumeLocked(bool drainInputBuf);
     int64_t getDecodingTimeUs();
 
     status_t parseAVCCodecSpecificData(
