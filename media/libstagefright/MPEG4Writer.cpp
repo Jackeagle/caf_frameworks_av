@@ -1844,15 +1844,17 @@ status_t MPEG4Writer::Track::stop() {
 
     status_t err = (status_t) dummy;
 
-    ALOGD("Stopping %s track source", mIsAudio? "Audio": "Video");
-    {
-        status_t status = mSource->stop();
-        if (err == OK && status != OK && status != ERROR_END_OF_STREAM) {
-            err = status;
+    if (!mPaused) {
+        ALOGD("Stopping %s track source", mIsAudio? "Audio": "Video");
+        {
+            status_t status = mSource->stop();
+            if (err == OK && status != OK && status != ERROR_END_OF_STREAM) {
+                err = status;
+            }
         }
-    }
 
-    ALOGD("%s track stopped", mIsAudio? "Audio": "Video");
+        ALOGD("%s track stopped", mIsAudio? "Audio": "Video");
+    }
     return err;
 }
 
@@ -2375,7 +2377,9 @@ status_t MPEG4Writer::Track::threadEntry() {
         if (currDurationTicks < 0ll) {
             ALOGE("timestampUs %lld < lastTimestampUs %lld for %s track",
                 timestampUs, lastTimestampUs, mIsAudio? "Audio": "Video");
-            return UNKNOWN_ERROR;
+            err = UNKNOWN_ERROR;
+            mSource->notifyError(err);
+            return err;
         }
 
         mStszTableEntries->add(htonl(sampleSize));
