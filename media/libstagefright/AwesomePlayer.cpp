@@ -1703,7 +1703,7 @@ status_t AwesomePlayer::initAudioDecoder() {
             /* Allowing two instances of MPQAudioPlayer to Acomodate Audio from Video
                Playback while Music Player is still holding an MPQAudioPlayer instance
                in Paused state */
-            (MPQAudioPlayer::getMPQAudioObjectsAlive() < 2) &&
+          //  (MPQAudioPlayer::getMPQAudioObjectsAlive() < 2) &&
             (property_get("ro.product.device", value, "0") &&
             (!strncmp(value, "msm8960", sizeof("msm8960") - 1)))) {
 
