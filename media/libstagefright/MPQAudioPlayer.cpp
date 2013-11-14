@@ -1284,12 +1284,24 @@ status_t MPQAudioPlayer::getDecoderAndFormat() {
     }
     else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_DTS)) {
         ALOGW("Hw Decoder - DTS");
-        mAudioFormat = AUDIO_FORMAT_DTS;
+        sp<MetaData> format = mSource->getFormat();
+        int isStreamTE = 1;
+        mAudioFormat = AUDIO_FORMAT_DTS_TE;
+        if (format->findInt32(kKeyIsStreamTE, &isStreamTE) && isStreamTE == 0) {
+            mAudioFormat = (audio_format_t)(mAudioFormat & ~AUDIO_FORMAT_SUB_DTS_TE);
+            ALOGW("Hw Decoder - DTS NON-Transcoder Engaged");
+        }
         mDecoderType = EHardwareDecoder;
     }
     else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_DTS_LBR)) {
-        ALOGW("Hw Decoder - DTS-LBR");
-        mAudioFormat = AUDIO_FORMAT_DTS_LBR;
+        ALOGW("Hw Decoder - DTS_LBR");
+        sp<MetaData> format = mSource->getFormat();
+        int isStreamTE = 1;
+        mAudioFormat = AUDIO_FORMAT_DTS_LBR_TE;
+        if (format->findInt32(kKeyIsStreamTE, &isStreamTE) && isStreamTE == 0) {
+            mAudioFormat = (audio_format_t)(mAudioFormat & ~AUDIO_FORMAT_SUB_DTS_TE);
+            ALOGW("Hw Decoder - DTS_LBR NON-Transcoder Engaged");
+        }
         mDecoderType = EHardwareDecoder;
     }
     else if(!strcasecmp(mMimeType.string(), MEDIA_MIMETYPE_AUDIO_MPEG)) {
