@@ -166,7 +166,8 @@ enum {
     kKeyPssh              = 'pssh',  // raw data
     kKeyTunnelException   = 'Ntnl', // not tunnel
     kKeyInterlaced        = 'Inlc',  // bool (int32_t)
-    kKeyIsStreamTE        = 'isTE'  // bool (int32_t) isTranscoderEngaged
+    kKeyIsStreamTE        = 'isTE',  // bool (int32_t) isTranscoderEngaged
+    kKeyAcmod             = 'acmod'
 };
 
 enum {
