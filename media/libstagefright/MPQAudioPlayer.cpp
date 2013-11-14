@@ -469,7 +469,9 @@ void MPQAudioPlayer::reset() {
 
     if (mAudioSink.get()) {
         mAudioSink->pause();
-        mAudioSink->flush();
+        // We dont flush if EoS is posted.
+        if(!mPostedEOS)
+           mAudioSink->flush();
         ALOGV("Close the PCM Stream");
         mAudioSink->stop();
     }
