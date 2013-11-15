@@ -24,6 +24,7 @@
 #include <media/stagefright/foundation/AHierarchicalStateMachine.h>
 #include <media/stagefright/SkipCutBuffer.h>
 #include <OMX_Audio.h>
+#include <OMX_Component.h>
 
 #define TRACK_BUFFER_TIMING     0
 
@@ -293,6 +294,10 @@ private:
     void signalError(
             OMX_ERRORTYPE error = OMX_ErrorUndefined,
             status_t internalError = UNKNOWN_ERROR);
+    //Smooth streaming related
+    status_t InitSmoothStreaming();
+    OMX_PARAM_PORTDEFINITIONTYPE mOutputPortDef;
+    bool mSmoothStreaming;
 
     status_t requestIDRFrame();
     status_t setParameters(const sp<AMessage> &params);
