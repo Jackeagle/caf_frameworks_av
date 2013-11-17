@@ -189,6 +189,7 @@ private:
     int64_t mPostEOSDelayUs;
 
     //Seek variables
+    bool mInternalSeeking;
     bool mSeeking;
 
     //EOS variables
