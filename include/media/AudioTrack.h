@@ -244,7 +244,13 @@ public:
      */
             uint32_t    channelCount() const { return mChannelCount; }
 
-            uint32_t    frameCount() const  { return mFrameCount; }
+            uint32_t    frameCount() const
+            {
+                if(mAudioDirectOutput != -1) {
+                    return mAudioFlinger->frameCount(mAudioDirectOutput);
+                }
+                return mFrameCount;
+            }
             size_t      frameSize() const   { return mFrameSize; }
 
     /* Return the static buffer specified in constructor or set(), or 0 for streaming mode */
