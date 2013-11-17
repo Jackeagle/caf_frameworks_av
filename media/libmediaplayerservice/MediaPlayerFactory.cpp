@@ -32,7 +32,11 @@
 #include "nuplayer/NuPlayerDriver.h"
 #include <dlfcn.h>
 
+class MPQ_PlayerClient;
+
 namespace android {
+
+typedef MPQ_PlayerClient* (*CreateMPQ_PlayerClientFunc)(void);
 
 Mutex MediaPlayerFactory::sLock;
 MediaPlayerFactory::tFactoryMap MediaPlayerFactory::sFactoryMap;
@@ -167,6 +171,29 @@ sp<MediaPlayerBase> MediaPlayerFactory::createPlayer(
  *                     Built-In Factory Implementations                      *
  *                                                                           *
  *****************************************************************************/
+
+class MPQPlayerFactory :
+    public MediaPlayerFactory::IFactory {
+  public:
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
+                               const char* url,
+                               float curScore) {
+        if (!strncasecmp("mpq", url, 3))
+            return 1.0;
+        else
+            return 0.0;
+    }
+
+    virtual sp<MediaPlayerBase> createPlayer() {
+        ALOGV(" create MPQPlayer");
+        CreateMPQ_PlayerClientFunc funcHandle;
+        void *handle;
+        handle = dlopen("libmpqplayerclient.so", RTLD_NOW);
+        ///((MediaPlayerService*)cookie)->mpqHandle(handle);          //TODO: fix me, close the handle opened above while destructing this factory.
+        funcHandle = (CreateMPQ_PlayerClientFunc)dlsym(handle , "_ZN16MPQ_PlayerClient22CreateMPQ_PlayerClientEv");
+        return (MediaPlayerBase*)funcHandle();
+    }
+};
 
 class StagefrightPlayerFactory :
     public MediaPlayerFactory::IFactory {
@@ -335,6 +362,7 @@ void MediaPlayerFactory::registerBuiltinFactories() {
     if (sInitComplete)
         return;
 
+    registerFactory_l(new MPQPlayerFactory(), MPQ_PLAYER);
     registerFactory_l(new StagefrightPlayerFactory(), STAGEFRIGHT_PLAYER);
     registerFactory_l(new NuPlayerFactory(), NU_PLAYER);
     registerFactory_l(new SonivoxPlayerFactory(), SONIVOX_PLAYER);

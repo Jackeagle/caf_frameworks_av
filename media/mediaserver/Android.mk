@@ -25,6 +25,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libnbaio \
 	libmedia \
 	libmediaplayerservice \
+	libdl  \
 	libutils \
 	liblog \
 	libbinder
