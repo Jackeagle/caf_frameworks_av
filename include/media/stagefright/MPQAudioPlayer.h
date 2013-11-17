@@ -187,7 +187,7 @@ private:
     int64_t mDurationUs;
     int32_t mTimeout;
     int64_t mPostEOSDelayUs;
-
+    int64_t mSavedTimeMediaUs;
     //Seek variables
     bool mInternalSeeking;
     bool mSeeking;
