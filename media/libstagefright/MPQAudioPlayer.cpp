@@ -799,7 +799,7 @@ size_t MPQAudioPlayer::fillBufferfromSoftwareDecoder(void *data, size_t size) {
                 if (err != OK) {
                     if (mObserver && !mReachedExtractorEOS) {
                         if(mAudioSink->getSessionId()) {
-                            mPostEOSDelayUs = mLatencyUs;
+                            mPostEOSDelayUs = (int64_t)mAudioSink->latency() * 1000;
                             ALOGV("mPostEOSDelayUs = %lld", mPostEOSDelayUs);
                         }
                         else {
@@ -1096,7 +1096,8 @@ int64_t MPQAudioPlayer::getRealTimeUs() {
             break;
         case EMS11Decoder:
         case ESoftwareDecoder:
-            mPositionTimeRealUs =  -mLatencyUs + mSeekTimeUs + mPositionTimeMediaUs;
+             mPositionTimeRealUs =  (-((int64_t)mAudioSink->latency() * 1000) + mSeekTimeUs
+                                       + mPositionTimeMediaUs);
             break;
         default:
             ALOGV(" Invalide Decoder return zero time");
