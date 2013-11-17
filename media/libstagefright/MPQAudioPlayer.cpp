@@ -117,6 +117,7 @@ mObserver(observer) {
     mPauseEvent        = new MPQAudioEvent(this, &MPQAudioPlayer::onPauseTimeOut);
     mPauseEventPending = false;
     mSourcePaused = false;
+    mplayPendingSamples = false;
 
     getAudioFlinger();
     ALOGD("Registering client with AudioFlinger");
@@ -351,7 +352,7 @@ status_t MPQAudioPlayer::seekPlayback() {
     mPositionTimeRealUs = mPositionTimeMediaUs = -1;
     mNumFramesPlayed = 0;
     if (mStarted) {
-        if(!mIsAACFormatAdif) {
+        if(!mIsAACFormatAdif && mIsAudioRouted) {
             mAudioSink->flush();
             if(err != OK) {
                 ALOGE("flush returned error =%d",err);
@@ -400,6 +401,7 @@ void MPQAudioPlayer::pause(bool playPendingSamples) {
             ALOGE("Invalid Decoder Type -");
         break;
     }
+    mplayPendingSamples = playPendingSamples;
     mTimePaused = mSeekTimeUs + getAudioTimeStampUs();
     if (playPendingSamples)
         mIsPaused = false;
@@ -416,10 +418,12 @@ void MPQAudioPlayer::resume() {
     CHECK(mStarted);
     CHECK(mSource != NULL);
 
-    ALOGD("Resume: mIsPaused %d",mIsPaused);
+    ALOGD("Resume: mIsPaused %d, mplayPendingSamples %d",
+           mIsPaused, mplayPendingSamples);
 
-    if (!mIsPaused)
+    if (!(mIsPaused || mplayPendingSamples))
         return;
+    mplayPendingSamples = false;
 
     if(mPauseEventPending) {
         ALOGV("Resume(): Cancelling the puaseTimeout event");
@@ -598,7 +602,7 @@ void MPQAudioPlayer::extractorThreadEntry() {
             else
                 bytesToWrite = fillBuffer(mLocalBuf, mInputBufferSize);
             ALOGV("fillBuffer returned size %d",bytesToWrite);
-            if(mSeeking || mIsPaused)
+            if((mSeeking || mIsPaused) && mFirstEncodedBuffer)
                 continue;
             //TODO : What if bytesWritetn is zero
             ALOGV("write - pcm  ++");
@@ -610,6 +614,8 @@ void MPQAudioPlayer::extractorThreadEntry() {
                 else {
                      bytesWritten = mAudioSink->write(mLocalBuf, mInputBufferSize);
                 }
+                if (!mFirstEncodedBuffer)
+                    mFirstEncodedBuffer = true;
                 ALOGV("bytesWritten = %d",(int)bytesWritten);
             }
             else if(!mAudioSink->getSessionId()) {
@@ -645,10 +651,12 @@ void MPQAudioPlayer::extractorThreadEntry() {
             ALOGV("Calling fillBuffer for size %d", mInputBufferSize);
             int bytesToWrite = fillBuffer(mLocalBuf, mInputBufferSize);
             ALOGV("fillBuffer returned size %d", bytesToWrite);
-            if (mSeeking || mIsPaused ) {
+            if ((mSeeking || mIsPaused) && mFirstEncodedBuffer) {
                 continue;
             }
             mAudioSink->write(mLocalBuf, bytesToWrite);
+            if (!mFirstEncodedBuffer)
+                mFirstEncodedBuffer = true;
             if (!mInputBufferSize) {
                 mInputBufferSize = mAudioSink->frameCount()-TUNNEL_BUFFER_METADATA_SIZE;
                 ALOGD("mInputBufferSize = %d",mInputBufferSize);
@@ -898,7 +906,6 @@ size_t MPQAudioPlayer::fillMS11InputBufferfromParser(void *data, size_t size) {
         size_done = mCodecSpecificDataSize;
 
         ALOGV("size_done = %d",size_done);
-        mFirstEncodedBuffer = true;
         return size_done;
     }
 
@@ -1008,7 +1015,6 @@ size_t MPQAudioPlayer::fillBufferfromParser(void *data, size_t size) {
         size_done = mCodecSpecificDataSize;
 
         ALOGV("size_done = %d",size_done);
-        mFirstEncodedBuffer = true;
         return size_done;
 
     }
