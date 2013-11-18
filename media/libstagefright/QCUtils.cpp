@@ -107,6 +107,11 @@ status_t QCUtils::HFR::reCalculateFileDuration(
             ALOGE("HFR mode is supported only upto 1080p resolution");
             return INVALID_OPERATION;
         }
+    } else if (!strncmp(mDeviceName, "msm8226", 7)) {
+        if (hfr && (width * height > 1280*720)) {
+            ALOGE("HFR mode is supported only upto 720p resolution");
+            return INVALID_OPERATION;
+        }
     } else {
         if (hfr && ((videoEncoder != VIDEO_ENCODER_H264) || (width * height > 800*480))) {
             ALOGE("HFR mode is supported only upto WVGA and H264 codec.");
