@@ -588,13 +588,11 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
          (mFlags & kEnableGrallocUsageProtected) ? 1 : 0);
 
     status_t err = OK;
-#ifndef RESOURCE_MANAGER
     err =  ResourceManager::AudioConcurrencyInfo::findUseCaseAndSetParameter(
             mMIME, mComponentName, !mIsEncoder, mUseCase, mUseCaseFlag, mFlags);
     if(err != OK) {
         return err;
     }
-#endif
 
     if (!(mFlags & kIgnoreCodecSpecificData)) {
         uint32_t type;
