@@ -1039,9 +1039,15 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
             ioHandle, keyValuePairs.string(), IPCThreadState::self()->getCallingPid());
 
     // check calling permissions
-    if (!settingsAllowed()) {
-        return PERMISSION_DENIED;
+#ifdef RESOURCE_MANAGER
+    if (ioHandle != 0) {
+#endif
+        if (!settingsAllowed()) {
+            return PERMISSION_DENIED;
+        }
+#ifdef RESOURCE_MANAGER
     }
+#endif
 
     // ioHandle == 0 means the parameters are global to the audio hardware interface
     if (ioHandle == 0) {
