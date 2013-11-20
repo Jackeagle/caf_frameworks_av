@@ -2330,7 +2330,9 @@ status_t MPEG4Writer::Track::threadEntry() {
             }
             trackProgressStatus(timestampUs);
         }
-        if (!hasMultipleTracks) {
+
+        // use File write in seperate thread for video only recording
+        if (!hasMultipleTracks && mIsAudio) {
             off64_t offset = mIsAvc? mOwner->addLengthPrefixedSample_l(copy)
                                  : mOwner->addSample_l(copy);
 
@@ -2380,7 +2382,7 @@ status_t MPEG4Writer::Track::threadEntry() {
     mOwner->trackProgressStatus(mTrackId, -1, err);
 
     // Last chunk
-    if (!hasMultipleTracks) {
+    if (!hasMultipleTracks && mIsAudio) {
         addOneStscTableEntry(1, mStszTableEntries->count());
     } else if (!mChunkSamples.empty()) {
         addOneStscTableEntry(++nChunks, mChunkSamples.size());
