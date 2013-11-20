@@ -32,6 +32,38 @@ namespace android {
 
 struct AMessage;
 class String8;
+class DataSource;
+class Sniffer;
+
+class Sniffer : public RefBase {
+public:
+    Sniffer();
+
+    ////////////////////////////////////////////////////////////////////////////
+
+    bool sniff(DataSource *source, String8 *mimeType, float *confidence, sp<AMessage> *meta);
+
+    // The sniffer can optionally fill in "meta" with an AMessage containing
+    // a dictionary of values that helps the corresponding extractor initialize
+    // its state without duplicating effort already exerted by the sniffer.
+    typedef bool (*SnifferFunc)(
+            const sp<DataSource> &source, String8 *mimeType,
+            float *confidence, sp<AMessage> *meta);
+
+    //if isExtendedExtractor = true, store the location of the sniffer to register
+    void RegisterSniffer(SnifferFunc func);
+    void RegisterDefaultSniffers();
+
+    virtual ~Sniffer() {}
+
+private:
+    Mutex mSnifferMutex;
+    List<SnifferFunc> mSniffers;
+    List<SnifferFunc>::iterator extendedSnifferPosition;
+
+    Sniffer(const Sniffer &);
+    Sniffer &operator=(const Sniffer &);
+};
 
 class DataSource : public RefBase {
 public:
@@ -47,7 +79,7 @@ public:
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
 
-    DataSource() {}
+    DataSource() { mSniffer = new Sniffer(); }
 
     virtual status_t initCheck() const = 0;
 
@@ -102,8 +134,7 @@ protected:
     virtual ~DataSource() {}
 
 private:
-    static Mutex gSnifferMutex;
-    static List<SnifferFunc> gSniffers;
+    sp<Sniffer> mSniffer;
 
     DataSource(const DataSource &);
     DataSource &operator=(const DataSource &);
