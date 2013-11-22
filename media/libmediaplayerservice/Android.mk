@@ -6,11 +6,6 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 
-# RESOURCE MANAGER
-ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
-LOCAL_CFLAGS += -DRESOURCE_MANAGER
-endif
-# RESOURCE MANAGER
 
 LOCAL_SRC_FILES:=               \
     ActivityManager.cpp         \
@@ -70,6 +65,13 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
     LOCAL_C_INCLUDES += $(TOP)/frameworks/av/include/media
     LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
 endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS
+
+# RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+  LOCAL_CFLAGS += -DRESOURCE_MANAGER
+  LOCAL_C_INCLUDES +=  frameworks/av/media/libmedia
+endif
+# RESOURCE MANAGER
 
 include $(BUILD_SHARED_LIBRARY)
 
