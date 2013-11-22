@@ -49,8 +49,10 @@ class TrackUtils {
 #endif
 public:
 
-    static void setFastFlag(audio_stream_type_t &streamType,
+    static bool setFastFlag(audio_stream_type_t &streamType,
             audio_output_flags_t &flags);
+
+    static void resetUseCasePcmPlayback(bool resetPcm);
 
     static void  isClientLivesLocally(bool &livesLocally);
 
