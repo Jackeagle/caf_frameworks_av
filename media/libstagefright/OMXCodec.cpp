@@ -730,6 +730,9 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
         } else {
+            ExtendedCodec::configureVideoDecoder(
+                    meta, mMIME, mOMX, mFlags, mNode, mComponentName);
+
             status_t err = setVideoOutputFormat(
                     mMIME, meta);
 
@@ -737,8 +740,6 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
 
-            ExtendedCodec::configureVideoDecoder(
-                    meta, mMIME, mOMX, mFlags, mNode, mComponentName);
             ExtendedCodec::configureFramePackingFormat(
                     meta, mOMX, mNode);
             ExtendedCodec::enableSmoothStreaming(
@@ -1135,6 +1136,7 @@ status_t OMXCodec::setupErrorCorrectionParameters() {
     errorCorrectionType.nResynchMarkerSpacing = 256;
     errorCorrectionType.bEnableDataPartitioning = OMX_FALSE;
     errorCorrectionType.bEnableRVLC = OMX_FALSE;
+    ExtendedCodec::overrideErrorCorrectionParameters(errorCorrectionType);
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamVideoErrorCorrection,
