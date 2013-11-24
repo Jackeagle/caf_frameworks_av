@@ -1070,10 +1070,10 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
         String8 value, key;
         int i = 0;
 
-        key = String8(AudioParameter::keyADSPStatus);
+        key = String8(AudioParameter::keySoundCardStatus);
         if (param.get(key, value) == NO_ERROR) {
-            ALOGV("Set keyADSPStatus:%s", value.string());
-            if (value == "ONLINE" || value == "OFFLINE") {
+            ALOGV("Set keySoundCardStatus:%s", value.string());
+            if ((value.find("ONLINE", 0) != -1) || (value.find("OFFLINE", 0) != -1) ) {
                if (!mDirectAudioTracks.isEmpty()) {
                    for (i=0; i < mDirectAudioTracks.size(); i++) {
                        mDirectAudioTracks.valueAt(i)->stream->common.set_parameters(
