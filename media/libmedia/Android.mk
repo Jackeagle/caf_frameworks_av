@@ -87,6 +87,14 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_WHOLE_STATIC_LIBRARY := libmedia_helper
 
+#RESOURCE MANAGER
+ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
+LOCAL_SRC_FILES += IResourceManagerDeathNotifier.cpp \
+                   IResourceManagerService.cpp \
+                   ResourceManagerService.cpp
+endif
+# RESOURCE MANAGER
+
 LOCAL_MODULE:= libmedia
 
 LOCAL_C_INCLUDES := \

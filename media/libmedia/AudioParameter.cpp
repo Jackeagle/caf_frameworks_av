@@ -41,6 +41,7 @@ const char * const AudioParameter::keyFluenceType = AUDIO_PARAMETER_KEY_FLUENCE_
 const char * const AudioParameter::keySSR = AUDIO_PARAMETER_KEY_SSR;
 const char * const AudioParameter::keyHandleA2dpDevice = AUDIO_PARAMETER_KEY_HANDLE_A2DP_DEVICE;
 const char * const AudioParameter::keyADSPStatus = AUDIO_PARAMETER_KEY_ADSP_STATUS;
+const char * const AudioParameter::keySoundCardStatus = AUDIO_PARAMETER_KEY_SND_CARD_STATUS;
 const char * const AudioParameter::keyCanOpenProxy = AUDIO_CAN_OPEN_PROXY;
 const char * const AudioParameter::keyFmVolume = AUDIO_PARAMETER_KEY_FM_VOLUME;
 

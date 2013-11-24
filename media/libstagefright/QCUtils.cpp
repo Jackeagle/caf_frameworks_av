@@ -471,8 +471,20 @@ void QCUtils::helper_addMediaCodec(Vector<MediaCodecList::CodecInfo> &mCodecInfo
     MediaCodecList::CodecInfo *info = &mCodecInfos.editItemAt(mCodecInfos.size() - 1);
     info->mName = name;
     info->mIsEncoder = encoder;
+    info->mTypes=0;
     ssize_t index = mTypes.indexOfKey(type);
-    uint32_t bit = mTypes.valueAt(index);
+    uint32_t bit;
+    if(index < 0)
+    {
+        bit = mTypes.size();
+        if (bit == 32) {
+            ALOGW("Too many distinct type names in configuration.");
+            return;
+        }
+        mTypes.add(name, bit);
+    }else {
+        bit = mTypes.valueAt(index);
+    }
     info->mTypes |= 1ul << bit;
     info->mQuirks = quirks;
 }
@@ -580,7 +592,8 @@ int32_t QCUtils::getEncoderTypeFlags() {
 
     char mDeviceName[100];
     property_get("ro.board.platform",mDeviceName,"0");
-    if (!strncmp(mDeviceName, "msm8610", 7)) {
+    if (!strncmp(mDeviceName, "msm8610", 7) ||
+        !strncmp(mDeviceName, "msm8626", 7)) {
         flags |= OMXCodec::kHardwareCodecsOnly;
     }
     return flags;
