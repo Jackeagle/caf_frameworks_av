@@ -161,6 +161,26 @@ public:
             const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV = NULL);
 
     /**
+     * Decrypt the protected content buffers for the given unit
+     * This method will be called any number of times, based on number of
+     * encrypted streams received from application.
+     *
+     * @param[in] decryptHandle Handle for the decryption session
+     * @param[in] decryptUnitId ID which specifies decryption unit, such as track ID
+     * @param[in] encBuffer Encrypted data block
+     * @param[out] decBuffer Decrypted data block
+     * @param[in] IV Optional buffer
+     * @return status_t
+     *     Returns the error code for this API
+     *     DRM_NO_ERROR for success, and one of DRM_ERROR_UNKNOWN, DRM_ERROR_LICENSE_EXPIRED
+     *     DRM_ERROR_SESSION_NOT_OPENED, DRM_ERROR_DECRYPT_UNIT_NOT_INITIALIZED,
+     *     DRM_ERROR_DECRYPT for failure.
+     */
+    status_t decrypt(
+            sp<DecryptHandle> &decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV = NULL);
+
+    /**
      * Finalize decryption for the given unit of the protected content
      *
      * @param[in] decryptHandle Handle for the decryption session

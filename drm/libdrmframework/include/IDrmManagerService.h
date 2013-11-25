@@ -74,6 +74,7 @@ public:
         CLOSE_DECRYPT_SESSION,
         INITIALIZE_DECRYPT_UNIT,
         DECRYPT,
+        DECRYPT_ION,
         FINALIZE_DECRYPT_UNIT,
         PREAD
     };
@@ -157,6 +158,9 @@ public:
 
     virtual status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
             const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV) = 0;
+
+    virtual status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV) = 0;
 
     virtual status_t finalizeDecryptUnit(
             int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId) = 0;
@@ -246,6 +250,9 @@ public:
 
     virtual status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
             const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV);
+
+    virtual status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV);
 
     virtual status_t finalizeDecryptUnit(
             int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId);
