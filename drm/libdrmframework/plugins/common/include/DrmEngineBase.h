@@ -98,6 +98,9 @@ public:
     status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
             const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV);
 
+    status_t decrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV);
+
     status_t finalizeDecryptUnit(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId);
 
     ssize_t pread(int uniqueId, DecryptHandle* decryptHandle,
@@ -493,6 +496,29 @@ protected:
      */
     virtual status_t onDecrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
             const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV) = 0;
+
+    /**
+     * Decrypt the protected content buffers for the given unit
+     * This method will be called any number of times, based on number of
+     * encrypted streams received from application.
+     *
+     * @param[in] uniqueId Unique identifier for a session
+     * @param[in] decryptId Handle for the decryption session
+     * @param[in] decryptUnitId ID Specifies decryption unit, such as track ID
+     * @param[in] encBuffer Encrypted data block
+     * @param[out] decBuffer Decrypted data block
+     * @param[in] IV Optional buffer
+     * @return status_t
+     *     Returns the error code for this API
+     *     DRM_NO_ERROR for success, and one of DRM_ERROR_UNKNOWN, DRM_ERROR_LICENSE_EXPIRED
+     *     DRM_ERROR_SESSION_NOT_OPENED, DRM_ERROR_DECRYPT_UNIT_NOT_INITIALIZED,
+     *     DRM_ERROR_DECRYPT for failure.
+     */
+    virtual status_t onDecrypt(int uniqueId, DecryptHandle* decryptHandle, int decryptUnitId,
+            const DrmIonBuffer* encBuffer, DrmIonBuffer** decBuffer, DrmBuffer* IV) {
+        return DRM_ERROR_CANNOT_HANDLE;
+    }
+
 
     /**
      * Finalize decryption for the given unit of the protected content
