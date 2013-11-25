@@ -688,5 +688,21 @@ void NuPlayer::Renderer::onResume() {
     }
 }
 
+#ifdef FEATURE_WFD_SINK
+status_t NuPlayer::Renderer::setMediaPresence(bool audio, bool bValue)
+{
+   if (audio)
+   {
+      ALOGV("mHasAudio set to %d from %d",bValue,mHasAudio);
+      mHasAudio = bValue;
+   }
+   else
+   {
+     ALOGV("mHasVideo set to %d from %d",bValue,mHasVideo);
+     mHasVideo = bValue;
+   }
+   return OK;
+}
+#endif //FEATURE_WFD_SINK
 }  // namespace android
 

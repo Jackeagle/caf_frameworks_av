@@ -152,6 +152,10 @@ void AnotherPacketSource::queueAccessUnit(const sp<ABuffer> &buffer) {
     mCondition.signal();
 }
 
+int AnotherPacketSource::getQueueSize() {
+    return mBuffers.size();
+}
+
 void AnotherPacketSource::queueDiscontinuity(
         ATSParser::DiscontinuityType type,
         const sp<AMessage> &extra) {

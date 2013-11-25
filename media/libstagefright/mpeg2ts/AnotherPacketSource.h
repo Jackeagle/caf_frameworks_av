@@ -60,6 +60,8 @@ struct AnotherPacketSource : public MediaSource {
 
     bool isFinished(int64_t duration) const;
 
+    int getQueueSize();
+
 protected:
     virtual ~AnotherPacketSource();
 

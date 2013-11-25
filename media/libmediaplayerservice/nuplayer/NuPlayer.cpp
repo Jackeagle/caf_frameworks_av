@@ -18,8 +18,12 @@
 #define LOG_TAG "NuPlayer"
 #include <utils/Log.h>
 
+#include <dlfcn.h>  // for dlopen/dlclose
 #include "NuPlayer.h"
 
+#ifdef FEATURE_WFD_SINK
+#include "WFDRenderer.h"
+#endif //FEATURE_WFD_SINK
 #include "HTTPLiveSource.h"
 #include "NuPlayerDecoder.h"
 #include "NuPlayerDriver.h"
@@ -116,6 +120,7 @@ NuPlayer::NuPlayer()
       mVideoIsAVC(false),
       mAudioEOS(false),
       mVideoEOS(false),
+      mDontSendFramesToRenderer(0),
       mScanSourcesPending(false),
       mScanSourcesGeneration(0),
       mPollDurationGeneration(0),
@@ -128,7 +133,9 @@ NuPlayer::NuPlayer()
       mNumFramesTotal(0ll),
       mNumFramesDropped(0ll),
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
-      mStarted(false) {
+      mWFDSinkSession(false),
+      mStarted(false),
+      mIsSecureInputBuffers(false) {
 }
 
 NuPlayer::~NuPlayer() {
@@ -186,7 +193,20 @@ void NuPlayer::setDataSourceAsync(
     sp<Source> source;
     if (IsHTTPLiveURL(url)) {
         source = new HTTPLiveSource(notify, url, headers, mUIDValid, mUID);
-    } else if (!strncasecmp(url, "rtsp://", 7)) {
+    }
+#ifdef FEATURE_WFD_SINK
+    else if(!strncasecmp(url, "rtp://wfd", 9)) {
+          //Load the WFD source library here.
+           source = LoadCreateSource(notify, url, headers, mUIDValid, mUID, true);
+           if (source != NULL) {
+              mWFDSinkSession = true;
+              //find  from URL if AVSYNC is disabled then dont create wfdrenderer
+              getValueforKey(url, "disableAVsync=", &mDontSendFramesToRenderer);
+              ALOGE("Nuplayer : disableAVsync = %d",mDontSendFramesToRenderer);
+           }
+    }
+#endif //FEATURE_WFD_SINK
+    else if (!strncasecmp(url, "rtsp://", 7)) {
         source = new RTSPSource(notify, url, headers, mUIDValid, mUID);
     } else if ((!strncasecmp(url, "http://", 7)
                 || !strncasecmp(url, "https://", 8))
@@ -334,7 +354,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         {
             ALOGV("kWhatSetVideoNativeWindow");
 
-            mDeferredActions.push_back(
+            if(!mWFDSinkSession)
+                mDeferredActions.push_back(
                     new SimpleAction(&NuPlayer::performDecoderShutdown));
 
             sp<RefBase> obj;
@@ -388,10 +409,21 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 flags |= Renderer::FLAG_REAL_TIME;
             }
 
-            mRenderer = new Renderer(
-                    mAudioSink,
-                    new AMessage(kWhatRendererNotify, id()),
-                    flags);
+#ifdef FEATURE_WFD_SINK
+            if (mWFDSinkSession) {
+                ALOGV("creating WFDRenderer in NU player");
+                mRenderer = new WFDRenderer(
+                        mAudioSink,
+                        new AMessage(kWhatRendererNotify, id()));
+            }
+            else
+#endif /* FEATURE_WFD_SINK */
+            {
+                mRenderer = new Renderer(
+                        mAudioSink,
+                        new AMessage(kWhatRendererNotify, id()),
+                        flags);
+             }
 
             looper()->registerHandler(mRenderer);
 
@@ -450,8 +482,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             if ((mAudioDecoder == NULL && mAudioSink != NULL)
                     || (mVideoDecoder == NULL && mNativeWindow != NULL)) {
+#ifdef FEATURE_WFD_SINK
+              if (mWFDSinkSession)
+                msg->post(5000ll);
+              else
+#endif//FEATURE_WFD_SINK
                 msg->post(100000ll);
-                mScanSourcesPending = true;
+              mScanSourcesPending = true;
             }
             break;
         }
@@ -473,7 +510,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 if (err == -EWOULDBLOCK) {
                     if (mSource->feedMoreTSData() == OK) {
-                        msg->post(10000ll);
+#ifdef FEATURE_WFD_SINK
+                    if (mWFDSinkSession)
+                       msg->post(5000ll);
+                    else
+#endif//FEATURE_WFD_SINK
+                       msg->post(10000ll);
                     }
                 }
             } else if (what == ACodec::kWhatEOS) {
@@ -629,7 +671,20 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 mRenderer->queueEOS(audio, UNKNOWN_ERROR);
             } else if (what == ACodec::kWhatDrainThisBuffer) {
-                renderBuffer(audio, codecRequest);
+#ifdef FEATURE_WFD_SINK
+                if ( mWFDSinkSession &&
+                     mDontSendFramesToRenderer) {
+                   ///send the frames from here itself to the NativeWindow
+                   ALOGE("AVSync disabled, send frames to native window");
+                   sp<AMessage>reply;
+                   CHECK(codecRequest->findMessage("reply",&reply));
+                   reply->setInt32("render",true);
+                   reply->post();
+                } else
+#endif /* FEATURE_WFD_SINK */
+                {
+                   renderBuffer(audio, codecRequest);
+                }
             } else if (what != ACodec::kWhatComponentAllocated
                     && what != ACodec::kWhatComponentConfigured
                     && what != ACodec::kWhatBuffersAllocated) {
@@ -838,6 +893,19 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
         AString mime;
         CHECK(format->findString("mime", &mime));
         mVideoIsAVC = !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str());
+
+#ifdef FEATURE_WFD_SINK
+        if(mWFDSinkSession) {
+           //Handle secure buffer requests from NuPlayer Source like WFD.
+           int32_t isDRMSecBuf = 0;
+           sp<MetaData> meta = mSource->getFormatMeta(audio);
+           meta->findInt32(kKeyRequiresSecureBuffers, &isDRMSecBuf);
+           if(isDRMSecBuf) {
+              mIsSecureInputBuffers = true;
+              format->setInt32("requires-secure-buffers", 1);
+           }
+        }
+#endif //FEATURE_WFD_SINK
     }
 
     sp<AMessage> notify =
@@ -848,7 +916,21 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
                        new Decoder(notify, mNativeWindow);
     looper()->registerHandler(*decoder);
 
-    (*decoder)->configure(format);
+#ifdef FEATURE_WFD_SINK
+     if (mWFDSinkSession && audio)
+     {
+         if(mDontSendFramesToRenderer) {
+           (*decoder)->setSink(mAudioSink, NULL);
+         } else {
+           (*decoder)->setSink(mAudioSink, mRenderer);
+         }
+         (*decoder)->configure(format,true);
+     }
+     else
+#endif //FEATURE_WFD_SINK
+     {
+        (*decoder)->configure(format);
+     }
 
     return OK;
 }
@@ -868,7 +950,21 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
 
     bool dropAccessUnit;
     do {
-        status_t err = mSource->dequeueAccessUnit(audio, &accessUnit);
+        status_t err = UNKNOWN_ERROR;
+#ifdef FEATURE_WFD_SINK
+        if (mIsSecureInputBuffers && !audio) {
+            msg->findBuffer("buffer", &accessUnit);
+
+            if (accessUnit == NULL) {
+                ALOGE("Nuplayer NULL buffer in message");
+                return err;
+            } else {
+                ALOGV("Nuplayer buffer in message %d %d",
+                accessUnit->data(), accessUnit->capacity());
+            }
+        }
+#endif
+        err = mSource->dequeueAccessUnit(audio, &accessUnit);
 
         if (err == -EWOULDBLOCK) {
             return err;
@@ -952,10 +1048,21 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
             ++mNumFramesTotal;
         }
 
+#ifdef FEATURE_WFD_SINK
+        if (mWFDSinkSession) {
+            int32_t nBytesLost =0;
+            accessUnit->meta()->findInt32("bytesLost",&nBytesLost);
+            if (nBytesLost) {
+                notifyListener(MEDIA_INFO, MEDIA_INFO_NETWORK_BANDWIDTH, nBytesLost);
+                ALOGV("MEDIA_INFO_NETWORK_BANDWIDTH nBytesLost (%d)",nBytesLost);
+            }
+        }
+#endif
         dropAccessUnit = false;
         if (!audio
                 && mVideoLateByUs > 100000ll
                 && mVideoIsAVC
+                && !mIsSecureInputBuffers
                 && !IsAVCReferenceFrame(accessUnit)) {
             dropAccessUnit = true;
             ++mNumFramesDropped;
@@ -971,7 +1078,19 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
          audio ? "audio" : "video",
          mediaTimeUs / 1E6);
 #endif
+#ifdef FEATURE_WFD_SINK
 
+        if (mWFDSinkSession) {
+            int64_t baseTimeUs = 0;
+            if(accessUnit->meta()->findInt64("baseTimeUs", &baseTimeUs))
+            {
+                ALOGE("Nu player Set basetime");
+                if (mRenderer != NULL) {
+                    ((WFDRenderer*)(mRenderer.get()))->setBaseMediaTime(baseTimeUs,true);
+                }
+            }
+        }
+#endif //FEATURE_WFD_SINK
     reply->setBuffer("buffer", accessUnit);
     reply->post();
 
@@ -1000,6 +1119,9 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
     sp<ABuffer> buffer;
     CHECK(msg->findBuffer("buffer", &buffer));
 
+    if(mWFDSinkSession){
+        reply->setInt32("WFDSinkSession", 1);
+    }
     int64_t &skipUntilMediaTimeUs =
         audio
             ? mSkipRenderingAudioUntilMediaTimeUs
@@ -1079,6 +1201,47 @@ void NuPlayer::flushDecoder(bool audio, bool needShutdown) {
     }
 }
 
+#ifdef FEATURE_WFD_SINK
+sp<NuPlayer::Source>
+    NuPlayer::LoadCreateSource(const sp<AMessage> &notify, const char * uri, const KeyedVector<String8,String8> *headers,
+                               bool uidValid, uid_t uid, bool wfdSink)
+{
+   const char* STREAMING_SOURCE_LIB = "libmmipstreamaal.so";
+   const char* WFD_CREATE_SOURCE = "CreateWFDSource";
+   void* pStreamingSourceLib = NULL;
+
+   typedef NuPlayer::Source* (*SourceFactory)(const sp<AMessage> &notify, const char * uri, const KeyedVector<String8, String8> *headers, bool uidValid, uid_t uid);
+
+   pStreamingSourceLib = ::dlopen(STREAMING_SOURCE_LIB, RTLD_LAZY);
+
+   if (pStreamingSourceLib == NULL) {
+       ALOGV("@@@@:: STREAMING  Source Library (libmmipstreamaal.so) Load Failed  Error : %s ",::dlerror());
+       return NULL;
+   }
+
+   SourceFactory StreamingSourcePtr=NULL;
+   if (wfdSink){
+       //Get the entry level symbol which gets us the pointer to WFD Source object
+       StreamingSourcePtr = (SourceFactory) dlsym(pStreamingSourceLib, WFD_CREATE_SOURCE);
+       if (StreamingSourcePtr == NULL){
+          ALOGE("@@@@:: %s symbol not found in libmmipstreamaal.so, return NULL",WFD_CREATE_SOURCE);
+          return NULL;
+       }
+   }
+
+   //Get the Streaming (DASH\WFD) Source object
+    sp<NuPlayer::Source> StreamingSource = StreamingSourcePtr(notify, uri, headers, uidValid, uid);
+
+    if(StreamingSource==NULL) {
+        ALOGE("@@@@:: StreamingSource failed to instantiate Source ");
+        return NULL;
+    }
+
+    return StreamingSource;
+}
+
+#endif
+
 sp<AMessage> NuPlayer::Source::getFormat(bool audio) {
     sp<MetaData> meta = getFormatMeta(audio);
 
@@ -1094,9 +1257,16 @@ sp<AMessage> NuPlayer::Source::getFormat(bool audio) {
     return NULL;
 }
 
+sp<MetaData> NuPlayer::Source::getFormatMeta(bool audio)
+{
+   sp<MetaData> meta = NULL;
+   return meta;
+}
+
 status_t NuPlayer::setVideoScalingMode(int32_t mode) {
     mVideoScalingMode = mode;
-    if (mNativeWindow != NULL) {
+    if (mNativeWindow != NULL
+            && mNativeWindow->getNativeWindow() != NULL) {
         status_t ret = native_window_set_scaling_mode(
                 mNativeWindow->getNativeWindow().get(), mVideoScalingMode);
         if (ret != OK) {
@@ -1192,12 +1362,22 @@ void NuPlayer::performDecoderFlush() {
 void NuPlayer::performDecoderShutdown() {
     ALOGV("performDecoderShutdown");
 
+#ifdef FEATURE_WFD_SINK
+    if (mWFDSinkSession && mSource != NULL) {
+                mSource->stop();
+    }
+#endif
+
     if (mAudioDecoder == NULL && mVideoDecoder == NULL) {
         return;
     }
 
     mTimeDiscontinuityPending = true;
-
+#ifdef FEATURE_WFD_SINK
+    if(mWFDSinkSession) {
+      mTimeDiscontinuityPending = false;
+    }
+#endif
     if (mAudioDecoder != NULL) {
         flushDecoder(true /* audio */, true /* needShutdown */);
     }
@@ -1369,6 +1549,31 @@ void NuPlayer::Source::notifyPrepared(status_t err) {
 
 void NuPlayer::Source::onMessageReceived(const sp<AMessage> &msg) {
     TRESPASS();
+}
+
+bool NuPlayer::getValueforKey(const char *pUrl, const char* pKey, int *Val)
+{
+     int startIndex = 0;
+     int endIndx = 0;
+     char *pMetaInfo = strstr(pUrl, pKey);
+
+     if(!pMetaInfo) {
+       ALOGE("Get key value creation failed");
+        return false;
+     }
+
+     startIndex = strlen(pKey);
+    *Val = 0;
+    while(pMetaInfo[startIndex] != '/' && pMetaInfo[startIndex] != '/0') {
+       if(pMetaInfo[startIndex] >= '0' && pMetaInfo[startIndex] <= '9') {
+           *Val = *Val * 10 + ((int)pMetaInfo[startIndex] - (int)'0');
+       }else {
+           break;
+       }
+       ++startIndex;
+    }
+
+    return true;
 }
 
 }  // namespace android

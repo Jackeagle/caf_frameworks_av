@@ -59,6 +59,7 @@
 #include <media/hardware/HardwareAPI.h>
 
 #include <OMX_Component.h>
+#include <OMX_QCOMExtns.h>
 #include <media/stagefright/ExtendedCodec.h>
 #include "include/avc_utils.h"
 #include "include/QCUtils.h"
@@ -393,7 +394,8 @@ ACodec::ACodec()
       mEncoderPadding(0),
       mChannelMaskPresent(false),
       mChannelMask(0),
-      mInSmoothStreamingMode(false) {
+      mInSmoothStreamingMode(false),
+      mFrameAssemblyOneFrame(false) {
 
     mUseCase = "";
     mUseCaseFlag = false;
@@ -2206,6 +2208,19 @@ status_t ACodec::setVideoFormatOnPort(
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
+    /* If frame assembly set to one frame then configure accordingly */
+    if(portIndex == kPortIndexInput && mFrameAssemblyOneFrame)
+    {
+        ALOGV("Enable frame by frame mode");
+        OMX_QCOM_PARAM_PORTDEFINITIONTYPE portFmt;
+        portFmt.nPortIndex = kPortIndexInput;
+        portFmt.nFramePackingFormat = OMX_QCOM_FramePacking_OnlyOneCompleteFrame;
+        status_t err = mOMX->setParameter(
+           mNode, (OMX_INDEXTYPE)OMX_QcomIndexPortDefn, (void *)&portFmt, sizeof(portFmt));
+        if(err != OK) {
+          ALOGE("Failed to set frame packing format on component");
+        }
+    }
 
     return err;
 }
@@ -3426,6 +3441,14 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     AString componentName;
 
     uint32_t quirks = 0;
+    int32_t requiresSecureBuffers = 0;
+
+    if (msg->findInt32(
+            "requires-secure-buffers",
+            &requiresSecureBuffers)
+            && requiresSecureBuffers) {
+        ALOGV("ACodec Needs Secure Buffers");
+    }
     if (msg->findString("componentName", &componentName)) {
         ssize_t index = matchingCodecs.add();
         OMXCodec::CodecNameAndQuirks *entry = &matchingCodecs.editItemAt(index);
@@ -3457,6 +3480,17 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
             ++matchIndex) {
         componentName = matchingCodecs.itemAt(matchIndex).mName.string();
         quirks = matchingCodecs.itemAt(matchIndex).mQuirks;
+
+        if (componentName.c_str() && requiresSecureBuffers &&
+            strstr(componentName.c_str(), "OMX.qcom.video")) {
+            AString tmp;
+
+            tmp = componentName.c_str();
+            tmp.append(".secure");
+
+            componentName = tmp.c_str();
+            ALOGE("ACodec Component name is %s", tmp.c_str());
+        }
         ExtendedCodec::overrideComponentName(quirks, msg, &componentName);
 
         pid_t tid = androidGetTid();
@@ -3512,6 +3546,29 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         notify->post();
     }
 
+    int32_t value = 0;
+
+    if (msg->findInt32("videoHwTurboMode", &value) && (value == 1) &&
+       !strcmp("OMX.qcom.video.decoder.avc", mCodec->mComponentName.c_str()) ||
+       !strcmp("OMX.qcom.video.decoder.avc.secure",mCodec->mComponentName.c_str())) {
+
+       QOMX_ENABLETYPE enable;
+       enable.bEnable = OMX_TRUE;
+
+       status_t err = mCodec->mOMX->setParameter(mCodec->mNode, (OMX_INDEXTYPE)OMX_QcomIndexConfigTurboMode,
+                              (OMX_PTR)&enable, sizeof(enable));
+
+       if (err != OK) {
+          ALOGE("ERROR:: unable to set Video HW in turbo mode..");
+       }
+    }
+
+    /* Frame assembly set to Frame-by-Frame */
+    if(msg->findInt32("frameAssemblyCount", &value) && (value == 1))
+    {
+      ALOGV("frameAssemblyCount set to frame by frame mode");
+      mCodec->mFrameAssemblyOneFrame = true;
+    }
     mCodec->changeState(mCodec->mLoadedState);
 
     return true;

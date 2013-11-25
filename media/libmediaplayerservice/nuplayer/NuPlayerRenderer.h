@@ -36,6 +36,18 @@ struct NuPlayer::Renderer : public AHandler {
             bool audio,
             const sp<ABuffer> &buffer,
             const sp<AMessage> &notifyConsumed);
+#ifdef FEATURE_WFD_SINK
+    virtual void queueEOS(bool audio, status_t finalResult);
+
+    virtual void flush(bool audio);
+
+    virtual void signalTimeDiscontinuity();
+
+    virtual void signalAudioSinkChanged();
+
+    virtual void pause();
+    virtual void resume();
+#else
 
     void queueEOS(bool audio, status_t finalResult);
 
@@ -47,7 +59,7 @@ struct NuPlayer::Renderer : public AHandler {
 
     void pause();
     void resume();
-
+#endif /* FEATURE_WFD_SINK */
     enum {
         kWhatEOS                 = 'eos ',
         kWhatFlushComplete       = 'fluC',
@@ -115,8 +127,11 @@ private:
 
     void onDrainVideoQueue();
     void postDrainVideoQueue();
-
+#ifdef FEATURE_WFD_SINK
+    virtual void onQueueBuffer(const sp<AMessage> &msg);
+#else
     void onQueueBuffer(const sp<AMessage> &msg);
+#endif /* FEATURE_WFD_SINK */
     void onQueueEOS(const sp<AMessage> &msg);
     void onFlush(const sp<AMessage> &msg);
     void onAudioSinkChanged();
@@ -133,6 +148,11 @@ private:
     bool dropBufferWhileFlushing(bool audio, const sp<AMessage> &msg);
     void syncQueuesDone();
 
+  public:
+#ifdef FEATURE_WFD_SINK
+    virtual status_t setMediaPresence(bool audio, bool bValue);
+#endif /* FEATURE_WFD_SINK */
+  private:
     DISALLOW_EVIL_CONSTRUCTORS(Renderer);
 };
 

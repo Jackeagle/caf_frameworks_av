@@ -25,6 +25,10 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/ACodec.h>
 #include <media/stagefright/MediaDefs.h>
+#ifdef FEATURE_WFD_SINK
+#include <media/stagefright/MetaData.h>
+#include <media/stagefright/Utils.h>
+#endif //FEATURE_WFD_SINK
 #include <media/stagefright/ExtendedCodec.h>
 
 namespace android {
@@ -34,12 +38,18 @@ NuPlayer::Decoder::Decoder(
         const sp<NativeWindowWrapper> &nativeWindow)
     : mNotify(notify),
       mNativeWindow(nativeWindow) {
+#ifdef FEATURE_WFD_SINK
+    IS_TARGET_MPQ(mIsTargetMPQ);
+    mCreateMPQAudioHALwrapper = false;
+    mMPQWrapper = NULL;
+    mAudioSink = NULL;
+#endif //FEATURE_WFD_SINK
 }
 
 NuPlayer::Decoder::~Decoder() {
 }
 
-void NuPlayer::Decoder::configure(const sp<AMessage> &format) {
+void NuPlayer::Decoder::configure(const sp<AMessage> &format, bool wfdSink) {
     CHECK(mCodec == NULL);
 
     AString mime;
@@ -82,16 +92,35 @@ void NuPlayer::Decoder::configure(const sp<AMessage> &format) {
 
     mCodec = new ACodec;
 
-    if (needDedicatedLooper && mCodecLooper == NULL) {
+#ifdef FEATURE_WFD_SINK
+    if (!needDedicatedLooper && wfdSink) //Audio for Wfd sink
+    {
+        // For wfd Audio we use the MPQ Hal Wrapper
+        //free the ACodec allocated above.
+        mCodec = NULL;
+        mCreateMPQAudioHALwrapper = true;
+        mMPQWrapper = new MPQHALWrapper(mAudioSink,mRenderer);
+     }
+#endif //FEATURE_WFD_SINK
+
+     if (needDedicatedLooper && mCodecLooper == NULL) {
         mCodecLooper = new ALooper;
         mCodecLooper->setName("NuPlayerDecoder");
         mCodecLooper->start(false, false, ANDROID_PRIORITY_AUDIO);
-    }
+     }
 
-    (needDedicatedLooper ? mCodecLooper : looper())->registerHandler(mCodec);
-
-    mCodec->setNotificationMessage(notifyMsg);
-    mCodec->initiateSetup(format);
+#ifdef FEATURE_WFD_SINK
+    if(mCreateMPQAudioHALwrapper) {
+         looper()->registerHandler(mMPQWrapper);
+         mMPQWrapper->setNotificationMessage(notifyMsg);
+         mMPQWrapper->initiateSetup(format);
+     } else
+#endif //FEATURE_WFD_SINK
+     {
+         (needDedicatedLooper ? mCodecLooper : looper())->registerHandler(mCodec);
+         mCodec->setNotificationMessage(notifyMsg);
+         mCodec->initiateSetup(format);
+     }
 }
 
 void NuPlayer::Decoder::onMessageReceived(const sp<AMessage> &msg) {
@@ -143,20 +172,47 @@ void NuPlayer::Decoder::onFillThisBuffer(const sp<AMessage> &msg) {
 }
 
 void NuPlayer::Decoder::signalFlush() {
-    if (mCodec != NULL) {
-        mCodec->signalFlush();
+#ifdef FEATURE_WFD_SINK
+    if(mCreateMPQAudioHALwrapper) {
+        if (mMPQWrapper!= NULL) {
+            mMPQWrapper->signalFlush();
+        }
+    } else
+#endif //FEATURE_WFD_SINK
+    {
+        if (mCodec != NULL) {
+           mCodec->signalFlush();
+        }
     }
 }
 
 void NuPlayer::Decoder::signalResume() {
-    if (mCodec != NULL) {
-        mCodec->signalResume();
+#ifdef FEATURE_WFD_SINK
+    if(mCreateMPQAudioHALwrapper) {
+        if (mMPQWrapper!= NULL) {
+            mMPQWrapper->signalResume();
+        }
+    } else
+#endif //FEATURE_WFD_SINK
+    {
+        if (mCodec != NULL) {
+           mCodec->signalResume();
+        }
     }
 }
 
 void NuPlayer::Decoder::initiateShutdown() {
-    if (mCodec != NULL) {
-        mCodec->initiateShutdown();
+#ifdef FEATURE_WFD_SINK
+    if(mCreateMPQAudioHALwrapper) {
+        if (mMPQWrapper!= NULL) {
+            mMPQWrapper->initiateShutdown();
+        }
+    } else
+#endif //FEATURE_WFD_SINK
+    {
+        if (mCodec != NULL) {
+           mCodec->initiateShutdown();
+        }
     }
 }
 
@@ -164,6 +220,11 @@ void NuPlayer::Decoder::signalConcurrencyParam(bool streamPaused) {
     if (mCodec != NULL) {
         mCodec->signalConcurrencyParam(streamPaused);
     }
+}
+
+void NuPlayer::Decoder::setSink(const sp<MediaPlayerBase::AudioSink> &sink, sp<Renderer> Renderer) {
+    mAudioSink = sink;
+    mRenderer  = Renderer;
 }
 }  // namespace android
 
