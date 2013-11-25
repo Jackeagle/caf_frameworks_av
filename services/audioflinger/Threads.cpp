@@ -15,6 +15,24 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
+**
+** This file was modified by DTS, Inc. The portions of the
+** code that are surrounded by "DTS..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2013 DTS, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License
 */
 
 
@@ -65,6 +83,7 @@
 #include <cpustats/CentralTendencyStatistics.h>
 #include <cpustats/ThreadCpuUsage.h>
 #endif
+#include "postpro_patch.h"
 
 // ----------------------------------------------------------------------------
 
@@ -1850,6 +1869,7 @@ ssize_t AudioFlinger::PlaybackThread::threadLoop_write()
     mLastWriteTime = systemTime();
     mInWrite = true;
     ssize_t bytesWritten;
+    POSTPRO_PATCH_OUTPROC_PLAY_SAMPLES(this, mFormat, mMixBuffer, mixBufferSize, mSampleRate, mChannelCount);
 
     // If an NBAIO sink is present, use it to write the normal mixer's submix
     if (mNormalSink != 0) {
@@ -2141,6 +2161,7 @@ bool AudioFlinger::PlaybackThread::threadLoop()
     const String8 myName(String8::format("thread %p type %d TID %d", this, mType, gettid()));
 
     acquireWakeLock();
+    POSTPRO_PATCH_OUTPROC_PLAY_INIT(this, myName);
 
     // mNBLogWriter->log can only be called while thread mutex mLock is held.
     // So if you need to log when mutex is unlocked, set logString to a non-NULL string,
@@ -2352,6 +2373,7 @@ if (mType == MIXER) {
             mOutput->stream->common.standby(&mOutput->stream->common);
         }
     }
+    POSTPRO_PATCH_OUTPROC_PLAY_EXIT(this, myName);
 
     releaseWakeLock();
 
@@ -3310,6 +3332,7 @@ bool AudioFlinger::MixerThread::checkForNewParameters_l()
         String8 keyValuePair = mNewParameters[0];
         AudioParameter param = AudioParameter(keyValuePair);
         int value;
+        POSTPRO_PATCH_OUTPROC_PLAY_ROUTE(this, param, value);
 
         if (param.getInt(String8(AudioParameter::keySamplingRate), value) == NO_ERROR) {
             reconfig = true;
@@ -4184,6 +4207,7 @@ void AudioFlinger::DuplicatingThread::threadLoop_sleepTime()
 
 ssize_t AudioFlinger::DuplicatingThread::threadLoop_write()
 {
+    POSTPRO_PATCH_OUTPROC_DUPE_SAMPLES(this, mFormat, mMixBuffer, mixBufferSize, mSampleRate, mChannelCount);
     for (size_t i = 0; i < outputTracks.size(); i++) {
         outputTracks[i]->write(mMixBuffer, writeFrames);
     }
@@ -4353,6 +4377,7 @@ bool AudioFlinger::RecordThread::threadLoop()
 
     inputStandBy();
     acquireWakeLock(mClientUid);
+    POSTPRO_PATCH_INPROC_INIT(this, gettid(), mFormat);
 
     // used to verify we've read at least once before evaluating how many bytes were read
     bool readOnce = false;
@@ -4462,6 +4487,7 @@ bool AudioFlinger::RecordThread::threadLoop()
                             }
                             mBytesRead = mInput->stream->read(mInput->stream, readInto,
                                     mBufferSize);
+                            POSTPRO_PATCH_INPROC_SAMPLES(this, mFormat, readInto, mBytesRead, mSampleRate, mChannelCount);
                             if (mBytesRead <= 0) {
                                 if ((mBytesRead < 0) && (mActiveTrack->mState == TrackBase::ACTIVE))
                                 {
@@ -4562,6 +4588,7 @@ bool AudioFlinger::RecordThread::threadLoop()
         mActiveTrack.clear();
         mStartStopCond.broadcast();
     }
+    POSTPRO_PATCH_INPROC_EXIT(this, gettid(), mFormat);
 
     releaseWakeLock();
 
@@ -4936,6 +4963,7 @@ status_t AudioFlinger::RecordThread::getNextBuffer(AudioBufferProvider::Buffer* 
 
     if (framesReady == 0) {
         mBytesRead = mInput->stream->read(mInput->stream, mRsmpInBuffer, mBufferSize);
+        POSTPRO_PATCH_INPROC_SAMPLES(this, mFormat, mRsmpInBuffer, mBytesRead, mSampleRate, mChannelCount);
         if (mBytesRead <= 0) {
             if ((mBytesRead < 0) && (mActiveTrack->mState == TrackBase::ACTIVE)) {
                 ALOGE("RecordThread::getNextBuffer() Error reading audio input");
@@ -4985,6 +5013,7 @@ bool AudioFlinger::RecordThread::checkForNewParameters_l()
         audio_format_t reqFormat = mFormat;
         uint32_t reqSamplingRate = mReqSampleRate;
         uint32_t reqChannelCount = mReqChannelCount;
+        POSTPRO_PATCH_INPROC_ROUTE(this, param, value);
 
         if (param.getInt(String8(AudioParameter::keySamplingRate), value) == NO_ERROR) {
             reqSamplingRate = value;
