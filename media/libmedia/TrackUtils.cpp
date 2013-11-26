@@ -43,15 +43,28 @@ namespace android {
 Mutex TrackUtils::mLock;
 
 #ifdef RESOURCE_MANAGER
-void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
 {
 
-   //Set fast flag for ringtones/Alarm/Notification/system sound
+    //Set fast flag for ringtones/Alarm/Notification/system sound
+    bool resetPcm = false;
 
     ALOGD("setFastFlag - flags b4 = %d , streamType = %d", flags, streamType);
     switch (streamType) {
 
     case AUDIO_STREAM_RING:
+        /* Check if Ringtone can be played using regular pcm path
+         * Else fallback to set fast flag
+         */
+        if (!(flags & AUDIO_OUTPUT_FLAG_FAST)) {
+            String8 useCase("USECASE_PCM_PLAYBACK");
+            if (!(setParameterForConcurrency(useCase, true))) {
+                ALOGD("Use regular PCM path for ringtone");
+                resetPcm = true;
+                break;
+            }
+        }
+        /* Else fall through to use ULL path*/
     case AUDIO_STREAM_ALARM:
     case AUDIO_STREAM_NOTIFICATION:
     case AUDIO_STREAM_ENFORCED_AUDIBLE:
@@ -77,6 +90,17 @@ void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags
 
     }
     ALOGD("setFastFlags after = %d", flags);
+    return resetPcm;
+}
+
+void TrackUtils::resetUseCasePcmPlayback(bool resetPcm)
+{
+     if (resetPcm) {
+         String8 useCase ("USECASE_PCM_PLAYBACK");
+         if (!(setParameterForConcurrency(useCase, false))) {
+             ALOGD("Reset regular PCM path used for ringtone");
+         }
+     }
 }
 
 void  TrackUtils::isClientLivesLocally(bool &livesLocally)
@@ -211,7 +235,12 @@ void TrackUtils::died()
 
 #else
 
-void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+{
+    return false;
+}
+
+void TrackUtils::resetUseCasePcmPlayback(bool resetPcm)
 {
     return;
 }
