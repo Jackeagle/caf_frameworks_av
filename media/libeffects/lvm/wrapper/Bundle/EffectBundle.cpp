@@ -941,6 +941,14 @@ int Effect_setConfig(EffectContext *pContext, effect_config_t *pConfig){
         SampleRate = LVM_FS_8000;
         pContext->pBundledContext->SamplesPerSecond = 8000*2; // 2 secs Stereo
         break;
+    case 11025:
+        SampleRate = LVM_FS_11025;
+        pContext->pBundledContext->SamplesPerSecond = 11025*2; // 2 secs Stereo
+        break;
+    case 12000:
+        SampleRate = LVM_FS_12000;
+        pContext->pBundledContext->SamplesPerSecond = 12000*2; // 2 secs Stereo
+        break;
     case 16000:
         SampleRate = LVM_FS_16000;
         pContext->pBundledContext->SamplesPerSecond = 16000*2; // 2 secs Stereo
@@ -948,6 +956,10 @@ int Effect_setConfig(EffectContext *pContext, effect_config_t *pConfig){
     case 22050:
         SampleRate = LVM_FS_22050;
         pContext->pBundledContext->SamplesPerSecond = 22050*2; // 2 secs Stereo
+        break;
+    case 24000:
+        SampleRate = LVM_FS_24000;
+        pContext->pBundledContext->SamplesPerSecond = 24000*2; // 2 secs Stereo
         break;
     case 32000:
         SampleRate = LVM_FS_32000;
