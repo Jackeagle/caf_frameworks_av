@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +22,9 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/ColorConverter.h>
 #include <media/stagefright/MediaErrors.h>
+#include <qcom/display/gralloc_priv.h>
+#include <dlfcn.h>
+#include <stdlib.h>
 
 namespace android {
 
@@ -28,12 +32,17 @@ ColorConverter::ColorConverter(
         OMX_COLOR_FORMATTYPE from, OMX_COLOR_FORMATTYPE to)
     : mSrcFormat(from),
       mDstFormat(to),
+      mI420Handle(NULL),
+      mI420Converter({0,0,0,0,0}),
       mClip(NULL) {
 }
 
 ColorConverter::~ColorConverter() {
     delete[] mClip;
     mClip = NULL;
+    if (mI420Handle) {
+        dlclose(mI420Handle);
+    }
 }
 
 bool ColorConverter::isValid() const {
@@ -47,6 +56,7 @@ bool ColorConverter::isValid() const {
         case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
         case OMX_COLOR_FormatYUV420SemiPlanar:
         case OMX_TI_COLOR_FormatYUV420PackedSemiPlanar:
+        case HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS:
             return true;
 
         default:
@@ -120,6 +130,10 @@ status_t ColorConverter::convert(
 
         case OMX_TI_COLOR_FormatYUV420PackedSemiPlanar:
             err = convertTIYUV420PackedSemiPlanar(src, dst);
+            break;
+
+        case HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS:
+            err = convertQCOMYUV420SemiPlanarVenus(src, dst);
             break;
 
         default:
@@ -288,6 +302,93 @@ status_t ColorConverter::convertYUV420Planar(
     }
 
     return OK;
+}
+
+status_t ColorConverter::loadI420Converter() {
+    // Pointer to function with signature
+    // void getI420ColorConverter(II420ColorConverter *converter)
+    typedef int (* getConverterFn)(II420ColorConverter *converter);
+    getConverterFn getI420ColorConverter = NULL;
+
+    // Open the shared library
+    if (mI420Handle == NULL) {
+        mI420Handle = dlopen("libI420colorconvert.so", RTLD_NOW);
+        if (mI420Handle == NULL) {
+            ALOGW("libI420colorconvert.so not found");
+            return INVALID_OPERATION;
+        }
+
+        // Find the entry point
+        getI420ColorConverter =
+            (getConverterFn) dlsym(mI420Handle, "getI420ColorConverter");
+
+        if (getI420ColorConverter == NULL) {
+            ALOGE("Cannot load getI420ColorConverter from libI420colorconvert.so");
+            dlclose(mI420Handle);
+            mI420Handle = NULL;
+            return INVALID_OPERATION;
+        }
+    }
+
+    // Fill the function pointers.
+    if (mI420Converter.convertDecoderOutputToI420 == 0) {
+        getI420ColorConverter(&mI420Converter);
+        if (mI420Converter.convertDecoderOutputToI420 == 0) {
+            ALOGE("Failed to initialize I420 color converter");
+            return INVALID_OPERATION;
+        }
+    }
+
+    return OK;
+}
+
+
+status_t ColorConverter::convertQCOMYUV420SemiPlanarVenus(
+        const BitmapParams &src, const BitmapParams &dst) {
+    status_t err;
+    uint8_t *kAdjustedClip = initClip();
+    int kI420BPP = 4;
+
+    ARect crop;
+    crop.top = src.mCropTop;
+    crop.bottom = src.mCropBottom;
+    crop.left = src.mCropLeft;
+    crop.right = src.mCropRight;
+
+    BitmapParams tmp = src;
+
+    tmp.mBits = malloc(src.mWidth * src.mHeight * kI420BPP);
+
+    if (tmp.mBits == NULL) {
+        ALOGE("Failed to allocate temporary conversion buffer!");
+        err = NO_MEMORY;
+        goto error;
+    }
+
+    err = loadI420Converter();
+    if (err) {
+        goto error;
+    }
+
+    //Converts to OMX_COLOR_FormatYUV420Planar
+    err = mI420Converter.convertDecoderOutputToI420(
+        src.mBits, src.mWidth, src.mHeight, crop, tmp.mBits);
+    if (err) {
+        ALOGE("Failed to convert frame to OMX_COLOR_FormatYUV420Planar format!");
+        goto error;
+    }
+
+    err = convertYUV420Planar(tmp, dst);
+    if (err) {
+        ALOGE("Failed to convert frame to OMX_COLOR_Format16bitRGB565 format!");
+        goto error;
+    }
+
+error:
+    if (tmp.mBits) {
+        free(tmp.mBits);
+    }
+    return err;
 }
 
 status_t ColorConverter::convertQCOMYUV420SemiPlanar(
