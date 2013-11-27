@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <utils/Errors.h>
+#include <media/editor/II420ColorConverter.h>
 
 #include <OMX_Video.h>
 
@@ -60,6 +61,8 @@ private:
     };
 
     OMX_COLOR_FORMATTYPE mSrcFormat, mDstFormat;
+    void *mI420Handle;
+    II420ColorConverter mI420Converter;
     uint8_t *mClip;
 
     uint8_t *initClip();
@@ -78,6 +81,11 @@ private:
 
     status_t convertTIYUV420PackedSemiPlanar(
             const BitmapParams &src, const BitmapParams &dst);
+
+    status_t convertQCOMYUV420SemiPlanarVenus(
+            const BitmapParams &src, const BitmapParams &dst);
+
+    status_t loadI420Converter();
 
     ColorConverter(const ColorConverter &);
     ColorConverter &operator=(const ColorConverter &);
