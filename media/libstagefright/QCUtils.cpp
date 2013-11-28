@@ -107,6 +107,11 @@ status_t QCUtils::HFR::reCalculateFileDuration(
             ALOGE("HFR mode is supported only upto 1080p resolution");
             return INVALID_OPERATION;
         }
+    } else if (!strncmp(mDeviceName, "msm8226", 7)) {
+        if (hfr && (width * height > 1280*720)) {
+            ALOGE("HFR mode is supported only upto 720p resolution");
+            return INVALID_OPERATION;
+        }
     } else {
         if (hfr && ((videoEncoder != VIDEO_ENCODER_H264) || (width * height > 800*480))) {
             ALOGE("HFR mode is supported only upto WVGA and H264 codec.");
@@ -471,8 +476,20 @@ void QCUtils::helper_addMediaCodec(Vector<MediaCodecList::CodecInfo> &mCodecInfo
     MediaCodecList::CodecInfo *info = &mCodecInfos.editItemAt(mCodecInfos.size() - 1);
     info->mName = name;
     info->mIsEncoder = encoder;
+    info->mTypes=0;
     ssize_t index = mTypes.indexOfKey(type);
-    uint32_t bit = mTypes.valueAt(index);
+    uint32_t bit;
+    if(index < 0)
+    {
+        bit = mTypes.size();
+        if (bit == 32) {
+            ALOGW("Too many distinct type names in configuration.");
+            return;
+        }
+        mTypes.add(name, bit);
+    }else {
+        bit = mTypes.valueAt(index);
+    }
     info->mTypes |= 1ul << bit;
     info->mQuirks = quirks;
 }
@@ -580,7 +597,8 @@ int32_t QCUtils::getEncoderTypeFlags() {
 
     char mDeviceName[100];
     property_get("ro.board.platform",mDeviceName,"0");
-    if (!strncmp(mDeviceName, "msm8610", 7)) {
+    if (!strncmp(mDeviceName, "msm8610", 7) ||
+        !strncmp(mDeviceName, "msm8626", 7)) {
         flags |= OMXCodec::kHardwareCodecsOnly;
     }
     return flags;
