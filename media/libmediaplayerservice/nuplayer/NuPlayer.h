@@ -21,6 +21,7 @@
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/foundation/AHandler.h>
 #include <media/stagefright/NativeWindowWrapper.h>
+#include <media/stagefright/foundation/ABuffer.h>
 
 namespace android {
 
@@ -69,12 +70,17 @@ protected:
 public:
     struct NuPlayerStreamListener;
     struct Source;
+    struct WFDSource;
 
 private:
     struct Decoder;
     struct GenericSource;
     struct HTTPLiveSource;
     struct Renderer;
+#ifdef FEATURE_WFD_SINK
+    struct WFDRenderer;
+    struct MPQHALWrapper;
+#endif //FEATURE_WFD_SINK
     struct RTSPSource;
     struct StreamingSource;
     struct Action;
@@ -118,6 +124,7 @@ private:
     bool mAudioEOS;
     bool mVideoEOS;
 
+    int mDontSendFramesToRenderer;
     bool mScanSourcesPending;
     int32_t mScanSourcesGeneration;
 
@@ -148,6 +155,11 @@ private:
 
     int32_t mVideoScalingMode;
 
+#ifdef FEATURE_WFD_SINK
+    bool mWFDSinkSession;
+    bool mIsSecureInputBuffers;
+#endif //FEATURE_WFD_SINK
+
     bool mStarted;
 
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
@@ -165,6 +177,11 @@ private:
 
     void postScanSources();
 
+#ifdef FEATURE_WFD_SINK
+    sp<Source> LoadCreateSource(const sp<AMessage> &notify, const char * uri, const KeyedVector<String8,
+                                 String8> *headers, bool uidValid, uid_t uid, bool wfdSink);
+#endif //FEATURE_WFD_SINK
+
     void schedulePollDuration();
     void cancelPollDuration();
 
@@ -180,6 +197,7 @@ private:
     void onSourceNotify(const sp<AMessage> &msg);
 
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
+    bool getValueforKey(const char *pUrl, const char* pKey, int *Val);
 };
 
 }  // namespace android

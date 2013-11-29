@@ -74,6 +74,7 @@ struct NuPlayer::Source : public AHandler {
         return INVALID_OPERATION;
     }
 
+    virtual sp<MetaData> getFormatMeta(bool audio);
     virtual bool isRealTime() const {
         return false;
     }
@@ -82,8 +83,6 @@ protected:
     virtual ~Source() {}
 
     virtual void onMessageReceived(const sp<AMessage> &msg);
-
-    virtual sp<MetaData> getFormatMeta(bool audio) { return NULL; }
 
     sp<AMessage> dupNotify() const { return mNotify->dup(); }
 

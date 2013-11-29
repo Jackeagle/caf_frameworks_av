@@ -254,6 +254,10 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
             return kOurScore;
         }
 
+        if (!strncasecmp("rtp://wfd", url, 9)) {
+            return kOurScore;
+        }
+
         return 0.0;
     }
 
