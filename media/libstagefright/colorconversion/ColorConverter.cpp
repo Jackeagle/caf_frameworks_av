@@ -22,9 +22,10 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/ColorConverter.h>
 #include <media/stagefright/MediaErrors.h>
-#include <qcom/display/gralloc_priv.h>
 #include <dlfcn.h>
 #include <stdlib.h>
+
+#define HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS 0x7FA30C04
 
 namespace android {
 
