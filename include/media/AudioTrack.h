@@ -618,6 +618,7 @@ protected:
     AudioTrackClientProxy*  mProxy;
     bool                    mAwaitBoost;    // thread should wait for priority boost before running
     audio_io_handle_t       mOutput;
+    bool                    mResetPcm;
 };
 
 class TimedAudioTrack : public AudioTrack
