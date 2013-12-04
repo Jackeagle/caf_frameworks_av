@@ -54,7 +54,7 @@ public:
 
     static void resetUseCasePcmPlayback(bool resetPcm);
 
-    static void  isClientLivesLocally(bool &livesLocally);
+    static bool  isClientLivesLocally(bool &livesLocally);
 
     static bool SetConcurrencyParameterForRemotePlaybackSession(
             audio_stream_type_t &streamType, audio_format_t &format,
