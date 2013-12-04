@@ -43,15 +43,28 @@ namespace android {
 Mutex TrackUtils::mLock;
 
 #ifdef RESOURCE_MANAGER
-void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
 {
 
-   //Set fast flag for ringtones/Alarm/Notification/system sound
+    //Set fast flag for ringtones/Alarm/Notification/system sound
+    bool resetPcm = false;
 
     ALOGD("setFastFlag - flags b4 = %d , streamType = %d", flags, streamType);
     switch (streamType) {
 
     case AUDIO_STREAM_RING:
+        /* Check if Ringtone can be played using regular pcm path
+         * Else fallback to set fast flag
+         */
+        if (!(flags & AUDIO_OUTPUT_FLAG_FAST)) {
+            String8 useCase("USECASE_PCM_PLAYBACK");
+            if (!(setParameterForConcurrency(useCase, true))) {
+                ALOGD("Use regular PCM path for ringtone");
+                resetPcm = true;
+                break;
+            }
+        }
+        /* Else fall through to use ULL path*/
     case AUDIO_STREAM_ALARM:
     case AUDIO_STREAM_NOTIFICATION:
     case AUDIO_STREAM_ENFORCED_AUDIBLE:
@@ -77,6 +90,17 @@ void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags
 
     }
     ALOGD("setFastFlags after = %d", flags);
+    return resetPcm;
+}
+
+void TrackUtils::resetUseCasePcmPlayback(bool resetPcm)
+{
+     if (resetPcm) {
+         String8 useCase ("USECASE_PCM_PLAYBACK");
+         if (!(setParameterForConcurrency(useCase, false))) {
+             ALOGD("Reset regular PCM path used for ringtone");
+         }
+     }
 }
 
 void  TrackUtils::isClientLivesLocally(bool &livesLocally)
@@ -185,23 +209,38 @@ status_t TrackUtils::setParameterForConcurrency(String8 useCase, bool value)
     } else {
        param.add(useCase, String8("false"));
     }
-    int64_t token = IPCThreadState::self()->clearCallingIdentity();
-    err = AudioSystem::setParameters(0, param.toString());
-    IPCThreadState::self()->restoreCallingIdentity(token);
+
+    const sp<IResourceManagerService>& service(getResourceManagerService());
+    if (service == 0) {
+        ALOGE("%s :: ERROR Could not get ResourceManagerService", __FUNCTION__);
+        return err;
+    }
+    err = service->setParam(param.toString());
+
     if(!err) {
        ALOGD("setParameter success for usecase = %s",useCase.string());
     } else if(err == INVALID_OPERATION) {
-        ALOGE("setParameter failed usecase = %s err = %d", useCase.string(),err );
-        ALOGE("Use case cannot be supported because of DSP limitation");
+       ALOGE("setParameter failed usecase = %s err = %d", useCase.string(),err );
+       ALOGE("Use case cannot be supported because of DSP limitation");
     } else {
-        ALOGE("setParameter failed with usecase = %s err = %d",  useCase.string(), err);
+       ALOGE("setParameter failed with usecase = %s err = %d",  useCase.string(), err);
     }
     return err;
 }
 
+void TrackUtils::died()
+{
+    //TODO:: Handle death notifier from service
+}
+
 #else
 
-void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+{
+    return false;
+}
+
+void TrackUtils::resetUseCasePcmPlayback(bool resetPcm)
 {
     return;
 }
@@ -222,5 +261,9 @@ status_t TrackUtils::setParameterForConcurrency(String8 useCase, bool value)
     return OK;
 }
 
+void TrackUtils::died()
+{
+    //Do nothing
+}
 #endif
 }
