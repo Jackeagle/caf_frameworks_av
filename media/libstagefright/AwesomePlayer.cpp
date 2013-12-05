@@ -48,6 +48,7 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/OMXCodec.h>
 #include <media/stagefright/Utils.h>
+#include "include/ExtendedUtils.h"
 
 #include <gui/IGraphicBufferProducer.h>
 #include <gui/Surface.h>
@@ -228,6 +229,9 @@ AwesomePlayer::AwesomePlayer()
     mAudioTearDownEvent = new AwesomeEvent(this,
                               &AwesomePlayer::onAudioTearDownEvent);
     mAudioTearDownEventPending = false;
+
+    mDurationUs = -1;
+    mAudioTearDownPosition = 0;
 
     reset();
 }
@@ -481,7 +485,8 @@ status_t AwesomePlayer::setDataSource_l(const sp<MediaExtractor> &extractor) {
                     &mStats.mTracks.editItemAt(mStats.mVideoTrackIndex);
                 stat->mMIME = mime.string();
             }
-        } else if (!haveAudio && !strncasecmp(mime.string(), "audio/", 6)) {
+        } else if (!haveAudio && !strncasecmp(mime.string(), "audio/", 6) &&
+                    !ExtendedUtils::ShellProp::isAudioDisabled(false)) {
             setAudioSource(extractor->getTrack(i));
             haveAudio = true;
             mActiveAudioTrackIndex = i;
@@ -615,7 +620,6 @@ void AwesomePlayer::reset_l() {
         shutdownVideoDecoder_l();
     }
 
-    mDurationUs = -1;
     modifyFlags(0, ASSIGN);
     mExtractorFlags = 0;
     mTimeSourceDeltaUs = 0;
@@ -1464,7 +1468,7 @@ status_t AwesomePlayer::getPosition(int64_t *positionUs) {
     } else if (mAudioPlayer != NULL) {
         *positionUs = mAudioPlayer->getMediaTimeUs();
     } else {
-        *positionUs = 0;
+        *positionUs = mAudioTearDownPosition;
     }
     return OK;
 }
