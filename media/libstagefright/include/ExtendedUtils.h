@@ -97,7 +97,7 @@ struct ExtendedUtils {
      */
     struct ShellProp {
         // check if shell property to disable audio is set
-        static bool isAudioDisabled();
+        static bool isAudioDisabled(bool isEncoder);
 
         //helper function to set encoding profiles
         static void setEncoderProfile(video_encoder &videoEncoder,
@@ -144,6 +144,7 @@ struct ExtendedUtils {
     //helper function for MPEG4 Extractor to check for AC3/EAC3 contents
     static void helper_Mpeg4ExtractorCheckAC3EAC3(MediaBuffer *buffer, sp<MetaData> &format,
                                                    size_t size);
+    static int32_t getEncoderTypeFlags();
 };
 
 }

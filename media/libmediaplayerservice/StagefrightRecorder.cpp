@@ -54,6 +54,8 @@
 #include <ctype.h>
 #include <unistd.h>
 
+#include "ExtendedUtils.h"
+
 #include <system/audio.h>
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
@@ -61,6 +63,7 @@
 
 #include "ARTPWriter.h"
 #include <cutils/properties.h>
+#include "ExtendedUtils.h"
 
 namespace android {
 
@@ -114,6 +117,10 @@ status_t StagefrightRecorder::setAudioSource(audio_source_t as) {
         return BAD_VALUE;
     }
 
+    if (ExtendedUtils::ShellProp::isAudioDisabled(true)) {
+        return OK;
+    }
+
     if (as == AUDIO_SOURCE_DEFAULT) {
         mAudioSource = AUDIO_SOURCE_MIC;
     } else {
@@ -163,6 +170,10 @@ status_t StagefrightRecorder::setAudioEncoder(audio_encoder ae) {
         ae >= AUDIO_ENCODER_LIST_END) {
         ALOGE("Invalid audio encoder: %d", ae);
         return BAD_VALUE;
+    }
+
+    if (ExtendedUtils::ShellProp::isAudioDisabled(true)) {
+        return OK;
     }
 
     if (ae == AUDIO_ENCODER_DEFAULT) {
@@ -1548,6 +1559,9 @@ status_t StagefrightRecorder::setupVideoEncoder(
     if (mVideoTimeScale > 0) {
         enc_meta->setInt32(kKeyTimeScale, mVideoTimeScale);
     }
+
+    ExtendedUtils::ShellProp::setEncoderProfile(mVideoEncoder, mVideoEncoderProfile);
+
     if (mVideoEncoderProfile != -1) {
         enc_meta->setInt32(kKeyVideoProfile, mVideoEncoderProfile);
     }
@@ -1569,6 +1583,7 @@ status_t StagefrightRecorder::setupVideoEncoder(
     if (mCaptureTimeLapse) {
         encoder_flags |= OMXCodec::kOnlySubmitOneInputBufferAtOneTime;
     }
+    encoder_flags |= ExtendedUtils::getEncoderTypeFlags();
 
     sp<MediaSource> encoder = OMXCodec::Create(
             client.interface(), enc_meta,
