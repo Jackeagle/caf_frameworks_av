@@ -43,15 +43,28 @@ namespace android {
 Mutex TrackUtils::mLock;
 
 #ifdef RESOURCE_MANAGER
-void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
 {
 
-   //Set fast flag for ringtones/Alarm/Notification/system sound
+    //Set fast flag for ringtones/Alarm/Notification/system sound
+    bool resetPcm = false;
 
     ALOGD("setFastFlag - flags b4 = %d , streamType = %d", flags, streamType);
     switch (streamType) {
 
     case AUDIO_STREAM_RING:
+        /* Check if Ringtone can be played using regular pcm path
+         * Else fallback to set fast flag
+         */
+        if (!(flags & AUDIO_OUTPUT_FLAG_FAST)) {
+            String8 useCase("USECASE_PCM_PLAYBACK");
+            if (!(setParameterForConcurrency(useCase, true))) {
+                ALOGD("Use regular PCM path for ringtone");
+                resetPcm = true;
+                break;
+            }
+        }
+        /* Else fall through to use ULL path*/
     case AUDIO_STREAM_ALARM:
     case AUDIO_STREAM_NOTIFICATION:
     case AUDIO_STREAM_ENFORCED_AUDIBLE:
@@ -77,17 +90,37 @@ void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags
 
     }
     ALOGD("setFastFlags after = %d", flags);
+    return resetPcm;
 }
 
-void  TrackUtils::isClientLivesLocally(bool &livesLocally)
+void TrackUtils::resetUseCasePcmPlayback(bool resetPcm)
+{
+     if (resetPcm) {
+         String8 useCase ("USECASE_PCM_PLAYBACK");
+         if (!(setParameterForConcurrency(useCase, false))) {
+             ALOGD("Reset regular PCM path used for ringtone");
+         }
+     }
+}
+
+bool  TrackUtils::isClientLivesLocally(bool &livesLocally)
 {
 
     sp<IServiceManager> sm = defaultServiceManager();
     sp<IBinder> binder = sm->getService(String16("media.player"));
     sp<IMediaPlayerService> service = interface_cast<IMediaPlayerService>(binder);
+    if(service == NULL) {
+        ALOGE("media service not available, returning");
+        return false;
+    }
     sp<IOMX> omx = service->getOMX();
+    if(omx == NULL) {
+        ALOGE("OMX not available, returning");
+        return false;
+    }
     livesLocally = omx->livesLocally(NULL /* node */, getpid());
     ALOGD("livesLocally  = %d", livesLocally);
+    return true;
 }
 
 bool TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
@@ -100,38 +133,41 @@ bool TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
         ALOGE("Tunnel Playback please ignore");
         return OK;
     }
-    isClientLivesLocally(livesLocally);
-    if(livesLocally) {
-        ALOGV("Lives in the media player context");
-        ALOGV("Concurrency taken care by stagefright");
-    }
-    else {
-        switch (streamType) {
-            case AUDIO_STREAM_MUSIC:
-            case AUDIO_STREAM_DEFAULT:
-            case AUDIO_STREAM_VOICE_CALL:
-            case AUDIO_STREAM_INCALL_MUSIC:
-            //Can in call music come from non framework context:
-            //case AUDIO_STREAM_INCALL_MUSIC:
-            //We are ignoring FAST/VOIP/TUNNEL and LPA streams here.
-                if(!(flags & AUDIO_OUTPUT_FLAG_VOIP_RX ||
-                     flags & AUDIO_OUTPUT_FLAG_LPA ||
-                     flags & AUDIO_OUTPUT_FLAG_TUNNEL ||
-                     flags & AUDIO_OUTPUT_FLAG_FAST)) {
-                    ALOGD("USECASE_PCM_PLAYBACK");
-                    String8 useCase ("USECASE_PCM_PLAYBACK");
-                    return setParameterForConcurrency(useCase, active);
-                }
-
-            break;
-
-            default:
-                ALOGW("AudioTrack created for streamType =%d, flags =%d", streamType, flags);
-                ALOGW("We donot need to inform HAL");
-            break;
+    if(isClientLivesLocally(livesLocally)) {
+        if(livesLocally) {
+            ALOGV("Lives in the media player context");
+            ALOGV("Concurrency taken care by stagefright");
         }
+        else {
+            switch (streamType) {
+                case AUDIO_STREAM_MUSIC:
+                case AUDIO_STREAM_DEFAULT:
+                case AUDIO_STREAM_VOICE_CALL:
+                case AUDIO_STREAM_INCALL_MUSIC:
+                //Can in call music come from non framework context:
+                //case AUDIO_STREAM_INCALL_MUSIC:
+                //We are ignoring FAST/VOIP/TUNNEL and LPA streams here.
+                    if(!(flags & AUDIO_OUTPUT_FLAG_VOIP_RX ||
+                         flags & AUDIO_OUTPUT_FLAG_LPA ||
+                         flags & AUDIO_OUTPUT_FLAG_TUNNEL ||
+                         flags & AUDIO_OUTPUT_FLAG_FAST)) {
+                        ALOGD("USECASE_PCM_PLAYBACK");
+                        String8 useCase ("USECASE_PCM_PLAYBACK");
+                        return setParameterForConcurrency(useCase, active);
+                    }
+
+                break;
+
+                default:
+                    ALOGW("AudioTrack created for streamType =%d, flags =%d", streamType, flags);
+                    ALOGW("We donot need to inform HAL");
+                break;
+           }
+        }
+        return OK;
     }
-    return OK;
+    else
+        return INVALID_OPERATION;
 }
 
 bool TrackUtils::SetConcurrencyParameterForRemoteRecordSession(
@@ -145,31 +181,34 @@ bool TrackUtils::SetConcurrencyParameterForRemoteRecordSession(
         return OK;
     }
 
-    isClientLivesLocally(livesLocally);
-    if(livesLocally) {
-        ALOGD("Lives in the media player context");
-        ALOGD("Concurrency taken care by stagefright");
-    } else {
+    if(isClientLivesLocally(livesLocally)) {
+        if(livesLocally) {
+            ALOGD("Lives in the media player context");
+            ALOGD("Concurrency taken care by stagefright");
+        } else {
 
-         // TODO: Use voip if skype gives voice communication always.
-         // also check if voice recognition needs to be added.
+             // TODO: Use voip if skype gives voice communication always.
+             // also check if voice recognition needs to be added.
 
-        /*if(inputSource == AUDIO_SOURCE_VOICE_COMMUNICATION) {
-            useCase =  "USECASE_PCM_VOIP_CALL";
-        } else */
-        //Need to check mode here.
-        if (inputSource == AUDIO_SOURCE_MIC ||
-                  inputSource == AUDIO_SOURCE_DEFAULT ||
-                  (inputSource == AUDIO_SOURCE_VOICE_COMMUNICATION &&
-                      (sampleRate != 8000 && sampleRate != 16000))) {
-             ALOGD("USECASE_PCM_RECORDING");
-             useCase = "USECASE_PCM_RECORDING";
-             return setParameterForConcurrency(useCase, active);
+            /*if(inputSource == AUDIO_SOURCE_VOICE_COMMUNICATION) {
+                useCase =  "USECASE_PCM_VOIP_CALL";
+            } else */
+            //Need to check mode here.
+            if (inputSource == AUDIO_SOURCE_MIC ||
+                       inputSource == AUDIO_SOURCE_DEFAULT ||
+                      (inputSource == AUDIO_SOURCE_VOICE_COMMUNICATION &&
+                          (sampleRate != 8000 && sampleRate != 16000))) {
+                 ALOGD("USECASE_PCM_RECORDING");
+                 useCase = "USECASE_PCM_RECORDING";
+                 return setParameterForConcurrency(useCase, active);
+           }
+
         }
 
+        return OK;
     }
-
-    return OK;
+    else
+        return INVALID_OPERATION;
 }
 status_t TrackUtils::setParameterForConcurrency(String8 useCase, bool value)
 {
@@ -211,7 +250,12 @@ void TrackUtils::died()
 
 #else
 
-void TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
+{
+    return false;
+}
+
+void TrackUtils::resetUseCasePcmPlayback(bool resetPcm)
 {
     return;
 }
