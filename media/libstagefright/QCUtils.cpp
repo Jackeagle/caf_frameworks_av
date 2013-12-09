@@ -236,11 +236,11 @@ int64_t QCUtils::ShellProp::getMaxAVSyncLateMargin() {
 
 bool QCUtils::ShellProp::isSmoothStreamingEnabled() {
     char prop[PROPERTY_VALUE_MAX] = {0};
-    property_get("mm.enable.smoothstreaming", prop, "0");
+    property_get("mm.disable.smoothstreaming", prop, "0");
     if (!strncmp(prop, "true", 4) || atoi(prop)) {
-        return true;
+        return false;
     }
-    return false;
+    return true;
 }
 
 void QCUtils::setBFrames(
