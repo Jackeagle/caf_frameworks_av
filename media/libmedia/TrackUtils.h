@@ -49,10 +49,12 @@ class TrackUtils {
 #endif
 public:
 
-    static void setFastFlag(audio_stream_type_t &streamType,
+    static bool setFastFlag(audio_stream_type_t &streamType,
             audio_output_flags_t &flags);
 
-    static void  isClientLivesLocally(bool &livesLocally);
+    static void resetUseCasePcmPlayback(bool resetPcm);
+
+    static bool  isClientLivesLocally(bool &livesLocally);
 
     static bool SetConcurrencyParameterForRemotePlaybackSession(
             audio_stream_type_t &streamType, audio_format_t &format,
