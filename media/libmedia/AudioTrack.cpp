@@ -24,11 +24,14 @@
 #include <sys/resource.h>
 #include <audio_utils/primitives.h>
 #include <binder/IPCThreadState.h>
+#include <media/AudioParameter.h>
+#include <media/AudioSystem.h>
 #include <media/AudioTrack.h>
 #include <utils/Log.h>
 #include <private/media/AudioTrackShared.h>
 #include <media/IAudioFlinger.h>
 #include <cutils/properties.h>
+#include <system/audio.h>
 
 #define WAIT_PERIOD_MS                  10
 #define WAIT_STREAM_END_TIMEOUT_SEC     120
@@ -104,7 +107,8 @@ AudioTrack::AudioTrack(
         int notificationFrames,
         int sessionId,
         transfer_type transferType,
-        const audio_offload_info_t *offloadInfo)
+        const audio_offload_info_t *offloadInfo,
+        int uid)
     : mStatus(NO_INIT),
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
@@ -112,7 +116,8 @@ AudioTrack::AudioTrack(
 {
     mStatus = set(streamType, sampleRate, format, channelMask,
             frameCount, flags, cbf, user, notificationFrames,
-            0 /*sharedBuffer*/, false /*threadCanCallJava*/, sessionId, transferType, offloadInfo);
+            0 /*sharedBuffer*/, false /*threadCanCallJava*/, sessionId, transferType,
+            offloadInfo, uid);
 }
 
 AudioTrack::AudioTrack(
@@ -127,7 +132,8 @@ AudioTrack::AudioTrack(
         int notificationFrames,
         int sessionId,
         transfer_type transferType,
-        const audio_offload_info_t *offloadInfo)
+        const audio_offload_info_t *offloadInfo,
+        int uid)
     : mStatus(NO_INIT),
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
@@ -135,7 +141,7 @@ AudioTrack::AudioTrack(
 {
     mStatus = set(streamType, sampleRate, format, channelMask,
             0 /*frameCount*/, flags, cbf, user, notificationFrames,
-            sharedBuffer, false /*threadCanCallJava*/, sessionId, transferType, offloadInfo);
+            sharedBuffer, false /*threadCanCallJava*/, sessionId, transferType, offloadInfo, uid);
 }
 
 AudioTrack::~AudioTrack()
@@ -172,8 +178,11 @@ status_t AudioTrack::set(
         bool threadCanCallJava,
         int sessionId,
         transfer_type transferType,
-        const audio_offload_info_t *offloadInfo)
+        const audio_offload_info_t *offloadInfo,
+        int uid)
 {
+    ALOGV("sampleRate %u, channelMask %#x, format %d", sampleRate, channelMask, format);
+    ALOGV("streamType %d", streamType);
     switch (transferType) {
     case TRANSFER_DEFAULT:
         if (sharedBuffer != 0) {
@@ -276,6 +285,10 @@ status_t AudioTrack::set(
                 // FIXME why can't we allow direct AND fast?
                 ((flags | AUDIO_OUTPUT_FLAG_DIRECT) & ~AUDIO_OUTPUT_FLAG_FAST);
     }
+    // do not allow FAST flag for Voice Call stream type
+    if (streamType == AUDIO_STREAM_VOICE_CALL) {
+        flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_FAST);
+    }
     // only allow deep buffering for music stream type
     if (streamType != AUDIO_STREAM_MUSIC) {
         flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
@@ -292,19 +305,27 @@ status_t AudioTrack::set(
     if ((streamType == AUDIO_STREAM_VOICE_CALL) &&
         (channelCount == 1) &&
         (sampleRate == 8000 || sampleRate == 16000)) {
-        if (audio_is_linear_pcm(format)) {
-            char propValue[PROPERTY_VALUE_MAX] = {0};
-            property_get("use.voice.path.for.pcm.voip", propValue, "0");
-            bool voipPcmSysPropEnabled = !strncmp("true", propValue, sizeof("true"));
-            if (voipPcmSysPropEnabled) {
-                flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX |
-                                               AUDIO_OUTPUT_FLAG_DIRECT);
-                ALOGD("Set VoIP and Direct output flags for PCM format");
+        String8 valueStr = AudioSystem::getParameters((audio_io_handle_t)0, String8("audio_mode"));
+        AudioParameter result = AudioParameter(valueStr);
+        int value, mode;
+        if (result.getInt(String8("audio_mode"),value) == NO_ERROR) {
+            mode = value;
+            if (mode == AUDIO_MODE_IN_COMMUNICATION) {
+                if (audio_is_linear_pcm(format)) {
+                    char propValue[PROPERTY_VALUE_MAX] = {0};
+                    property_get("use.voice.path.for.pcm.voip", propValue, "0");
+                    bool voipPcmSysPropEnabled = !strncmp("true", propValue, sizeof("true"));
+                    if (voipPcmSysPropEnabled) {
+                        flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX |
+                                                       AUDIO_OUTPUT_FLAG_DIRECT);
+                        ALOGD("Set VoIP and Direct output flags for PCM format");
+                    }
+                } else {
+                    flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX |
+                                                   AUDIO_OUTPUT_FLAG_DIRECT);
+                    ALOGD("Set VoIP and Direct output flags for Non-PCM formats");
+                }
             }
-        } else {
-            flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX |
-                                           AUDIO_OUTPUT_FLAG_DIRECT);
-            ALOGD("Set VoIP and Direct output flags for Non-PCM formats");
         }
     }
 
@@ -335,6 +356,11 @@ status_t AudioTrack::set(
     mNotificationFramesReq = notificationFrames;
     mNotificationFramesAct = 0;
     mSessionId = sessionId;
+    if (uid == -1 || (IPCThreadState::self()->getCallingPid() != getpid())) {
+        mClientUid = IPCThreadState::self()->getCallingUid();
+    } else {
+        mClientUid = uid;
+    }
     mAuxEffectId = 0;
     mFlags = flags;
     mCbf = cbf;
@@ -984,6 +1010,7 @@ status_t AudioTrack::createTrack_l(
                                                       tid,
                                                       &mSessionId,
                                                       mName,
+                                                      mClientUid,
                                                       &status);
 
     if (track == 0) {
