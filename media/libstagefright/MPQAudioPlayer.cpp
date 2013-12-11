@@ -574,7 +574,8 @@ void *MPQAudioPlayer::extractorThreadWrapper(void *me) {
 void MPQAudioPlayer::extractorThreadEntry() {
     mExtractorMutex.lock();
     pid_t tid  = gettid();
-    androidSetThreadPriority(tid, ANDROID_PRIORITY_AUDIO);
+    androidSetThreadPriority(tid, mHasVideo ? ANDROID_PRIORITY_NORMAL :
+                                              ANDROID_PRIORITY_AUDIO);
     prctl(PR_SET_NAME, (unsigned long)"MPQ Audio DecodeThread", 0, 0, 0);
     ALOGV("extractorThreadEntry wait for signal \n");
 
@@ -762,6 +763,7 @@ size_t MPQAudioPlayer::fillBufferfromSoftwareDecoder(void *data, size_t size) {
 
     size_t size_done = 0;
     size_t size_remaining = size;
+	bool yield = !mIsFirstBuffer;
 
     while (size_remaining > 0) {
         MediaSource::ReadOptions options;
@@ -884,6 +886,9 @@ size_t MPQAudioPlayer::fillBufferfromSoftwareDecoder(void *data, size_t size) {
 
         size_done += copy;
         size_remaining -= copy;
+        if (mHasVideo && yield) {
+            sched_yield();
+        }
     }
 
     {
