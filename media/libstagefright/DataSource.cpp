@@ -112,22 +112,42 @@ status_t DataSource::getCurrentOffset(off64_t *size) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Mutex DataSource::gSnifferMutex;
-List<DataSource::SnifferFunc> DataSource::gSniffers;
-
 bool DataSource::sniff(
         String8 *mimeType, float *confidence, sp<AMessage> *meta) {
+
+    return  mSniffer->sniff(this, mimeType, confidence, meta);
+}
+
+// static
+void DataSource::RegisterSniffer(SnifferFunc func) {
+    return;
+}
+
+// static
+void DataSource::RegisterDefaultSniffers() {
+    return;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Sniffer::Sniffer() {
+    RegisterDefaultSniffers();
+}
+
+bool Sniffer::sniff(
+        DataSource *source,String8 *mimeType, float *confidence, sp<AMessage> *meta) {
+
     *mimeType = "";
     *confidence = 0.0f;
     meta->clear();
 
-    Mutex::Autolock autoLock(gSnifferMutex);
-    for (List<SnifferFunc>::iterator it = gSniffers.begin();
-         it != gSniffers.end(); ++it) {
+    Mutex::Autolock autoLock(mSnifferMutex);
+    for (List<SnifferFunc>::iterator it = mSniffers.begin();
+         it != mSniffers.end(); ++it) {
         String8 newMimeType;
         float newConfidence;
         sp<AMessage> newMeta;
-        if ((*it)(this, &newMimeType, &newConfidence, &newMeta)) {
+        if ((*it)(source, &newMimeType, &newConfidence, &newMeta)) {
             if (newConfidence > *confidence) {
                 *mimeType = newMimeType;
                 *confidence = newConfidence;
@@ -139,22 +159,21 @@ bool DataSource::sniff(
     return *confidence > 0.0;
 }
 
-// static
-void DataSource::RegisterSniffer(SnifferFunc func) {
-    Mutex::Autolock autoLock(gSnifferMutex);
+void Sniffer::RegisterSniffer(SnifferFunc func) {
+    Mutex::Autolock autoLock(mSnifferMutex);
 
-    for (List<SnifferFunc>::iterator it = gSniffers.begin();
-         it != gSniffers.end(); ++it) {
+    for (List<SnifferFunc>::iterator it = mSniffers.begin();
+         it != mSniffers.end(); ++it) {
         if (*it == func) {
             return;
         }
     }
 
-    gSniffers.push_back(func);
+    mSniffers.push_back(func);
 }
 
 // static
-void DataSource::RegisterDefaultSniffers() {
+void Sniffer::RegisterDefaultSniffers() {
     RegisterSniffer(SniffMPEG4);
     RegisterSniffer(SniffMatroska);
     RegisterSniffer(SniffOgg);
