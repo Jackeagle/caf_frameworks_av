@@ -1423,7 +1423,8 @@ status_t MediaPlayerService::AudioOutput::open(
     mCallbackCookie = cookie;
     if (flags & AUDIO_OUTPUT_FLAG_LPA || flags & AUDIO_OUTPUT_FLAG_TUNNEL) {
         ALOGV("AudioOutput open: with flags %x",flags);
-        channelMask = audio_channel_out_mask_from_count(channelCount);
+        if (0 == channelMask)
+            channelMask = audio_channel_out_mask_from_count(channelCount);
         if (0 == channelMask) {
             ALOGE("open() error, can't derive mask for %d audio channels", channelCount);
             return NO_INIT;
