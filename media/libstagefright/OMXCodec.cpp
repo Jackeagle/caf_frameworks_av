@@ -51,6 +51,7 @@
 #include <QOMX_AudioExtensions.h>
 #endif
 #include "include/avc_utils.h"
+#include "include/ExtendedUtils.h"
 
 namespace android {
 
@@ -392,12 +393,7 @@ sp<MediaSource> OMXCodec::Create(
             observer->setCodec(codec);
 
             err = codec->configureCodec(meta);
-
             if (err == OK) {
-                if (!strcmp("OMX.Nvidia.mpeg2v.decode", componentName)) {
-                    codec->mFlags |= kOnlySubmitOneInputBufferAtOneTime;
-                }
-
                 return codec;
             }
 
@@ -632,6 +628,9 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
         } else {
+            ExtendedCodec::configureVideoDecoder(
+                    meta, mMIME, mOMX, mFlags, mNode, mComponentName);
+
             status_t err = setVideoOutputFormat(
                     mMIME, meta);
 
@@ -639,8 +638,6 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
 
-            ExtendedCodec::configureVideoDecoder(
-                    meta, mMIME, mOMX, mFlags, mNode, mComponentName);
             ExtendedCodec::configureFramePackingFormat(
                     meta, mOMX, mNode, mComponentName);
         }
@@ -1464,8 +1461,7 @@ OMXCodec::OMXCodec(
       mLeftOverBuffer(NULL),
       mPaused(false),
       mNativeWindow(
-              (!strncmp(componentName, "OMX.google.", 11)
-              || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
+              (!strncmp(componentName, "OMX.google.", 11))
                         ? NULL : nativeWindow),
       mNumBFrames(0) {
     mPortStatus[kPortIndexInput] = ENABLED;
@@ -1920,12 +1916,21 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
+    //add an extra buffer to display queue to get around dequeue+wait
+    //blocking too long (more than 1 Vsync) in case BufferQeuue is in
+    //sync-mode and advertizes only 1 buffer
+    //NOTE: This is not necessary for 30fps content, but adding a buffer
+    //      regardless this root-cause is identified in SF
+    minUndequeuedBufs++;
+    ALOGI("NOTE: Overriding minUndequeuedBufs to %d",minUndequeuedBufs);
+
     // XXX: Is this the right logic to use?  It's not clear to me what the OMX
     // buffer counts refer to - how do they account for the renderer holding on
     // to buffers?
     if (def.nBufferCountActual < def.nBufferCountMin + minUndequeuedBufs) {
         OMX_U32 newBufferCount = def.nBufferCountMin + minUndequeuedBufs;
         def.nBufferCountActual = newBufferCount;
+        ALOGI("NOTE: Allocating %lu buffers on output port",def.nBufferCountActual);
         err = mOMX->setParameter(
                 mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
         if (err != OK) {
@@ -4696,6 +4701,8 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 if (mNativeWindow != NULL) {
                      initNativeWindowCrop();
                 }
+            } else {
+                ExtendedUtils::HFR::copyHFRParams(inputFormat, mOutputFormat);
             }
             break;
         }
