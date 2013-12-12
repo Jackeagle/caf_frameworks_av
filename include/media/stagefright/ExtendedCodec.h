@@ -141,9 +141,6 @@ struct ExtendedCodec {
 
     static bool useHWAACDecoder(const char *mime);
 
-    static void overrideErrorCorrectionParameters(
-            OMX_VIDEO_PARAM_ERRORCORRECTIONTYPE &errorCorrectionType);
-
 private:
     static const char* getMsgKey(int key );
 
