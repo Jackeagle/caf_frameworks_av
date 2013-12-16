@@ -122,7 +122,7 @@ private:
     int32_t mScanSourcesGeneration;
 
     int32_t mPollDurationGeneration;
-
+    bool mIsHPXProcessed;
     enum FlushStatus {
         NONE,
         AWAITING_DISCONTINUITY,
