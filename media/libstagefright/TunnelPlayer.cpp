@@ -852,10 +852,7 @@ int64_t TunnelPlayer::getRealTimeUs() {
     getOffsetRealTime_l(&mPositionTimeRealUs);
     //update media time too
     mPositionTimeMediaUs = mPositionTimeRealUs;
-    if (mAudioSink != NULL) {
-        mLatencyUs = ((uint64_t)mAudioSink->latency()) * 1000;
-    }
-    return mPositionTimeRealUs-mLatencyUs;
+    return mPositionTimeRealUs;
 }
 
 void TunnelPlayer::getPlayedTimeFromDSP_l(int64_t* timeStamp ) {
