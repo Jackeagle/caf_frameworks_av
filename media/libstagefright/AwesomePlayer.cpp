@@ -66,6 +66,7 @@ static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
 static int64_t kHighWaterMarkUs = 5000000ll;  // 5secs
 static const size_t kLowWaterMarkBytes = 40000;
 static const size_t kHighWaterMarkBytes = 200000;
+static int64_t kVideoEarlyMarginUs = -10000LL;
 
 // maximum time in paused state when offloading audio decompression. When elapsed, the AudioPlayer
 // is destroyed to allow the audio DSP to power down.
@@ -1585,8 +1586,13 @@ status_t AwesomePlayer::initAudioDecoder() {
         streamType = mAudioSink->getAudioStreamType();
     }
 
-    mOffloadAudio = canOffloadStream(meta, (mVideoSource != NULL),
+    if (mDecryptHandle != NULL) {
+        ALOGV("Do not use offload playback for DRM contents");
+        mOffloadAudio = false;
+    } else {
+        mOffloadAudio = canOffloadStream(meta, (mVideoSource != NULL),
                                      isStreamingHTTP(), streamType);
+    }
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         ALOGV("createAudioPlayer: bypass OMX (raw)");
@@ -2064,7 +2070,8 @@ void AwesomePlayer::onVideoEvent() {
                 Mutex::Autolock autoLock(mStatsLock);
                 mStats.mConsecutiveFramesDropped = 0;
             }
-            postVideoEvent_l(10000);
+            postVideoEvent_l((kVideoEarlyMarginUs - latenessUs) > 100000LL ?
+                                100000LL : (kVideoEarlyMarginUs - latenessUs));
             return;
         }
     }
