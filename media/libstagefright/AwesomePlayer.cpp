@@ -365,9 +365,7 @@ AwesomePlayer::~AwesomePlayer() {
     if(err != OK) {
         ALOGE("resetConcurrencyParameters failed = %d", err);
     }
-
     reset();
-
     // Disable Tunnel Mode Audio
     if (mIsTunnelAudio) {
         if (mTunnelAliveAP > 0) {
@@ -1142,6 +1140,30 @@ status_t AwesomePlayer::play_l() {
                     allowDeepBuffering = false;
                 }
 #ifdef USE_TUNNEL_MODE
+
+                ALOGD("MPQ Audio Player ");
+                IS_TARGET_MPQ(is_mpq);
+                if(mIsMPQAudio) {
+                    ALOGD("MPQ Audio player created for  mime %s duration %lld\n", mime, mDurationUs);
+                    bool initCheck =  false;
+                    if(mVideoSource != NULL) {
+                        // The parameter true is to inform tunnel player that
+                        // clip is audio video
+                        mAudioPlayer = new MPQAudioPlayer(mAudioSink, initCheck,
+                                this, true);
+                    }
+                    else {
+                        mAudioPlayer = new MPQAudioPlayer(mAudioSink, initCheck,
+                                this);
+                    }
+                    if(!initCheck) {
+                       ALOGE("deleting MPQ Audio Player - initCheck failed");
+                       delete mAudioPlayer;
+                       mAudioPlayer = NULL;
+                    }
+                }
+                mpqAudioObjetcsAlive = (MPQAudioPlayer::getMPQAudioObjectsAlive());
+
                 // Create tunnel player if tunnel mode is enabled
                 ALOGW("Trying to create tunnel player mIsTunnelAudio %d, \
                         LPAPlayer::mObjectsAlive %d, \
@@ -1188,32 +1210,6 @@ status_t AwesomePlayer::play_l() {
                     }
                 }
 
-#ifndef NON_QCOM_TARGET
-#ifdef USE_TUNNEL_MODE
-                ALOGD("MPQ Audio Player ");
-                IS_TARGET_MPQ(is_mpq);
-                if(mIsMPQAudio) {
-                    ALOGD("MPQ Audio player created for  mime %s duration %lld\n", mime, mDurationUs);
-                    bool initCheck =  false;
-                    if(mVideoSource != NULL) {
-                        // The parameter true is to inform tunnel player that
-                        // clip is audio video
-                        mAudioPlayer = new MPQAudioPlayer(mAudioSink, initCheck,
-                                this, true);
-                    }
-                    else {
-                        mAudioPlayer = new MPQAudioPlayer(mAudioSink, initCheck,
-                                this);
-                    }
-                    if(!initCheck) {
-                       ALOGE("deleting MPQ Audio Player - initCheck failed");
-                       delete mAudioPlayer;
-                       mAudioPlayer = NULL;
-                    }
-                }
-                mpqAudioObjetcsAlive = (MPQAudioPlayer::getMPQAudioObjectsAlive());
-#endif
-#endif
                 if(mAudioPlayer == NULL) {
                     ALOGV("AudioPlayer created, Non-LPA mode mime %s duration %lld\n", mime, mDurationUs);
                     mAudioPlayer = new AudioPlayer(mAudioSink, allowDeepBuffering, this);
@@ -1760,47 +1756,6 @@ status_t AwesomePlayer::initAudioDecoder() {
            nchannels);
 
 #ifdef USE_TUNNEL_MODE
-    char tunnelDecode[PROPERTY_VALUE_MAX];
-    property_get("tunnel.decode",tunnelDecode,"0");
-    // Enable tunnel mode for mp3 and aac and if the clip is not aac adif
-    // and if no other tunnel mode instances aare running.
-    ALOGD("Tunnel Mime Type: %s, object alive = %d, mTunnelAliveAP = %d",\
-            mime, (TunnelPlayer::mTunnelObjectsAlive), mTunnelAliveAP);
-
-    bool sys_prop_enabled = !strcmp("true",tunnelDecode) || atoi(tunnelDecode);
-    ALOGD("maxPossible tunnels = %d", TunnelPlayer::getTunnelObjectsAliveMax());
-    //widevine will fallback to software decoder
-    if (sys_prop_enabled && (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
-       (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax()) && (isADTS == 0) &&
-        mAudioSink->realtime() &&
-        inSupportedTunnelFormats(mime)) {
-
-        if (mVideoSource != NULL) {
-           char tunnelAVDecode[PROPERTY_VALUE_MAX];
-           property_get("tunnel.audiovideo.decode",tunnelAVDecode,"0");
-           sys_prop_enabled = !strncmp("true", tunnelAVDecode, 4) || atoi(tunnelAVDecode);
-           if (sys_prop_enabled) {
-               ALOGD("Enable Tunnel Mode for A-V playback");
-               mIsTunnelAudio = true;
-           }
-        }
-        else {
-            ALOGI("Tunnel Mode Audio Enabled");
-            mIsTunnelAudio = true;
-        }
-#ifdef NO_TUNNEL_MODE_FOR_MULTICHANNEL
-        if (nchannels > 2 || nchannels <= 0) {
-            ALOGD("Use tunnel mode only for mono and stereo channels");
-            mIsTunnelAudio = false;
-        }
-#endif
-    }
-    else
-       ALOGD("Normal Audio Playback");
-#endif
-#ifndef NON_QCOM_TARGET
-#ifdef USE_TUNNEL_MODE
-
     char value[PROPERTY_VALUE_MAX];
 
     char mpqAudioDecode[128];
@@ -1840,9 +1795,45 @@ status_t AwesomePlayer::initAudioDecoder() {
                 mIsMPQTunnelAudio = true;
             }
     }
-    else
-       ALOGE("Normal Audio Playback");
+    else {
+        char tunnelDecode[PROPERTY_VALUE_MAX];
+        property_get("tunnel.decode",tunnelDecode,"0");
+        // Enable tunnel mode for mp3 and aac and if the clip is not aac adif
+        // and if no other tunnel mode instances aare running.
+        ALOGD("Tunnel Mime Type: %s, object alive = %d, mTunnelAliveAP = %d",\
+                mime, (TunnelPlayer::mTunnelObjectsAlive), mTunnelAliveAP);
+
+        bool sys_prop_enabled = !strcmp("true",tunnelDecode) || atoi(tunnelDecode);
+        ALOGD("maxPossible tunnels = %d", TunnelPlayer::getTunnelObjectsAliveMax());
+        //widevine will fallback to software decoder
+        if (sys_prop_enabled && (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
+           (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax()) && (isADTS == 0) &&
+            mAudioSink->realtime() &&
+            inSupportedTunnelFormats(mime)) {
+
+            if (mVideoSource != NULL) {
+               char tunnelAVDecode[PROPERTY_VALUE_MAX];
+               property_get("tunnel.audiovideo.decode",tunnelAVDecode,"0");
+               sys_prop_enabled = !strncmp("true", tunnelAVDecode, 4) || atoi(tunnelAVDecode);
+               if (sys_prop_enabled) {
+                  ALOGD("Enable Tunnel Mode for A-V playback");
+                  mIsTunnelAudio = true;
+               }
+            }
+            else {
+                ALOGI("Tunnel Mode Audio Enabled");
+                mIsTunnelAudio = true;
+            }
+#ifdef NO_TUNNEL_MODE_FOR_MULTICHANNEL
+            if (nchannels > 2 || nchannels <= 0) {
+                ALOGD("Use tunnel mode only for mono and stereo channels");
+                mIsTunnelAudio = false;
+            }
 #endif
+       }
+       else
+           ALOGE("Normal Audio Playback");
+    }
 #endif
     checkTunnelExceptions();
 
