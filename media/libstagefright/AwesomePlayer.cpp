@@ -3125,6 +3125,20 @@ void AwesomePlayer::checkTunnelExceptions()
         return;
     }
 
+    /* exception 4: check for  AAC main/AAC ELD profiles, it is not supported */
+    sp<MetaData> metaData  = mAudioTrack->getFormat();
+    const char * mime;
+    int32_t objecttype = 0;
+
+    if (metaData->findCString(kKeyMIMEType, &mime) &&
+           !strcmp(mime, MEDIA_MIMETYPE_AUDIO_AAC) &&
+           (metaData->findInt32(kKeyAACProfile, &objecttype) &&
+           ((1 == objecttype) || (39 == objecttype)))) {
+        ALOGD("FOUND unsupported AAC profiletype(%d) , disable tunnel mode\n",objecttype);
+        mIsTunnelAudio = false;
+        return;
+    }
+
     status_t err = OK;
     err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
             mUseCase, mUseCaseFlag, OMXCodec::kInTunnelMode);
@@ -3136,8 +3150,8 @@ void AwesomePlayer::checkTunnelExceptions()
     /* below exceptions are only for av content */
     if (mVideoTrack == NULL) return;
 
-    sp<MetaData> metaData = mVideoTrack->getFormat();
-    const char * mime;
+    metaData = mVideoTrack->getFormat();
+
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
     if(metaData->findCString(kKeyMIMEType, &mime) &&
             !strncmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC,
