@@ -699,9 +699,10 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                 mLatencyUs = (int64_t)mAudioTrack->latency() * 1000;
             }
 
-            CHECK(mInputBuffer->meta_data()->findInt64(
-                        kKeyTime, &mPositionTimeMediaUs));
-
+            if (mInputBuffer->range_length() != 0) {
+                CHECK(mInputBuffer->meta_data()->findInt64(
+                            kKeyTime, &mPositionTimeMediaUs));
+            }
             mPositionTimeRealUs =
                 ((mNumFramesPlayed + size_done / mFrameSize) * 1000000)
                     / mSampleRate;
