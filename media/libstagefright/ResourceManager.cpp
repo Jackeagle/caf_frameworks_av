@@ -63,7 +63,7 @@ bool  ResourceManager::isLPAPlayback(const sp<MediaSource> &audioTrack,
         const sp<MediaSource> &videoSource, const AudioPlayer * audioPlayer,
         const sp<MediaPlayerBase::AudioSink> &audioSink,
         int64_t &durationUs, String8 &useCase,
-        bool &useCaseFlag) {
+        bool &useCaseFlag, bool isHTTP) {
 
     ALOGV("isLPAPlayback");
     int32_t nchannels = 0;
@@ -111,6 +111,10 @@ bool  ResourceManager::isLPAPlayback(const sp<MediaSource> &audioTrack,
        ALOGV("property lpa false");
        return false;
     }
+    if (isHTTP) {
+       ALOGV("online streaming music - lpa false");
+       return false;
+    }
     if (audioPlayer != NULL) {
        ALOGV("audio player  - lpa false");
        return false;
@@ -147,7 +151,7 @@ bool  ResourceManager::isLPAPlayback(const sp<MediaSource> &audioTrack,
     }
 
     if(!ResourceManager::isStreamMusic(audioSink)) {
-        ALOGV("No LPA /Tunnel for stream Music");
+        ALOGV("No LPA /Tunnel for stream other than Music");
         return false;
     }
 
@@ -186,7 +190,7 @@ bool ResourceManager::isLPAPlayback(const sp<MediaSource> &audioTrack,
         const sp<MediaSource> &videoSource, const AudioPlayer * audioPlayer,
         const sp<MediaPlayerBase::AudioSink> &audioSink,
         int64_t &durationUs, String8 &useCase,
-        bool &useCaseFlag) {
+        bool &useCaseFlag, bool isHTTP) {
     return false;
 }
 
