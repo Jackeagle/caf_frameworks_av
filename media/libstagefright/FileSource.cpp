@@ -132,25 +132,8 @@ status_t FileSource::getSize(off64_t *size) {
 }
 
 sp<DecryptHandle> FileSource::DrmInitialization(const char *mime) {
-    if (mDrmManagerClient == NULL) {
-        mDrmManagerClient = new DrmManagerClient();
-    }
-
-    if (mDrmManagerClient == NULL) {
-        return NULL;
-    }
-
-    if (mDecryptHandle == NULL) {
-        mDecryptHandle = mDrmManagerClient->openDecryptSession(
-                mFd, mOffset, mLength, mime);
-    }
-
-    if (mDecryptHandle == NULL) {
-        delete mDrmManagerClient;
-        mDrmManagerClient = NULL;
-    }
-
-    return mDecryptHandle;
+    (void) mime;
+    return NULL;
 }
 
 void FileSource::getDrmInfo(sp<DecryptHandle> &handle, DrmManagerClient **client) {
