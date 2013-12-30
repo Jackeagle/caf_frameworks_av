@@ -2278,7 +2278,10 @@ void AwesomePlayer::onVideoEvent() {
                     if(!(mFlags & AT_EOS)) logLate(timeUs,nowUs,latenessUs);
                 }
 
-                postVideoEvent_l(0);
+                int64_t eventDurationUs = mSystemTimeSource.getRealTimeUs() - eventStartTimeUs;
+                int64_t delayUs = mFrameDurationUs - eventDurationUs - latenessUs - earlyGapUs;
+                delayUs = delayUs > kDefaultEventDelayUs ? kDefaultEventDelayUs : delayUs;
+                postVideoEvent_l(delayUs > 0 ? delayUs : 0);
                 return;
             }
         }
