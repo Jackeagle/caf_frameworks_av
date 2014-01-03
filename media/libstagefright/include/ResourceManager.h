@@ -91,7 +91,7 @@ private:
         const sp<MediaSource> &videoSource, const AudioPlayer * audioPlayer,
         const sp<MediaPlayerBase::AudioSink> &audioSink,
         int64_t &durationUs, String8 &useCase,
-        bool &useCaseFlag);
+        bool &useCaseFlag, bool isHTTP);
 
     static bool isStreamMusic(const sp<MediaPlayerBase::AudioSink> &audioSink);
 };
