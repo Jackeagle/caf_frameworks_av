@@ -1618,10 +1618,15 @@ status_t AwesomePlayer::initAudioDecoder() {
     bool sys_prop_enabled = !strcmp("true",tunnelDecode) || atoi(tunnelDecode);
     ALOGD("maxPossible tunnels = %d", TunnelPlayer::getTunnelObjectsAliveMax());
     //widevine will fallback to software decoder
+    char pcmTunnelProp[PROPERTY_VALUE_MAX];
+    property_get("tunnel.decode.pcm", pcmTunnelProp, "0");
+    // Enable tunnel mode for all the formats when tunnel.decode.pcm is true
+    // else only for inSupportedTunnelFormats()
     if (sys_prop_enabled && (TunnelPlayer::mTunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
        (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax()) && (isADTS == 0) &&
         mAudioSink->realtime() &&
-        inSupportedTunnelFormats(mime)) {
+        (inSupportedTunnelFormats(mime) ||
+         !strncmp("true", pcmTunnelProp, sizeof("true"))||atoi(pcmTunnelProp))) {
 
         if (mVideoSource != NULL) {
            char tunnelAVDecode[PROPERTY_VALUE_MAX];
@@ -1657,18 +1662,36 @@ status_t AwesomePlayer::initAudioDecoder() {
              && (mTunnelAliveAP < TunnelPlayer::getTunnelObjectsAliveMax())
 #endif
     )) {
-        ALOGD("Set Audio Track as Audio Source");
-
         err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
                mUseCase, mUseCaseFlag, flags, mime);
         if(err != OK) {
             return err;
         }
 
+        mAudioSource = NULL;
         if(mIsTunnelAudio) {
             mTunnelAliveAP++;
+#ifdef USE_TUNNEL_MODE
+            if (!strncmp("true",pcmTunnelProp, sizeof("true"))||atoi(pcmTunnelProp)) {
+                if (!inSupportedTunnelFormats(mime) &&
+                    strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
+                    ALOGV("Set OMXCodec output as Audio Source (in tunnel mode)");
+                    mAudioSource = OMXCodec::Create(
+                                     mClient.interface(), mAudioTrack->getFormat(),
+                                     false, mAudioTrack, NULL, 0, NULL);
+                    if (mAudioSource == NULL) {
+                        ALOGV("OMX create failed");
+                    }
+                } else {
+                    ALOGV("mp3, aac, or pcm detected (%s)", mime);
+                }
+            }
+#endif
         }
-        mAudioSource = mAudioTrack;
+        if (mAudioSource == NULL) {
+            ALOGD("Set Audio Track as Audio Source");
+            mAudioSource = mAudioTrack;
+        }
     } else {
         // For LPA Playback use the decoder without OMX layer
         char *matchComponentName = NULL;
