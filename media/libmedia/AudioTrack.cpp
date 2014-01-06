@@ -693,6 +693,14 @@ uint32_t AudioTrack::getSampleRate() const
     return mSampleRate;
 }
 
+uint32_t AudioTrack::frameCount() const
+{
+    if(mAudioDirectOutput != -1) {
+        return mAudioFlinger->frameCount(mAudioDirectOutput);
+    }
+    return mFrameCount;
+}
+
 status_t AudioTrack::setLoop(uint32_t loopStart, uint32_t loopEnd, int loopCount)
 {
     AutoMutex lock(mLock);
