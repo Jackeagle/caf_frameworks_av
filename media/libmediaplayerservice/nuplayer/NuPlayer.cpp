@@ -547,7 +547,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     } else {
                         flags = AUDIO_OUTPUT_FLAG_NONE;
                     }
-
+                    char prop[PROPERTY_VALUE_MAX];
+                    property_get("nurenderer.direct.pcm", prop, "0");
+                    if (!strncmp("true",prop, sizeof("true"))||atoi(prop)) {
+                        flags = (audio_output_flags_t)(AUDIO_OUTPUT_FLAG_DIRECT|
+                                                       AUDIO_OUTPUT_FLAG_NU_DIRECT);
+                    }
                     int32_t channelMask;
                     if (!codecRequest->findInt32("channel-mask", &channelMask)) {
                         channelMask = CHANNEL_MASK_USE_CHANNEL_ORDER;

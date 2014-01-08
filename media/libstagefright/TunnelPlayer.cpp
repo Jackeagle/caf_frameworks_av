@@ -141,10 +141,6 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
         }
     }
 
-    //Create extractor thread, read and initialize all the
-    //mutexes and coditional variables
-    createThreads();
-    ALOGV("Thread Created.");
     // We allow an optional INFO_FORMAT_CHANGED at the very beginning
     // of playback, if there is one, getFormat below will retrieve the
     // updated format, if there isn't, we'll stash away the valid buffer
@@ -177,20 +173,23 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
     else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_MPEG)) {
         mFormat = AUDIO_FORMAT_MP3;
         ALOGD("TunnelPlayer::start AUDIO_FORMAT_MP3");
-    } else {
-        ALOGE("TunnelPlayer::UNSUPPORTED");
     }
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
-    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AC3)) {
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AC3)) {
         mFormat = AUDIO_FORMAT_AC3;
         ALOGV("TunnelPlayer::start AUDIO_FORMAT_AC3");
     }
-    if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_EAC3)) {
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_EAC3)) {
         mFormat = AUDIO_FORMAT_EAC3;
         ALOGV("TunnelPlayer::start AUDIO_FORMAT_EAC3");
     }
 #endif
-
+    else if (!strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_RAW)) {
+        mFormat = AUDIO_FORMAT_PCM;
+        ALOGD("TunnelPlayer::start AUDIO_FORMAT_PCM");
+    } else {
+        ALOGE("TunnelPlayer::UNSUPPORTED");
+    }
 
     CHECK(success);
 
@@ -229,6 +228,11 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
         ALOGE("Opening a routing session failed");
         return err;
     }
+
+    //Create extractor thread, read and initialize all the
+    //mutexes and coditional variables
+    createThreads();
+    ALOGV("All Threads Created.");
 
     mIsAudioRouted = true;
     mStarted = true;
@@ -433,7 +437,8 @@ void *TunnelPlayer::extractorThreadWrapper(void *me) {
 void TunnelPlayer::extractorThreadEntry() {
 
     mLock.lock();
-    uint32_t BufferSizeToUse = MEM_BUFFER_SIZE;
+    uint32_t BufferSizeToUse = mAudioSink->frameCount();
+    ALOGD("buffer size from hal: %d", BufferSizeToUse);
 
     pid_t tid  = gettid();
     androidSetThreadPriority(tid, mHasVideo ? ANDROID_PRIORITY_NORMAL :
