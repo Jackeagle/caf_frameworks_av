@@ -343,6 +343,10 @@ status_t ColorConverter::loadI420Converter() {
     return OK;
 }
 
+static int align(int x, int y) {
+    // y must be a power of 2.
+    return (x + y - 1) & ~(y - 1);
+}
 
 status_t ColorConverter::convertQCOMYUV420SemiPlanarVenus(
         const BitmapParams &src, const BitmapParams &dst) {
@@ -358,7 +362,11 @@ status_t ColorConverter::convertQCOMYUV420SemiPlanarVenus(
 
     BitmapParams tmp = src;
 
-    tmp.mBits = malloc(src.mWidth * src.mHeight * kI420BPP);
+    //The converter assumes the destination buffer
+    //has the same alignment as a YUV 420 SP venus buffer
+    int alignedWidth = align(src.mWidth, 128);
+    int alignedHeight = align(src.mHeight, 32);
+    tmp.mBits = malloc(alignedWidth * alignedHeight * kI420BPP);
 
     if (tmp.mBits == NULL) {
         ALOGE("Failed to allocate temporary conversion buffer!");
