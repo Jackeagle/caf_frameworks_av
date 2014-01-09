@@ -15,24 +15,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2013 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  */
 
 //#define LOG_NDEBUG 0
@@ -57,10 +39,6 @@
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
 #endif
-#ifdef DTS_M6_NOTIFY
-#include "include/NotifyPlaybackStates.h"
-#endif
-
 #include "include/AwesomePlayer.h"
 #include <cutils/properties.h>
 
@@ -122,13 +100,6 @@ mObserver(observer) {
     mHasVideo = hasVideo;
     initCheck = true;
 
-#ifdef DTS_M6_NOTIFY
-    mIsHpxPreprocessed = false;
-    strncpy(mMIME_to_notify, "", 1);
-    mSessionId = mAudioSink->getSessionId();
-    mStreamType = mAudioSink->streamType();
-    NotifyPlaybackStates::create_state_notifier_node(mSessionId, mStreamType);
-#endif
 }
 const int TunnelPlayer::getTunnelObjectsAliveMax() {
     char value[PROPERTY_VALUE_MAX];
@@ -148,15 +119,6 @@ TunnelPlayer::~TunnelPlayer() {
     reset();
     mTunnelObjectsAlive--;
 
-#ifdef DTS_M6_NOTIFY
-	const char *mime = NULL;
-    if(mSource != NULL) {
-        sp<MetaData> format = mSource->getFormat();
-        CHECK(format->findCString(kKeyMIMEType, &mime));
-    }
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mime, mSampleRate, numChannels, false /* isPlaying */, mIsHpxPreprocessed);
-    NotifyPlaybackStates::remove_state_notifier_node(mSessionId, mStreamType);
-#endif
 }
 
 void TunnelPlayer::setSource(const sp<MediaSource> &source) {
@@ -275,18 +237,6 @@ status_t TunnelPlayer::start(bool sourceAlreadyStarted) {
     ALOGV("Waking up extractor thread");
     mExtractorCv.signal();
     mLock.unlock();
-
-#ifdef DTS_M6_NOTIFY
-    const char *decoderComponent = NULL;
-    if (AUDIO_FORMAT_PCM == mFormat) {
-        success = format->findCString(kKeyDecoderComponent, &decoderComponent);
-        if (!success)
-            ALOGD("Source is PCM");
-        getMimeFromComponent(decoderComponent);
-    } else
-        strncpy(mMIME_to_notify, mime, strlen(mime)+1);
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mMIME_to_notify, mSampleRate, numChannels, true /* isPlaying */, mIsHpxPreprocessed);
-#endif
     return OK;
 }
 
@@ -345,9 +295,6 @@ void TunnelPlayer::pause(bool playPendingSamples) {
         ALOGV("AudioSink pause");
         mAudioSink->pause();
     }
-#ifdef DTS_M6_NOTIFY
-    NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mMIME_to_notify, mSampleRate, numChannels, false/* isPlaying */, mIsHpxPreprocessed);
-#endif
 }
 
 void TunnelPlayer::resume() {
@@ -383,9 +330,6 @@ void TunnelPlayer::resume() {
         ALOGV("Audio sink start succeeded.");
         mExtractorCv.signal();
         ALOGV("Audio signalling extractor thread.");
-#ifdef DTS_M6_NOTIFY
-        NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mMIME_to_notify, mSampleRate, numChannels, true/* isPlaying */, mIsHpxPreprocessed);
-#endif
     }
 }
 
@@ -668,9 +612,6 @@ size_t TunnelPlayer::fillBuffer(void *data, size_t size) {
 
                 mIsFirstBuffer = false;
             } else {
-#ifdef DTS_M6_NOTIFY
-                updateHpxPreProcessedState();
-#endif
                 err = mSource->read(&mInputBuffer, &options);
             }
 
@@ -864,62 +805,4 @@ bool TunnelPlayer::seekTooClose(int64_t time_us) {
     return (time_us > t1) && ((time_us - t1) <= deltaUs);
 }
 
-#ifdef DTS_M6_NOTIFY
-void TunnelPlayer::updateHpxPreProcessedState()
-{
-    sp<MetaData> format = mSource->getFormat();
-    const char *decoderComponent;
-    int hpxProcessed;
-    bool success = format->findCString(kKeyDecoderComponent, &decoderComponent);
-    if (success && strstr(decoderComponent, "dts")) {
-        CHECK(format->findInt32(kKeyHPXProcessed, &hpxProcessed));
-        ALOGV("updateHpxPreProcessedState: hpxProcessed: %d", hpxProcessed);
-        bool isHpxPreprocessed = hpxProcessed ? true : false;
-        if (mIsHpxPreprocessed != isHpxPreprocessed) {
-            ALOGV("updateHpxPreProcessedState: hpxProcessed CHANGED to %d", hpxProcessed);
-            mIsHpxPreprocessed = isHpxPreprocessed;
-            bool isPlaying = !mPaused;
-            NotifyPlaybackStates::notify_playback_state(mSessionId, mStreamType, mMIME_to_notify, mSampleRate, numChannels, isPlaying, mIsHpxPreprocessed);
-        }
-    }
-}
-void TunnelPlayer::getMimeFromComponent(const char *decoderComponent)
-{
-    if(!decoderComponent) {
-        strncpy(mMIME_to_notify, "audio/raw", sizeof(mMIME_to_notify));
-        return;
-    }
-
-    if (strstr(decoderComponent, "dts"))
-        strncpy(mMIME_to_notify, "audio/dts", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "wma"))
-        strncpy(mMIME_to_notify, "audio/x-ms-wma", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "amrwbplus"))
-        strncpy(mMIME_to_notify, "audio/amr-wb-plus", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "vorbis"))
-        strncpy(mMIME_to_notify, "audio/vorbis", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "mp3") || strstr(decoderComponent, "MP3"))
-        strncpy(mMIME_to_notify, "audio/mpeg", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "amrnb"))
-        strncpy(mMIME_to_notify, "audio/3gpp", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "amrwb"))
-        strncpy(mMIME_to_notify, "audio/amr-wb", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "aac") || strstr(decoderComponent, "AAC"))
-        strncpy(mMIME_to_notify, "audio/mp4a-latm", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "alaw"))
-        strncpy(mMIME_to_notify, "audio/g711-alaw", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "mlaw"))
-        strncpy(mMIME_to_notify, "audio/g711-mlaw", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "Qcelp13"))
-        strncpy(mMIME_to_notify, "audio/qcelp", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "evrc"))
-        strncpy(mMIME_to_notify, "audio/evrc", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "ac3"))
-        strncpy(mMIME_to_notify, "audio/ac3", sizeof(mMIME_to_notify));
-    else if (strstr(decoderComponent, "ec3"))
-        strncpy(mMIME_to_notify, "audio/ec3", sizeof(mMIME_to_notify));
-    else
-        strncpy(mMIME_to_notify, "audio/raw", sizeof(mMIME_to_notify));
-}
-#endif
 } //namespace android
