@@ -47,6 +47,9 @@ struct ACodec : public AHierarchicalStateMachine {
         kWhatSignaledInputEOS    = 'seos',
         kWhatBuffersAllocated    = 'allc',
         kWhatOMXDied             = 'OMXd',
+#ifdef DTS_M6_NOTIFY
+        kWhatHPXProcessed        = 'hpxP'
+#endif
     };
 
     ACodec();
