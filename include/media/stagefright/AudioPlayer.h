@@ -116,6 +116,7 @@ private:
 
     bool mStarted;
     bool mSourcePaused;
+    bool mPauseRequired;
 
     bool mIsFirstBuffer;
     status_t mFirstBufferResult;

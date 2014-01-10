@@ -4229,6 +4229,7 @@ status_t OMXCodec::read(
         CHECK_EQ((int)mState, (int)EXECUTING);
         setState(FLUSHING);
         //DSP supports flushing of ports simultaneously. Flushing individual port is not supported.
+        setState(FLUSHING);
 
         if(mQuirks & kRequiresGlobalFlush) {
             bool emulateFlushCompletion = !flushPortAsync(kPortIndexBoth);
@@ -5004,13 +5005,13 @@ status_t OMXCodec::resumeLocked(bool drainInputBuf) {
         while (mState != EXECUTING && mState != ERROR) {
             mAsyncCompletion.wait(mLock);
         }
+        if(drainInputBuf)
+            drainInputBuffers();
         return mState == ERROR ? UNKNOWN_ERROR : OK;
     } else {   // SW Codec
         mPaused = false;
         return OK;
     }
-    if(drainInputBuf)
-        drainInputBuffers();
 }
 
 status_t OMXCodec::updateConcurrencyParam(bool pauseflag) {
