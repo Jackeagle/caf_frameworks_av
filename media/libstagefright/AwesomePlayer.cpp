@@ -1052,7 +1052,7 @@ status_t AwesomePlayer::play_l() {
 #endif
                 if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
                                         mAudioPlayer, mAudioSink, mDurationUs,
-                                        mUseCase, mUseCaseFlag ) ==  true) {
+                                        mUseCase, mUseCaseFlag, isStreamingHTTP()) ==  true) {
                     ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
                     bool initCheck =  false;
                     mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
@@ -1699,7 +1699,7 @@ status_t AwesomePlayer::initAudioDecoder() {
 
         if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
                 mAudioPlayer, mAudioSink, mDurationUs,
-                mUseCase, mUseCaseFlag) == true) {
+                mUseCase, mUseCaseFlag, isStreamingHTTP()) == true) {
             char nonOMXDecoder[128];
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
                 ALOGD("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
