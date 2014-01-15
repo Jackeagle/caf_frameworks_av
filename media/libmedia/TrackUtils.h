@@ -1,5 +1,5 @@
 
-/*Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -69,8 +69,15 @@ public:
     //IResourceManagerDeathNotifier
     void   died();
 
+    static status_t updateConcurrencyInfo(
+        audio_stream_type_t &streamType,
+        audio_format_t &format,
+        audio_output_flags_t &flags, bool update);
+
 private:
     static Mutex mLock;
+
+    static bool mConcurrencyInfoUpdated;
 
 };
 }

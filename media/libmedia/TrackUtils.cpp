@@ -1,4 +1,4 @@
-/*Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -41,6 +41,7 @@
 namespace android {
 
 Mutex TrackUtils::mLock;
+bool TrackUtils::mConcurrencyInfoUpdated = false;
 
 #ifdef RESOURCE_MANAGER
 bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
@@ -248,6 +249,23 @@ void TrackUtils::died()
     //TODO:: Handle death notifier from service
 }
 
+status_t TrackUtils::updateConcurrencyInfo(
+        audio_stream_type_t &streamType,
+        audio_format_t &format,
+        audio_output_flags_t &flags, bool update)
+{
+   status_t err = OK;
+   if(mConcurrencyInfoUpdated != update) {
+      if((err = SetConcurrencyParameterForRemotePlaybackSession(
+               streamType, format, flags, update))) {
+         ALOGE("set concurrency param failed");
+      } else {
+         mConcurrencyInfoUpdated = update;
+      }
+   }
+   return err;
+}
+
 #else
 
 bool TrackUtils::setFastFlag(audio_stream_type_t &streamType, audio_output_flags_t &flags)
@@ -280,5 +298,14 @@ void TrackUtils::died()
 {
     //Do nothing
 }
+
+status_t TrackUtils::updateConcurrencyInfo(
+        audio_stream_type_t &streamType,
+        audio_format_t &format,
+        audio_output_flags_t &flags, bool update)
+{
+   return OK;
+}
+
 #endif
 }

@@ -1,4 +1,4 @@
-/*Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -382,11 +382,24 @@ status_t ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
     return err;
 }
 
+static bool isAudioCase(String8 useCase) {
+
+    if(useCase == "USECASE_PCM_PLAYBACK" ||
+            useCase == "USECASE_NON_TUNNEL_DSP_PLAYBACK" ||
+            useCase == "USECASE_TUNNEL_DSP_PLAYBACK" ||
+            useCase == "USECASE_PCM_RECORDING" ||
+            useCase == "USECASE_LPA_PLAYBACK") {
+        return true;
+    }
+    return false;
+}
+
 // Fucntion that calls the Audio System API and sets a usecase to Audio HAL
 status_t ResourceManager::AudioConcurrencyInfo::setParameter(String8 useCase, bool value) {
 
     status_t err = NO_ERROR;
-    if(useCase == "USECASE_ULL" || useCase.isEmpty()) {
+    //for Audio playback we handle the resourcemanagement in AudioTrack
+    if(useCase == "USECASE_ULL" || useCase.isEmpty() || isAudioCase(useCase)) {
         return NO_ERROR;
     }
     AudioParameter param = AudioParameter();
