@@ -742,8 +742,7 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
 
             ExtendedCodec::configureFramePackingFormat(
                     meta, mOMX, mNode);
-            ExtendedCodec::enableSmoothStreaming(
-                    mOMX, mNode, &mInSmoothStreamingMode, mComponentName);
+
         }
     }
 
