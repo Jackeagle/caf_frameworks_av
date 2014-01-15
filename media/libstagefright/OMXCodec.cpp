@@ -1576,7 +1576,8 @@ OMXCodec::OMXCodec(
               || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
                         ? NULL : nativeWindow),
       mNumBFrames(0),
-      mInSmoothStreamingMode(false) {
+      mInSmoothStreamingMode(false),
+      mNeedsGeometryUpdate(false) {
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
 
@@ -1856,6 +1857,7 @@ status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
         info.mStatus = OWNED_BY_US;
         info.mMem = mem;
         info.mMediaBuffer = NULL;
+        info.mNeedsGeometryUpdate = false;
 
         if (portIndex == kPortIndexOutput) {
             if (!(mOMXLivesLocally
@@ -2539,6 +2541,10 @@ void OMXCodec::on_message(const omx_message &msg) {
                     mTargetTimeUs = -1;
                 }
 
+                if (mNeedsGeometryUpdate) {
+                    mNeedsGeometryUpdate = false;
+                    info->mNeedsGeometryUpdate = true;
+                }
                 mFilledBuffers.push_back(i);
                 mBufferFilled.signal();
                 if (mIsEncoder) {
@@ -4298,6 +4304,18 @@ status_t OMXCodec::read(
         mSkipCutBuffer->submit(info->mMediaBuffer);
     }
     *buffer = info->mMediaBuffer;
+    if (info->mNeedsGeometryUpdate) {
+        int32_t width = 0, height = 0, colorFormat = 0;
+        CHECK(mOutputFormat->findInt32(kKeyWidth, &width));
+        CHECK(mOutputFormat->findInt32(kKeyHeight, &height));
+        CHECK(mOutputFormat->findInt32(kKeyColorFormat, &colorFormat));
+
+        QCUtils::updateNativeWindowBufferGeometry(
+                mNativeWindow.get(), width, height,
+                (OMX_COLOR_FORMATTYPE)colorFormat);
+        initNativeWindowCrop();
+        info->mNeedsGeometryUpdate = false;
+    }
 
     return OK;
 }
@@ -4908,11 +4926,10 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
 
                 if (mNativeWindow != NULL) {
                     if (mInSmoothStreamingMode) {
-                        QCUtils::updateNativeWindowBufferGeometry(
-                                mNativeWindow.get(), video_def->nFrameWidth,
-                                video_def->nFrameHeight, video_def->eColorFormat);
+                        mNeedsGeometryUpdate = true;
+                    } else {
+                        initNativeWindowCrop();
                     }
-                    initNativeWindowCrop();
                 }
             } else {
                 QCUtils::HFR::copyHFRParams(inputFormat, mOutputFormat);
