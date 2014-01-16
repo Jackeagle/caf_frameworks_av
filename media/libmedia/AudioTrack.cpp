@@ -276,12 +276,6 @@ status_t AudioTrack::set(
                 // FIXME why can't we allow direct AND fast?
                 ((flags | AUDIO_OUTPUT_FLAG_DIRECT) & ~AUDIO_OUTPUT_FLAG_FAST);
     }
-
-    // do not allow FAST flag for Voice Call stream type
-    if (streamType == AUDIO_STREAM_VOICE_CALL) {
-        flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_FAST);
-    }
-
     // only allow deep buffering for music stream type
     if (streamType != AUDIO_STREAM_MUSIC) {
         flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);

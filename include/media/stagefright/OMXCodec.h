@@ -187,6 +187,7 @@ private:
         size_t mSize;
         void *mData;
         MediaBuffer *mMediaBuffer;
+        bool mNeedsGeometryUpdate;
     };
 
     struct CodecSpecificData {
@@ -387,6 +388,7 @@ private:
 
     bool mNumBFrames;
     bool mInSmoothStreamingMode;
+    bool mNeedsGeometryUpdate;
 };
 
 struct CodecCapabilities {
