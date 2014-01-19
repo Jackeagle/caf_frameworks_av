@@ -161,6 +161,16 @@ AudioTrack::~AudioTrack()
         mAudioTrack.clear();
         IPCThreadState::self()->flushCommands();
         AudioSystem::releaseAudioSessionId(mSessionId);
+        if (isOffloaded()) {
+            char propValue[PROPERTY_VALUE_MAX];
+            bool prop_enabled = false;
+
+            if (property_get("audio.offload.multi_inst.enable", propValue, NULL))
+                prop_enabled = atoi(propValue) || !strncmp("true", propValue, 4);
+
+            if (prop_enabled)
+                AudioSystem::releaseOutput(mOutput);
+        }
     }
 }
 
