@@ -2,7 +2,7 @@
 **
 ** Copyright 2007, The Android Open Source Project
 **
-** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+** Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 ** Not a Contribution.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -175,9 +175,8 @@ AudioTrack::~AudioTrack()
     ALOGV_IF(mSharedBuffer != 0, "Destructor sharedBuffer: %p", mSharedBuffer->pointer());
     TrackUtils::resetUseCasePcmPlayback(mResetPcm);
     if (!mResetPcm) {
-        if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
-               mStreamType, mFormat, mFlags, false/*sesion active*/)) {
-           ALOGE("Reset concurency param failed");
+        if(TrackUtils::updateConcurrencyInfo(mStreamType, mFormat, mFlags, false)) {
+             ALOGE("Failed to updateConcurrencyInfo");
         }
     }
 
@@ -414,10 +413,10 @@ status_t AudioTrack::set(
     mUpdatePeriod = 0;
     mFlushed = false;
     if (!mResetPcm) {
-        if(TrackUtils::SetConcurrencyParameterForRemotePlaybackSession(
-                mStreamType, mFormat, mFlags, true/*sesion active*/)) {
-           ALOGE("Set concurency param failed");
-           return INVALID_OPERATION;
+        if(TrackUtils::updateConcurrencyInfo(
+                mStreamType, mFormat, mFlags, true)) {
+             ALOGE("Failed to updateConcurrencyInfo");
+             return INVALID_OPERATION;
         }
     }
     return NO_ERROR;
@@ -474,6 +473,11 @@ void AudioTrack::start()
         android_atomic_and(~CBLK_DISABLED, &cblk->flags);
         if (t != 0) {
             t->resume();
+            if(TrackUtils::updateConcurrencyInfo(
+                  mStreamType, mFormat, mFlags, true)) {
+                 ALOGE("Failed to updateConcurrencyInfo");
+                 return;
+            }
         } else {
             mPreviousPriority = getpriority(PRIO_PROCESS, 0);
             get_sched_policy(0, &mPreviousSchedulingGroup);
@@ -526,6 +530,11 @@ void AudioTrack::stop()
             mActive = false;
             mCblk->cv.signal();
             mAudioTrack->stop();
+            if(TrackUtils::updateConcurrencyInfo(
+                  mStreamType, mFormat, mFlags, false)) {
+                 ALOGE("Failed to updateConcurrencyInfo");
+                 return;
+            }
             // Cancel loops (If we are in the middle of a loop, playback
             // would not stop until loopCount reaches 0).
             setLoop_l(0, 0, 0);
@@ -594,6 +603,10 @@ void AudioTrack::pause()
         } else {
             mCblk->cv.signal();
             mAudioTrack->pause();
+            if(TrackUtils::updateConcurrencyInfo(
+                  mStreamType, mFormat, mFlags, false)) {
+                 ALOGE("Failed to updateConcurrencyInfo");
+            }
         }
     }
 }
