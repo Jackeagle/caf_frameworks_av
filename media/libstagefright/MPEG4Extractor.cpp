@@ -2418,6 +2418,11 @@ status_t MPEG4Extractor::updateAudioTrackInfoFromESDS_MPEG4Audio(
         objectType = 32 + br.getBits(6);
     }
 
+    if(objectType == 1) { //AAC Main profile
+        ALOGD("\n >>> Found AAC mainprofile in MPEG4 Extractor... \n");
+    }
+
+    mLastTrack->meta->setInt32(kKeyAACProfile, objectType);
     uint32_t freqIndex = br.getBits(4);
 
     int32_t sampleRate = 0;
