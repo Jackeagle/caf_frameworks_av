@@ -3156,7 +3156,7 @@ void AwesomePlayer::checkTunnelExceptions()
     if (metaData->findCString(kKeyMIMEType, &mime) &&
            !strcmp(mime, MEDIA_MIMETYPE_AUDIO_AAC) &&
            (metaData->findInt32(kKeyAACProfile, &objecttype) &&
-           ((1 == objecttype) || (39 == objecttype)))) {
+           ((1 == objecttype) || (39 == objecttype) || (23 == objecttype)))) {
         ALOGD("FOUND unsupported AAC profiletype(%d) , disable tunnel mode\n",objecttype);
         mIsTunnelAudio = false;
         return;
