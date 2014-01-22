@@ -186,7 +186,6 @@ private:
 
     bool mSentFormat;
     bool mIsEncoder;
-    bool mHaveNativeWindow;
 
     bool mShutdownInProgress;
 
