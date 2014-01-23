@@ -159,7 +159,7 @@ static const enum {
     //  and another HAL implementation corrupts memory, possibly in the sample rate converter.
     //  We could either fix the HAL implementations, or provide a wrapper that breaks
     //  up large writes into smaller ones, and the wrapper would need to deal with scheduler.
-} kUseFastMixer = FastMixer_Static;
+} kUseFastMixer = FastMixer_Never;
 
 // Priorities for requestPriority
 static const int kPriorityAudioApp = 2;
