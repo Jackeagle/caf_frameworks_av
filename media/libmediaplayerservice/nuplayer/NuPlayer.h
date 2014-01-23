@@ -122,9 +122,7 @@ private:
     int32_t mScanSourcesGeneration;
 
     int32_t mPollDurationGeneration;
-#ifdef DTS_M6_NOTIFY
-    bool mIsHPXProcessed;
-#endif
+
     enum FlushStatus {
         NONE,
         AWAITING_DISCONTINUITY,

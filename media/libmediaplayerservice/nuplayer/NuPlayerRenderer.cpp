@@ -12,24 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2013 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  */
 
 //#define LOG_NDEBUG 0
@@ -41,9 +23,6 @@
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
-#ifdef DTS_M6_NOTIFY
-#include <NotifyPlaybackStates.h>
-#endif
 
 namespace android {
 
@@ -73,28 +52,9 @@ NuPlayer::Renderer::Renderer(
       mVideoRenderingStarted(false),
       mLastPositionUpdateUs(-1ll),
       mVideoLateByUs(0ll) {
-#ifdef DTS_M6_NOTIFY
-    mIsHPXProcessed = false;
-    mSessionId = mAudioSink->getSessionId();
-    mStreamType = mAudioSink->streamType();
-    mMime = "";
-    mSampleRate = 0;
-    mNumChannels = 0;
-    NotifyPlaybackStates::create_state_notifier_node(mSessionId, mStreamType);
-#endif
 }
 
 NuPlayer::Renderer::~Renderer() {
-#ifdef DTS_M6_NOTIFY
-    NotifyPlaybackStates::notify_playback_state(mSessionId,
-                                                mStreamType,
-                                                mMime.c_str(),
-                                                mSampleRate,
-                                                mNumChannels,
-                                                false,
-                                                mIsHPXProcessed);
-    NotifyPlaybackStates::remove_state_notifier_node(mSessionId, mStreamType);
-#endif
 }
 
 void NuPlayer::Renderer::queueBuffer(
@@ -706,15 +666,6 @@ void NuPlayer::Renderer::onPause() {
           mAudioQueue.size(), mVideoQueue.size());
 
     mPaused = true;
-#ifdef DTS_M6_NOTIFY
-    NotifyPlaybackStates::notify_playback_state(mSessionId,
-                                                mStreamType,
-                                                mMime.c_str(),
-                                                mSampleRate,
-                                                mNumChannels,
-                                                false,
-                                                mIsHPXProcessed);
-#endif
 }
 
 void NuPlayer::Renderer::onResume() {
@@ -735,38 +686,7 @@ void NuPlayer::Renderer::onResume() {
     if (!mVideoQueue.empty()) {
         postDrainVideoQueue();
     }
-#ifdef DTS_M6_NOTIFY
-    NotifyPlaybackStates::notify_playback_state(mSessionId,
-                                                mStreamType,
-                                                mMime.c_str(),
-                                                mSampleRate,
-                                                mNumChannels,
-                                                true,
-                                                mIsHPXProcessed);
-#endif
 }
-
-#ifdef DTS_M6_NOTIFY
-void NuPlayer::Renderer::setSessionMetaData(AString mime, int sampleRate, int numChannels) {
-    mSampleRate = sampleRate;
-    mNumChannels = numChannels;
-    mMime = mime;
-}
-
-void NuPlayer::Renderer::updateHPXState(bool isHPXProcessed) {
-    ALOGV("mIsHPXProcessed %d updateHPXState %d",mIsHPXProcessed, isHPXProcessed);
-    if(mIsHPXProcessed != isHPXProcessed) {
-        mIsHPXProcessed = isHPXProcessed;
-        NotifyPlaybackStates::notify_playback_state(mSessionId,
-                                                    mStreamType,
-                                                    mMime.c_str(),
-                                                    mSampleRate,
-                                                    mNumChannels,
-                                                    !mPaused,
-                                                    isHPXProcessed);
-    }
-}
-#endif
 
 }  // namespace android
 
