@@ -1066,7 +1066,7 @@ status_t AwesomePlayer::play_l() {
 #endif
                 if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
                                         mAudioPlayer, mAudioSink, mDurationUs,
-                                        mUseCase, mUseCaseFlag ) ==  true) {
+                                        mUseCase, mUseCaseFlag, isStreamingHTTP()) ==  true) {
                     ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
                     bool initCheck =  false;
                     mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
@@ -1692,7 +1692,7 @@ status_t AwesomePlayer::initAudioDecoder() {
 
         if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
                 mAudioPlayer, mAudioSink, mDurationUs,
-                mUseCase, mUseCaseFlag) == true) {
+                mUseCase, mUseCaseFlag, isStreamingHTTP()) == true) {
             char nonOMXDecoder[128];
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
                 ALOGD("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
@@ -3192,6 +3192,19 @@ void AwesomePlayer::checkTunnelExceptions()
         return;
     }
 
+    /* exception 4: check for  AAC mainprofile , it is not supported */
+    sp<MetaData> metaData  = mAudioTrack->getFormat();
+    const char * mime;
+    int32_t objecttype = 0;
+
+    if (metaData->findCString(kKeyMIMEType, &mime) &&
+           !strcmp(mime, MEDIA_MIMETYPE_AUDIO_AAC) &&
+           (metaData->findInt32(kKeyAACProfile, &objecttype) && (1 == objecttype))) {
+        ALOGD("FOUND AAC Main Profile, disable tunnel mode");
+        mIsTunnelAudio = false;
+        return;
+    }
+
     status_t err = OK;
     err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(
             mUseCase, mUseCaseFlag, OMXCodec::kInTunnelMode);
@@ -3203,8 +3216,8 @@ void AwesomePlayer::checkTunnelExceptions()
     /* below exceptions are only for av content */
     if (mVideoTrack == NULL) return;
 
-    sp<MetaData> metaData = mVideoTrack->getFormat();
-    const char * mime;
+    metaData = mVideoTrack->getFormat();
+
 #ifdef ENABLE_QC_AV_ENHANCEMENTS
     if(metaData->findCString(kKeyMIMEType, &mime) &&
             !strncmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC,
