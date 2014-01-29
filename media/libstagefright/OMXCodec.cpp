@@ -4515,11 +4515,8 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
 }
 
 status_t OMXCodec::pause() {
-    Mutex::Autolock autoLock(mLock);
-
-    mPaused = true;
-
-    return OK;
+    // b2g does not support aosp OMXCodec::pause(). See Bug 919590.
+    return ERROR_UNSUPPORTED;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
