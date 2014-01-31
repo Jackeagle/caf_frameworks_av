@@ -101,6 +101,7 @@ private:
         kWhatResume                     = 'rsme',
         kWhatPollDuration               = 'polD',
         kWhatSourceNotify               = 'srcN',
+        kWhatSeekDone                   = 'seed',
     };
 
     wp<NuPlayerDriver> mDriver;
@@ -153,6 +154,8 @@ private:
     bool mStarted;
 
     sp<NuPlayerStats> mStats;
+
+    bool mSeeking;
 
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
 
