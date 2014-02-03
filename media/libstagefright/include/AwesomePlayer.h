@@ -224,6 +224,7 @@ private:
 
     String8 mUseCase;
     bool mUseCaseFlag;
+    bool RMConcParamAlredySet;
 
     void postVideoEvent_l(int64_t delayUs = -1);
     void postBufferingEvent_l();

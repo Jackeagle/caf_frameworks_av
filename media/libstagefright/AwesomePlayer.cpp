@@ -565,6 +565,7 @@ void AwesomePlayer::reset_l() {
     mActiveAudioTrackIndex = -1;
     mDisplayWidth = 0;
     mDisplayHeight = 0;
+    RMConcParamAlredySet = 0;
 
     if (mDecryptHandle != NULL) {
             mDrmManagerClient->setPlaybackStatus(mDecryptHandle,
@@ -985,6 +986,16 @@ status_t AwesomePlayer::play_l() {
         status_t err = updateConcurrencyParam(false);
         if(err != OK) {
             return err;
+        }
+       //Decrement RM conc if it is already incremented during initVideodecoder
+       if((mVideoSource != NULL) && RMConcParamAlredySet) {
+             ALOGD("RM Video concurrency updated twice, decrement it once");
+             status_t err = mVideoSource->updateConcurrencyParam(true);
+             RMConcParamAlredySet = 0;
+             if(err != OK) {
+                 ALOGE("Video updateConcurrencyInfoParam failed\
+                     err = %d", err);
+             }
         }
     }
     modifyFlags(PLAYING, SET);
@@ -1437,6 +1448,19 @@ status_t AwesomePlayer::setNativeWindow_l(const sp<ANativeWindow> &native) {
         play_l();
     }
 
+   //when playback is in pause state and focus is lost reset video RM flag to unblock other usecases
+   //will be restored during play
+    if((mVideoSource != NULL) && RMConcParamAlredySet) {
+         ALOGD("Playback is in pause decrement video concurrency\
+               will be restored during play_l()");
+         status_t err = mVideoSource->updateConcurrencyParam(true);
+         RMConcParamAlredySet = 0;
+         if(err != OK) {
+             ALOGE("Video updateConcurrencyInfoParam failed\
+                 err = %d", err);
+         }
+    }
+
     return OK;
 }
 
@@ -1824,6 +1848,9 @@ status_t AwesomePlayer::initVideoDecoder(uint32_t flags) {
 
     if (mVideoSource != NULL) {
         int64_t durationUs;
+        //RM concurrency is upadated in OMXCreate
+        //set flag to prevent incrementing it twice
+        RMConcParamAlredySet = 1;
         if (mVideoTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
             Mutex::Autolock autoLock(mMiscStateLock);
             if (mDurationUs < 0 || durationUs > mDurationUs) {
