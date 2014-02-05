@@ -298,7 +298,8 @@ status_t AudioTrack::set(
         if (result.getInt(String8("VOIP_STREAM"),value) == NO_ERROR) {
             if(!value) {
                 ALOGD("Turn on Direct Output for VOIP RX");
-                flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
+                flags = (audio_output_flags_t)((flags & ~AUDIO_OUTPUT_FLAG_FAST)|
+                                               AUDIO_OUTPUT_FLAG_VOIP_RX|AUDIO_OUTPUT_FLAG_DIRECT);
             }
         }
     }
