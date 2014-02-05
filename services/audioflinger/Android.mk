@@ -22,7 +22,7 @@
 # code that are surrounded by "DOLBY..." are copyrighted and
 # licensed separately, as follows:
 #
-#  (C) 2012-2013 Dolby Laboratories, Inc.
+#  (C) 2012-2014 Dolby Laboratories, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -83,6 +83,17 @@ LOCAL_SHARED_LIBRARIES := \
     libeffects \
     libdl \
     libpowermanager
+
+#QTI Resampler
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(BOARD_USES_QCOM_RESAMPLER)),true)
+LOCAL_SRC_FILES += AudioResamplerQTI.cpp.arm
+LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-src
+LOCAL_SHARED_LIBRARIES += libqct_resampler
+LOCAL_CFLAGS += -DQTI_RESAMPLER
+endif
+endif
+#QTI Resampler
 
 LOCAL_STATIC_LIBRARIES := \
     libscheduling_policy \
