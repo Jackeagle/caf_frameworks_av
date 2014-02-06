@@ -495,6 +495,7 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     int32_t channelMask = 0;
     int32_t delaySamples = 0;
     int32_t paddingSamples = 0;
+    int32_t isADTS = 0;
 
     AudioParameter param = AudioParameter();
 
@@ -512,6 +513,9 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     }
     if (meta->findInt32(kKeyEncoderPadding, &paddingSamples)) {
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_PADDING_SAMPLES), paddingSamples);
+    }
+    if (meta->findInt32(kKeyIsADTS, &isADTS)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FORMAT), 0x02 /*SND_AUDIOSTREAMFORMAT_MP4ADTS*/);
     }
 
     ALOGV("sendMetaDataToHal: bitRate %d, sampleRate %d, chanMask %d,"
@@ -582,13 +586,13 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
         return false;
     }
 
-    // check whether it is ELD/LD content -> no offloading
+    // check whether it is ELD/LD/main content -> no offloading
     // FIXME: this should depend on audio DSP capabilities. mapMimeToAudioFormat() should use the
     // metadata to refine the AAC format and the audio HAL should only list supported profiles.
     int32_t aacaot = -1;
     if (meta->findInt32(kKeyAACAOT, &aacaot)) {
-        if (aacaot == 23 || aacaot == 39 ) {
-            ALOGV("track of type '%s' is ELD/LD content", mime);
+        if (aacaot == 23 || aacaot == 39 || aacaot == 1) {
+            ALOGV("track of type '%s' is ELD/LD/main content", mime);
             return false;
         }
     }
