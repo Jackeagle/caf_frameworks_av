@@ -30,7 +30,6 @@ static Mutex sMutex;
 
 int requestPriority(pid_t pid, pid_t tid, int32_t prio, bool asynchronous)
 {
-#if 0
     // FIXME merge duplicated code related to service lookup, caching, and error recovery
     int ret;
     for (;;) {
@@ -58,9 +57,6 @@ int requestPriority(pid_t pid, pid_t tid, int32_t prio, bool asynchronous)
         sMutex.unlock();
     }
     return ret;
-#else
-    return 0;
-#endif
 }
 
 }   // namespace android
