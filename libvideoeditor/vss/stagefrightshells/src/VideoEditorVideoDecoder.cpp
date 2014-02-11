@@ -807,9 +807,6 @@ M4OSA_ERR VideoEditorVideoDecoder_configureFromMetadata(M4OSA_Context pContext,
     success = meta->findInt32(kKeyHeight, &vHeight);
     VIDEOEDITOR_CHECK(TRUE == success, M4ERR_PARAMETER);
 
-    // Fix: vWidth needs to aligned to 32 otherwise FWVGA clip will fail.
-    vWidth = (vWidth + 31) & (~0x1F);
-
     ALOGV("vWidth = %d, vHeight = %d", vWidth, vHeight);
 
     pDecShellContext->mGivenWidth = vWidth;
