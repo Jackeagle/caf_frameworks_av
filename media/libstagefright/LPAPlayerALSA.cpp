@@ -297,8 +297,8 @@ void LPAPlayer::resume() {
 size_t LPAPlayer::AudioSinkCallback(
         MediaPlayerBase::AudioSink *audioSink,
         void *buffer, size_t size, void *cookie) {
+    LPAPlayer *me = (LPAPlayer *)cookie;
     if (buffer == NULL && size == AudioTrack::EVENT_UNDERRUN) {
-        LPAPlayer *me = (LPAPlayer *)cookie;
         if(me->mReachedEOS == true) {
             //in the case of seek all these flags will be reset
             me->mReachedOutputEOS = true;
@@ -307,7 +307,13 @@ size_t LPAPlayer::AudioSinkCallback(
         }else {
             ALOGV("postAudioEOS ignored since %d", me->mSeeking);
         }
-    }
+    } else if (size == AudioTrack::EVENT_HW_FAIL) {
+        ALOGV("postAudioEOS in SSR");
+        me->mReachedOutputEOS = true;
+        me->mReachedEOS = true;
+        me->mKillDecoderThread = true;
+        me->mObserver->postAudioEOS(0);
+       }
     return 1;
 }
 
