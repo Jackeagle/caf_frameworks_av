@@ -1738,7 +1738,8 @@ status_t AwesomePlayer::initAudioDecoder() {
             ALOGI("MPQ Audio Enabled - MPQ Audio Player");
             mIsMPQAudio = true;
             //Add WMA / DTS
-            if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) ||
+             if(mAudioSink->getSessionId() &&
+                    (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) ||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC3) ||
                     ((!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC))
                     &&((dlopen ("libms11.so", RTLD_NOW))!=NULL))||
@@ -1747,7 +1748,7 @@ status_t AwesomePlayer::initAudioDecoder() {
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS_LBR)||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EAC3)||
                     !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_I)||
-                    !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_II)) {
+                    !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_II))) {
                 ALOGI("Tunnel Mode in MPQ Audio Player");
                 mIsMPQTunnelAudio = true;
             }
