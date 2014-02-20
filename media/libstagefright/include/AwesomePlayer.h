@@ -29,6 +29,8 @@
 #include <utils/threads.h>
 #include <drm/DrmManagerClient.h>
 
+#include "ExtendedUtils.h"
+
 namespace android {
 
 struct AudioPlayer;
@@ -386,6 +388,8 @@ private:
 
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
+
+    sp<VSyncLocker> mVSyncLocker;
 };
 
 }  // namespace android
