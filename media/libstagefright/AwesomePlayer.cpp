@@ -1067,13 +1067,19 @@ status_t AwesomePlayer::play_l() {
                 if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
                                         mAudioPlayer, mAudioSink, mDurationUs,
                                         mUseCase, mUseCaseFlag, isStreamingHTTP()) ==  true) {
-                    ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
                     bool initCheck =  false;
-                    mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
-                    if(!initCheck) {
-                         ALOGE("deleting Tunnel Player - initCheck failed");
-                         delete mAudioPlayer;
-                         mAudioPlayer = NULL;
+                    mUseCase = "USECASE_LPA_PLAYBACK";
+                    status_t err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(mUseCase, mUseCaseFlag);
+                    if(err != OK) {
+                       mUseCase = "";
+                    } else {
+                       ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
+                       mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
+                       if(!initCheck) {
+                           ALOGE("deleting Tunnel Player - initCheck failed");
+                           delete mAudioPlayer;
+                           mAudioPlayer = NULL;
+                       }
                     }
                 }
                 if(mAudioPlayer == NULL) {
@@ -3377,10 +3383,12 @@ bool AwesomePlayer::updateConcurrencyParam(bool pauseFlag)  {
     status_t err = OK;
     ALOGV("updateConcurrencyInfoParam  = %d", pauseFlag);
 
-    err = ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
-            mUseCase, mUseCaseFlag, pauseFlag);
-    if(err != OK) {
-        return err;
+    if (mAudioPlayer != NULL){
+        err = ResourceManager::AudioConcurrencyInfo::updateConcurrencyParam(
+               mUseCase, mUseCaseFlag, pauseFlag);
+        if(err != OK) {
+           return err;
+        }
     }
 
     if(mVideoSource != NULL) {

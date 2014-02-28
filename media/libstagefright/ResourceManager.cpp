@@ -155,15 +155,6 @@ bool  ResourceManager::isLPAPlayback(const sp<MediaSource> &audioTrack,
         return false;
     }
 
-    status_t err = OK;
-    if(useCase != "USECASE_LPA_PLAYBACK") {
-        useCase = "USECASE_LPA_PLAYBACK";
-        err = ResourceManager::AudioConcurrencyInfo::setNonCodecParameter(useCase, useCaseFlag);
-        if(err != OK) {
-           useCase = "";
-           return false;
-        }
-    }
     return true;
 }
 
