@@ -362,9 +362,10 @@ sp<MediaSource> OMXCodec::Create(
     bool success = meta->findCString(kKeyMIMEType, &mime);
     CHECK(success);
 
-    if ((!strcmp(mime, "audio/mpeg"))
-            && createEncoder == false
-            && flags == kHardwareCodecsOnly) {
+    if (createEncoder == false
+            && flags == kHardwareCodecsOnly
+            && (!(strcmp(mime, "audio/mpeg"))
+                    || !(strcmp(mime, "audio/3gpp")))) {
         flags = kSoftwareCodecsOnly;
         ALOGE("Forcing SoftwareCodec for mime type %s\n", mime);
     }
