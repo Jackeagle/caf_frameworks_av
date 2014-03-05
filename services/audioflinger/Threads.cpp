@@ -4774,10 +4774,6 @@ void AudioFlinger::DirectAudioTrack::signalEffect() {
 }
 
 AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
-#ifdef SRS_PROCESSING
-    ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
-    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_EXIT(this, gettid());
-#endif
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
         requestAndWaitForEffectsThreadExit();
         mAudioFlinger->deleteEffectSession();
@@ -4786,6 +4782,10 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
     } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
         requestAndWaitForEffectsThreadExit();
         mAudioFlinger->deleteEffectSession();
+#endif
+#ifdef SRS_PROCESSING
+    ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
+    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_EXIT(this, gettid());
 #endif
     }
     AudioSystem::releaseOutput(mOutput);
