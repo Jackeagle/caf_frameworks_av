@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1114,9 +1114,7 @@ status_t StagefrightRecorder::startRawAudioRecording() {
     return OK;
 }
 
-
 status_t StagefrightRecorder::startFMA2DPWriter() {
-
     sp<MetaData> meta = new MetaData;
 
     meta->setInt32(kKeyChannelCount, AUDIO_CHANNELS);
@@ -1124,10 +1122,14 @@ status_t StagefrightRecorder::startFMA2DPWriter() {
 
     mWriter = new FMA2DPWriter();
     mWriter->setListener(mListener);
-    mWriter->start(meta.get());
-    return OK;
-}
+    status_t status = mWriter->start(meta.get());
+    if (status != OK) {
+        mWriter.clear();
+        mWriter = NULL;
+    }
 
+    return status;
+}
 
 status_t StagefrightRecorder::startRTPRecording() {
     CHECK_EQ(mOutputFormat, OUTPUT_FORMAT_RTP_AVP);
