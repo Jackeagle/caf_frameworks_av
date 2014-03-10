@@ -546,6 +546,7 @@ status_t AudioRecord::openRecord_l(
 
     if (record == 0) {
         ALOGE("AudioFlinger could not create record track, status: %d", status);
+        AudioSystem::releaseInput(input);
         return status;
     }
     sp<IMemory> iMem = record->getCblk();
