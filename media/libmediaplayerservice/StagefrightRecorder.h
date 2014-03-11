@@ -119,9 +119,6 @@ private:
 
     String8 mParams;
 
-    String8 mUseCase;
-    bool mUseCaseFlag;
-
     bool mIsMetaDataStoredInVideoBuffers;
     MediaProfiles *mEncoderProfiles;
 
@@ -142,13 +139,15 @@ private:
         sp<MetaData> *meta);
     status_t startMPEG4Recording();
     status_t startAMRRecording();
+    status_t startFMA2DPWriter();
     status_t startAACRecording();
     status_t startWAVERecording();
     status_t startRawAudioRecording();
     status_t startRTPRecording();
     status_t startMPEG2TSRecording();
     sp<MediaSource> createAudioSource();
-    status_t checkVideoEncoderCapabilities();
+    status_t checkVideoEncoderCapabilities(
+            bool *supportsCameraSourceMetaDataMode);
     status_t checkAudioEncoderCapabilities();
     // Generic MediaSource set-up. Returns the appropriate
     // source (CameraSource or SurfaceMediaSource)
@@ -201,7 +200,7 @@ private:
     StagefrightRecorder &operator=(const StagefrightRecorder &);
 
     /* extension */
-#ifdef ENABLE_QC_AV_ENHANCEMENTS
+#ifdef ENABLE_AV_ENHANCEMENTS
     status_t startExtendedRecording();
 #endif
 };

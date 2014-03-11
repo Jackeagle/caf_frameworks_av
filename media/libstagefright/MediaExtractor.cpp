@@ -29,7 +29,6 @@
 #include "include/WVMExtractor.h"
 #include "include/FLACExtractor.h"
 #include "include/AACExtractor.h"
-#include "include/ExtendedExtractor.h"
 
 #include "matroska/MatroskaExtractor.h"
 
@@ -40,7 +39,7 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
 
-#include "include/QCUtils.h"
+#include "include/ExtendedUtils.h"
 
 namespace android {
 
@@ -129,7 +128,7 @@ sp<MediaExtractor> MediaExtractor::Create(
        }
     }
 
-    return QCUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
+    return ExtendedUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
 }
 
 }  // namespace android

@@ -20,19 +20,11 @@ include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 
-# RESOURCE MANAGER
-ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
-LOCAL_CFLAGS += -DRESOURCE_MANAGER
-endif
-# RESOURCE MANAGER
-
 LOCAL_SRC_FILES:= \
     AudioTrack.cpp \
     AudioTrackShared.cpp \
     IAudioFlinger.cpp \
     IAudioFlingerClient.cpp \
-    IDirectTrack.cpp \
-    IDirectTrackClient.cpp \
     IAudioTrack.cpp \
     IAudioRecord.cpp \
     ICrypto.cpp \
@@ -70,8 +62,8 @@ LOCAL_SRC_FILES:= \
     Visualizer.cpp \
     MemoryLeakTrackUtil.cpp \
     SoundPool.cpp \
-    SoundPoolThread.cpp\
-    TrackUtils.cpp\
+    SoundPoolThread.cpp \
+    StringArray.cpp
 
 LOCAL_SRC_FILES += ../libnbaio/roundup.c
 
@@ -79,6 +71,15 @@ LOCAL_SRC_FILES += ../libnbaio/roundup.c
 LOCAL_CFLAGS += -DANDROID_SMP=$(if $(findstring true,$(TARGET_CPU_SMP)),1,0)
 LOCAL_SRC_FILES += SingleStateQueue.cpp
 LOCAL_CFLAGS += -DSINGLE_STATE_QUEUE_INSTANTIATIONS='"SingleStateQueueInstantiations.cpp"'
+# Consider a separate a library for SingleStateQueueInstantiations.
+
+#QTI Resampler
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(BOARD_USES_QCOM_RESAMPLER)),true)
+LOCAL_CFLAGS += -DQTI_RESAMPLER
+endif
+endif
+#QTI Resampler
 
 LOCAL_SHARED_LIBRARIES := \
 	libui liblog libcutils libutils libbinder libsonivox libicuuc libexpat \

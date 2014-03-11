@@ -3,7 +3,7 @@
 # code that are surrounded by "DOLBY..." are copyrighted and
 # licensed separately, as follows:
 #
-#  (C) 2012-2013 Dolby Laboratories, Inc.
+#  (C) 2012-2014 Dolby Laboratories, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,25 +19,6 @@
 #
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
-
-ifeq ($(BOARD_USES_ALSA_AUDIO),true)
-    ifeq ($(USE_TUNNEL_MODE),true)
-        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
-        LOCAL_CFLAGS += -DUSE_LPA_MODE
-    endif
-    ifeq ($(TUNNEL_MODE_SUPPORTS_AMRWB),true)
-        LOCAL_CFLAGS += -DTUNNEL_MODE_SUPPORTS_AMRWB
-    endif
-    ifeq ($(NO_TUNNEL_MODE_FOR_MULTICHANNEL),true)
-        LOCAL_CFLAGS += -DNO_TUNNEL_MODE_FOR_MULTICHANNEL
-    endif
-endif
-
-# RESOURCE MANAGER
-ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
-LOCAL_CFLAGS += -DRESOURCE_MANAGER
-endif
-# RESOURCE MANAGER
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
@@ -59,7 +40,6 @@ LOCAL_SRC_FILES:=                         \
         FLACExtractor.cpp                 \
         HTTPBase.cpp                      \
         JPEGSource.cpp                    \
-        LPAPlayerALSA.cpp                 \
         MP3Extractor.cpp                  \
         MPEG2TSWriter.cpp                 \
         MPEG4Extractor.cpp                \
@@ -89,7 +69,6 @@ LOCAL_SRC_FILES:=                         \
         ThrottledSource.cpp               \
         TimeSource.cpp                    \
         TimedEventQueue.cpp               \
-        TunnelPlayer.cpp                  \
         Utils.cpp                         \
         VBRISeeker.cpp                    \
         WAVExtractor.cpp                  \
@@ -100,13 +79,14 @@ LOCAL_SRC_FILES:=                         \
         mp4/FragmentedMP4Parser.cpp       \
         mp4/TrackFragment.cpp             \
         ExtendedExtractor.cpp             \
-        QCUtils.cpp                       \
-        ResourceManager.cpp             \
+        ExtendedUtils.cpp                 \
+        FMA2DPWriter.cpp                  \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
         $(TOP)/frameworks/native/include/media/openmax \
+        $(TOP)/frameworks/native/services/connectivitymanager \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
@@ -114,7 +94,7 @@ LOCAL_C_INCLUDES:= \
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
         libcamera_client \
-        libcrypto \
+        libconnectivitymanager \
         libcutils \
         libdl \
         libdrmframework \
@@ -133,20 +113,34 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz \
-        libaudioparameter \
+        libpowermanager
+
+#QTI FLAC Decoder
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(BOARD_USES_QTI_FLAC_DECODER)),true)
+LOCAL_SRC_FILES += FLACDecoder.cpp
+LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio-noship/audio-flac
+LOCAL_CFLAGS := -DQTI_FLAC_DECODER
+endif
+endif
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
-        libstagefright_mp3dec \
         libstagefright_aacenc \
         libstagefright_matroska \
         libstagefright_timedtext \
         libvpx \
         libwebm \
         libstagefright_mpeg2ts \
-        libstagefright_httplive \
         libstagefright_id3 \
         libFLAC \
+        libmedia_helper
+
+ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
+       LOCAL_CFLAGS     += -DENABLE_AV_ENHANCEMENTS
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+       LOCAL_SRC_FILES  += ExtendedMediaDefs.cpp
+endif #TARGET_ENABLE_AV_ENHANCEMENTS
 
 LOCAL_SRC_FILES += \
         chromium_http_stub.cpp
@@ -165,20 +159,24 @@ LOCAL_CFLAGS += -Wno-multichar
 
 ifdef DOLBY_UDC
   LOCAL_CFLAGS += -DDOLBY_UDC
+  LOCAL_CFLAGS += -DDOLBY_UDC_OMX_BUFFER_FLUSH
 endif #DOLBY_UDC
-ifdef DOLBY_UDC_MULTICHANNEL
-  LOCAL_CFLAGS += -DDOLBY_UDC_MULTICHANNEL
-endif #DOLBY_UDC_MULTICHANNEL
+ifdef DOLBY_DAP
+    ifdef DOLBY_DAP_OPENSLES
+        LOCAL_CFLAGS += -DDOLBY_DAP_OPENSLES
+    endif
+endif #DOLBY_END
 LOCAL_MODULE:= libstagefright
 
 LOCAL_MODULE_TAGS := optional
 
 
 ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
-       LOCAL_CFLAGS += -DENABLE_QC_AV_ENHANCEMENTS
+       LOCAL_CFLAGS += -DENABLE_AV_ENHANCEMENTS
        LOCAL_SRC_FILES  += ExtendedWriter.cpp
-       LOCAL_SRC_FILES  += QCMediaDefs.cpp
        LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+       LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+       LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
 endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS
 
 include $(BUILD_SHARED_LIBRARY)

@@ -3,7 +3,7 @@
 # code that are surrounded by "DOLBY..." are copyrighted and
 # licensed separately, as follows:
 #
-#  (C) 2012 Dolby Laboratories, Inc.
+#  (C) 2012-2014 Dolby Laboratories, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ LOCAL_SRC_FILES:=                     \
         SimpleSoftOMXComponent.cpp    \
         SoftOMXComponent.cpp          \
         SoftOMXPlugin.cpp             \
+        SoftVideoDecoderOMXComponent.cpp \
 
 LOCAL_C_INCLUDES += \
         $(TOP)/frameworks/av/media/libstagefright \
@@ -47,7 +48,7 @@ LOCAL_SHARED_LIBRARIES :=               \
 
 ifdef DOLBY_UDC
   LOCAL_CFLAGS += -DDOLBY_UDC
-endif #DOLBY_UDC
+endif #DOLBY_END
 LOCAL_MODULE:= libstagefright_omx
 
 include $(BUILD_SHARED_LIBRARY)

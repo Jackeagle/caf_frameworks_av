@@ -1,8 +1,6 @@
 /*
 **
 ** Copyright 2012, The Android Open Source Project
-** Copyright (c) 2013, The Linux Foundation. All rights reserved.
-** Not a Contribution.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -21,6 +19,7 @@
 #define LOG_TAG "AudioFlinger"
 //#define LOG_NDEBUG 0
 
+#include "Configuration.h"
 #include <utils/Log.h>
 #include <audio_effects/effect_visualizer.h>
 #include <audio_utils/primitives.h>
@@ -29,11 +28,6 @@
 
 #include "AudioFlinger.h"
 #include "ServiceUtilities.h"
-
-#ifdef SRS_PROCESSING
-#include "srs_processing.h"
-#include "postpro_patch_ics.h"
-#endif
 
 // ----------------------------------------------------------------------------
 
@@ -72,7 +66,7 @@ AudioFlinger::EffectModule::EffectModule(ThreadBase *thread,
       mStatus(NO_INIT), mState(IDLE),
       // mMaxDisableWaitCnt is set by configure() and not used before then
       // mDisableWaitCnt is set by process() and updateState() and not used before then
-      mSuspended(false), mIsForLPA(false)
+      mSuspended(false)
 {
     ALOGV("Constructor %p", this);
     int lStatus;
@@ -101,16 +95,7 @@ AudioFlinger::EffectModule::~EffectModule()
 {
     ALOGV("Destructor %p", this);
     if (mEffectInterface != NULL) {
-        if ((mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_PRE_PROC ||
-                (mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_POST_PROC) {
-            sp<ThreadBase> thread = mThread.promote();
-            if (thread != 0) {
-                audio_stream_t *stream = thread->stream();
-                if (stream != NULL) {
-                    stream->remove_audio_effect(stream, mEffectInterface);
-                }
-            }
-        }
+        remove_effect_from_hal_l();
         // release effect engine
         EffectRelease(mEffectInterface);
     }
@@ -316,14 +301,13 @@ void AudioFlinger::EffectModule::reset_l()
     (*mEffectInterface)->command(mEffectInterface, EFFECT_CMD_RESET, 0, NULL, 0, NULL);
 }
 
-status_t AudioFlinger::EffectModule::configure(bool isForLPA, int sampleRate, int channelCount, int frameCount)
+status_t AudioFlinger::EffectModule::configure()
 {
     status_t status;
     status_t cmdStatus = 0;
     sp<ThreadBase> thread;
     uint32_t size;
     audio_channel_mask_t channelMask;
-    uint32_t channels;
 
     if (mEffectInterface == NULL) {
         status = NO_INIT;
@@ -342,20 +326,6 @@ status_t AudioFlinger::EffectModule::configure(bool isForLPA, int sampleRate, in
         ALOGE("Error: Trying to apply effect on  %d channel content",popcount(channelMask));
         return INVALID_OPERATION;
     }
-    mIsForLPA = isForLPA;
-    if(isForLPA) {
-        if (channelCount == 1) {
-            channels = AUDIO_CHANNEL_OUT_MONO;
-        } else {
-            channels = AUDIO_CHANNEL_OUT_STEREO;
-        }
-    } else {
-        if (thread->channelCount() == 1) {
-            channels = AUDIO_CHANNEL_OUT_MONO;
-        } else {
-            channels = AUDIO_CHANNEL_OUT_STEREO;
-        }
-    }
 
     if ((mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_AUXILIARY) {
         mConfig.inputCfg.channels = AUDIO_CHANNEL_OUT_MONO;
@@ -365,11 +335,7 @@ status_t AudioFlinger::EffectModule::configure(bool isForLPA, int sampleRate, in
     mConfig.outputCfg.channels = channelMask;
     mConfig.inputCfg.format = AUDIO_FORMAT_PCM_16_BIT;
     mConfig.outputCfg.format = AUDIO_FORMAT_PCM_16_BIT;
-    if(isForLPA){
-        mConfig.inputCfg.samplingRate = sampleRate;
-    } else {
-        mConfig.inputCfg.samplingRate = thread->sampleRate();
-    }
+    mConfig.inputCfg.samplingRate = thread->sampleRate();
     mConfig.outputCfg.samplingRate = mConfig.inputCfg.samplingRate;
     mConfig.inputCfg.bufferProvider.cookie = NULL;
     mConfig.inputCfg.bufferProvider.getBuffer = NULL;
@@ -394,11 +360,7 @@ status_t AudioFlinger::EffectModule::configure(bool isForLPA, int sampleRate, in
     }
     mConfig.inputCfg.mask = EFFECT_CONFIG_ALL;
     mConfig.outputCfg.mask = EFFECT_CONFIG_ALL;
-    if(isForLPA) {
-        mConfig.inputCfg.buffer.frameCount = frameCount;
-    } else {
-        mConfig.inputCfg.buffer.frameCount = thread->frameCount();
-    }
+    mConfig.inputCfg.buffer.frameCount = thread->frameCount();
     mConfig.outputCfg.buffer.frameCount = mConfig.inputCfg.buffer.frameCount;
 
     ALOGV("configure() %p thread %p buffer %p framecount %d",
@@ -521,7 +483,7 @@ status_t AudioFlinger::EffectModule::stop_l()
     if (mStatus != NO_ERROR) {
         return mStatus;
     }
-    status_t cmdStatus = 0;
+    status_t cmdStatus = NO_ERROR;
     uint32_t size = sizeof(status_t);
     status_t status = (*mEffectInterface)->command(mEffectInterface,
                                                    EFFECT_CMD_DISABLE,
@@ -529,12 +491,19 @@ status_t AudioFlinger::EffectModule::stop_l()
                                                    NULL,
                                                    &size,
                                                    &cmdStatus);
-    if (status == 0) {
+    if (status == NO_ERROR) {
         status = cmdStatus;
     }
-    if (status == 0 &&
-            ((mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_PRE_PROC ||
-             (mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_POST_PROC)) {
+    if (status == NO_ERROR) {
+        status = remove_effect_from_hal_l();
+    }
+    return status;
+}
+
+status_t AudioFlinger::EffectModule::remove_effect_from_hal_l()
+{
+    if ((mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_PRE_PROC ||
+             (mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_POST_PROC) {
         sp<ThreadBase> thread = mThread.promote();
         if (thread != 0) {
             audio_stream_t *stream = thread->stream();
@@ -543,7 +512,7 @@ status_t AudioFlinger::EffectModule::stop_l()
             }
         }
     }
-    return status;
+    return NO_ERROR;
 }
 
 status_t AudioFlinger::EffectModule::command(uint32_t cmdCode,
@@ -588,11 +557,10 @@ status_t AudioFlinger::EffectModule::setEnabled(bool enabled)
 // must be called with EffectModule::mLock held
 status_t AudioFlinger::EffectModule::setEnabled_l(bool enabled)
 {
-    bool effectStateChanged = false;
+
     ALOGV("setEnabled %p enabled %d", this, enabled);
 
     if (enabled != isEnabled()) {
-        effectStateChanged = true;
         status_t status = AudioSystem::setEffectEnabled(mId, enabled);
         if (enabled && status != NO_ERROR) {
             return status;
@@ -629,17 +597,6 @@ status_t AudioFlinger::EffectModule::setEnabled_l(bool enabled)
                 h->setEnabled(enabled);
             }
         }
-    }
-    /*
-       Send notification event to LPA Player when an effect for
-       LPA output is enabled or disabled.
-    */
-    sp<EffectChain> chain = mChain.promote();
-    if (effectStateChanged && chain->isForLPATrack()) {
-        sp<ThreadBase> thread = mThread.promote();
-        unlock();//Acquire locks in certain sequence to avoid deadlock
-        thread->effectConfigChanged();
-        lock();
     }
     return NO_ERROR;
 }
@@ -811,6 +768,46 @@ bool AudioFlinger::EffectModule::purgeHandles()
     return enabled;
 }
 
+status_t AudioFlinger::EffectModule::setOffloaded(bool offloaded, audio_io_handle_t io)
+{
+    Mutex::Autolock _l(mLock);
+    if (mStatus != NO_ERROR) {
+        return mStatus;
+    }
+    status_t status = NO_ERROR;
+    if ((mDescriptor.flags & EFFECT_FLAG_OFFLOAD_SUPPORTED) != 0) {
+        status_t cmdStatus;
+        uint32_t size = sizeof(status_t);
+        effect_offload_param_t cmd;
+
+        cmd.isOffload = offloaded;
+        cmd.ioHandle = io;
+        status = (*mEffectInterface)->command(mEffectInterface,
+                                              EFFECT_CMD_OFFLOAD,
+                                              sizeof(effect_offload_param_t),
+                                              &cmd,
+                                              &size,
+                                              &cmdStatus);
+        if (status == NO_ERROR) {
+            status = cmdStatus;
+        }
+        mOffloaded = (status == NO_ERROR) ? offloaded : false;
+    } else {
+        if (offloaded) {
+            status = INVALID_OPERATION;
+        }
+        mOffloaded = false;
+    }
+    ALOGV("setOffloaded() offloaded %d io %d status %d", offloaded, io, status);
+    return status;
+}
+
+bool AudioFlinger::EffectModule::isOffloaded() const
+{
+    Mutex::Autolock _l(mLock);
+    return mOffloaded;
+}
+
 void AudioFlinger::EffectModule::dump(int fd, const Vector<String16>& args)
 {
     const size_t SIZE = 256;
@@ -978,6 +975,23 @@ status_t AudioFlinger::EffectHandle::enable()
             thread->checkSuspendOnEffectEnabled(mEffect, false, mEffect->sessionId());
         }
         mEnabled = false;
+    } else {
+        if (thread != 0) {
+            if (thread->type() == ThreadBase::OFFLOAD) {
+                PlaybackThread *t = (PlaybackThread *)thread.get();
+                Mutex::Autolock _l(t->mLock);
+                t->broadcast_l();
+            }
+            if (!mEffect->isOffloadable()) {
+                if (thread->type() == ThreadBase::OFFLOAD) {
+                    PlaybackThread *t = (PlaybackThread *)thread.get();
+                    t->invalidateTracks(AUDIO_STREAM_MUSIC);
+                }
+                if (mEffect->sessionId() == AUDIO_SESSION_OUTPUT_MIX) {
+                    thread->mAudioFlinger->onNonOffloadableGlobalEffectEnable();
+                }
+            }
+        }
     }
     return status;
 }
@@ -1006,6 +1020,11 @@ status_t AudioFlinger::EffectHandle::disable()
     sp<ThreadBase> thread = mEffect->thread().promote();
     if (thread != 0) {
         thread->checkSuspendOnEffectEnabled(mEffect, false, mEffect->sessionId());
+        if (thread->type() == ThreadBase::OFFLOAD) {
+            PlaybackThread *t = (PlaybackThread *)thread.get();
+            Mutex::Autolock _l(t->mLock);
+            t->broadcast_l();
+        }
     }
 
     return status;
@@ -1122,15 +1141,6 @@ status_t AudioFlinger::EffectHandle::command(uint32_t cmdCode,
         return disable();
     }
 
-    if(mEffect->isOnLPA() &&
-       ((cmdCode == EFFECT_CMD_SET_PARAM) || (cmdCode == EFFECT_CMD_SET_PARAM_DEFERRED) ||
-        (cmdCode == EFFECT_CMD_SET_PARAM_COMMIT) || (cmdCode == EFFECT_CMD_SET_DEVICE) ||
-        (cmdCode == EFFECT_CMD_SET_VOLUME) || (cmdCode == EFFECT_CMD_SET_AUDIO_MODE)) ) {
-        // Notify Direct track for the change in Effect module
-        // TODO: check if it is required to send mLPAHandle
-        ALOGV("Notifying Direct Track for the change in effect config %d", cmdCode);
-        mClient->audioFlinger()->audioConfigChanged_l(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
-    }
     return mEffect->command(cmdCode, cmdSize, pCmdData, replySize, pReplyData);
 }
 
@@ -1198,7 +1208,7 @@ AudioFlinger::EffectChain::EffectChain(ThreadBase *thread,
                                         int sessionId)
     : mThread(thread), mSessionId(sessionId), mActiveTrackCnt(0), mTrackCnt(0), mTailBufferCount(0),
       mOwnInBuffer(false), mVolumeCtrlIdx(-1), mLeftVolume(UINT_MAX), mRightVolume(UINT_MAX),
-      mNewLeftVolume(UINT_MAX), mNewRightVolume(UINT_MAX), mIsForLPATrack(false)
+      mNewLeftVolume(UINT_MAX), mNewRightVolume(UINT_MAX)
 {
     mStrategy = AudioSystem::getStrategyForStream(AUDIO_STREAM_MUSIC);
     if (thread == NULL) {
@@ -1244,18 +1254,6 @@ sp<AudioFlinger::EffectModule> AudioFlinger::EffectChain::getEffectFromId_l(int 
     return 0;
 }
 
-sp<AudioFlinger::EffectModule> AudioFlinger::EffectChain::getEffectFromIndex_l(int idx)
-{
-    sp<EffectModule> effect = NULL;
-    if(idx < 0 || idx >= mEffects.size()) {
-        ALOGE("EffectChain::getEffectFromIndex_l: invalid index %d", idx);
-    }
-    if(mEffects.size() > 0){
-        effect = mEffects[idx];
-    }
-    return effect;
-}
-
 // getEffectFromType_l() must be called with ThreadBase::mLock held
 sp<AudioFlinger::EffectModule> AudioFlinger::EffectChain::getEffectFromType_l(
         const effect_uuid_t *type)
@@ -1284,9 +1282,7 @@ void AudioFlinger::EffectChain::clearInputBuffer()
 // Must be called with EffectChain::mLock locked
 void AudioFlinger::EffectChain::clearInputBuffer_l(sp<ThreadBase> thread)
 {
-    size_t numSamples = thread->frameCount() * thread->channelCount();
-    memset(mInBuffer, 0, numSamples * sizeof(int16_t));
-
+    memset(mInBuffer, 0, thread->frameCount() * thread->frameSize());
 }
 
 // Must be called with EffectChain::mLock locked
@@ -1299,9 +1295,10 @@ void AudioFlinger::EffectChain::process_l()
     }
     bool isGlobalSession = (mSessionId == AUDIO_SESSION_OUTPUT_MIX) ||
             (mSessionId == AUDIO_SESSION_OUTPUT_STAGE);
-    // always process effects unless no more tracks are on the session and the effect tail
-    // has been rendered
-    bool doProcess = true;
+    // never process effects when:
+    // - on an OFFLOAD thread
+    // - no more tracks are on the session and the effect tail has been rendered
+    bool doProcess = (thread->type() != ThreadBase::OFFLOAD);
     if (!isGlobalSession) {
         bool tracksOnSession = (trackCnt() != 0);
 
@@ -1322,7 +1319,7 @@ void AudioFlinger::EffectChain::process_l()
     }
 
     size_t size = mEffects.size();
-    if (doProcess || isForLPATrack()) {
+    if (doProcess) {
         for (size_t i = 0; i < size; i++) {
             mEffects[i]->process();
         }
@@ -1787,179 +1784,16 @@ void AudioFlinger::EffectChain::checkSuspendOnEffectEnabled(const sp<EffectModul
     }
 }
 
-#define DEAFULT_FRAME_COUNT 1200
-bool AudioFlinger::applyEffectsOn(void *token, int16_t *inBuffer,
-                            int16_t *outBuffer, int size, bool force)
+bool AudioFlinger::EffectChain::isNonOffloadableEnabled()
 {
-    ALOGV("applyEffectsOn: inBuf %p outBuf %p size %d token %p", inBuffer, outBuffer, size, token);
-    // This might be the first buffer to apply effects after effect config change
-    // should not skip effects processing
-    mIsEffectConfigChanged = false;
-
-    volatile size_t numEffects = 0;
-#ifdef SRS_PROCESSING
-    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(token, AUDIO_FORMAT_PCM_16_BIT, outBuffer, size, mLPASampleRate, mLPANumChannels);
-#endif
-
-    if(mLPAEffectChain != NULL) {
-        numEffects = mLPAEffectChain->getNumEffects();
-    }
-
-    if( numEffects > 0) {
-        size_t  i     = 0;
-        int16_t *pIn  = inBuffer;
-        int16_t *pOut = outBuffer;
-
-        int frameCount = size / (sizeof(int16_t) * mLPANumChannels);
-
-        while(frameCount > 0) {
-            if(mLPAEffectChain == NULL) {
-                ALOGV("LPA Effect Chain is removed - No effects processing !!");
-                numEffects = 0;
-                break;
-            }
-            mLPAEffectChain->lock();
-
-            numEffects = mLPAEffectChain->getNumEffects();
-            if(!numEffects) {
-                ALOGV("applyEffectsOn: All the effects are removed - nothing to process");
-                mLPAEffectChain->unlock();
-                break;
-            }
-
-            int outFrameCount = (frameCount > DEAFULT_FRAME_COUNT ? DEAFULT_FRAME_COUNT: frameCount);
-            bool isEffectEnabled = false;
-            for(i = 0; i < numEffects; i++) {
-                // If effect configuration is changed while applying effects do not process further
-                if(mIsEffectConfigChanged && !force) {
-                    mLPAEffectChain->unlock();
-                    ALOGV("applyEffectsOn: mIsEffectConfigChanged is set - no further processing %d",frameCount);
-                    return false;
-                }
-                sp<EffectModule> effect = mLPAEffectChain->getEffectFromIndex_l(i);
-                if(effect == NULL) {
-                    ALOGE("getEffectFromIndex_l(%d) returned NULL ptr", i);
-                    mLPAEffectChain->unlock();
-                    return false;
-                }
-                if(i == 0) {
-                    // For the first set input and output buffers different
-                    isEffectEnabled = effect->isProcessEnabled();
-                    effect->setInBuffer(pIn);
-                    effect->setOutBuffer(pOut);
-                } else {
-                    // For the remaining use previous effect's output buffer as input buffer
-                    effect->setInBuffer(pOut);
-                    effect->setOutBuffer(pOut);
-                }
-                // true indicates that it is being applied on LPA output
-                effect->configure(true, mLPASampleRate, mLPANumChannels, outFrameCount);
-            }
-
-            if(isEffectEnabled) {
-                // Clear the output buffer
-                memset(pOut, 0, (outFrameCount * mLPANumChannels * sizeof(int16_t)));
-            } else {
-                // Copy input buffer content to the output buffer
-                memcpy(pOut, pIn, (outFrameCount * mLPANumChannels * sizeof(int16_t)));
-            }
-
-            mLPAEffectChain->process_l();
-
-            mLPAEffectChain->unlock();
-
-            // Update input and output buffer pointers
-            pIn        += (outFrameCount * mLPANumChannels);
-            pOut       += (outFrameCount * mLPANumChannels);
-            frameCount -= outFrameCount;
+    Mutex::Autolock _l(mLock);
+    size_t size = mEffects.size();
+    for (size_t i = 0; i < size; i++) {
+        if (mEffects[i]->isEnabled() && !mEffects[i]->isOffloadable()) {
+            return true;
         }
     }
-
-    if (!numEffects && !force) {
-        ALOGV("applyEffectsOn: There are no effects to be applied");
-        if(inBuffer != outBuffer) {
-            // No effect applied so just copy input buffer to output buffer
-            memcpy(outBuffer, inBuffer, size);
-        }
-    }
-    return true;
-}
-
-void *AudioFlinger::DirectAudioTrack::EffectsThreadWrapper(void *me) {
-    static_cast<DirectAudioTrack *>(me)->EffectsThreadEntry();
-    return NULL;
-}
-
-void AudioFlinger::DirectAudioTrack::EffectsThreadEntry() {
-    while(1) {
-        mEffectLock.lock();
-        if (!mEffectConfigChanged && !mKillEffectsThread) {
-            mEffectCv.wait(mEffectLock);
-        }
-        if(mKillEffectsThread) {
-            mEffectLock.unlock();
-            break;
-        }
-        if (mEffectConfigChanged) {
-            mEffectConfigChanged = false;
-            if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
-                for ( List<BufferInfo>::iterator it = mEffectsPool.begin();
-                      it != mEffectsPool.end(); it++) {
-                    ALOGV("ete: calling applyEffectsOn buff %x",it->localBuf);
-                    bool isEffectsApplied = mAudioFlinger->applyEffectsOn(
-                                    static_cast<void *>(this),
-                                    (int16_t *)it->localBuf,
-                                    (int16_t *)mEffectsThreadScratchBuffer,
-                                    it->bytesToWrite,
-                                    false);
-                    if (isEffectsApplied == true){
-                        ALOGV("ete:dsp updated for local buf %x",it->localBuf);
-                        memcpy(it->dspBuf, mEffectsThreadScratchBuffer, it->bytesToWrite);
-                    }
-                    else
-                        ALOGV("ete:dsp updated for local buf %x SKIPPED",it->localBuf);
-
-                    if (mEffectConfigChanged) {
-                        ALOGE("ete:effects changed, abort effects application");
-                        break;
-                    }
-                }
-#ifdef SRS_PROCESSING
-            } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
-                ALOGV("applying effects for TUNNEL");
-                char buffer[2];
-                    //dummy buffer to ensure the SRS processing takes place
-                    // The API mandates Sample rate and channel mode. Hence
-                    // defaulted the sample rate channel mode to 48000 and 2 respectively
-                POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(static_cast<void *>(this),
-                                                         AUDIO_FORMAT_PCM_16_BIT,
-                                                        (int16_t*)buffer, 2, 48000, 2);
-#endif
-            }
-        }
-        mEffectLock.unlock();
-    }
-    ALOGV("Effects thread is dead");
-    mEffectsThreadAlive = false;
-}
-
-void AudioFlinger::DirectAudioTrack::requestAndWaitForEffectsThreadExit() {
-    if (!mEffectsThreadAlive)
-        return;
-    mKillEffectsThread = true;
-    mEffectCv.signal();
-    pthread_join(mEffectsThread,NULL);
-    ALOGV("effects thread killed");
-}
-
-void AudioFlinger::DirectAudioTrack::createEffectThread() {
-    //Create the effects thread
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    mEffectsThreadAlive = true;
-    ALOGV("Creating Effects Thread");
-    pthread_create(&mEffectsThread, &attr, EffectsThreadWrapper, this);
+    return false;
 }
 
 }; // namespace android

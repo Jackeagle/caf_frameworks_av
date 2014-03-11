@@ -1,7 +1,5 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +25,7 @@
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/TimeSource.h>
+#include <media/stagefright/MetaData.h>
 #include <utils/threads.h>
 #include <drm/DrmManagerClient.h>
 
@@ -102,7 +101,7 @@ struct AwesomePlayer {
 
     void postAudioEOS(int64_t delayUs = 0ll);
     void postAudioSeekComplete();
-    void printFileName(int fd);
+    void postAudioTearDown();
     status_t dump(int fd, const Vector<String16> &args) const;
 
 private:
@@ -140,7 +139,6 @@ private:
         TEXTPLAYER_INITIALIZED  = 0x20000,
 
         SLOW_DECODER_HACK   = 0x40000,
-        PAUSE               = 0x80000,
     };
 
     mutable Mutex mLock;
@@ -171,9 +169,12 @@ private:
     sp<AwesomeRenderer> mVideoRenderer;
     bool mVideoRenderingStarted;
     bool mVideoRendererIsPreview;
+    int32_t mMediaRenderingStartGeneration;
+    int32_t mStartGeneration;
 
     ssize_t mActiveAudioTrackIndex;
     sp<MediaSource> mAudioTrack;
+    sp<MediaSource> mOmxSource;
     sp<MediaSource> mAudioSource;
     AudioPlayer *mAudioPlayer;
     int64_t mDurationUs;
@@ -203,7 +204,6 @@ private:
 
     bool mWatchForAudioSeekComplete;
     bool mWatchForAudioEOS;
-    static int mTunnelAliveAP;
 
     sp<TimedEventQueue::Event> mVideoEvent;
     bool mVideoEventPending;
@@ -215,22 +215,23 @@ private:
     bool mAudioStatusEventPending;
     sp<TimedEventQueue::Event> mVideoLagEvent;
     bool mVideoLagEventPending;
-
+    sp<TimedEventQueue::Event> mAudioTearDownEvent;
+    bool mAudioTearDownEventPending;
     sp<TimedEventQueue::Event> mAsyncPrepareEvent;
     Condition mPreparedCondition;
     bool mIsAsyncPrepare;
     status_t mPrepareResult;
     status_t mStreamDoneStatus;
 
-    String8 mUseCase;
-    bool mUseCaseFlag;
-
     void postVideoEvent_l(int64_t delayUs = -1);
     void postBufferingEvent_l();
     void postStreamDoneEvent_l(status_t status);
     void postCheckAudioStatusEvent(int64_t delayUs);
     void postVideoLagEvent_l();
+    void postAudioTearDownEvent(int64_t delayUs);
+
     status_t play_l();
+    status_t fallbackToSWDecoder();
 
     MediaBuffer *mVideoBuffer;
 
@@ -241,7 +242,6 @@ private:
     sp<DecryptHandle> mDecryptHandle;
 
     int64_t mLastVideoTimeUs;
-    int64_t mFrameDurationUs;
     TimedTextDriver *mTextDriver;
 
     sp<WVMExtractor> mWVMExtractor;
@@ -265,6 +265,7 @@ private:
     void setAudioSource(sp<MediaSource> source);
     status_t initAudioDecoder();
 
+
     void setVideoSource(sp<MediaSource> source);
     status_t initVideoDecoder(uint32_t flags = 0);
 
@@ -281,6 +282,9 @@ private:
     void abortPrepare(status_t err);
     void finishAsyncPrepare_l();
     void onVideoLagUpdate();
+    void onAudioTearDownEvent();
+
+    void beginPrepareAsync_l();
 
     bool getCachedDuration_l(int64_t *durationUs, bool *eos);
 
@@ -293,6 +297,8 @@ private:
     void finishSeekIfNecessary(int64_t videoTimeUs);
     void ensureCacheIsFetching_l();
 
+    void notifyIfMediaStarted_l();
+    void createAudioPlayer_l();
     status_t startAudioPlayer_l(bool sendErrorNotification = true);
 
     void shutdownVideoDecoder_l();
@@ -308,7 +314,6 @@ private:
         ASSIGN
     };
     void modifyFlags(unsigned value, FlagMode mode);
-    void checkTunnelExceptions();
     void logFirstFrame();
     void logCatchUp(int64_t ts, int64_t clock, int64_t delta);
     void logLate(int64_t ts, int64_t clock, int64_t delta);
@@ -361,6 +366,11 @@ private:
         int64_t mSeekDelayStartUs;
     } mStats;
 
+    bool    mOffloadAudio;
+    bool    mAudioTearDown;
+    bool    mAudioTearDownWasPlaying;
+    int64_t mAudioTearDownPosition;
+
     status_t setVideoScalingMode(int32_t mode);
     status_t setVideoScalingMode_l(int32_t mode);
     status_t getTrackInfo(Parcel* reply) const;
@@ -373,14 +383,9 @@ private:
 
     size_t countTracks() const;
 
-    bool inSupportedTunnelFormats(const char * mime);
-
-    bool updateConcurrencyParam(bool pauseFlag);
-
-    //Flag to check if tunnel mode audio is enabled
-    bool mIsTunnelAudio;
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
+    bool mReadRetry;
 };
 
 }  // namespace android

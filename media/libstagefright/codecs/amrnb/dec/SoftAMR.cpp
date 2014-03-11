@@ -436,7 +436,7 @@ void SoftAMR::onQueueFilled(OMX_U32 portIndex) {
 }
 
 void SoftAMR::onPortFlushCompleted(OMX_U32 portIndex) {
-        ALOGE("onPortFlushCompleted portindex %d, resetting frame ",portIndex);
+        ALOGV("onPortFlushCompleted portindex %d, resetting frame ",portIndex);
         if(portIndex == 0) {
            if(mMode == MODE_NARROW)
               Speech_Decode_Frame_reset(mState);
@@ -469,6 +469,11 @@ void SoftAMR::onPortEnableCompleted(OMX_U32 portIndex, bool enabled) {
             break;
         }
     }
+}
+
+void SoftAMR::onReset() {
+    mSignalledError = false;
+    mOutputPortSettingsChange = NONE;
 }
 
 }  // namespace android

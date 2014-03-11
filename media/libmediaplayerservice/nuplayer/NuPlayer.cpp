@@ -89,6 +89,38 @@ private:
     DISALLOW_EVIL_CONSTRUCTORS(SetSurfaceAction);
 };
 
+struct NuPlayer::ShutdownDecoderAction : public Action {
+    ShutdownDecoderAction(bool audio, bool video)
+        : mAudio(audio),
+          mVideo(video) {
+    }
+
+    virtual void execute(NuPlayer *player) {
+        player->performDecoderShutdown(mAudio, mVideo);
+    }
+
+private:
+    bool mAudio;
+    bool mVideo;
+
+    DISALLOW_EVIL_CONSTRUCTORS(ShutdownDecoderAction);
+};
+
+struct NuPlayer::PostMessageAction : public Action {
+    PostMessageAction(const sp<AMessage> &msg)
+        : mMessage(msg) {
+    }
+
+    virtual void execute(NuPlayer *) {
+        mMessage->post();
+    }
+
+private:
+    sp<AMessage> mMessage;
+
+    DISALLOW_EVIL_CONSTRUCTORS(PostMessageAction);
+};
+
 // Use this if there's no state necessary to save in order to execute
 // the action.
 struct NuPlayer::SimpleAction : public Action {
@@ -308,6 +340,46 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatGetTrackInfo:
+        {
+            uint32_t replyID;
+            CHECK(msg->senderAwaitsResponse(&replyID));
+
+            status_t err = INVALID_OPERATION;
+            if (mSource != NULL) {
+                Parcel* reply;
+                CHECK(msg->findPointer("reply", (void**)&reply));
+                err = mSource->getTrackInfo(reply);
+            }
+
+            sp<AMessage> response = new AMessage;
+            response->setInt32("err", err);
+
+            response->postReply(replyID);
+            break;
+        }
+
+        case kWhatSelectTrack:
+        {
+            uint32_t replyID;
+            CHECK(msg->senderAwaitsResponse(&replyID));
+
+            status_t err = INVALID_OPERATION;
+            if (mSource != NULL) {
+                size_t trackIndex;
+                int32_t select;
+                CHECK(msg->findSize("trackIndex", &trackIndex));
+                CHECK(msg->findInt32("select", &select));
+                err = mSource->selectTrack(trackIndex, select);
+            }
+
+            sp<AMessage> response = new AMessage;
+            response->setInt32("err", err);
+
+            response->postReply(replyID);
+            break;
+        }
+
         case kWhatPollDuration:
         {
             int32_t generation;
@@ -335,7 +407,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             ALOGV("kWhatSetVideoNativeWindow");
 
             mDeferredActions.push_back(
-                    new SimpleAction(&NuPlayer::performDecoderShutdown));
+                    new ShutdownDecoderAction(
+                        false /* audio */, true /* video */));
 
             sp<RefBase> obj;
             CHECK(msg->findObject("native-window", &obj));
@@ -593,7 +666,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                     // Take into account sample aspect ratio if necessary:
                     int32_t sarWidth, sarHeight;
-                    if (videoInputFormat->findInt32("sar-width", &sarWidth)
+                    if (videoInputFormat != NULL
+                            && videoInputFormat->findInt32(
+                                "sar-width", &sarWidth)
                             && videoInputFormat->findInt32(
                                 "sar-height", &sarHeight)) {
                         ALOGV("Sample aspect ratio %d : %d",
@@ -698,6 +773,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 ALOGV("renderer %s flush completed.", audio ? "audio" : "video");
             } else if (what == Renderer::kWhatVideoRenderingStart) {
                 notifyListener(MEDIA_INFO, MEDIA_INFO_RENDERING_START, 0);
+            } else if (what == Renderer::kWhatMediaRenderingStart) {
+                ALOGV("media rendering started");
+                notifyListener(MEDIA_STARTED, 0, 0);
             }
             break;
         }
@@ -712,7 +790,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             ALOGV("kWhatReset");
 
             mDeferredActions.push_back(
-                    new SimpleAction(&NuPlayer::performDecoderShutdown));
+                    new ShutdownDecoderAction(
+                        true /* audio */, true /* video */));
 
             mDeferredActions.push_back(
                     new SimpleAction(&NuPlayer::performReset));
@@ -742,31 +821,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             CHECK(mRenderer != NULL);
             mSource->pause();
             mRenderer->pause();
-
-            if (mAudioDecoder != NULL) {
-                mAudioDecoder->signalConcurrencyParam(true);
-            }
-            if (mVideoDecoder != NULL) {
-                mVideoDecoder->signalConcurrencyParam(true);
-            }
-
             break;
         }
 
         case kWhatResume:
         {
-
             CHECK(mRenderer != NULL);
             mSource->resume();
             mRenderer->resume();
-
-            if (mAudioDecoder != NULL) {
-                mAudioDecoder->signalConcurrencyParam(false);
-            }
-            if (mVideoDecoder != NULL) {
-                mVideoDecoder->signalConcurrencyParam(false);
-            }
-
             break;
         }
 
@@ -828,6 +890,7 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
     if (*decoder != NULL) {
         return OK;
     }
+
     sp<AMessage> format = mSource->getFormat(audio);
 
     if (format == NULL) {
@@ -1024,7 +1087,7 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
     mRenderer->queueBuffer(audio, buffer, reply);
 }
 
-void NuPlayer::notifyListener(int msg, int ext1, int ext2) {
+void NuPlayer::notifyListener(int msg, int ext1, int ext2, const Parcel *in) {
     if (mDriver == NULL) {
         return;
     }
@@ -1035,10 +1098,13 @@ void NuPlayer::notifyListener(int msg, int ext1, int ext2) {
         return;
     }
 
-    driver->notifyListener(msg, ext1, ext2);
+    driver->notifyListener(msg, ext1, ext2, in);
 }
 
 void NuPlayer::flushDecoder(bool audio, bool needShutdown) {
+    ALOGV("[%s] flushDecoder needShutdown=%d",
+          audio ? "audio" : "video", needShutdown);
+
     if ((audio && mAudioDecoder == NULL) || (!audio && mVideoDecoder == NULL)) {
         ALOGI("flushDecoder %s without decoder present",
              audio ? "audio" : "video");
@@ -1106,6 +1172,26 @@ status_t NuPlayer::setVideoScalingMode(int32_t mode) {
         }
     }
     return OK;
+}
+
+status_t NuPlayer::getTrackInfo(Parcel* reply) const {
+    sp<AMessage> msg = new AMessage(kWhatGetTrackInfo, id());
+    msg->setPointer("reply", reply);
+
+    sp<AMessage> response;
+    status_t err = msg->postAndAwaitResponse(&response);
+    return err;
+}
+
+status_t NuPlayer::selectTrack(size_t trackIndex, bool select) {
+    sp<AMessage> msg = new AMessage(kWhatSelectTrack, id());
+    msg->setSize("trackIndex", trackIndex);
+    msg->setInt32("select", select);
+
+    sp<AMessage> response;
+    status_t err = msg->postAndAwaitResponse(&response);
+
+    return err;
 }
 
 void NuPlayer::schedulePollDuration() {
@@ -1189,20 +1275,29 @@ void NuPlayer::performDecoderFlush() {
     }
 }
 
-void NuPlayer::performDecoderShutdown() {
-    ALOGV("performDecoderShutdown");
+void NuPlayer::performDecoderShutdown(bool audio, bool video) {
+    ALOGV("performDecoderShutdown audio=%d, video=%d", audio, video);
 
-    if (mAudioDecoder == NULL && mVideoDecoder == NULL) {
+    if ((!audio || mAudioDecoder == NULL)
+            && (!video || mVideoDecoder == NULL)) {
         return;
     }
 
     mTimeDiscontinuityPending = true;
 
-    if (mAudioDecoder != NULL) {
+    if (mFlushingAudio == NONE && (!audio || mAudioDecoder == NULL)) {
+        mFlushingAudio = FLUSHED;
+    }
+
+    if (mFlushingVideo == NONE && (!video || mVideoDecoder == NULL)) {
+        mFlushingVideo = FLUSHED;
+    }
+
+    if (audio && mAudioDecoder != NULL) {
         flushDecoder(true /* audio */, true /* needShutdown */);
     }
 
-    if (mVideoDecoder != NULL) {
+    if (video && mVideoDecoder != NULL) {
         flushDecoder(false /* audio */, true /* needShutdown */);
     }
 }
@@ -1303,6 +1398,11 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
             uint32_t flags;
             CHECK(msg->findInt32("flags", (int32_t *)&flags));
 
+            sp<NuPlayerDriver> driver = mDriver.promote();
+            if (driver != NULL) {
+                driver->notifyFlagsChanged(flags);
+            }
+
             if ((mSourceFlags & Source::FLAG_DYNAMIC_DURATION)
                     && (!(flags & Source::FLAG_DYNAMIC_DURATION))) {
                 cancelPollDuration();
@@ -1338,6 +1438,42 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
             break;
         }
 
+        case Source::kWhatSubtitleData:
+        {
+            sp<ABuffer> buffer;
+            CHECK(msg->findBuffer("buffer", &buffer));
+
+            int32_t trackIndex;
+            int64_t timeUs, durationUs;
+            CHECK(buffer->meta()->findInt32("trackIndex", &trackIndex));
+            CHECK(buffer->meta()->findInt64("timeUs", &timeUs));
+            CHECK(buffer->meta()->findInt64("durationUs", &durationUs));
+
+            Parcel in;
+            in.writeInt32(trackIndex);
+            in.writeInt64(timeUs);
+            in.writeInt64(durationUs);
+            in.writeInt32(buffer->size());
+            in.writeInt32(buffer->size());
+            in.write(buffer->data(), buffer->size());
+
+            notifyListener(MEDIA_SUBTITLE_DATA, 0, 0, &in);
+            break;
+        }
+
+        case Source::kWhatQueueDecoderShutdown:
+        {
+            int32_t audio, video;
+            CHECK(msg->findInt32("audio", &audio));
+            CHECK(msg->findInt32("video", &video));
+
+            sp<AMessage> reply;
+            CHECK(msg->findMessage("reply", &reply));
+
+            queueDecoderShutdown(audio, video, reply);
+            break;
+        }
+
         default:
             TRESPASS();
     }
@@ -1369,6 +1505,21 @@ void NuPlayer::Source::notifyPrepared(status_t err) {
 
 void NuPlayer::Source::onMessageReceived(const sp<AMessage> &msg) {
     TRESPASS();
+}
+
+void NuPlayer::queueDecoderShutdown(
+        bool audio, bool video, const sp<AMessage> &reply) {
+    ALOGI("queueDecoderShutdown audio=%d, video=%d", audio, video);
+
+    mDeferredActions.push_back(
+            new ShutdownDecoderAction(audio, video));
+
+    mDeferredActions.push_back(
+            new SimpleAction(&NuPlayer::performScanSources));
+
+    mDeferredActions.push_back(new PostMessageAction(reply));
+
+    processDeferredActions();
 }
 
 }  // namespace android

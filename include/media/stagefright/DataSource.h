@@ -40,6 +40,7 @@ public:
         kStreamedFromLocalHost = 2,
         kIsCachingDataSource   = 4,
         kIsHTTPBasedSource     = 8,
+        kSupportNonBlockingRead = 16,
     };
 
     static sp<DataSource> CreateFromURI(
@@ -80,7 +81,6 @@ public:
             const sp<DataSource> &source, String8 *mimeType,
             float *confidence, sp<AMessage> *meta);
 
-    static void RegisterSniffer(SnifferFunc func);
     static void RegisterDefaultSniffers();
 
     // for DRM
@@ -101,6 +101,9 @@ protected:
 private:
     static Mutex gSnifferMutex;
     static List<SnifferFunc> gSniffers;
+    static bool gSniffersRegistered;
+
+    static void RegisterSniffer_l(SnifferFunc func);
 
     DataSource(const DataSource &);
     DataSource &operator=(const DataSource &);

@@ -6,12 +6,6 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 
-# RESOURCE MANAGER
-ifeq ($(strip $(BOARD_USES_RESOURCE_MANAGER)),true)
-LOCAL_CFLAGS += -DRESOURCE_MANAGER
-endif
-# RESOURCE MANAGER
-
 LOCAL_SRC_FILES:=               \
     ActivityManager.cpp         \
     Crypto.cpp                  \
@@ -40,6 +34,7 @@ LOCAL_SHARED_LIBRARIES :=       \
     libsonivox                  \
     libstagefright              \
     libstagefright_foundation   \
+    libstagefright_httplive     \
     libstagefright_omx          \
     libstagefright_wfd          \
     libutils                    \
@@ -48,7 +43,6 @@ LOCAL_SHARED_LIBRARIES :=       \
 LOCAL_STATIC_LIBRARIES :=       \
     libstagefright_nuplayer     \
     libstagefright_rtsp         \
-    libmedia_helper             \
 
 LOCAL_C_INCLUDES :=                                                 \
     $(call include-path-for, graphics corecg)                       \
@@ -58,14 +52,10 @@ LOCAL_C_INCLUDES :=                                                 \
     $(TOP)/frameworks/native/include/media/openmax                  \
     $(TOP)/external/tremolo/Tremolo                                 \
 
-ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS), true)
-    LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
-endif
-
 LOCAL_MODULE:= libmediaplayerservice
 
 ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
-    LOCAL_CFLAGS += -DENABLE_QC_AV_ENHANCEMENTS
+    LOCAL_CFLAGS += -DENABLE_AV_ENHANCEMENTS
     LOCAL_C_INCLUDES += $(TOP)/frameworks/av/include/media
     LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
 endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS

@@ -52,13 +52,13 @@ public:
     static const char * const keyInputSource;
     static const char * const keyScreenState;
     static const char * const keyHandleFm;
-    static const char * const keyVoipCheck;
-    static const char * const keyFluenceType;
+    static const char * const keyFmVolume;
+    static const char * const keyFluence;
     static const char * const keySSR;
     static const char * const keyHandleA2dpDevice;
     static const char * const keyADSPStatus;
+    static const char * const keySoundCardStatus;
     static const char * const keyCanOpenProxy;
-    static const char * const keyFmVolume;
 
     String8 toString();
 

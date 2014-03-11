@@ -358,11 +358,10 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
             uint32_t flags = 0;
 
             if (mHandler->isSeekable()) {
-                flags = FLAG_CAN_PAUSE | FLAG_CAN_SEEK;
-
-                // Seeking 10secs forward or backward is a very expensive
-                // operation for rtsp, so let's not enable that.
-                // The user can always use the seek bar.
+                flags = FLAG_CAN_PAUSE
+                        | FLAG_CAN_SEEK
+                        | FLAG_CAN_SEEK_BACKWARD
+                        | FLAG_CAN_SEEK_FORWARD;
             }
 
             notifyFlagsChanged(flags);
@@ -444,8 +443,9 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
                 if (!info->mNPTMappingValid) {
                     // This is a live stream, we didn't receive any normal
                     // playtime mapping. We won't map to npt time.
-                    source->queueAccessUnit(accessUnit);
-                    break;
+                    info->mRTPTime = rtpTime;
+                    info->mNormalPlaytimeUs = 0ll;
+                    info->mNPTMappingValid = true;
                 }
 
                 int64_t nptUs =
@@ -634,6 +634,10 @@ void NuPlayer::RTSPSource::onSDPLoaded(const sp<AMessage> &msg) {
 }
 
 void NuPlayer::RTSPSource::onDisconnected(const sp<AMessage> &msg) {
+    if (mState == DISCONNECTED) {
+        return;
+    }
+
     status_t err;
     CHECK(msg->findInt32("result", &err));
     CHECK_NE(err, (status_t)OK);

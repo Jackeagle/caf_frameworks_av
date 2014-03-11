@@ -32,7 +32,7 @@
 #include <dlfcn.h>  // for dlopen/dlclose
 #include "include/ExtendedExtractor.h"
 
-#ifdef ENABLE_QC_AV_ENHANCEMENTS
+#ifdef ENABLE_AV_ENHANCEMENTS
 
 namespace android {
 
@@ -122,7 +122,7 @@ bool ExtendedExtractor::Sniff (
 
 }  // namespace android
 
-#else //ENABLE_QC_AV_ENHANCEMENTS
+#else //ENABLE_AV_ENHANCEMENTS
 
 namespace android {
 
@@ -139,5 +139,5 @@ bool ExtendedExtractor::Sniff (
 
 }  // namespace android
 
-#endif //ENABLE_QC_AV_ENHANCEMENTS
+#endif //ENABLE_AV_ENHANCEMENTS
 

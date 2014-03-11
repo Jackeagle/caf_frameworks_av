@@ -17,7 +17,7 @@
  * code that are surrounded by "DOLBY..." are copyrighted and
  * licensed separately, as follows:
  *
- *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *  (C) 2011-2014 Dolby Laboratories, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,8 +110,8 @@ struct ATSParser : public RefBase {
         STREAMTYPE_PCM_AUDIO            = 0x83,
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
         STREAMTYPE_DDP_AC3_AUDIO        = 0x81,
-        STREAMTYPE_DDP_EAC3_AUDIO        = 0x87,
-#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
+        STREAMTYPE_DDP_EC3_AUDIO        = 0x87,
+#endif // DOLBY_END
     };
 
 protected:

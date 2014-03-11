@@ -1,8 +1,6 @@
 /*
 **
 ** Copyright 2012, The Android Open Source Project
-** Copyright (c) 2013, The Linux Foundation. All rights reserved.
-** Not a Contribution.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -27,6 +25,10 @@
 // state changes or resource modifications. Always respect the following order
 // if multiple mutexes must be acquired to avoid cross deadlock:
 // AudioFlinger -> ThreadBase -> EffectChain -> EffectModule
+// In addition, methods that lock the AudioPolicyService mutex (getOutputForEffect(),
+// startOutput()...) should never be called with AudioFlinger or Threadbase mutex locked
+// to avoid cross deadlock with other clients calling AudioPolicyService methods that in turn
+// call AudioFlinger thus locking the same mutexes in the reverse order.
 
 // The EffectModule class is a wrapper object controlling the effect engine implementation
 // in the effect library. It prevents concurrent calls to process() and command() functions
@@ -66,10 +68,7 @@ public:
                      void *pReplyData);
 
     void reset_l();
-    status_t configure(bool isForLPA = false,
-                       int sampleRate = 0,
-                       int channelCount = 0,
-                       int frameCount = 0);
+    status_t configure();
     status_t init();
     effect_state state() const {
         return mState;
@@ -116,8 +115,10 @@ public:
     bool             purgeHandles();
     void             lock() { mLock.lock(); }
     void             unlock() { mLock.unlock(); }
-    bool             isOnLPA() { return mIsForLPA;}
-    void             setLPAFlag(bool isForLPA) {mIsForLPA = isForLPA; }
+    bool             isOffloadable() const
+                        { return (mDescriptor.flags & EFFECT_FLAG_OFFLOAD_SUPPORTED) != 0; }
+    status_t         setOffloaded(bool offloaded, audio_io_handle_t io);
+    bool             isOffloaded() const;
 
     void             dump(int fd, const Vector<String16>& args);
 
@@ -133,6 +134,7 @@ protected:
 
     status_t start_l();
     status_t stop_l();
+    status_t remove_effect_from_hal_l();
 
 mutable Mutex               mLock;      // mutex for process, commands and handles list protection
     wp<ThreadBase>      mThread;    // parent thread
@@ -150,7 +152,7 @@ mutable Mutex               mLock;      // mutex for process, commands and handl
                                     // sending disable command.
     uint32_t mDisableWaitCnt;       // current process() calls count during disable period.
     bool     mSuspended;            // effect is suspended: temporarily disabled by framework
-    bool     mIsForLPA;
+    bool     mOffloaded;            // effect is currently offloaded to the audio DSP
 };
 
 // The EffectHandle class implements the IEffect interface. It provides resources
@@ -260,14 +262,12 @@ public:
 
     status_t addEffect_l(const sp<EffectModule>& handle);
     size_t removeEffect_l(const sp<EffectModule>& handle);
-    size_t getNumEffects() { return mEffects.size(); }
 
     int sessionId() const { return mSessionId; }
     void setSessionId(int sessionId) { mSessionId = sessionId; }
 
     sp<EffectModule> getEffectFromDesc_l(effect_descriptor_t *descriptor);
     sp<EffectModule> getEffectFromId_l(int id);
-    sp<EffectModule> getEffectFromIndex_l(int idx);
     sp<EffectModule> getEffectFromType_l(const effect_uuid_t *type);
     bool setVolume_l(uint32_t *left, uint32_t *right);
     void setDevice_l(audio_devices_t device);
@@ -312,9 +312,11 @@ public:
 
     void clearInputBuffer();
 
+    // At least one non offloadable effect in the chain is enabled
+    bool isNonOffloadableEnabled();
+
+
     void dump(int fd, const Vector<String16>& args);
-    bool isForLPATrack() {return mIsForLPATrack; }
-    void setLPAFlag(bool flag) {mIsForLPATrack = flag;}
 
 protected:
     friend class AudioFlinger;  // for mThread, mEffects
@@ -363,7 +365,6 @@ protected:
     uint32_t mNewLeftVolume;       // new volume on left channel
     uint32_t mNewRightVolume;      // new volume on right channel
     uint32_t mStrategy; // strategy for this effect chain
-    bool     mIsForLPATrack;
     // mSuspendedEffects lists all effects currently suspended in the chain.
     // Use effect type UUID timelow field as key. There is no real risk of identical
     // timeLow fields among effect type UUIDs.

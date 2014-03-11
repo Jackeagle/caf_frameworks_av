@@ -17,7 +17,7 @@
  * code that are surrounded by "DOLBY..." are copyrighted and
  * licensed separately, as follows:
  *
- *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *  (C) 2011-2014 Dolby Laboratories, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,10 +51,6 @@
 #include "include/avc_utils.h"
 
 #include <netinet/in.h>
-
-#if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
- #include <QCMediaDefs.h>
-#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
 
 namespace android {
 
@@ -289,7 +285,7 @@ status_t ElementaryStreamQueue::appendData(
 
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
             case DDP_AC3_AUDIO:
-            case DDP_EAC3_AUDIO:
+            case DDP_EC3_AUDIO:
             {
                 uint8_t *ptr = (uint8_t *)data;
 
@@ -397,7 +393,7 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnit() {
             return dequeueAccessUnitPCMAudio();
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
         case DDP_AC3_AUDIO:
-        case DDP_EAC3_AUDIO:
+        case DDP_EC3_AUDIO:
             return dequeueAccessUnitDDP();
 #endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
         default:
@@ -505,6 +501,7 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitAAC() {
             mFormat = MakeAACCodecSpecificData(
                     profile, sampling_freq_index, channel_configuration);
 
+            mFormat->setInt32(kKeyMaxInputSize, (8192 * 4)); // setting max aac input size
             mFormat->setInt32(kKeyIsADTS, true);
 
             int32_t sampleRate;
@@ -581,7 +578,6 @@ calc_dd_frame_size(int code)
 sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitDDP() {
     unsigned int size;
     unsigned char* ptr;
-    unsigned int i;
     int bsid;
     size_t frame_size = 0;
     size_t auSize = 0;
@@ -598,7 +594,6 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitDDP() {
     if(mFormat == NULL)
     {
         sp<MetaData> meta = new MetaData;
-        //TODO: Shoud this be EAC3 or AC3 or if statement?
         meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_EAC3);
 
         // Zero values entered to prevent crash
@@ -670,11 +665,6 @@ int64_t ElementaryStreamQueue::fetchTimestamp(size_t size) {
 
         if (info->mLength > size) {
             info->mLength -= size;
-
-            if (first) {
-                info->mTimestampUs = -1;
-            }
-
             size = 0;
         } else {
             size -= info->mLength;
@@ -683,7 +673,6 @@ int64_t ElementaryStreamQueue::fetchTimestamp(size_t size) {
             info = NULL;
         }
 
-        first = false;
     }
 
     if (timeUs == 0ll) {

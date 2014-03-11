@@ -3,7 +3,7 @@
 # code that are surrounded by "DOLBY..." are copyrighted and
 # licensed separately, as follows:
 #
-#  (C) 2012 Dolby Laboratories, Inc.
+#  (C) 2012-2014 Dolby Laboratories, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,9 +38,8 @@ ifdef DOLBY_UDC
 #ifdef DOLBY_UDC_STREAMING_HLS
   LOCAL_CFLAGS += -DDOLBY_UDC
   LOCAL_CFLAGS += -DDOLBY_UDC_STREAMING_HLS
-  LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
 #endif
-endif #DOLBY_UDC
+endif #DOLBY_END
 ifeq ($(TARGET_ARCH),arm)
     LOCAL_CFLAGS += -Wno-psabi
 endif

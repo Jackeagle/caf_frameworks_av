@@ -28,6 +28,7 @@
 #include "ASessionDescription.h"
 
 #include <ctype.h>
+#include <cutils/properties.h>
 
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
@@ -127,11 +128,20 @@ struct MyHandler : public AHandler {
           mKeepAliveTimeoutUs(kDefaultKeepAliveTimeoutUs),
           mKeepAliveGeneration(0),
           mPausing(false),
-          mPauseGeneration(0) {
+          mPauseGeneration(0),
+          mPlayResponseParsed(false) {
         mNetLooper->setName("rtsp net");
         mNetLooper->start(false /* runOnCallingThread */,
                           false /* canCallJava */,
                           PRIORITY_HIGHEST);
+
+        char value[PROPERTY_VALUE_MAX] = {0};
+        property_get("rtsp.transport.TCP", value, "false");
+        if (!strcmp(value, "true")) {
+            mTryTCPInterleaving = true;
+        } else {
+            mTryTCPInterleaving = false;
+        }
 
         // Strip any authentication info from the session url, we don't
         // want to transmit user/pass in cleartext.
@@ -711,7 +721,9 @@ struct MyHandler : public AHandler {
                             // Clear the tag
                             if (mUIDValid) {
                                 HTTPBase::UnRegisterSocketUserTag(track->mRTPSocket);
+                                HTTPBase::UnRegisterSocketUserMark(track->mRTPSocket);
                                 HTTPBase::UnRegisterSocketUserTag(track->mRTCPSocket);
+                                HTTPBase::UnRegisterSocketUserMark(track->mRTCPSocket);
                             }
 
                             close(track->mRTPSocket);
@@ -737,6 +749,7 @@ struct MyHandler : public AHandler {
                     request.append(mSessionID);
                     request.append("\r\n");
 
+                    request.append(StringPrintf("Range: npt=0-\r\n"));
                     request.append("\r\n");
 
                     sp<AMessage> reply = new AMessage('play', id());
@@ -842,7 +855,9 @@ struct MyHandler : public AHandler {
                         // Clear the tag
                         if (mUIDValid) {
                             HTTPBase::UnRegisterSocketUserTag(info->mRTPSocket);
+                            HTTPBase::UnRegisterSocketUserMark(info->mRTPSocket);
                             HTTPBase::UnRegisterSocketUserTag(info->mRTCPSocket);
+                            HTTPBase::UnRegisterSocketUserMark(info->mRTCPSocket);
                         }
 
                         close(info->mRTPSocket);
@@ -1371,6 +1386,7 @@ struct MyHandler : public AHandler {
     }
 
     void parsePlayResponse(const sp<ARTSPResponse> &response) {
+        mPlayResponseParsed = true;
         if (mTracks.size() == 0) {
             ALOGV("parsePlayResponse: late packets ignored.");
             return;
@@ -1524,6 +1540,8 @@ private:
 
     Vector<TrackInfo> mTracks;
 
+    bool mPlayResponseParsed;
+
     void setupTrack(size_t index) {
         sp<APacketSource> source =
             new APacketSource(mSessionDesc, index);
@@ -1595,6 +1613,8 @@ private:
                                                 (uint32_t)*(uint32_t*) "RTP_");
                 HTTPBase::RegisterSocketUserTag(info->mRTCPSocket, mUID,
                                                 (uint32_t)*(uint32_t*) "RTP_");
+                HTTPBase::RegisterSocketUserMark(info->mRTPSocket, mUID);
+                HTTPBase::RegisterSocketUserMark(info->mRTCPSocket, mUID);
             }
 
             request.append("Transport: RTP/AVP/UDP;unicast;client_port=");
@@ -1671,6 +1691,26 @@ private:
         return true;
     }
 
+    void handleFirstAccessUnit() {
+        if (mFirstAccessUnit) {
+            sp<AMessage> msg = mNotify->dup();
+            msg->setInt32("what", kWhatConnected);
+            msg->post();
+
+            if (mSeekable) {
+                for (size_t i = 0; i < mTracks.size(); ++i) {
+                    TrackInfo *info = &mTracks.editItemAt(i);
+
+                    postNormalPlayTimeMapping(
+                            i,
+                            info->mNormalPlayTimeRTP, info->mNormalPlayTimeUs);
+                }
+            }
+
+            mFirstAccessUnit = false;
+        }
+    }
+
     void onTimeUpdate(int32_t trackIndex, uint32_t rtpTime, uint64_t ntpTime) {
         ALOGV("onTimeUpdate track %d, rtpTime = 0x%08x, ntpTime = 0x%016llx",
              trackIndex, rtpTime, ntpTime);
@@ -1702,6 +1742,8 @@ private:
             }
         }
         if (mAllTracksHaveTime && dataReceivedOnAllChannels()) {
+            handleFirstAccessUnit();
+
             // Time is now established, lets start timestamping immediately
             for (size_t i = 0; i < mTracks.size(); ++i) {
                 TrackInfo *trackInfo = &mTracks.editItemAt(i);
@@ -1728,23 +1770,14 @@ private:
             int32_t trackIndex, const sp<ABuffer> &accessUnit) {
         ALOGV("onAccessUnitComplete track %d", trackIndex);
 
-        if (mFirstAccessUnit) {
-            sp<AMessage> msg = mNotify->dup();
-            msg->setInt32("what", kWhatConnected);
-            msg->post();
-
-            if (mSeekable) {
-                for (size_t i = 0; i < mTracks.size(); ++i) {
-                    TrackInfo *info = &mTracks.editItemAt(i);
-
-                    postNormalPlayTimeMapping(
-                            i,
-                            info->mNormalPlayTimeRTP, info->mNormalPlayTimeUs);
-                }
-            }
-
-            mFirstAccessUnit = false;
+        if(!mPlayResponseParsed){
+            ALOGI("play response is not parsed, storing accessunit");
+            TrackInfo *track = &mTracks.editItemAt(trackIndex);
+            track->mPackets.push_back(accessUnit);
+            return;
         }
+
+        handleFirstAccessUnit();
 
         TrackInfo *track = &mTracks.editItemAt(trackIndex);
 

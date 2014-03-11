@@ -399,9 +399,6 @@ void SoftAAC2::onQueueFilled(OMX_U32 portIndex) {
             }
 
             outHeader->nFlags = OMX_BUFFERFLAG_EOS;
-            outHeader->nTimeStamp =
-                mAnchorTimeUs
-                    + (mNumSamplesOutput * 1000000ll) / mStreamInfo->sampleRate;
 
             outQueue.erase(outQueue.begin());
             outInfo->mOwnedByUs = false;
@@ -611,6 +608,9 @@ void SoftAAC2::onReset() {
     // To make the codec behave the same before and after a reset, we need to invalidate the
     // streaminfo struct. This does that:
     mStreamInfo->sampleRate = 0;
+
+    mSignalledError = false;
+    mOutputPortSettingsChange = NONE;
 }
 
 void SoftAAC2::onPortEnableCompleted(OMX_U32 portIndex, bool enabled) {

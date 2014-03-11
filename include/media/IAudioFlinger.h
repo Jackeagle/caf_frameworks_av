@@ -1,7 +1,5 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
- * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +24,6 @@
 #include <utils/RefBase.h>
 #include <utils/Errors.h>
 #include <binder/IInterface.h>
-#include <media/IDirectTrack.h>
-#include <media/IDirectTrackClient.h>
 #include <media/IAudioTrack.h>
 #include <media/IAudioRecord.h>
 #include <media/IAudioFlingerClient.h>
@@ -53,8 +49,12 @@ public:
         TRACK_DEFAULT = 0,  // client requests a default AudioTrack
         TRACK_TIMED   = 1,  // client requests a TimedAudioTrack
         TRACK_FAST    = 2,  // client requests a fast AudioTrack or AudioRecord
+        TRACK_OFFLOAD = 4,  // client requests offload to hw codec
     };
     typedef uint32_t track_flags_t;
+
+    // invariant on exit for all APIs that return an sp<>:
+    //   (return value != 0) == (*status == NO_ERROR)
 
     /* create an audio track and registers it with AudioFlinger.
      * return null if the track cannot be created.
@@ -70,19 +70,11 @@ public:
                                 audio_io_handle_t output,
                                 pid_t tid,  // -1 means unused, otherwise must be valid non-0
                                 int *sessionId,
-                                status_t *status) = 0;
-
-    /* create a direct audio track and registers it with AudioFlinger.
-     * return null if the track cannot be created.
-     */
-    virtual sp<IDirectTrack> createDirectTrack(
-                                pid_t pid,
-                                uint32_t sampleRate,
-                                audio_channel_mask_t channelMask,
-                                audio_io_handle_t output,
-                                int *sessionId,
-                                IDirectTrackClient* client,
-                                audio_stream_type_t streamType,
+                                // input: ignored
+                                // output: server's description of IAudioTrack for display in logs.
+                                // Don't attempt to parse, as the format could change.
+                                String8& name,
+                                int clientUid,
                                 status_t *status) = 0;
 
     virtual sp<IAudioRecord> openRecord(
@@ -91,7 +83,7 @@ public:
                                 audio_format_t format,
                                 audio_channel_mask_t channelMask,
                                 size_t frameCount,
-                                track_flags_t flags,
+                                track_flags_t *flags,
                                 pid_t tid,  // -1 means unused, otherwise must be valid non-0
                                 int *sessionId,
                                 status_t *status) = 0;
@@ -141,7 +133,9 @@ public:
     virtual     String8     getParameters(audio_io_handle_t ioHandle, const String8& keys)
                                     const = 0;
 
-    // register a current process for audio output change notifications
+    // Register an object to receive audio input/output change and track notifications.
+    // For a given calling pid, AudioFlinger disregards any registrations after the first.
+    // Thus the IAudioFlingerClient must be a singleton per process.
     virtual void registerClient(const sp<IAudioFlingerClient>& client) = 0;
 
     // retrieve the audio recording buffer size
@@ -154,7 +148,8 @@ public:
                                          audio_format_t *pFormat,
                                          audio_channel_mask_t *pChannelMask,
                                          uint32_t *pLatencyMs,
-                                         audio_output_flags_t flags) = 0;
+                                         audio_output_flags_t flags,
+                                         const audio_offload_info_t *offloadInfo = NULL) = 0;
     virtual audio_io_handle_t openDuplicateOutput(audio_io_handle_t output1,
                                     audio_io_handle_t output2) = 0;
     virtual status_t closeOutput(audio_io_handle_t output) = 0;
@@ -210,6 +205,10 @@ public:
     virtual uint32_t getPrimaryOutputSamplingRate() = 0;
     virtual size_t getPrimaryOutputFrameCount() = 0;
 
+    // Intended for AudioService to inform AudioFlinger of device's low RAM attribute,
+    // and should be called at most once.  For a definition of what "low RAM" means, see
+    // android.app.ActivityManager.isLowRamDevice().
+    virtual status_t setLowRamDevice(bool isLowRamDevice) = 0;
 };
 
 

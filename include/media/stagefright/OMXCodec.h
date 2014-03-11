@@ -63,13 +63,6 @@ struct OMXCodec : public MediaSource,
 
         // Secure decoding mode
         kUseSecureInputBuffers = 256,
-
-        // Flag added to tell codec that playback is LPA/ULL. This is to ignore
-        // setting the usecase as it will be already set from Player.
-        kInLPAMode = 32768,
-        kULL = 65536,
-        kInTunnelMode = 131072
-
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
@@ -92,8 +85,6 @@ struct OMXCodec : public MediaSource,
             MediaBuffer **buffer, const ReadOptions *options = NULL);
 
     virtual status_t pause();
-
-    virtual status_t updateConcurrencyParam(bool pauseflag);
 
     // from MediaBufferObserver
     virtual void signalBufferReturned(MediaBuffer *buffer);
@@ -187,6 +178,7 @@ private:
         size_t mSize;
         void *mData;
         MediaBuffer *mMediaBuffer;
+        bool mOutputCropChanged;
     };
 
     struct CodecSpecificData {
@@ -233,9 +225,6 @@ private:
     Condition mAsyncCompletion;
 
     bool mPaused;
-
-    String8 mUseCase;
-    bool mUseCaseFlag;
 
     sp<ANativeWindow> mNativeWindow;
 
@@ -369,6 +358,7 @@ private:
     status_t applyRotation();
     status_t waitForBufferFilled_l();
 
+    status_t resumeLocked(bool drainInputBuf);
     int64_t getDecodingTimeUs();
 
     status_t parseAVCCodecSpecificData(
@@ -379,17 +369,26 @@ private:
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
-    status_t setWMAFormat(const sp<MetaData> &inputFormat);
-    void setAC3Format(int32_t numChannels, int32_t sampleRate);
+    bool hasDisabledPorts();
 
-    bool mNumBFrames;
+    int32_t mNumBFrames;
     bool mInSmoothStreamingMode;
+    bool mOutputCropChanged;
+    bool mSignalledReadTryAgain;
+    bool mReturnedRetry;
+    int64_t mLastSeekTimeUs;
+    ReadOptions::SeekMode mLastSeekMode;
 };
 
 struct CodecCapabilities {
+    enum {
+        kFlagSupportsAdaptivePlayback = 1 << 0,
+    };
+
     String8 mComponentName;
     Vector<CodecProfileLevel> mProfileLevels;
     Vector<OMX_U32> mColorFormats;
+    uint32_t mFlags;
 };
 
 // Return a vector of componentNames with supported profile/level pairs

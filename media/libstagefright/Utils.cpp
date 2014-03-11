@@ -26,8 +26,17 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MetaData.h>
+#include <media/stagefright/MediaDefs.h>
+#include <media/AudioSystem.h>
+#include <media/MediaPlayerInterface.h>
+#include <hardware/audio.h>
 #include <media/stagefright/Utils.h>
+#include <media/AudioParameter.h>
 #include <media/stagefright/ExtendedCodec.h>
+
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include "QCMediaDefs.h"
+#endif
 
 namespace android {
 
@@ -440,6 +449,11 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
                 char avcc[1024]; // that oughta be enough, right?
                 size_t outsize = reassembleAVCC(csd0, csd1, avcc);
                 meta->setData(kKeyAVCC, kKeyAVCC, avcc, outsize);
+            } else {
+                int csd0size = csd0->size();
+                char esds[csd0size + 31];
+                reassembleESDS(csd0, esds);
+                meta->setData(kKeyESDS, kKeyESDS, esds, sizeof(esds));
             }
         } else if (mime.startsWith("audio/")) {
             int csd0size = csd0->size();
@@ -471,6 +485,158 @@ AString MakeUserAgent() {
     ua.append(")");
 
     return ua;
+}
+
+status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
+                           const sp<MetaData>& meta)
+{
+    int32_t sampleRate = 0;
+    int32_t bitRate = 0;
+    int32_t channelMask = 0;
+    int32_t delaySamples = 0;
+    int32_t paddingSamples = 0;
+    int32_t isADTS = 0;
+
+    AudioParameter param = AudioParameter();
+
+    if (meta->findInt32(kKeySampleRate, &sampleRate)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_SAMPLE_RATE), sampleRate);
+    }
+    if (meta->findInt32(kKeyChannelMask, &channelMask)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_NUM_CHANNEL), channelMask);
+    }
+    if (meta->findInt32(kKeyBitRate, &bitRate)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_AVG_BIT_RATE), bitRate);
+    }
+    if (meta->findInt32(kKeyEncoderDelay, &delaySamples)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_DELAY_SAMPLES), delaySamples);
+    }
+    if (meta->findInt32(kKeyEncoderPadding, &paddingSamples)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_PADDING_SAMPLES), paddingSamples);
+    }
+    if (meta->findInt32(kKeyIsADTS, &isADTS)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FORMAT), 0x02 /*SND_AUDIOSTREAMFORMAT_MP4ADTS*/);
+    }
+
+    ALOGV("sendMetaDataToHal: bitRate %d, sampleRate %d, chanMask %d,"
+          "delaySample %d, paddingSample %d", bitRate, sampleRate,
+          channelMask, delaySamples, paddingSamples);
+
+    sink->setParameters(param.toString());
+    return OK;
+}
+
+struct mime_conv_t {
+    const char* mime;
+    audio_format_t format;
+};
+
+static const struct mime_conv_t mimeLookup[] = {
+    { MEDIA_MIMETYPE_AUDIO_MPEG,        AUDIO_FORMAT_MP3 },
+    { MEDIA_MIMETYPE_AUDIO_RAW,         AUDIO_FORMAT_PCM_16_BIT },
+    { MEDIA_MIMETYPE_AUDIO_AMR_NB,      AUDIO_FORMAT_AMR_NB },
+    { MEDIA_MIMETYPE_AUDIO_AMR_WB,      AUDIO_FORMAT_AMR_WB },
+    { MEDIA_MIMETYPE_AUDIO_AAC,         AUDIO_FORMAT_AAC },
+    { MEDIA_MIMETYPE_AUDIO_VORBIS,      AUDIO_FORMAT_VORBIS },
+#ifdef ENABLE_AV_ENHANCEMENTS
+    { MEDIA_MIMETYPE_AUDIO_AC3,         AUDIO_FORMAT_AC3 },
+    { MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS, AUDIO_FORMAT_AMR_WB_PLUS },
+    { MEDIA_MIMETYPE_AUDIO_DTS,         AUDIO_FORMAT_DTS },
+    { MEDIA_MIMETYPE_AUDIO_EAC3,        AUDIO_FORMAT_EAC3 },
+    { MEDIA_MIMETYPE_AUDIO_EVRC,        AUDIO_FORMAT_EVRC },
+    { MEDIA_MIMETYPE_AUDIO_QCELP,       AUDIO_FORMAT_QCELP },
+    { MEDIA_MIMETYPE_AUDIO_WMA,         AUDIO_FORMAT_WMA },
+#endif
+    { 0, AUDIO_FORMAT_INVALID }
+};
+
+status_t mapMimeToAudioFormat( audio_format_t& format, const char* mime )
+{
+const struct mime_conv_t* p = &mimeLookup[0];
+    while (p->mime != NULL) {
+        if (0 == strcasecmp(mime, p->mime)) {
+            format = p->format;
+            return OK;
+        }
+        ++p;
+    }
+
+    return BAD_VALUE;
+}
+
+bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
+                      bool isStreaming, audio_stream_type_t streamType)
+{
+    const char *mime;
+    CHECK(meta->findCString(kKeyMIMEType, &mime));
+
+    audio_offload_info_t info = AUDIO_INFO_INITIALIZER;
+
+    info.format = AUDIO_FORMAT_INVALID;
+    if (mapMimeToAudioFormat(info.format, mime) != OK) {
+        ALOGE(" Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format !", mime);
+        return false;
+    } else {
+        ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
+    }
+
+    if (AUDIO_FORMAT_INVALID == info.format) {
+        // can't offload if we don't know what the source format is
+        ALOGE("mime type \"%s\" not a known audio format", mime);
+        return false;
+    }
+
+    // check whether it is ELD/LD/main content -> no offloading
+    // FIXME: this should depend on audio DSP capabilities. mapMimeToAudioFormat() should use the
+    // metadata to refine the AAC format and the audio HAL should only list supported profiles.
+    int32_t aacaot = -1;
+    if (meta->findInt32(kKeyAACAOT, &aacaot)) {
+        if (aacaot == 23 || aacaot == 39 || aacaot == 1) {
+            ALOGV("track of type '%s' is ELD/LD/main content", mime);
+            return false;
+        }
+    }
+
+    int32_t srate = -1;
+    if (!meta->findInt32(kKeySampleRate, &srate)) {
+        ALOGV("track of type '%s' does not publish sample rate", mime);
+    }
+    info.sample_rate = srate;
+
+    int32_t cmask = 0;
+    if (!meta->findInt32(kKeyChannelMask, &cmask)) {
+        ALOGV("track of type '%s' does not publish channel mask", mime);
+
+        // Try a channel count instead
+        int32_t channelCount;
+        if (!meta->findInt32(kKeyChannelCount, &channelCount)) {
+            ALOGV("track of type '%s' does not publish channel count", mime);
+        } else {
+            cmask = audio_channel_out_mask_from_count(channelCount);
+        }
+    }
+    info.channel_mask = cmask;
+
+    int64_t duration = 0;
+    if (!meta->findInt64(kKeyDuration, &duration)) {
+        ALOGV("track of type '%s' does not publish duration", mime);
+    }
+    info.duration_us = duration;
+
+    int32_t brate = -1;
+    if (!meta->findInt32(kKeyBitRate, &brate)) {
+        ALOGV("track of type '%s' does not publish bitrate", mime);
+     }
+    info.bit_rate = brate;
+
+
+    info.stream_type = streamType;
+    info.has_video = hasVideo;
+    info.is_streaming = isStreaming;
+
+    // Check if offload is possible for given format, stream type, sample rate,
+    // bit rate, duration, video and streaming
+    return AudioSystem::isOffloadSupported(info);
 }
 
 }  // namespace android

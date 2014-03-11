@@ -17,7 +17,7 @@
  * code that are surrounded by "DOLBY..." are copyrighted and
  * licensed separately, as follows:
  *
- *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *  (C) 2011-2014 Dolby Laboratories, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -527,17 +527,15 @@ ATSParser::Stream::Stream(
 
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
         case STREAMTYPE_DDP_AC3_AUDIO:
-            // TODO FIXME verify!
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::DDP_AC3_AUDIO);
             break;
 
-        case STREAMTYPE_DDP_EAC3_AUDIO:
-            // TODO FIXME verify!
+        case STREAMTYPE_DDP_EC3_AUDIO:
             mQueue = new ElementaryStreamQueue(
-                    ElementaryStreamQueue::DDP_EAC3_AUDIO);
+                    ElementaryStreamQueue::DDP_EC3_AUDIO);
             break;
-#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
+#endif // DOLBY_END
         default:
             break;
     }
@@ -648,8 +646,8 @@ bool ATSParser::Stream::isAudio() const {
         case STREAMTYPE_PCM_AUDIO:
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
         case STREAMTYPE_DDP_AC3_AUDIO:
-        case STREAMTYPE_DDP_EAC3_AUDIO:
-#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
+        case STREAMTYPE_DDP_EC3_AUDIO:
+#endif // DOLBY_END
             return true;
 
         default:
@@ -1229,7 +1227,10 @@ status_t ATSParser::parseTS(ABitReader *br) {
     unsigned sync_byte = br->getBits(8);
     CHECK_EQ(sync_byte, 0x47u);
 
-    MY_LOGV("transport_error_indicator = %u", br->getBits(1));
+    if (br->getBits(1)) {  // transport_error_indicator
+        // silently ignore.
+        return OK;
+    }
 
     unsigned payload_unit_start_indicator = br->getBits(1);
     ALOGV("payload_unit_start_indicator = %u", payload_unit_start_indicator);

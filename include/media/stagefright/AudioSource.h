@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
  * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +25,7 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <utils/List.h>
+#include <utils/String8.h>
 
 #include <system/audio.h>
 
@@ -74,7 +76,7 @@ private:
     Condition mFrameAvailableCondition;
     Condition mFrameEncodingCompletionCondition;
 
-    AudioRecord *mRecord;
+    sp<AudioRecord> mRecord;
     status_t mInitCheck;
     bool mStarted;
     int32_t mSampleRate;
@@ -86,7 +88,6 @@ private:
     int64_t mInitialReadTimeUs;
     int64_t mNumFramesReceived;
     int64_t mNumClientOwnedBuffers;
-    int64_t mAutoRampStartUs;
 
     List<MediaBuffer * > mBuffersReceived;
 
@@ -115,7 +116,6 @@ private:
     audio_format_t mFormat;
     String8 mMime;
     int32_t mMaxBufferSize;
-    int64_t bufferDurationUs( ssize_t n );
 };
 
 }  // namespace android

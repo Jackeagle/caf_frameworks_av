@@ -1,5 +1,7 @@
 /*
  * Copyright 2012, The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +29,7 @@
 #include <utils/threads.h>
 
 #include <libexpat/expat.h>
-#include "include/QCUtils.h"
+#include "include/ExtendedUtils.h"
 
 namespace android {
 
@@ -66,11 +68,12 @@ MediaCodecList::MediaCodecList()
         addMediaCodec(
                 false /* encoder */, "OMX.google.raw.decoder", "audio/raw");
 
-        Vector<AString> QcomAACQuirks;
-        QcomAACQuirks.push(AString("requires-allocate-on-input-ports"));
-        QcomAACQuirks.push(AString("requires-allocate-on-output-ports"));
-        QCUtils::helper_addMediaCodec(mCodecInfos, mTypes, false, "OMX.qcom.audio.decoder.multiaac",
-            "audio/mp4a-latm", QCUtils::helper_getCodecSpecificQuirks(mCodecQuirks, QcomAACQuirks));
+        Vector<AString> HWAACQuirks;
+        HWAACQuirks.push(AString("requires-allocate-on-input-ports"));
+        HWAACQuirks.push(AString("requires-allocate-on-output-ports"));
+        ExtendedUtils::helper_addMediaCodec(mCodecInfos, mTypes, false,
+            "OMX.qcom.audio.decoder.multiaac", "audio/mp4a-latm",
+            ExtendedUtils::helper_getCodecSpecificQuirks(mCodecQuirks, HWAACQuirks));
     }
 
 #if 0
@@ -516,7 +519,8 @@ status_t MediaCodecList::getSupportedTypes(
 status_t MediaCodecList::getCodecCapabilities(
         size_t index, const char *type,
         Vector<ProfileLevel> *profileLevels,
-        Vector<uint32_t> *colorFormats) const {
+        Vector<uint32_t> *colorFormats,
+        uint32_t *flags) const {
     profileLevels->clear();
     colorFormats->clear();
 
@@ -553,6 +557,8 @@ status_t MediaCodecList::getCodecCapabilities(
     for (size_t i = 0; i < caps.mColorFormats.size(); ++i) {
         colorFormats->push(caps.mColorFormats.itemAt(i));
     }
+
+    *flags = caps.mFlags;
 
     return OK;
 }

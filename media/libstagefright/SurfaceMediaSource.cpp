@@ -21,7 +21,7 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaData.h>
 #include <OMX_IVCommon.h>
-#include <MetadataBufferType.h>
+#include <media/hardware/MetadataBufferType.h>
 
 #include <ui/GraphicBuffer.h>
 #include <gui/ISurfaceComposer.h>
@@ -47,16 +47,16 @@ SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeig
     mNumFramesEncoded(0),
     mFirstFrameTimestamp(0),
     mMaxAcquiredBufferCount(4),  // XXX double-check the default
-    mUseAbsoluteTimestamps(false) {
+    mUseAbsoluteTimestamps(false),
+    mBuffersReleased(false) {
     ALOGV("SurfaceMediaSource");
 
     if (bufferWidth == 0 || bufferHeight == 0) {
         ALOGE("Invalid dimensions %dx%d", bufferWidth, bufferHeight);
     }
 
-    mBufferQueue = new BufferQueue(true);
+    mBufferQueue = new BufferQueue();
     mBufferQueue->setDefaultBufferSize(bufferWidth, bufferHeight);
-    mBufferQueue->setSynchronousMode(true);
     mBufferQueue->setConsumerUsageBits(GRALLOC_USAGE_HW_VIDEO_ENCODER |
             GRALLOC_USAGE_HW_TEXTURE);
 
@@ -66,12 +66,10 @@ SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeig
     // reference once the ctor ends, as that would cause the refcount of 'this'
     // dropping to 0 at the end of the ctor.  Since all we need is a wp<...>
     // that's what we create.
-    wp<BufferQueue::ConsumerListener> listener;
-    sp<BufferQueue::ConsumerListener> proxy;
-    listener = static_cast<BufferQueue::ConsumerListener*>(this);
-    proxy = new BufferQueue::ProxyConsumerListener(listener);
+    wp<ConsumerListener> listener = static_cast<ConsumerListener*>(this);
+    sp<BufferQueue::ProxyConsumerListener> proxy = new BufferQueue::ProxyConsumerListener(listener);
 
-    status_t err = mBufferQueue->consumerConnect(proxy);
+    status_t err = mBufferQueue->consumerConnect(proxy, false);
     if (err != NO_ERROR) {
         ALOGE("SurfaceMediaSource: error connecting to BufferQueue: %s (%d)",
                 strerror(-err), err);
@@ -108,7 +106,7 @@ void SurfaceMediaSource::dump(String8& result, const char* prefix,
     Mutex::Autolock lock(mMutex);
 
     result.append(buffer);
-    mBufferQueue->dump(result);
+    mBufferQueue->dump(result, "");
 }
 
 status_t SurfaceMediaSource::setFrameRate(int32_t fps)
@@ -141,6 +139,7 @@ status_t SurfaceMediaSource::start(MetaData *params)
     Mutex::Autolock lock(mMutex);
 
     CHECK(!mStarted);
+    mBuffersReleased = false;
 
     mStartTimeNs = 0;
     int64_t startTimeUs;
@@ -291,9 +290,9 @@ status_t SurfaceMediaSource::read( MediaBuffer **buffer,
     BufferQueue::BufferItem item;
     // If the recording has started and the queue is empty, then just
     // wait here till the frames come in from the client side
-    while (mStarted) {
+    while (mStarted && !mBuffersReleased) {
 
-        status_t err = mBufferQueue->acquireBuffer(&item);
+        status_t err = mBufferQueue->acquireBuffer(&item, 0);
         if (err == BufferQueue::NO_BUFFER_AVAILABLE) {
             // wait for a buffer to be queued
             mFrameAvailableCondition.wait(mMutex);
@@ -305,8 +304,9 @@ status_t SurfaceMediaSource::read( MediaBuffer **buffer,
 
             // First time seeing the buffer?  Added it to the SMS slot
             if (item.mGraphicBuffer != NULL) {
-                mBufferSlot[item.mBuf] = item.mGraphicBuffer;
+                mSlots[item.mBuf].mGraphicBuffer = item.mGraphicBuffer;
             }
+            mSlots[item.mBuf].mFrameNumber = item.mFrameNumber;
 
             // check for the timing of this buffer
             if (mNumFramesReceived == 0 && !mUseAbsoluteTimestamps) {
@@ -315,7 +315,8 @@ status_t SurfaceMediaSource::read( MediaBuffer **buffer,
                 if (mStartTimeNs > 0) {
                     if (item.mTimestamp < mStartTimeNs) {
                         // This frame predates start of record, discard
-                        mBufferQueue->releaseBuffer(item.mBuf, EGL_NO_DISPLAY,
+                        mBufferQueue->releaseBuffer(
+                                item.mBuf, item.mFrameNumber, EGL_NO_DISPLAY,
                                 EGL_NO_SYNC_KHR, Fence::NO_FENCE);
                         continue;
                     }
@@ -336,7 +337,7 @@ status_t SurfaceMediaSource::read( MediaBuffer **buffer,
 
     // If the loop was exited as a result of stopping the recording,
     // it is OK
-    if (!mStarted) {
+    if (!mStarted || mBuffersReleased) {
         ALOGV("Read: SurfaceMediaSource is stopped. Returning ERROR_END_OF_STREAM.");
         return ERROR_END_OF_STREAM;
     }
@@ -345,17 +346,18 @@ status_t SurfaceMediaSource::read( MediaBuffer **buffer,
 
     // First time seeing the buffer?  Added it to the SMS slot
     if (item.mGraphicBuffer != NULL) {
-        mBufferSlot[mCurrentSlot] = item.mGraphicBuffer;
+        mSlots[item.mBuf].mGraphicBuffer = item.mGraphicBuffer;
     }
+    mSlots[item.mBuf].mFrameNumber = item.mFrameNumber;
 
-    mCurrentBuffers.push_back(mBufferSlot[mCurrentSlot]);
+    mCurrentBuffers.push_back(mSlots[mCurrentSlot].mGraphicBuffer);
     int64_t prevTimeStamp = mCurrentTimestamp;
     mCurrentTimestamp = item.mTimestamp;
 
     mNumFramesEncoded++;
     // Pass the data to the MediaBuffer. Pass in only the metadata
 
-    passMetadataBuffer(buffer, mBufferSlot[mCurrentSlot]->handle);
+    passMetadataBuffer(buffer, mSlots[mCurrentSlot].mGraphicBuffer->handle);
 
     (*buffer)->setObserver(this);
     (*buffer)->add_ref();
@@ -405,15 +407,16 @@ void SurfaceMediaSource::signalBufferReturned(MediaBuffer *buffer) {
     }
 
     for (int id = 0; id < BufferQueue::NUM_BUFFER_SLOTS; id++) {
-        if (mBufferSlot[id] == NULL) {
+        if (mSlots[id].mGraphicBuffer == NULL) {
             continue;
         }
 
-        if (bufferHandle == mBufferSlot[id]->handle) {
+        if (bufferHandle == mSlots[id].mGraphicBuffer->handle) {
             ALOGV("Slot %d returned, matches handle = %p", id,
-                    mBufferSlot[id]->handle);
+                    mSlots[id].mGraphicBuffer->handle);
 
-            mBufferQueue->releaseBuffer(id, EGL_NO_DISPLAY, EGL_NO_SYNC_KHR,
+            mBufferQueue->releaseBuffer(id, mSlots[id].mFrameNumber,
+                                        EGL_NO_DISPLAY, EGL_NO_SYNC_KHR,
                     Fence::NO_FENCE);
 
             buffer->setObserver(0);
@@ -466,10 +469,11 @@ void SurfaceMediaSource::onBuffersReleased() {
 
     Mutex::Autolock lock(mMutex);
 
+    mBuffersReleased = true;
     mFrameAvailableCondition.signal();
 
     for (int i = 0; i < BufferQueue::NUM_BUFFER_SLOTS; i++) {
-       mBufferSlot[i] = 0;
+       mSlots[i].mGraphicBuffer = 0;
     }
 }
 

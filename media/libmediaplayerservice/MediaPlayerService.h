@@ -1,8 +1,5 @@
 /*
 **
-** Copyright (c) 2013, The Linux Foundation. All rights reserved.
-** Not a Contribution.
-**
 ** Copyright 2008, The Android Open Source Project
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,15 +20,12 @@
 
 #include <arpa/inet.h>
 
-#include <utils/Log.h>
 #include <utils/threads.h>
-#include <utils/List.h>
 #include <utils/Errors.h>
 #include <utils/KeyedVector.h>
 #include <utils/String8.h>
 #include <utils/Vector.h>
 
-#include <media/IMediaPlayerService.h>
 #include <media/MediaPlayerInterface.h>
 #include <media/Metadata.h>
 #include <media/stagefright/foundation/ABase.h>
@@ -78,17 +72,16 @@ class MediaPlayerService : public BnMediaPlayerService
         class CallbackData;
 
      public:
-                                AudioOutput(int sessionId);
+                                AudioOutput(int sessionId, int uid);
         virtual                 ~AudioOutput();
 
-        virtual bool            ready() const { return mTrack != NULL; }
+        virtual bool            ready() const { return mTrack != 0; }
         virtual bool            realtime() const { return true; }
         virtual ssize_t         bufferSize() const;
         virtual ssize_t         frameCount() const;
         virtual ssize_t         channelCount() const;
         virtual ssize_t         frameSize() const;
         virtual uint32_t        latency() const;
-        virtual audio_stream_type_t streamType() const;
         virtual float           msecsPerFrame() const;
         virtual status_t        getPosition(uint32_t *position) const;
         virtual status_t        getFramesWritten(uint32_t *frameswritten) const;
@@ -98,15 +91,19 @@ class MediaPlayerService : public BnMediaPlayerService
                 uint32_t sampleRate, int channelCount, audio_channel_mask_t channelMask,
                 audio_format_t format, int bufferCount,
                 AudioCallback cb, void *cookie,
-                audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE);
+                audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE,
+                const audio_offload_info_t *offloadInfo = NULL);
 
-        virtual void            start();
+        virtual status_t        start();
         virtual ssize_t         write(const void* buffer, size_t size);
         virtual void            stop();
         virtual void            flush();
         virtual void            pause();
         virtual void            close();
-                void            setAudioStreamType(audio_stream_type_t streamType) { mStreamType = streamType; }
+                void            setAudioStreamType(audio_stream_type_t streamType) {
+                                                                        mStreamType = streamType; }
+        virtual audio_stream_type_t getAudioStreamType() const { return mStreamType; }
+
                 void            setVolume(float left, float right);
         virtual status_t        setPlaybackRatePermille(int32_t ratePermille);
                 status_t        setAuxEffectSendLevel(float level);
@@ -118,16 +115,17 @@ class MediaPlayerService : public BnMediaPlayerService
                 void            setNextOutput(const sp<AudioOutput>& nextOutput);
                 void            switchToNextOutput();
         virtual bool            needsTrailingPadding() { return mNextOutput == NULL; }
-        virtual ssize_t         sampleRate() const;
-        virtual status_t        getTimeStamp(uint64_t *tstamp);
+        virtual status_t        setParameters(const String8& keyValuePairs);
+        virtual String8         getParameters(const String8& keys);
 
     private:
         static void             setMinBufferCount();
         static void             CallbackWrapper(
                 int event, void *me, void *info);
+               void             deleteRecycledTrack();
 
-        AudioTrack*             mTrack;
-        AudioTrack*             mRecycledTrack;
+        sp<AudioTrack>          mTrack;
+        sp<AudioTrack>          mRecycledTrack;
         sp<AudioOutput>         mNextOutput;
         AudioCallback           mCallback;
         void *                  mCallbackCookie;
@@ -140,6 +138,7 @@ class MediaPlayerService : public BnMediaPlayerService
         uint32_t                mSampleRateHz; // sample rate of the content, as set in open()
         float                   mMsecsPerFrame;
         int                     mSessionId;
+        int                     mUid;
         float                   mSendLevel;
         int                     mAuxEffectId;
         static bool             mIsOnEmulator;
@@ -182,7 +181,7 @@ class MediaPlayerService : public BnMediaPlayerService
     class AudioCache : public MediaPlayerBase::AudioSink
     {
     public:
-                                AudioCache(const char* name);
+                                AudioCache(const sp<IMemoryHeap>& heap);
         virtual                 ~AudioCache() {}
 
         virtual bool            ready() const { return (mChannelCount > 0) && (mHeap->getHeapID() > 0); }
@@ -201,17 +200,22 @@ class MediaPlayerService : public BnMediaPlayerService
                 uint32_t sampleRate, int channelCount, audio_channel_mask_t channelMask,
                 audio_format_t format, int bufferCount = 1,
                 AudioCallback cb = NULL, void *cookie = NULL,
-                audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE);
+                audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE,
+                const audio_offload_info_t *offloadInfo = NULL);
 
-        virtual void            start();
+        virtual status_t        start();
         virtual ssize_t         write(const void* buffer, size_t size);
         virtual void            stop();
         virtual void            flush() {}
         virtual void            pause() {}
         virtual void            close() {}
                 void            setAudioStreamType(audio_stream_type_t streamType) {}
+                // stream type is not used for AudioCache
+        virtual audio_stream_type_t getAudioStreamType() const { return AUDIO_STREAM_DEFAULT; }
+
                 void            setVolume(float left, float right) {}
         virtual status_t        setPlaybackRatePermille(int32_t ratePermille) { return INVALID_OPERATION; }
+                uint32_t        sampleRate() const { return mSampleRate; }
                 audio_format_t  format() const { return mFormat; }
                 size_t          size() const { return mSize; }
                 status_t        wait();
@@ -221,14 +225,13 @@ class MediaPlayerService : public BnMediaPlayerService
         static  void            notify(void* cookie, int msg,
                                        int ext1, int ext2, const Parcel *obj);
         virtual status_t        dump(int fd, const Vector<String16>& args) const;
-        virtual ssize_t         sampleRate() const;
 
     private:
                                 AudioCache();
 
         Mutex               mLock;
         Condition           mSignal;
-        sp<MemoryHeapBase>  mHeap;
+        sp<IMemoryHeap>     mHeap;
         float               mMsecsPerFrame;
         uint16_t            mChannelCount;
         audio_format_t      mFormat;
@@ -251,8 +254,13 @@ public:
 
     virtual sp<IMediaPlayer>    create(const sp<IMediaPlayerClient>& client, int audioSessionId);
 
-    virtual sp<IMemory>         decode(const char* url, uint32_t *pSampleRate, int* pNumChannels, audio_format_t* pFormat);
-    virtual sp<IMemory>         decode(int fd, int64_t offset, int64_t length, uint32_t *pSampleRate, int* pNumChannels, audio_format_t* pFormat);
+    virtual status_t            decode(const char* url, uint32_t *pSampleRate, int* pNumChannels,
+                                       audio_format_t* pFormat,
+                                       const sp<IMemoryHeap>& heap, size_t *pSize);
+    virtual status_t            decode(int fd, int64_t offset, int64_t length,
+                                       uint32_t *pSampleRate, int* pNumChannels,
+                                       audio_format_t* pFormat,
+                                       const sp<IMemoryHeap>& heap, size_t *pSize);
     virtual sp<IOMX>            getOMX();
     virtual sp<ICrypto>         makeCrypto();
     virtual sp<IDrm>            makeDrm();

@@ -50,6 +50,8 @@ NuPlayer::Renderer::Renderer(
       mSyncQueues(false),
       mPaused(false),
       mVideoRenderingStarted(false),
+      mVideoRenderingStartGeneration(0),
+      mAudioRenderingStartGeneration(0),
       mLastPositionUpdateUs(-1ll),
       mVideoLateByUs(0ll) {
 }
@@ -95,11 +97,11 @@ void NuPlayer::Renderer::flush(bool audio) {
 }
 
 void NuPlayer::Renderer::signalTimeDiscontinuity() {
-    CHECK(mAudioQueue.empty());
-    CHECK(mVideoQueue.empty());
+    // CHECK(mAudioQueue.empty());
+    // CHECK(mVideoQueue.empty());
     mAnchorTimeMediaUs = -1;
     mAnchorTimeRealUs = -1;
-    mSyncQueues = mHasAudio && mHasVideo;
+    mSyncQueues = false;
 }
 
 void NuPlayer::Renderer::pause() {
@@ -220,6 +222,23 @@ void NuPlayer::Renderer::signalAudioSinkChanged() {
     (new AMessage(kWhatAudioSinkChanged, id()))->post();
 }
 
+void NuPlayer::Renderer::prepareForMediaRenderingStart() {
+    mAudioRenderingStartGeneration = mAudioQueueGeneration;
+    mVideoRenderingStartGeneration = mVideoQueueGeneration;
+}
+
+void NuPlayer::Renderer::notifyIfMediaRenderingStarted() {
+    if (mVideoRenderingStartGeneration == mVideoQueueGeneration &&
+        mAudioRenderingStartGeneration == mAudioQueueGeneration) {
+        mVideoRenderingStartGeneration = -1;
+        mAudioRenderingStartGeneration = -1;
+
+        sp<AMessage> notify = mNotify->dup();
+        notify->setInt32("what", kWhatMediaRenderingStart);
+        notify->post();
+    }
+}
+
 bool NuPlayer::Renderer::onDrainAudioQueue() {
     uint32_t numFramesPlayed;
     if (mAudioSink->getPosition(&numFramesPlayed) != OK) {
@@ -299,6 +318,8 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
         numBytesAvailableToWrite -= copy;
         size_t copiedFrames = copy / mAudioSink->frameSize();
         mNumFramesWritten += copiedFrames;
+
+        notifyIfMediaRenderingStarted();
     }
 
     notifyPosition();
@@ -376,10 +397,10 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
     }
 
     int64_t realTimeUs;
+    int64_t mediaTimeUs;
     if (mFlags & FLAG_REAL_TIME) {
         CHECK(entry->mBuffer->meta()->findInt64("timeUs", &realTimeUs));
     } else {
-        int64_t mediaTimeUs;
         CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
 
         realTimeUs = mediaTimeUs - mAnchorTimeMediaUs + mAnchorTimeRealUs;
@@ -391,6 +412,8 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
     if (tooLate) {
         ALOGV("video late by %lld us (%.2f secs)",
              mVideoLateByUs, mVideoLateByUs / 1E6);
+    } else if (mFlags & FLAG_REAL_TIME) {
+        ALOGV("rendering video at real time %.2f secs", realTimeUs / 1E6);
     } else {
         ALOGV("rendering video at media time %.2f secs", mediaTimeUs / 1E6);
     }
@@ -404,6 +427,8 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
         mVideoRenderingStarted = true;
         notifyVideoRenderingStart();
     }
+
+    notifyIfMediaRenderingStarted();
 
     notifyPosition();
 }
@@ -552,6 +577,7 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
     // is flushed.
     syncQueuesDone();
 
+    ALOGV("flushing %s", audio ? "audio" : "video");
     if (audio) {
         flushQueue(&mAudioQueue);
 
@@ -560,6 +586,8 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
 
         mDrainAudioQueuePending = false;
         ++mAudioQueueGeneration;
+
+        prepareForMediaRenderingStart();
     } else {
         flushQueue(&mVideoQueue);
 
@@ -568,6 +596,8 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
 
         mDrainVideoQueuePending = false;
         ++mVideoQueueGeneration;
+
+        prepareForMediaRenderingStart();
     }
 
     notifyFlushComplete(audio);
@@ -658,9 +688,14 @@ void NuPlayer::Renderer::onPause() {
     mDrainVideoQueuePending = false;
     ++mVideoQueueGeneration;
 
+    prepareForMediaRenderingStart();
+
     if (mHasAudio) {
         mAudioSink->pause();
     }
+    //for video only stream, reset mAnchorTimeMediaUs on stream's pause scenario
+    if (mHasVideo && !mHasAudio)
+        mAnchorTimeMediaUs = -1;
 
     ALOGV("now paused audio queue has %d entries, video has %d entries",
           mAudioQueue.size(), mVideoQueue.size());

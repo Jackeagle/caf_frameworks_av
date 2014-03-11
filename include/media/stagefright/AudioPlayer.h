@@ -1,7 +1,5 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,34 +12,12 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This file was modified by Dolby Laboratories, Inc. The portions of the
- * code that are surrounded by "DOLBY..." are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2011-2012 Dolby Laboratories, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
  */
 
 #ifndef AUDIO_PLAYER_H_
 
 #define AUDIO_PLAYER_H_
 
-#ifdef DOLBY_UDC_MULTICHANNEL
-#include "include/TimedEventQueue.h"
-#endif // DOLBY_UDC_MULTICHANNEL
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/TimeSource.h>
@@ -60,41 +36,51 @@ public:
         SEEK_COMPLETE
     };
 
+    enum {
+        ALLOW_DEEP_BUFFERING = 0x01,
+        USE_OFFLOAD = 0x02,
+        HAS_VIDEO   = 0x1000,
+        IS_STREAMING = 0x2000
+
+    };
+
     AudioPlayer(const sp<MediaPlayerBase::AudioSink> &audioSink,
-                bool allowDeepBuffering = false,
+                uint32_t flags = 0,
                 AwesomePlayer *audioObserver = NULL);
 
     virtual ~AudioPlayer();
 
     // Caller retains ownership of "source".
-    virtual void setSource(const sp<MediaSource> &source);
+    void setSource(const sp<MediaSource> &source);
 
     // Return time in us.
     virtual int64_t getRealTimeUs();
 
-    virtual status_t start(bool sourceAlreadyStarted = false);
+    status_t start(bool sourceAlreadyStarted = false);
 
-    virtual void pause(bool playPendingSamples = false);
-    virtual void resume();
+    void pause(bool playPendingSamples = false);
+    status_t resume();
 
     // Returns the timestamp of the last buffer played (in us).
-    virtual int64_t getMediaTimeUs();
+    int64_t getMediaTimeUs();
 
     // Returns true iff a mapping is established, i.e. the AudioPlayer
     // has played at least one frame of audio.
-    virtual bool getMediaTimeMapping(int64_t *realtime_us, int64_t *mediatime_us);
+    bool getMediaTimeMapping(int64_t *realtime_us, int64_t *mediatime_us);
 
-    virtual status_t seekTo(int64_t time_us);
+    status_t seekTo(int64_t time_us);
 
-    virtual bool isSeeking();
-    virtual bool reachedEOS(status_t *finalStatus);
+    bool isSeeking();
+    bool reachedEOS(status_t *finalStatus);
 
     status_t setPlaybackRatePermille(int32_t ratePermille);
+
+    void notifyAudioEOS();
 
 private:
     friend class VideoEditorAudioPlayer;
     sp<MediaSource> mSource;
-    AudioTrack *mAudioTrack;
+    sp<AudioTrack> mAudioTrack;
 
     MediaBuffer *mInputBuffer;
 
@@ -122,17 +108,21 @@ private:
     MediaBuffer *mFirstBuffer;
 
     sp<MediaPlayerBase::AudioSink> mAudioSink;
-    bool mAllowDeepBuffering;       // allow audio deep audio buffers. Helps with low power audio
-                                    // playback but implies high latency
     AwesomePlayer *mObserver;
     int64_t mPinnedTimeUs;
+
+    bool mPlaying;
+    int64_t mStartPosUs;
+    const uint32_t mCreateFlags;
+    bool mPauseRequired;
 
     static void AudioCallback(int event, void *user, void *info);
     void AudioCallback(int event, void *info);
 
     static size_t AudioSinkCallback(
             MediaPlayerBase::AudioSink *audioSink,
-            void *data, size_t size, void *me);
+            void *data, size_t size, void *me,
+            MediaPlayerBase::AudioSink::cb_event_t event);
 
     size_t fillBuffer(void *data, size_t size);
 
@@ -140,15 +130,11 @@ private:
 
     void reset();
 
-#ifdef DOLBY_UDC_MULTICHANNEL
-    void onPortSettingsChangedEvent();
-    TimedEventQueue mQueue;
-    bool mQueueStarted;
-    sp<TimedEventQueue::Event> mPortSettingsChangedEvent;
-    bool mPortSettingsChangedEventPending;
-    int reOpenSink(int numChannels, int channelMask);
-#endif // DOLBY_UDC_MULTICHANNEL
     uint32_t getNumFramesPendingPlayout() const;
+    int64_t getOutputPlayPositionUs_l() const;
+
+    bool allowDeepBuffering() const { return (mCreateFlags & ALLOW_DEEP_BUFFERING) != 0; }
+    bool useOffload() const { return (mCreateFlags & USE_OFFLOAD) != 0; }
 
     AudioPlayer(const AudioPlayer &);
     AudioPlayer &operator=(const AudioPlayer &);

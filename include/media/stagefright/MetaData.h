@@ -1,9 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
  *
- * Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
- * Not a Contribution
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -51,6 +48,7 @@ enum {
     kKeyChannelCount      = '#chn',  // int32_t
     kKeyChannelMask       = 'chnm',  // int32_t
     kKeySampleRate        = 'srte',  // int32_t (audio sampling rate Hz)
+    kKeyExtSampleRate     = 'exsr',  // int32_t (extenstion audio sampling rate Hz)
     kKeyFrameRate         = 'frmR',  // int32_t (video frame rate fps)
     kKeyBitRate           = 'brte',  // int32_t (bps)
     kKeyESDS              = 'esds',  // raw data
@@ -137,6 +135,7 @@ enum {
     kKeyRequiresSecureBuffers = 'secu',  // bool (int32_t)
 
     kKeyIsADTS            = 'adts',  // bool (int32_t)
+    kKeyAACAOT            = 'aaot',  // int32_t
 
     // If a MediaBuffer's data represents (at least partially) encrypted
     // data, the following fields aid in decryption.
@@ -164,7 +163,13 @@ enum {
     kKeyCryptoDefaultIVSize = 'cryS',  // int32_t
 
     kKeyPssh              = 'pssh',  // raw data
-    kKeyTunnelException   = 'Ntnl', // not tunnel
+
+    kKeySampleBits        = 'sbit', // int32_t (audio sample bit-width)
+    kKeyMinBlkSize        = 'mibs', //int32_t
+    kKeyMaxBlkSize        = 'mabs', //int32_t
+    kKeyMinFrmSize        = 'mifs', //int32_t
+    kKeyMaxFrmSize        = 'mafs', //int32_t
+    kKeyMd5Sum            = 'md5s', //cstring
 };
 
 enum {

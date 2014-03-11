@@ -17,7 +17,7 @@
  * code that are surrounded by "DOLBY..." are copyrighted and
  * licensed separately, as follows:
  *
- *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *  (C) 2011-2014 Dolby Laboratories, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,15 +69,16 @@ static const struct {
     { "OMX.google.mpeg4.encoder", "mpeg4enc", "video_encoder.mpeg4" },
     { "OMX.google.mp3.decoder", "mp3dec", "audio_decoder.mp3" },
     { "OMX.google.vorbis.decoder", "vorbisdec", "audio_decoder.vorbis" },
-    { "OMX.google.vpx.decoder", "vpxdec", "video_decoder.vpx" },
-    { "OMX.google.vpx.encoder", "vpxenc", "video_encoder.vpx" },
+    { "OMX.google.vp8.decoder", "vpxdec", "video_decoder.vp8" },
+    { "OMX.google.vp9.decoder", "vpxdec", "video_decoder.vp9" },
+    { "OMX.google.vp8.encoder", "vpxenc", "video_encoder.vp8" },
     { "OMX.google.raw.decoder", "rawdec", "audio_decoder.raw" },
     { "OMX.google.flac.encoder", "flacenc", "audio_encoder.flac" },
     { "OMX.google.gsm.decoder", "gsmdec", "audio_decoder.gsm" },
 #ifdef DOLBY_UDC
     { "OMX.dolby.ac3.decoder", "ddpdec", "audio_decoder.ac3" },
-    { "OMX.dolby.ec3.decoder", "ddpdec", "audio_decoder.eac3" },
-#endif // DOLBY_UDC
+    { "OMX.dolby.ec3.decoder", "ddpdec", "audio_decoder.ec3" },
+#endif // DOLBY_END
 };
 
 static const size_t kNumComponents =

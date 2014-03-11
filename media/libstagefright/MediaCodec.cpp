@@ -31,6 +31,7 @@
 #include <media/stagefright/foundation/hexdump.h>
 #include <media/stagefright/ACodec.h>
 #include <media/stagefright/BufferProducerWrapper.h>
+#include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
@@ -38,6 +39,7 @@
 #include <media/stagefright/NativeWindowWrapper.h>
 
 #include "include/avc_utils.h"
+#include "include/ExtendedUtils.h"
 
 namespace android {
 
@@ -79,6 +81,7 @@ MediaCodec::MediaCodec(const sp<ALooper> &looper)
 
 MediaCodec::~MediaCodec() {
     CHECK_EQ(mState, UNINITIALIZED);
+    ExtendedUtils::drainSecurePool();
 }
 
 // static
@@ -105,8 +108,25 @@ status_t MediaCodec::init(const char *name, bool nameIsType, bool encoder) {
     bool needDedicatedLooper = false;
     if (nameIsType && !strncasecmp(name, "video/", 6)) {
         needDedicatedLooper = true;
-    } else if (!nameIsType && !strncmp(name, "OMX.TI.DUCATI1.VIDEO.", 21)) {
-        needDedicatedLooper = true;
+    } else {
+        AString tmp = name;
+        if (tmp.endsWith(".secure")) {
+            ExtendedUtils::prefetchSecurePool();
+            tmp.erase(tmp.size() - 7, 7);
+        }
+        const MediaCodecList *mcl = MediaCodecList::getInstance();
+        ssize_t codecIdx = mcl->findCodecByName(tmp.c_str());
+        if (codecIdx >= 0) {
+            Vector<AString> types;
+            if (mcl->getSupportedTypes(codecIdx, &types) == OK) {
+                for (int i = 0; i < types.size(); i++) {
+                    if (types[i].startsWith("video/")) {
+                        needDedicatedLooper = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     if (needDedicatedLooper) {
@@ -1497,7 +1517,8 @@ void MediaCodec::returnBuffersToCodecOnPort(int32_t portIndex) {
             info->mOwnedByClient = false;
 
             if (portIndex == kPortIndexInput) {
-                msg->setInt32("err", ERROR_END_OF_STREAM);
+                /* no error, just returning buffers */
+                msg->setInt32("err", OK);
             }
             msg->post();
         }

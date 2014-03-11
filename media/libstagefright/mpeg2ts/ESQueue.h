@@ -17,7 +17,7 @@
  * code that are surrounded by "DOLBY..." are copyrighted and
  * licensed separately, as follows:
  *
- *  (C) 2011-2012 Dolby Laboratories, Inc.
+ *  (C) 2011-2014 Dolby Laboratories, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,8 +57,8 @@ struct ElementaryStreamQueue {
         PCM_AUDIO,
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
         DDP_AC3_AUDIO,
-        DDP_EAC3_AUDIO,
-#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
+        DDP_EC3_AUDIO,
+#endif // DOLBY_END
     };
 
     enum Flags {
@@ -96,7 +96,7 @@ private:
     sp<ABuffer> dequeueAccessUnitPCMAudio();
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
     sp<ABuffer> dequeueAccessUnitDDP();
-#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
+#endif // DOLBY_END
 
     // consume a logical (compressed) access unit of size "size",
     // returns its timestamp in us (or -1 if no time information).

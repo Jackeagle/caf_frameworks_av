@@ -1,5 +1,7 @@
 /*
  * Copyright 2012, The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,7 +52,8 @@ struct MediaCodecList {
     status_t getCodecCapabilities(
             size_t index, const char *type,
             Vector<ProfileLevel> *profileLevels,
-            Vector<uint32_t> *colorFormats) const;
+            Vector<uint32_t> *colorFormats,
+            uint32_t *flags) const;
 
 private:
     enum Section {
@@ -99,7 +102,7 @@ private:
     status_t addTypeFromAttributes(const char **attrs);
     void addType(const char *name);
 
-    friend class QCUtils;
+    friend class ExtendedUtils;
 
     DISALLOW_EVIL_CONSTRUCTORS(MediaCodecList);
 };

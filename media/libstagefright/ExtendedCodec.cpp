@@ -35,6 +35,7 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/ABuffer.h>
+#include <media/stagefright/foundation/ABitReader.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaCodecList.h>
 
@@ -42,14 +43,14 @@
 #include <media/stagefright/ExtendedCodec.h>
 #include <media/stagefright/OMXCodec.h>
 
-#ifdef ENABLE_QC_AV_ENHANCEMENTS
+#ifdef ENABLE_AV_ENHANCEMENTS
 
 #include <QCMetaData.h>
 #include <QCMediaDefs.h>
 #include <OMX_QCOMExtns.h>
 #include <OMX_Component.h>
 #include <QOMX_AudioExtensions.h>
-#include "include/QCUtils.h"
+#include "include/ExtendedUtils.h"
 
 namespace android {
 enum MetaKeyType{
@@ -167,7 +168,7 @@ const char* ExtendedCodec::overrideComponentName(
     if(quirks & kRequiresWMAProComponent)
     {
        int32_t version = 0;
-       if(meta->findInt32(kKeyWMAVersion, &version)) {
+       if((meta->findInt32(kKeyWMAVersion, &version))) {
           if(version==kTypeWMA) {
              componentName = "OMX.qcom.audio.decoder.wma";
           } else if(version==kTypeWMAPro) {
@@ -185,7 +186,7 @@ void ExtendedCodec::overrideComponentName(
     if(quirks & kRequiresWMAProComponent)
     {
        int32_t version = 0;
-       if(msg->findInt32(getMsgKey(kKeyWMAVersion), &version)) {
+       if((msg->findInt32(getMsgKey(kKeyWMAVersion), &version))) {
           if(version==kTypeWMA) {
              componentName->setTo("OMX.qcom.audio.decoder.wma");
           } else if(version==kTypeWMAPro) {
@@ -388,6 +389,9 @@ status_t ExtendedCodec::setSupportedRole(
           "audio_decoder.ac3", NULL },
         { MEDIA_MIMETYPE_AUDIO_WMA,
           "audio_decoder.wma" , NULL },
+        { MEDIA_MIMETYPE_VIDEO_HEVC,
+          "video_decoder.hevc" , NULL },
+
         };
 
     static const size_t kNumMimeToRole =
@@ -470,7 +474,13 @@ status_t ExtendedCodec::handleSupportedAudioFormats(int format, AString* mime) {
 }
 
 void ExtendedCodec::configureFramePackingFormat(
-        const sp<AMessage> &msg, sp<IOMX> OMXhandle, IOMX::node_id nodeID) {
+        const sp<AMessage> &msg, sp<IOMX> OMXhandle, IOMX::node_id nodeID,
+        const char* componentName) {
+    //ignore non QC components
+    if (strncmp(componentName, "OMX.qcom.", 9)) {
+        return;
+    }
+
     int32_t arbitraryMode = 0;
     bool success = msg->findInt32(getMsgKey(kKeyUseArbitraryMode), &arbitraryMode);
     bool useFrameByFrameMode = true; //default option
@@ -494,11 +504,12 @@ void ExtendedCodec::configureFramePackingFormat(
 }
 
 void ExtendedCodec::configureFramePackingFormat(
-        const sp<MetaData> &meta, sp<IOMX> OMXhandle, IOMX::node_id nodeID) {
+        const sp<MetaData> &meta, sp<IOMX> OMXhandle, IOMX::node_id nodeID,
+        const char* componentName) {
     sp<AMessage> msg = new AMessage();
     msg->clear();
     convertMetaDataToMessage(meta, &msg);
-    configureFramePackingFormat(msg, OMXhandle, nodeID);
+    configureFramePackingFormat(msg, OMXhandle, nodeID, componentName);
 }
 
 void ExtendedCodec::configureVideoDecoder(
@@ -570,12 +581,211 @@ void ExtendedCodec::configureVideoDecoder(
     configureVideoDecoder(msg, mime, OMXhandle, flags, nodeID, componentName);
 }
 
+bool ExtendedCodec::checkDPFromCodecSpecificData(const uint8_t *data, size_t size) {
+    bool retVal = false;
+    size_t offset = 0, startCodeOffset = 0;
+    bool isStartCode = false;
+    int VOL_START_CODE = 0x20;
+    const char startCode[]="\x00\x00\x01";
+    size_t maxHeaderSize = 28;
+
+    if (!data && (((size < 4) || (size > maxHeaderSize)))) {
+        return retVal;
+    }
+
+    while (offset < size - 3) {
+        if ((data[offset + 3] & 0xf0) == VOL_START_CODE) {
+            if (!memcmp(&data[offset], startCode, 3)) {
+                startCodeOffset = offset;
+                isStartCode = true;
+                break;
+            }
+        }
+        offset++;
+    }
+
+    if (isStartCode) {
+        retVal = checkDPFromVOLHeader((const uint8_t*) &data[startCodeOffset],
+                                       size);
+    }
+
+    return retVal;
+}
+
+bool ExtendedCodec::checkDPFromVOLHeader(const uint8_t *data, size_t size) {
+    bool retVal = false;
+    size_t minHeaderSize = 5;
+    size_t maxHeaderSize = 46;
+
+    if (!data && (size < minHeaderSize)) {
+        return false;
+    }
+
+    ABitReader br(&data[4], size);
+    br.skipBits(1);  // random_accessible_vol
+
+    unsigned videoObjectTypeIndication = br.getBits(8);
+
+    if (videoObjectTypeIndication == 0x12u) {
+        ALOGE("checkDPFromVOLHeader: videoObjectTypeIndication:%d\n",
+               videoObjectTypeIndication);
+        return false;
+    }
+
+    unsigned videoObjectLayerVerid = 1;
+    unsigned videoObjectLayerPriority;
+    if (br.getBits(1)) {
+        videoObjectLayerVerid = br.getBits(4);
+        videoObjectLayerPriority = br.getBits(3);
+        ALOGD("checkDPFromVOLHeader: videoObjectLayerVerid:%d\n",
+               videoObjectLayerVerid);
+    }
+    unsigned aspectRatioInfo = br.getBits(4);
+    if (aspectRatioInfo == 0x0f /* extended PAR */) {
+        ALOGD("checkDPFromVOLHeader: extended PAR\n");
+        br.skipBits(8);  // par_width
+        br.skipBits(8);  // par_height
+    }
+
+    if (br.getBits(1)) {  // vol_control_parameters
+        br.skipBits(2);  // chroma_format
+        br.skipBits(1);  // low_delay
+        if (br.getBits(1)) {  // vbv_parameters
+            br.skipBits(15);  // first_half_bit_rate
+            br.skipBits(1);  // marker_bit
+            br.skipBits(15);  // latter_half_bit_rate
+            br.skipBits(1);  // marker_bit
+            br.skipBits(15);  // first_half_vbv_buffer_size
+            br.skipBits(1);  // marker_bit
+            br.skipBits(3);  // latter_half_vbv_buffer_size
+            br.skipBits(11);  // first_half_vbv_occupancy
+            br.skipBits(1);  // marker_bit
+            br.skipBits(15);  // latter_half_vbv_occupancy
+            br.skipBits(1);  // marker_bit
+        }
+    }
+
+    unsigned videoObjectLayerShape = br.getBits(2);
+    if (videoObjectLayerShape != 0x00u /* rectangular */) {
+        ALOGD("checkDPFromVOLHeader: videoObjectLayerShape:%x\n",
+               videoObjectLayerShape);
+        return false;
+    }
+
+    br.skipBits(1);  // marker_bit
+
+    unsigned vopTimeIncrementResolution = br.getBits(16);
+    br.skipBits(1);  // marker_bit
+
+    if (br.getBits(1)) {  // fixed_vop_rate
+        // range [0..vopTimeIncrementResolution)
+
+        // vopTimeIncrementResolution
+        // 2 => 0..1, 1 bit
+        // 3 => 0..2, 2 bits
+        // 4 => 0..3, 2 bits
+        // 5 => 0..4, 3 bits
+        // ...
+
+        if (vopTimeIncrementResolution <= 0u) {
+            return BAD_VALUE;
+        }
+        --vopTimeIncrementResolution;
+
+        unsigned numBits = 0;
+        while (vopTimeIncrementResolution > 0) {
+            ++numBits;
+            vopTimeIncrementResolution >>= 1;
+        }
+
+        br.skipBits(numBits);  // fixed_vop_time_increment
+    }
+
+    br.skipBits(1);  // marker_bit
+    unsigned videoObjectLayerWidth = br.getBits(13);
+    br.skipBits(1);  // marker_bit
+    unsigned videoObjectLayerHeight = br.getBits(13);
+    br.skipBits(1);  // marker_bit
+
+    unsigned interlaced = br.getBits(1);
+    unsigned obmcDisable = br.getBits(1);
+    unsigned spriteEnable = 0;
+    if (videoObjectLayerVerid == 1) {
+        spriteEnable = br.getBits(1);
+    } else {
+        spriteEnable = br.getBits(2);
+    }
+    if (spriteEnable == 0x1 || spriteEnable == 0x2) {
+        if (spriteEnable != 0x2) {
+            int spriteWidth=br.getBits(13); //spriteWidth
+            ALOGD("ExtendedCodec: spriteWidth:%d\n", spriteWidth);
+            br.getBits(1) ; //marker
+            br.getBits(13);
+            br.getBits(1);
+            br.getBits(13);
+            br.getBits(1);
+            br.getBits(13);
+            br.getBits(1);
+        }
+        br.getBits(6);
+        br.getBits(2);
+        br.getBits(1);
+        if (spriteEnable != 0x2) {
+            br.getBits(1);
+        }
+    }
+    if (videoObjectLayerVerid != 1 &&
+        videoObjectLayerShape != 0x0u) {
+        br.getBits(1);
+    }
+    unsigned not8Bit = br.getBits(1);
+    if (not8Bit) {
+        unsigned quantPrecision = br.getBits(4);
+        unsigned bitsPerPixel = br.getBits(4);
+    }
+    if (videoObjectLayerShape == 0x3) {
+        br.getBits(1);
+        br.getBits(1);
+        br.getBits(1);
+    }
+    unsigned quantType = br.getBits(1);
+    if (quantType) {
+        unsigned loadIntraQuantMat = br.getBits(1);
+        if (loadIntraQuantMat) {
+            unsigned IntraQuantMat = 1;
+            for (int i=0; i<64 && IntraQuantMat; i++) {
+                 IntraQuantMat = br.getBits(8);
+            }
+        }
+        unsigned loadNonIntraQuantMat = br.getBits(1);
+        if (loadNonIntraQuantMat) {
+            unsigned NonIntraQuantMat = 1;
+            for (int i=0; i<64 && NonIntraQuantMat; i++) {
+                 NonIntraQuantMat = br.getBits(8);
+            }
+        }
+    } /*quantType*/
+    if (videoObjectLayerVerid != 1) {
+        unsigned quarterSample = br.getBits(1);
+        ALOGD("checkDPFromVOLHeader: quarterSample:%d\n",
+               quarterSample);
+    }
+    unsigned complexityEstimationDisable = br.getBits(1);
+    unsigned resyncMarkerDisable = br.getBits(1);
+    unsigned dataPartitioned = br.getBits(1);
+    if (dataPartitioned) {
+        retVal = true;
+    }
+    ALOGD("checkDPFromVOLHeader: DP:%d\n", dataPartitioned);
+    return retVal;
+}
+
 void ExtendedCodec::enableSmoothStreaming(
         const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
         const char* componentName) {
     *isEnabled = false;
 
-    if (!QCUtils::ShellProp::isSmoothStreamingEnabled()) {
+    if (!ExtendedUtils::ShellProp::isSmoothStreamingEnabled()) {
         return;
     }
 
@@ -905,9 +1115,17 @@ bool ExtendedCodec::useHWAACDecoder(const char *mime) {
     return false;
 }
 
+bool ExtendedCodec::isSourcePauseRequired(const char *componentName) {
+    /* pause is required for hardware component to release adsp resources */
+    if (!strncmp(componentName, "OMX.qcom.", 9)) {
+        return true;
+    }
+    return false;
+}
+
 } //namespace android
 
-#else //ENABLE_QC_AV_ENHANCEMENTS
+#else //ENABLE_AV_ENHANCEMENTS
 
 namespace android {
     status_t ExtendedCodec::convertMetaDataToMessage(
@@ -1007,26 +1225,26 @@ namespace android {
 
     status_t ExtendedCodec::setWMAFormat(
             const sp<MetaData> &meta, sp<IOMX> OMXhandle,
-            IOMX::node_id nodeID, bool isEncoder ) {
+            IOMX::node_id nodeID, bool isEncoder) {
         return OK;
     }
 
     status_t ExtendedCodec::setWMAFormat(
             const sp<AMessage> &msg, sp<IOMX> OMXhandle,
-            IOMX::node_id nodeID, bool isEncoder ) {
+            IOMX::node_id nodeID, bool isEncoder) {
         return OK;
     }
 
     void ExtendedCodec::setEVRCFormat(
             int32_t numChannels, int32_t sampleRate,
             sp<IOMX> OMXhandle, IOMX::node_id nodeID,
-            bool isEncoder ) {
+            bool isEncoder) {
     }
 
     void ExtendedCodec::setQCELPFormat(
             int32_t numChannels, int32_t sampleRate,
             sp<IOMX> OMXhandle, IOMX::node_id nodeID,
-            bool isEncoder ) {
+            bool isEncoder) {
     }
 
     void ExtendedCodec::setAC3Format(
@@ -1036,22 +1254,22 @@ namespace android {
 
     void ExtendedCodec::configureFramePackingFormat(
             const sp<AMessage> &msg, sp<IOMX> OMXhandle,
-            IOMX::node_id nodeID){
+            IOMX::node_id nodeID, const char* componentName){
     }
 
     void ExtendedCodec::configureFramePackingFormat(
             const sp<MetaData> &meta, sp<IOMX> OMXhandle,
-            IOMX::node_id nodeID) {
+            IOMX::node_id nodeID, const char* componentName) {
     }
 
     void ExtendedCodec::configureVideoDecoder(
         const sp<MetaData> &meta, const char* mime, sp<IOMX> OMXhandle,
-        const uint32_t flags, IOMX::node_id nodeID, const char* componentName ) {
+        const uint32_t flags, IOMX::node_id nodeID, const char* componentName) {
     }
 
     void ExtendedCodec::configureVideoDecoder(
         const sp<AMessage> &msg, const char* mime,  sp<IOMX> OMXhandle,
-        const uint32_t flags, IOMX::node_id nodeID, const char* componentName ) {
+        const uint32_t flags, IOMX::node_id nodeID, const char* componentName) {
     }
 
     bool ExtendedCodec::useHWAACDecoder(const char *mime) {
@@ -1065,6 +1283,9 @@ namespace android {
         return;
     }
 
+    bool ExtendedCodec::isSourcePauseRequired(const char *componentName) {
+        return false;
+    }
 } //namespace android
 
-#endif //ENABLE_QC_AV_ENHANCEMENTS
+#endif //ENABLE_AV_ENHANCEMENTS

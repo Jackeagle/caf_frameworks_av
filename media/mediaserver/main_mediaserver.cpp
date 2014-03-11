@@ -34,7 +34,7 @@
 #include "MediaLogService.h"
 #include "MediaPlayerService.h"
 #include "AudioPolicyService.h"
-#ifdef QCOM_LISTEN_FEATURE_ENABLE
+#ifdef AUDIO_LISTEN_ENABLED
 #include "ListenService.h"
 #endif
 
@@ -130,7 +130,7 @@ int main(int argc, char** argv)
         AudioFlinger::instantiate();
         MediaPlayerService::instantiate();
         CameraService::instantiate();
-#ifdef QCOM_LISTEN_FEATURE_ENABLE
+#ifdef AUDIO_LISTEN_ENABLED
         ALOGI("ListenService instantiated");
         ListenService::instantiate();
 #endif
