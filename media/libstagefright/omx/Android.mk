@@ -48,11 +48,6 @@ LOCAL_SHARED_LIBRARIES :=               \
 ifdef DOLBY_UDC
   LOCAL_CFLAGS += -DDOLBY_UDC
 endif #DOLBY_UDC
-
-ifeq ($(DTS_M6), true)
-  LOCAL_CFLAGS += -DDTS_M6
-endif
-
 LOCAL_MODULE:= libstagefright_omx
 
 include $(BUILD_SHARED_LIBRARY)
