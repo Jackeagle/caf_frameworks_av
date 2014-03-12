@@ -66,11 +66,15 @@ MediaCodecList::MediaCodecList()
         addMediaCodec(
                 false /* encoder */, "OMX.google.raw.decoder", "audio/raw");
 
+        //Disabling hw based aac decoder for LF targets, as this codec gets selected
+        //whenever kHardwareCodecs flag is specified
+#if 0
         Vector<AString> QcomAACQuirks;
         QcomAACQuirks.push(AString("requires-allocate-on-input-ports"));
         QcomAACQuirks.push(AString("requires-allocate-on-output-ports"));
         QCUtils::helper_addMediaCodec(mCodecInfos, mTypes, false, "OMX.qcom.audio.decoder.multiaac",
             "audio/mp4a-latm", QCUtils::helper_getCodecSpecificQuirks(mCodecQuirks, QcomAACQuirks));
+#endif
     }
 
 #if 0
