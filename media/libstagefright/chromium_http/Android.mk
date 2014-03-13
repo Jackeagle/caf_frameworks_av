@@ -21,6 +21,7 @@ LOCAL_SHARED_LIBRARIES += \
         libstlport \
         libchromium_net \
         libutils \
+        libbinder \
         libcutils \
         libstagefright_foundation \
         libstagefright \
