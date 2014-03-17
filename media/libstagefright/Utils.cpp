@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -555,11 +557,22 @@ const struct mime_conv_t* p = &mimeLookup[0];
     return BAD_VALUE;
 }
 
-bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
+bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData>& vMeta,
                       bool isStreaming, audio_stream_type_t streamType)
 {
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
+
+    if (hasVideo) {
+        const char *vMime;
+        CHECK(vMeta->findCString(kKeyMIMEType, &vMime));
+#ifdef ENABLE_AV_ENHANCEMENTS
+        if (!strncmp(vMime, MEDIA_MIMETYPE_VIDEO_HEVC, 10)) {
+            ALOGD("Do not offload HEVC audio+video playback");
+            return false;
+        }
+#endif
+    }
 
     audio_offload_info_t info = AUDIO_INFO_INITIALIZER;
 
@@ -568,6 +581,10 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
         ALOGE(" Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format !", mime);
         return false;
     } else {
+        // Override audio format for PCM offload
+        if (info.format == AUDIO_FORMAT_PCM_16_BIT) {
+            info.format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+        }
         ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
     }
 
@@ -577,13 +594,13 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
         return false;
     }
 
-    // check whether it is ELD/LD content -> no offloading
+    // check whether it is ELD/LD/main content -> no offloading
     // FIXME: this should depend on audio DSP capabilities. mapMimeToAudioFormat() should use the
     // metadata to refine the AAC format and the audio HAL should only list supported profiles.
     int32_t aacaot = -1;
     if (meta->findInt32(kKeyAACAOT, &aacaot)) {
-        if (aacaot == 23 || aacaot == 39 ) {
-            ALOGV("track of type '%s' is ELD/LD content", mime);
+        if (aacaot == 23 || aacaot == 39 || aacaot == 1) {
+            ALOGV("track of type '%s' is ELD/LD/main content", mime);
             return false;
         }
     }
