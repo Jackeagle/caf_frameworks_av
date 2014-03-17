@@ -303,6 +303,15 @@ status_t NuPlayer::RTSPSource::getDuration(int64_t *durationUs) {
 }
 
 status_t NuPlayer::RTSPSource::seekTo(int64_t seekTimeUs) {
+    // After seek, the previous packets in the source are obsolete, so clear them
+    for (size_t index = 0; index < mTracks.size(); index++) {
+        TrackInfo *info = &mTracks.editItemAt(index);
+        sp<AnotherPacketSource> source = info->mSource;
+        if (source != NULL) {
+            source->queueDiscontinuity(ATSParser::DISCONTINUITY_SEEK, NULL);
+        }
+    }
+
     sp<AMessage> msg = new AMessage(kWhatPerformSeek, mReflector->id());
     msg->setInt32("generation", ++mSeekGeneration);
     msg->setInt64("timeUs", seekTimeUs);
