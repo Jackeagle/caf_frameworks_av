@@ -68,12 +68,14 @@ MediaCodecList::MediaCodecList()
         addMediaCodec(
                 false /* encoder */, "OMX.google.raw.decoder", "audio/raw");
 
+#if 0
         Vector<AString> HWAACQuirks;
         HWAACQuirks.push(AString("requires-allocate-on-input-ports"));
         HWAACQuirks.push(AString("requires-allocate-on-output-ports"));
         ExtendedUtils::helper_addMediaCodec(mCodecInfos, mTypes, false,
             "OMX.qcom.audio.decoder.multiaac", "audio/mp4a-latm",
             ExtendedUtils::helper_getCodecSpecificQuirks(mCodecQuirks, HWAACQuirks));
+#endif
     }
 
 #if 0
