@@ -581,6 +581,14 @@ void AwesomePlayer::reset_l() {
         }
         if (mVideoSource != NULL) {
             params |= IMediaPlayerService::kBatteryDataTrackVideo;
+
+            ALOGD("reset RM conc when decoder is shutting down,\
+                will be set during initVideodecoder");
+            status_t err = mVideoSource->updateConcurrencyParam(true);
+            if(err != OK) {
+                ALOGE("Video updateConcurrencyInfoParam failed\
+                    err = %d", err);
+            }
         }
         addBatteryData(params);
     }
@@ -1561,6 +1569,10 @@ status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
             status_t err = updateConcurrencyParam(true);
             if(err != OK) {
                 return err;
+            }
+            if(RMConcParamAlredySet) {
+                ALOGD("Reset RMconc flag when in pause state during codec creation");
+                RMConcParamAlredySet = 0;
             }
         }
         ALOGV("seeking while paused, sending SEEK_COMPLETE notification"
