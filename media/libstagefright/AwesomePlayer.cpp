@@ -1112,7 +1112,7 @@ void AwesomePlayer::createAudioPlayer_l()
             cachedDurationUs > AUDIO_SINK_MIN_DEEP_BUFFER_DURATION_US))) {
         flags |= AudioPlayer::ALLOW_DEEP_BUFFERING;
     }
-    if (isStreamingHTTP()) {
+    if (isStreamingHTTP() || isWidevineContent()) {
         flags |= AudioPlayer::IS_STREAMING;
     }
     if (mVideoSource != NULL) {
@@ -1603,7 +1603,8 @@ status_t AwesomePlayer::initAudioDecoder() {
     }
 
     mOffloadAudio = canOffloadStream(meta, (mVideoSource != NULL), vMeta,
-                                     isStreamingHTTP(), streamType);
+                                     (isStreamingHTTP() || isWidevineContent()),
+                                     streamType);
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         ALOGV("createAudioPlayer: bypass OMX (raw)");
@@ -1634,7 +1635,8 @@ status_t AwesomePlayer::initAudioDecoder() {
             format->setInt64(kKeyDuration, durationUs);
         }
         mOffloadAudio = canOffloadStream(format, (mVideoSource != NULL), vMeta,
-                                     isStreamingHTTP(), streamType);
+                                    (isStreamingHTTP() || isWidevineContent()),
+                                     streamType);
     }
 
     if (mAudioSource != NULL) {
@@ -2984,6 +2986,22 @@ status_t AwesomePlayer::invoke(const Parcel &request, Parcel *reply) {
 
 bool AwesomePlayer::isStreamingHTTP() const {
     return mCachedSource != NULL || mWVMExtractor != NULL;
+}
+
+bool AwesomePlayer::isWidevineContent() const {
+    if (mWVMExtractor != NULL) {
+        return true;
+    }
+
+    sp<MetaData> fileMeta = mExtractor->getMetaData();
+    const char *containerMime;
+    if (fileMeta != NULL &&
+        fileMeta->findCString(kKeyMIMEType, &containerMime) &&
+        !strcasecmp(containerMime, "video/wvm")) {
+       return true;
+    }
+
+    return false;
 }
 
 status_t AwesomePlayer::dump(int fd, const Vector<String16> &args) const {
