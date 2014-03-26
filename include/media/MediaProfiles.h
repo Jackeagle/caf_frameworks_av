@@ -145,9 +145,11 @@ public:
      * enc.vid.bps.max - max bit rate in bits per second
      * enc.vid.fps.min - min frame rate in frames per second
      * enc.vid.fps.max - max frame rate in frames per second
+#ifdef ENABLE_AV_ENHANCEMENTS
      * enc.vid.hfr.width.max - max hfr video frame width
      * enc.vid.hfr.height.max - max hfr video frame height
      * enc.vid.hfr.mode.max - max hfr mode
+#endif //ENABLE_AV_ENHANCEMENTS
      */
     int getVideoEncoderParamByName(const char *name, video_encoder codec) const;
 
@@ -312,16 +314,24 @@ private:
                         int minBitRate, int maxBitRate,
                         int minFrameWidth, int maxFrameWidth,
                         int minFrameHeight, int maxFrameHeight,
+#ifdef ENABLE_AV_ENHANCEMENTS
                         int minFrameRate, int maxFrameRate,
                         int maxHFRFrameWidth, int maxHFRFrameHeight,
                         int maxHFRMode)
+#else //ENABLE_AV_ENHANCEMENTS
+                        int minFrameRate, int maxFrameRate)
+#endif //ENABLE_AV_ENHANCEMENTS
             : mCodec(codec),
               mMinBitRate(minBitRate), mMaxBitRate(maxBitRate),
               mMinFrameWidth(minFrameWidth), mMaxFrameWidth(maxFrameWidth),
               mMinFrameHeight(minFrameHeight), mMaxFrameHeight(maxFrameHeight),
+#ifdef ENABLE_AV_ENHANCEMENTS
               mMinFrameRate(minFrameRate), mMaxFrameRate(maxFrameRate),
               mMaxHFRFrameWidth(maxHFRFrameWidth), mMaxHFRFrameHeight(maxHFRFrameHeight),
               mMaxHFRMode(maxHFRMode) {}
+#else //ENABLE_AV_ENHANCEMENTS
+              mMinFrameRate(minFrameRate), mMaxFrameRate(maxFrameRate) {}
+#endif //ENABLE_AV_ENHANCEMENTS
 
          ~VideoEncoderCap() {}
 
@@ -330,8 +340,10 @@ private:
         int mMinFrameWidth, mMaxFrameWidth;
         int mMinFrameHeight, mMaxFrameHeight;
         int mMinFrameRate, mMaxFrameRate;
+#ifdef ENABLE_AV_ENHANCEMENTS
         int mMaxHFRFrameWidth, mMaxHFRFrameHeight;
         int mMaxHFRMode;
+#endif //ENABLE_AV_ENHANCEMENTS
     };
 
     struct AudioEncoderCap {
