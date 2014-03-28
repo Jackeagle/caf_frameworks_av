@@ -35,7 +35,7 @@
 #include <camera/ICameraServiceListener.h>
 
 /* This needs to be increased if we can have more cameras */
-#define MAX_CAMERAS 2
+#define MAX_CAMERAS 4
 
 namespace android {
 
