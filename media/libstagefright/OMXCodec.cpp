@@ -3973,6 +3973,8 @@ status_t OMXCodec::start(MetaData *meta) {
 
     if(mPaused && mIsEncoder) {
         CODEC_LOGV("resume : S");
+        //wake waitForBufferFilled_l() to avoid timeout when mPause becomes false
+        mBufferFilled.signal();
         mPaused = false;
 
         if (mIsVideo) {
