@@ -69,7 +69,7 @@ private:
 
         // This is the initial mute duration to suppress
         // the video recording signal tone
-        kAutoRampStartUs = 0,
+        kAutoRampStartUs = 300000,
     };
 
     Mutex mLock;
@@ -88,6 +88,7 @@ private:
     int64_t mInitialReadTimeUs;
     int64_t mNumFramesReceived;
     int64_t mNumClientOwnedBuffers;
+    int64_t mAutoRampStartUs;
 
     List<MediaBuffer * > mBuffersReceived;
 
