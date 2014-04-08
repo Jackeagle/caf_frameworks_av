@@ -2956,12 +2956,6 @@ void AudioFlinger::MixerThread::threadLoop_standby()
     PlaybackThread::threadLoop_standby();
 }
 
-// Empty implementation for standard mixer
-// Overridden for offloaded playback
-void AudioFlinger::PlaybackThread::flushOutput_l()
-{
-}
-
 bool AudioFlinger::PlaybackThread::waitingAsyncCallback_l()
 {
     return false;
@@ -4262,6 +4256,17 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::OffloadThread::prepareTr
         sp<Track> l = mLatestActiveTrack.promote();
         bool last = l.get() == track;
 
+        if (track->isInvalid()) {
+            ALOGW("An invalidated track shouldn't be in active list");
+            tracksToRemove->add(track);
+            continue;
+        }
+
+        if (track->mState == TrackBase::IDLE) {
+            ALOGW("An idle track shouldn't be in active list");
+            continue;
+        }
+
         if (track->isPausing()) {
             track->setPaused();
             if (last) {
@@ -4280,32 +4285,39 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::OffloadThread::prepareTr
                 mBytesRemaining = 0;    // stop writing
             }
             tracksToRemove->add(track);
-        } else if (track->framesReady() && track->isReady() &&
+        } else if (track->isFlushPending()) {
+            track->flushAck();
+            if (last) {
+                mFlushPending = true;
+            }
+        } else if (track->isResumePending()) {
+            track->resumeAck();
+            if (last) {
+                if (mPausedBytesRemaining) {
+                    // Need to continue write that was interrupted
+                    mCurrentWriteLength = mPausedWriteLength;
+                    mBytesRemaining = mPausedBytesRemaining;
+                    mPausedBytesRemaining = 0;
+                }
+                if (mHwPaused) {
+                    doHwResume = true;
+                    mHwPaused = false;
+                    // threadLoop_mix() will handle the case that we need to
+                    // resume an interrupted write
+                }
+                // enable write to audio HAL
+                sleepTime = 0;
+
+                // Do not handle new data in this iteration even if track->framesReady()
+                mixerStatus = MIXER_TRACKS_ENABLED;
+            }
+        }  else if (track->framesReady() && track->isReady() &&
                 !track->isPaused() && !track->isTerminated() && !track->isStopping_2()) {
             ALOGVV("OffloadThread: track %d s=%08x [OK]", track->name(), cblk->mServer);
             if (track->mFillingUpStatus == Track::FS_FILLED) {
                 track->mFillingUpStatus = Track::FS_ACTIVE;
                 // make sure processVolume_l() will apply new volume even if 0
                 mLeftVolFloat = mRightVolFloat = -1.0;
-                if (track->isResumePending()) {
-                    track->resumeAck();
-                    if (last) {
-                        if (mPausedBytesRemaining) {
-                            // Need to continue write that was interrupted
-                            mCurrentWriteLength = mPausedWriteLength;
-                            mBytesRemaining = mPausedBytesRemaining;
-                            mPausedBytesRemaining = 0;
-                        }
-                        if (mHwPaused) {
-                            doHwResume = true;
-                            mHwPaused = false;
-                            // threadLoop_mix() will handle the case that we need to
-                            // resume an interrupted write
-                        }
-                        // enable write to audio HAL
-                        sleepTime = 0;
-                    }
-                }
             }
 
             if (last) {
@@ -4421,11 +4433,6 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::OffloadThread::prepareTr
     removeTracks_l(*tracksToRemove);
 
     return mixerStatus;
-}
-
-void AudioFlinger::OffloadThread::flushOutput_l()
-{
-    mFlushPending = true;
 }
 
 // must be called with thread mutex locked
