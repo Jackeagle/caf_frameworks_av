@@ -906,7 +906,8 @@ void AudioPolicyService::AudioCommandThread::insertCommand_l(AudioCommand *comma
     for (i = mAudioCommands.size()-1; i >= 0; i--) {
         AudioCommand *command2 = mAudioCommands[i];
         // commands are sorted by increasing time stamp: no need to scan the rest of mAudioCommands
-        if (command2->mTime <= command->mTime) break;
+        // ensure check is performed on updated timestamp of current command
+        if (command2->mTime <= (time == 0 ? command->mTime : time)) break;
         if (command2->mCommand != command->mCommand) continue;
 
         switch (command->mCommand) {
