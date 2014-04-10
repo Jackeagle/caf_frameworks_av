@@ -51,7 +51,8 @@ NuPlayer::RTSPSource::RTSPSource(
       mBuffering(true),
       mSeekGeneration(0),
       mEOSTimeoutAudio(0),
-      mEOSTimeoutVideo(0) {
+      mEOSTimeoutVideo(0),
+      mSeekDoneNotify(NULL) {
     if (headers) {
         mExtraHeaders = *headers;
 
@@ -388,12 +389,19 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
 
         case MyHandler::kWhatSeekDone:
         {
+            if (mSeekDoneNotify != NULL) {
+                mSeekDoneNotify->post();
+                mSeekDoneNotify = NULL;
+            }
             mState = CONNECTED;
             break;
         }
 
         case MyHandler::kWhatAccessUnit:
         {
+            if (mState == SEEKING) {
+                break;
+            }
             size_t trackIndex;
             CHECK(msg->findSize("trackIndex", &trackIndex));
 
@@ -680,6 +688,11 @@ void NuPlayer::RTSPSource::finishDisconnectIfPossible() {
 
     (new AMessage)->postReply(mDisconnectReplyID);
     mDisconnectReplyID = 0;
+}
+
+bool NuPlayer::RTSPSource::setCbfForSeekDone(const sp<AMessage> &notify) {
+    mSeekDoneNotify = notify;
+    return true;
 }
 
 }  // namespace android
