@@ -472,13 +472,13 @@ status_t AudioTrack::start()
     }
 
     status_t status = NO_ERROR;
-    if (!(flags & CBLK_INVALID)) {
+    if (!(flags & (CBLK_INVALID | CBLK_STREAM_FATAL_ERROR))) {
         status = mAudioTrack->start();
         if (status == DEAD_OBJECT) {
             flags |= CBLK_INVALID;
         }
     }
-    if (flags & CBLK_INVALID) {
+    if (flags & (CBLK_INVALID | CBLK_STREAM_FATAL_ERROR)) {
         status = restoreTrack_l("start");
     }
 
@@ -1426,6 +1426,13 @@ nsecs_t AudioTrack::processAudioBuffer(const sp<AudioTrackThread>& thread)
     // Can only reference mCblk while locked
     int32_t flags = android_atomic_and(
         ~(CBLK_UNDERRUN | CBLK_LOOP_CYCLE | CBLK_LOOP_FINAL | CBLK_BUFFER_END), &mCblk->mFlags);
+
+    if (flags & CBLK_STREAM_FATAL_ERROR) {
+        ALOGE("clbk sees STREAM_FATAL_ERROR.. close session");
+        mLock.unlock();
+        mCbf(EVENT_STREAM_END, mUserData, NULL);
+        return NS_INACTIVE;
+    }
 
     // Check for track invalidation
     if (flags & CBLK_INVALID) {
