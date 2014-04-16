@@ -472,13 +472,13 @@ status_t AudioTrack::start()
     }
 
     status_t status = NO_ERROR;
-    if (!(flags & CBLK_INVALID)) {
+    if (!(flags & (CBLK_INVALID | CBLK_STREAM_FATAL_ERROR))) {
         status = mAudioTrack->start();
         if (status == DEAD_OBJECT) {
             flags |= CBLK_INVALID;
         }
     }
-    if (flags & CBLK_INVALID) {
+    if (flags & (CBLK_INVALID | CBLK_STREAM_FATAL_ERROR)) {
         status = restoreTrack_l("start");
     }
 
@@ -1108,8 +1108,14 @@ status_t AudioTrack::createTrack_l(
     }
 
     mAudioTrack->attachAuxEffect(mAuxEffectId);
-    // FIXME don't believe this lie
-    mLatency = afLatency + (1000*frameCount) / sampleRate;
+
+    if (flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
+        // Use latency given by HAL in offload mode
+        mLatency = afLatency;
+    } else {
+        // FIXME don't believe this lie
+        mLatency = afLatency + (1000*frameCount) / sampleRate;
+    }
     mFrameCount = frameCount;
     // If IAudioTrack is re-created, don't let the requested frameCount
     // decrease.  This can confuse clients that cache frameCount().
@@ -1420,6 +1426,13 @@ nsecs_t AudioTrack::processAudioBuffer(const sp<AudioTrackThread>& thread)
     // Can only reference mCblk while locked
     int32_t flags = android_atomic_and(
         ~(CBLK_UNDERRUN | CBLK_LOOP_CYCLE | CBLK_LOOP_FINAL | CBLK_BUFFER_END), &mCblk->mFlags);
+
+    if (flags & CBLK_STREAM_FATAL_ERROR) {
+        ALOGE("clbk sees STREAM_FATAL_ERROR.. close session");
+        mLock.unlock();
+        mCbf(EVENT_STREAM_END, mUserData, NULL);
+        return NS_INACTIVE;
+    }
 
     // Check for track invalidation
     if (flags & CBLK_INVALID) {
