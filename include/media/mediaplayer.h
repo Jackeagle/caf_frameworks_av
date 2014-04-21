@@ -166,6 +166,8 @@ enum media_player_invoke_ids {
     INVOKE_ID_SELECT_TRACK = 4,
     INVOKE_ID_UNSELECT_TRACK = 5,
     INVOKE_ID_SET_VIDEO_SCALING_MODE = 6,
+    INVOKE_ID_SET_TCP_DECODER_LATENCY = 7,
+    INVOKE_ID_SET_FLUSH_TIMESTAMP = 8
 };
 
 // Keep MEDIA_TRACK_TYPE_* in sync with MediaPlayer.java.

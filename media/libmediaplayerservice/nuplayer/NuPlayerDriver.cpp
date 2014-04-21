@@ -277,6 +277,20 @@ status_t NuPlayerDriver::invoke(const Parcel &request, Parcel *reply) {
             int mode = request.readInt32();
             return mPlayer->setVideoScalingMode(mode);
         }
+#ifdef QCOM_WFD_SINK
+        case INVOKE_ID_SET_TCP_DECODER_LATENCY:
+        {
+            int decoderLatency = request.readInt32();
+            ALOGE("decoderlatency = %d",decoderLatency);
+            return mPlayer->setDecoderLatency(decoderLatency);
+        }
+        case INVOKE_ID_SET_FLUSH_TIMESTAMP:
+        {
+            uint64_t flushTimestamp = request.readInt64();
+            ALOGE("flushTimestamp = %llu",flushTimestamp);
+            return mPlayer->setFlushTimeStamp(flushTimestamp);
+        }
+#endif //QCOM_WFD_SINK
         default:
         {
             return INVALID_OPERATION;

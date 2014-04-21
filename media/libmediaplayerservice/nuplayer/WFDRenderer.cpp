@@ -44,6 +44,8 @@ NuPlayer::WFDRenderer::WFDRenderer(
       mAudioSink(sink),
       mNotify(notify),
       mNumFramesWritten(0),
+      mDecoderLatency(0),
+      mFlushTimeStamp(0),
       mDrainAudioQueuePending(false),
       mDrainVideoQueuePending(false),
       mAudioQueueGeneration(0),
@@ -258,7 +260,7 @@ void NuPlayer::WFDRenderer::wfdPostDrainAudioQueue(int64_t delayUs) {
     if (mAudioQueue.empty()) {
         return;
     }
-
+    mAudioFlushInProgress = false;
    if(mWFDAudioTimeMaster == true) {
       mDrainAudioQueuePending = true;
       sp<AMessage> msg = new AMessage(kWhatDrainAudioQueue, id());
@@ -275,63 +277,82 @@ void NuPlayer::WFDRenderer::wfdPostDrainAudioQueue(int64_t delayUs) {
        // EOS doesn't carry a timestamp.
        delayUs = 0;
      } else {
-        int64_t mediaTimeUs;
+        int64_t mediaTimeUs = 0;
         CHECK(entry.mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
-        if ( (mHasAudio && !mHasVideo) && (mWasPaused == true)) {
-             mWasPaused = false;
-        }
-
-        if (mRefAudioMediaTimeUs < 0)
+        if(mediaTimeUs < mFlushTimeStamp)
         {
-           if (mediaTimeUs == 0 && entry.mBuffer->size() == 2)
-           {
-              //if codec config frame then do not set the mRefAudioMediaTimeUs
-              ALOGE("Audio Codec config frame, hence no need set size %d, mRefAudioMediaTimeUs %d",
-                     entry.mBuffer->size(),mRefAudioMediaTimeUs);
-           }
-           else
-           {
-              mRefAudioMediaTimeUs = mediaTimeUs;
-              ALOGE("Setting mRefAudioMediaTimeUs %d, size %d",
-                     mRefAudioMediaTimeUs, entry.mBuffer->size());
-
-           }
-
-       }
-        mAnchorTimeMediaUs = mediaTimeUs - mRefAudioMediaTimeUs;
-        mAnchorTimeRealUs = wfdGetMediaTime(true);
-
-        int64_t realTimeUs = mediaTimeUs - WFD_RENDERER_AUDIO_LATENCY;
-        //Audio latency, we need to fine tune this number  //(mAudioSink->latency());
-
-        delayUs = mAnchorTimeMediaUs - wfdGetMediaTime(true);
-        mAudioDelayInUs = delayUs;
-       ALOGE("AV Audio mAudioDelayInUs (%lld)", mAudioDelayInUs);
-#ifdef WFD_ENABLE_AV_CLOCK_CORRECTION
-        /* If AV Clock correction is enabled, check if the Audio delayUs constantly and contineously
-           crossing AV_CLOCK_ADJUST_DELAY_SATURATION_POINT, if so then keep track of the count */
-        if (-(delayUs) > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT)
-        {
-           // increment count
-           mNumAudioFramesClockCorrection++;
+            ALOGE("wfdPostDrainAudioQueue : dropping data TS = %lld", mediaTimeUs);
+            mAudioQueue.erase(mAudioQueue.begin());
+            mAudioLateByUs = 0ll;
+            delayUs = 0;
+            mDrainAudioQueuePending = false;
+            mAudioFlushInProgress = true;
         }
         else
         {
-          //reset count to 0, if delay is < AV_CLOCK_ADJUST_DELAY_SATURATION_POINT
-          mNumAudioFramesClockCorrection = 0;
-        }
-#endif
-        ALOGV("@@@@:: wfdPostDrainAudioQueue delayUs -  %lld us realTimeUs  %lld us   wfdGetMediaTime  %lld us  mMediaClockUs %lld us ALooper::GetUs() %lld us mNumAudioFramesClockCorrection (%d)",
-            delayUs, realTimeUs, wfdGetMediaTime(true), mMediaClockUs, ALooper::GetNowUs(), mNumAudioFramesClockCorrection);
-        //need to evaluate this
-        if(delayUs < 0) {
-            delayUs = 0;
-        }
-     }
-     /* Since it is a live broadcast scenario, we do not expect positive delay*/
-        msg->post(0);
+            if ( (mHasAudio && !mHasVideo) && (mWasPaused == true)) {
+                 mWasPaused = false;
+            }
 
-     ALOGV("WFDRenderer: Audio Delay = %d", delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
+            if (mRefAudioMediaTimeUs < 0)
+            {
+               if (mediaTimeUs == 0 && entry.mBuffer->size() == 2)
+               {
+                  //if codec config frame then do not set the mRefAudioMediaTimeUs
+                  ALOGE("Audio Codec config frame, hence no need set size %d, mRefAudioMediaTimeUs %d",
+                         entry.mBuffer->size(),mRefAudioMediaTimeUs);
+               }
+               else
+               {
+                  mRefAudioMediaTimeUs = mediaTimeUs;
+                  ALOGE("Setting mRefAudioMediaTimeUs %d, size %d",
+                         mRefAudioMediaTimeUs, entry.mBuffer->size());
+
+               }
+
+           }
+            mAnchorTimeMediaUs = mediaTimeUs - mRefAudioMediaTimeUs;
+            mAnchorTimeRealUs = wfdGetMediaTime(true);
+
+            int64_t realTimeUs = mediaTimeUs - WFD_RENDERER_AUDIO_LATENCY;
+            //Audio latency, we need to fine tune this number  //(mAudioSink->latency());
+
+            if(mDecoderLatency > 0) {
+                delayUs = (mAnchorTimeMediaUs - wfdGetMediaTime(true)) + mDecoderLatency;
+            }else {
+                delayUs = mAnchorTimeMediaUs - wfdGetMediaTime(true);
+            }
+            mAudioDelayInUs = delayUs;
+           ALOGE("AV Audio mAudioDelayInUs (%lld)", mAudioDelayInUs);
+#ifdef WFD_ENABLE_AV_CLOCK_CORRECTION
+            /* If AV Clock correction is enabled, check if the Audio delayUs constantly and contineously
+               crossing AV_CLOCK_ADJUST_DELAY_SATURATION_POINT, if so then keep track of the count */
+            if (-(delayUs) > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT)
+            {
+               // increment count
+               mNumAudioFramesClockCorrection++;
+            }
+            else
+            {
+              //reset count to 0, if delay is < AV_CLOCK_ADJUST_DELAY_SATURATION_POINT
+              mNumAudioFramesClockCorrection = 0;
+            }
+#endif
+            if(mDecoderLatency > 0) {
+                delayUs = delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP;
+            }else {
+                delayUs = 0;
+            }
+            ALOGV("@@@@:: wfdPostDrainAudioQueue delayUs -  %lld us realTimeUs  %lld us   wfdGetMediaTime  %lld us  mMediaClockUs %lld us ALooper::GetUs() %lld us mNumAudioFramesClockCorrection (%d)",
+                delayUs, realTimeUs, wfdGetMediaTime(true), mMediaClockUs, ALooper::GetNowUs(), mNumAudioFramesClockCorrection);
+         }
+     }
+     /* Since WFD is a live broadcast scenario, we don't expect positive delay
+      * For TCP scenario if buffering is enabled we will have positive scenario.
+      */
+     msg->post(delayUs);
+
+     ALOGV("WFDRenderer: Audio Delay = %lld", delayUs);
   }
 }
 
@@ -402,7 +423,7 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
 
               int64_t nowUs = wfdGetMediaTime(true);
               mAudioLateByUs = nowUs - realTimeUs;
-              tooLate = (mAudioLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
+              tooLate = (mAudioLateByUs > (WFD_RENDERER_AVSYNC_WINDOW + mDecoderLatency));
               ALOGV("@@@@:: wfdOnDrainAudioQueue mediaTimeUs  %lld us nowUs  %lld us  realTimeUs %lld us   mAudioLateByUs  %lld us ", mediaTimeUs, nowUs, realTimeUs, mAudioLateByUs);
 
               if (tooLate) {
@@ -435,7 +456,7 @@ bool NuPlayer::WFDRenderer::wfdOnDrainAudioQueue() {
                        (ssize_t)copy);
             }
             else {
-               ALOGV("@@@@:: Dropping audio buffer frame is too late by % lld us", mAudioLateByUs);
+               ALOGV("@@@@:: Dropping audio buffer frame is too late by % lld us", (mAudioLateByUs - mDecoderLatency));
             }
 
             entry->mOffset += copy;
@@ -473,170 +494,189 @@ void NuPlayer::WFDRenderer::wfdPostDrainVideoQueue() {
     sp<AMessage> msg = new AMessage(kWhatDrainVideoQueue, id());
     msg->setInt32("generation", mVideoQueueGeneration);
 
-    int64_t delayUs;
+    int64_t delayUs = 0;
+    mVideoFlushInProgress = false;
 
     if (entry.mBuffer == NULL) {
         // EOS doesn't carry a timestamp.
         delayUs = 0;
+        mDrainVideoQueuePending = true;
     } else {
         int64_t mediaTimeUs;
         CHECK(entry.mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
+        if(mediaTimeUs < mFlushTimeStamp)
+        {
+            ALOGE("wfdPostDrainVideoQueue : dropping data TS = %lld", mediaTimeUs);
+            mVideoFlushInProgress = true;
+        }
+        else
+        {
+            if (mAnchorTimeMediaUs < 0) {
+                delayUs = 0;
 
-        if (mAnchorTimeMediaUs < 0) {
-            delayUs = 0;
-
-           if (!mMediaTimeRead)
-            {
-            if (mRefVideoMediaTime <0) {
-                mRefVideoMediaTime = mediaTimeUs;
-                }
-            }
-           else
-            {
-              mRefVideoMediaTime = mRefAudioMediaTimeUs;
-            }
-
-            if (!mHasAudio) {
-                mAnchorTimeMediaUs = mediaTimeUs;
-                mAnchorTimeRealUs = wfdGetMediaTime(false);
-            }
-        } else {
-            if ( (!mHasAudio && mHasVideo) && (mWasPaused == true))
-            {
-               mAnchorTimeMediaUs = mediaTimeUs;
-               mAnchorTimeRealUs = wfdGetMediaTime(false);
-               mWasPaused = false;
-            }
-            if (mRefVideoMediaTime <0) {
-                mRefVideoMediaTime = mediaTimeUs;
-            }
-
-          if (!mMediaTimeRead)
-            {
-            if (mRefVideoMediaTime <0) {
-                mRefVideoMediaTime = mediaTimeUs;
-            }
-            }
-           else
-            {
-              if (mRefAudioMediaTimeUs >= 0) {
-                mRefVideoMediaTime = mRefAudioMediaTimeUs;
-              }
-            }
-
-            int64_t realTimeUs = mediaTimeUs - mRefVideoMediaTime;
-            delayUs = realTimeUs - (wfdGetMediaTime(false));
-            // Note down the video Delay
-            mVideoDelayInUs = delayUs;
-            ALOGV("AV Video mVideoDelayInUs (%lld)", mVideoDelayInUs);
-#ifdef WFD_ENABLE_AV_CLOCK_CORRECTION
-            /* The conscept behind the clock correction is if Audio and Video frames have crossed
-               AV_CLOCK_ADJUST_DELAY_SATURATION_POINT contineously for AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME
-               amount of frames consecutinvely then adjust the AV Sync media clock as per the delay
-               detected so that there won't be any frame drops if the delayUs crosses AV Sync window. */
-
-            /*If Video delayUs has corssed AV_CLOCK_ADJUST_DELAY_SATURATION_POINT */
-            if (-(delayUs) > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT)
-            {
-                /*check if the number of consecutinve delayUs count is greater than
-                  AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME then check is audio is
-                  present and check the audio delay pattern. If Audio also has the
-                  same pattern then go ahead and correct the clock */
-                 if ((mNumVideoFramesClockCorrection > AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME)  &&
-                       (mChkAVCorrection == true))
-                 {
-                   if (mHasAudio)
-                   {
-                    /* Check if Audio delayUs is more than AV_CLOCK_ADJUST_DELAY_SATURATION_POINT */
-                    if (-(mAudioDelayInUs) > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT)
-                    {
-                         int64_t mLocalAudioDelayInUs = mAudioDelayInUs;
-                         /* Check if audio delay crossed AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME
-                            across contineous frames */
-                         if (mNumAudioFramesClockCorrection > AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME)
-                         {
-                            // Trigger AV Clock correction logic
-                            mNumVideoFramesClockCorrection = 0;
-                            mNumAudioFramesClockCorrection = 0;
-                            ALOGV("wfdOnClockAdjust AV Clock Correction is needed now current mMediaClockUs (%lld)", mMediaClockUs);
-                            // get the AV Clock and adjust it by constant value.
-                            uint64_t mAVclockCorrectionTS = mMediaClockUs + AV_CONSTANT_ADJUST_DELAY;
-                            /* Now set the base timie, but just to make sure the delayUs
-                               because of ajusting it to eact delay doesn't go to +ve. Adjust the
-                               new offset calculated with AV_CLOCK_ADJUST_LATENCY_BY, just to
-                               make sure next time when delay is caluculated it will be in -ve */
-                            setBaseMediaTime((mAVclockCorrectionTS - AV_CLOCK_ADJUST_LATENCY_BY) , true);
-
-                            int64_t realTimeUs_local = mediaTimeUs - mRefVideoMediaTime;
-                            delayUs = realTimeUs_local - (wfdGetMediaTime(false));
-                            mVideoDelayInUs = delayUs;
-
-                            ALOGV("wfdOnClockAdjust AV Clock Correction done current (%lld) calculated (%lld)", mMediaClockUs, mAVclockCorrectionTS);
-                         }
+               if (!mMediaTimeRead)
+                {
+                if (mRefVideoMediaTime <0) {
+                    mRefVideoMediaTime = mediaTimeUs;
                     }
-                  }
-                  else
-                  {
-                      // video only session
-                      ALOGE("wfdOnClockAdjust (V only) AV Clock Correction is needed now current mMediaClockUs (%lld)", mMediaClockUs);
-                      mNumVideoFramesClockCorrection = 0;
-                      uint64_t mAVclockCorrectionTS = mMediaClockUs -   mVideoDelayInUs;
-                      setBaseMediaTime((mAVclockCorrectionTS - AV_CLOCK_ADJUST_LATENCY_BY) , true);
-                      int64_t realTimeUs_local = mediaTimeUs - mRefVideoMediaTime;
-                      delayUs = realTimeUs_local - (wfdGetMediaTime(false));
-                      mVideoDelayInUs = delayUs;
+                }
+               else
+                {
+                  mRefVideoMediaTime = mRefAudioMediaTimeUs;
+                }
 
-                      ALOGE("wfdOnClockAdjust (V only) AV Clock Correction done current (%lld) calculated (%lld)", mMediaClockUs, mAVclockCorrectionTS);
+                if (!mHasAudio) {
+                    mAnchorTimeMediaUs = mediaTimeUs;
+                    mAnchorTimeRealUs = wfdGetMediaTime(false);
+                }
+            } else {
+                if ( (!mHasAudio && mHasVideo) && (mWasPaused == true))
+                {
+                   mAnchorTimeMediaUs = mediaTimeUs;
+                   mAnchorTimeRealUs = wfdGetMediaTime(false);
+                   mWasPaused = false;
+                }
+                if (mRefVideoMediaTime <0) {
+                    mRefVideoMediaTime = mediaTimeUs;
+                }
 
+              if (!mMediaTimeRead)
+                {
+                if (mRefVideoMediaTime <0) {
+                    mRefVideoMediaTime = mediaTimeUs;
+                }
+                }
+               else
+                {
+                  if (mRefAudioMediaTimeUs >= 0) {
+                    mRefVideoMediaTime = mRefAudioMediaTimeUs;
                   }
+                }
+
+                int64_t realTimeUs = mediaTimeUs - mRefVideoMediaTime;
+                if(mDecoderLatency > 0) {
+                    delayUs = (realTimeUs - wfdGetMediaTime(false)) + mDecoderLatency;
+                }else {
+                    delayUs = realTimeUs - (wfdGetMediaTime(false));
+                }
+
+                // Note down the video Delay
+                mVideoDelayInUs = delayUs;
+                ALOGV("AV Video mVideoDelayInUs (%lld)", mVideoDelayInUs);
+#ifdef WFD_ENABLE_AV_CLOCK_CORRECTION
+                /* The conscept behind the clock correction is if Audio and Video frames have crossed
+                   AV_CLOCK_ADJUST_DELAY_SATURATION_POINT contineously for AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME
+                   amount of frames consecutinvely then adjust the AV Sync media clock as per the delay
+                   detected so that there won't be any frame drops if the delayUs crosses AV Sync window. */
+
+                /*If Video delayUs has corssed AV_CLOCK_ADJUST_DELAY_SATURATION_POINT */
+                if (-(delayUs) > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT)
+                {
+                    /*check if the number of consecutinve delayUs count is greater than
+                      AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME then check is audio is
+                      present and check the audio delay pattern. If Audio also has the
+                      same pattern then go ahead and correct the clock */
+                     if ((mNumVideoFramesClockCorrection > AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME)  &&
+                           (mChkAVCorrection == true))
+                     {
+                       if (mHasAudio)
+                       {
+                        /* Check if Audio delayUs is more than AV_CLOCK_ADJUST_DELAY_SATURATION_POINT */
+                        if (-(mAudioDelayInUs) > AV_CLOCK_ADJUST_DELAY_SATURATION_POINT)
+                        {
+                             int64_t mLocalAudioDelayInUs = mAudioDelayInUs;
+                             /* Check if audio delay crossed AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME
+                                across contineous frames */
+                             if (mNumAudioFramesClockCorrection > AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME)
+                             {
+                                // Trigger AV Clock correction logic
+                                mNumVideoFramesClockCorrection = 0;
+                                mNumAudioFramesClockCorrection = 0;
+                                ALOGV("wfdOnClockAdjust AV Clock Correction is needed now current mMediaClockUs (%lld)", mMediaClockUs);
+                                // get the AV Clock and adjust it by constant value.
+                                uint64_t mAVclockCorrectionTS = mMediaClockUs + AV_CONSTANT_ADJUST_DELAY;
+                                /* Now set the base timie, but just to make sure the delayUs
+                                   because of ajusting it to eact delay doesn't go to +ve. Adjust the
+                                   new offset calculated with AV_CLOCK_ADJUST_LATENCY_BY, just to
+                                   make sure next time when delay is caluculated it will be in -ve */
+                                setBaseMediaTime((mAVclockCorrectionTS - AV_CLOCK_ADJUST_LATENCY_BY) , true);
+
+                                int64_t realTimeUs_local = mediaTimeUs - mRefVideoMediaTime;
+                                delayUs = realTimeUs_local - (wfdGetMediaTime(false));
+                                mVideoDelayInUs = delayUs;
+
+                                ALOGV("wfdOnClockAdjust AV Clock Correction done current (%lld) calculated (%lld)", mMediaClockUs, mAVclockCorrectionTS);
+                             }
+                        }
+                      }
+                      else
+                      {
+                          // video only session
+                          ALOGE("wfdOnClockAdjust (V only) AV Clock Correction is needed now current mMediaClockUs (%lld)", mMediaClockUs);
+                          mNumVideoFramesClockCorrection = 0;
+                          uint64_t mAVclockCorrectionTS = mMediaClockUs -   mVideoDelayInUs;
+                          setBaseMediaTime((mAVclockCorrectionTS - AV_CLOCK_ADJUST_LATENCY_BY) , true);
+                          int64_t realTimeUs_local = mediaTimeUs - mRefVideoMediaTime;
+                          delayUs = realTimeUs_local - (wfdGetMediaTime(false));
+                          mVideoDelayInUs = delayUs;
+
+                          ALOGE("wfdOnClockAdjust (V only) AV Clock Correction done current (%lld) calculated (%lld)", mMediaClockUs, mAVclockCorrectionTS);
+
+                      }
+                    }
+                    else
+                    {
+                      /*  Make sure to increment count when the consecutive delay >
+                          AV_CLOCK_ADJUST_DELAY_SATURATION_POINT and if the count is
+                          reached AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME no need to
+                          increment as we might have to correct the clock now. when
+                          delay during this period becomes <
+                          AV_CLOCK_ADJUST_DELAY_SATURATION_POINT,
+                          mNumVideoFramesClockCorrection will be reseted and it will
+                          start incrementing
+                       */
+                       mNumVideoFramesClockCorrection++;
+                    }
                 }
                 else
                 {
-                  /*  Make sure to increment count when the consecutive delay >
-                      AV_CLOCK_ADJUST_DELAY_SATURATION_POINT and if the count is
-                      reached AV_CLOCK_ADJUST_CONSECUTIVE_DELAY_FRAME no need to
-                      increment as we might have to correct the clock now. when
-                      delay during this period becomes <
-                      AV_CLOCK_ADJUST_DELAY_SATURATION_POINT,
-                      mNumVideoFramesClockCorrection will be reseted and it will
-                      start incrementing
-                   */
-                   mNumVideoFramesClockCorrection++;
+                  //reset count to 0
+                  mNumVideoFramesClockCorrection = 0;
                 }
-            }
-            else
-            {
-              //reset count to 0
-              mNumVideoFramesClockCorrection = 0;
-            }
-            /* To post the AV Correction logic to trigger after 4/5 secs */
-            if (mPostAVCorrection)
-            {
-              ALOGE("wfdPostDrainVideoQueue Post AV Clock correction after 2.5 sec");
-              /* When AV correction logic to be triggered */
-              trackAVClock(WFD_RENDERER_AV_CLOCK_ADJUST_INTERVAL * 2.5);
-              mPostAVCorrection = false;
-            }
+                /* To post the AV Correction logic to trigger after 4/5 secs */
+                if (mPostAVCorrection)
+                {
+                  ALOGE("wfdPostDrainVideoQueue Post AV Clock correction after 2.5 sec");
+                  /* When AV correction logic to be triggered */
+                  trackAVClock(WFD_RENDERER_AV_CLOCK_ADJUST_INTERVAL * 2.5);
+                  mPostAVCorrection = false;
+                }
 #endif
-        ALOGE("wfdPostDrainVideoQueue delay  %lld us  mediaTimeUs %lld us   wfdGetMediaTime()  %lld us  mRefVideoMediaTime   %lld us    mMediaClockUs %lld us  ALooper::GetNowUs() %lld us mNumVideoFramesClockCorrection (%d) mNumAudioFramesClockCorrection(%d)", delayUs, mediaTimeUs, wfdGetMediaTime(false),mRefVideoMediaTime,
-                  mMediaClockUs, ALooper::GetNowUs(), mNumVideoFramesClockCorrection,mNumAudioFramesClockCorrection);
+            ALOGE("wfdPostDrainVideoQueue delay  %lld us  mediaTimeUs %lld us   wfdGetMediaTime()  %lld us  mRefVideoMediaTime   %lld us    mMediaClockUs %lld us  ALooper::GetNowUs() %lld us mNumVideoFramesClockCorrection (%d) mNumAudioFramesClockCorrection(%d)", delayUs, mediaTimeUs, wfdGetMediaTime(false),mRefVideoMediaTime,
+                      mMediaClockUs, ALooper::GetNowUs(), mNumVideoFramesClockCorrection,mNumAudioFramesClockCorrection);
 
+            }
+            mDrainVideoQueuePending = true;
         }
     }
-    if(delayUs < 0) {
+    if(mDecoderLatency > 0) {
+        delayUs = delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP;
+    }else {
         delayUs = 0;
     }
-    /* Since WFD is a live broadcast scenario, we don't expect positive delay */
-    msg->post(0);
+    /* Since WFD is a live broadcast scenario, we don't expect positive delay 
+     * For TCP scenario if buffering is enabled we will have positive scenario.
+     */
+    msg->post(delayUs);
 
-    ALOGE("$$$$$ WFDRenderer: Video Delay = %d", delayUs - WFD_RENDERER_TIME_BEFORE_WAKE_UP);
-    mDrainVideoQueuePending = true;
+    ALOGV("$$$$$ WFDRenderer: Video Delay = %lld", delayUs);
 }
 
 void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
     if (mVideoQueue.empty()) {
         return;
     }
+
     QueueEntry *entry = &*mVideoQueue.begin();
 
     if (entry->mBuffer == NULL) {
@@ -665,7 +705,11 @@ void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
     int64_t nowUs = wfdGetMediaTime(false);
     mVideoLateByUs = nowUs - realTimeUs;
 
-    bool tooLate = (mVideoLateByUs > WFD_RENDERER_AVSYNC_WINDOW);
+    /* In TCP case when we will have a buffering and all the frames
+     * will come delayed by buffering duration. Making sure that those are
+     * not dropped unnecessarily as it is expected.
+     */
+    bool tooLate = (mVideoLateByUs > (WFD_RENDERER_AVSYNC_WINDOW + mDecoderLatency));
     ALOGV("@@@@:: wfdOnDrainVideoQueue mediaTimeUs %lld us \
            realTimeUs %lld us nowUs  %lld us  mVideoLateByUs  %lld us",\
            mediaTimeUs, realTimeUs, nowUs, mVideoLateByUs);
@@ -677,7 +721,14 @@ void NuPlayer::WFDRenderer::wfdOnDrainVideoQueue() {
         ALOGV("rendering video at media time %.2f secs", mediaTimeUs / 1E6);
     }
 
-    entry->mNotifyConsumed->setInt32("render", !tooLate);
+    if(!mVideoFlushInProgress)
+    {
+        entry->mNotifyConsumed->setInt32("render", !tooLate);
+    }
+    else
+    {
+        entry->mNotifyConsumed->setInt32("render", false);
+    }
     entry->mNotifyConsumed->post();
     mVideoQueue.erase(mVideoQueue.begin());
     entry = NULL;
@@ -1011,5 +1062,18 @@ ALOGE("$$$$$ WFDRenderer: Setting basetime %lld", ts);
      ALOGE("$$$$$ WFDRenderer: Set basetime %lld bForceReset %d mMediaTimeRead %d", ts, bForceReset, mMediaTimeRead);
    }
 }
+
+void NuPlayer::WFDRenderer::setDecoderLatency(uint32_t decoderLatency)
+{
+    mDecoderLatency = decoderLatency;
+    ALOGE("WFDRenderer: setDecoderLatency %lu", mDecoderLatency);
+}
+
+void NuPlayer::WFDRenderer::setFlushTimeStamp(uint64_t flushTimeStamp)
+{
+    mFlushTimeStamp = flushTimeStamp;
+    ALOGE("WFDRenderer: setFlushTimeStamp %llu", mFlushTimeStamp);
+}
+
 
 }  // namespace android

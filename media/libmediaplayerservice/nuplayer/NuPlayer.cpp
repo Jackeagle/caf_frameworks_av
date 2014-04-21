@@ -1204,6 +1204,28 @@ status_t NuPlayer::setVideoScalingMode(int32_t mode) {
     return OK;
 }
 
+#ifdef QCOM_WFD_SINK
+status_t NuPlayer::setDecoderLatency(uint32_t decoderLatency) {
+    if(mWFDSinkSession && (mRenderer != NULL))
+    {
+        ((WFDRenderer*)(mRenderer.get()))->setDecoderLatency(decoderLatency);
+        return OK;
+    }
+    return UNKNOWN_ERROR;
+}
+
+status_t NuPlayer::setFlushTimeStamp(uint64_t flushTimeStamp) {
+    if(!mWFDSinkSession && (mRenderer == NULL) && (mSource == NULL))
+    {
+        return UNKNOWN_ERROR;
+    }
+    uint64_t baseTime = mSource->setFlushTimeStamp(flushTimeStamp);
+    flushTimeStamp = (baseTime < flushTimeStamp ? (flushTimeStamp - baseTime) : flushTimeStamp);
+    ((WFDRenderer*)(mRenderer.get()))->setFlushTimeStamp(flushTimeStamp);
+    return OK;
+}
+#endif
+
 void NuPlayer::schedulePollDuration() {
     sp<AMessage> msg = new AMessage(kWhatPollDuration, id());
     msg->setInt32("generation", mPollDurationGeneration);

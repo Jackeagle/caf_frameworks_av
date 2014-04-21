@@ -67,6 +67,10 @@ struct NuPlayer::WFDRenderer : public NuPlayer::Renderer {
     void setBaseMediaTime(int64_t ts, bool bForceReset = false);
 
     void trackAVClock(int64_t nDelay = 0);
+
+    void setDecoderLatency(uint32_t decoderLatency);
+    void setFlushTimeStamp(uint64_t flushTimeStamp);
+
     enum {
         kWhatEOS                = 'eos ',
         kWhatFlushComplete      = 'fluC',
@@ -105,6 +109,8 @@ private:
     List<QueueEntry> mAudioQueue;
     List<QueueEntry> mVideoQueue;
     uint32_t mNumFramesWritten;
+    int32_t mDecoderLatency;
+    uint64_t mFlushTimeStamp;
 
     bool mDrainAudioQueuePending;
     bool mDrainVideoQueuePending;
@@ -120,6 +126,9 @@ private:
     Mutex mFlushLock;  // protects the following 2 member vars.
     bool mFlushingAudio;
     bool mFlushingVideo;
+
+    bool mVideoFlushInProgress;
+    bool mAudioFlushInProgress;
 
     bool mHasAudio;
     bool mHasVideo;

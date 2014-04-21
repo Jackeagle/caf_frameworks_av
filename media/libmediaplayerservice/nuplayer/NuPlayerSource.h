@@ -63,6 +63,10 @@ struct NuPlayer::Source : public RefBase {
     virtual void resume() {
         ALOGE("Resume called on Wrong DataSource.. Please check !!!");
     }
+
+    virtual uint64_t setFlushTimeStamp(uint64_t flushTimeStamp){
+        return INVALID_OPERATION;
+    }
 protected:
     virtual ~Source() {}
 
