@@ -166,6 +166,7 @@ private:
     void stopThread();
 
     sp<MediaSource> mSource;
+    bool mSourceStarted;
     MediaBuffer *mBuffer;
     size_t mRemnantOffset;
 

@@ -69,6 +69,7 @@ struct AutoTrace {
 PrefetchSource::PrefetchSource(
         sp<MediaSource> source, uint32_t mode, const char *id)
     : mSource(source),
+      mSourceStarted(false),
       mBuffer(0),
       mRemnantOffset(0),
       mAvailBufferQueue(0),
@@ -139,6 +140,7 @@ status_t PrefetchSource::start(MetaData *params) {
         return err;
     }
 
+    mSourceStarted = true;
     startThread();
     return OK;
 }
@@ -147,7 +149,10 @@ status_t PrefetchSource::stop() {
     ALOGD("Stopping %s", mId);
     stopThread();
     flushFilledBuffers();
-    mSource->stop();
+    if (mSourceStarted) {
+        mSource->stop();
+        mSourceStarted = false;
+    }
     ALOGD("%s has stopped", mId);
     return OK;
 }
