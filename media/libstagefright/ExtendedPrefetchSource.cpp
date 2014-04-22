@@ -109,6 +109,8 @@ PrefetchSource::PrefetchSource(
 }
 
 PrefetchSource::~PrefetchSource() {
+    stop();
+
     if (mAvailBufferQueue) {
         delete mAvailBufferQueue;
     }
@@ -117,7 +119,6 @@ PrefetchSource::~PrefetchSource() {
         delete mFilledBufferQueue;
     }
 
-    CHECK(mState == STATE_STOPPED);
     ALOGV("Destroyed %s", mId);
 }
 
