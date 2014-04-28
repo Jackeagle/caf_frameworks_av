@@ -398,7 +398,10 @@ void LPAPlayer::decoderThreadEntry() {
 
     mLock.lock();
     pid_t tid  = gettid();
-    androidSetThreadPriority(tid, ANDROID_PRIORITY_AUDIO);
+    //Set thread priority to half of priority audio as LPA thread is CPU bound.
+    //This is to ensure that there no glitches during playback over BT with software effects enabled.
+    androidSetThreadPriority(tid, ANDROID_PRIORITY_AUDIO + 8*ANDROID_PRIORITY_LESS_FAVORABLE);
+    ALOGD("Priority of LPA thread set to %d", ANDROID_PRIORITY_AUDIO + 8*ANDROID_PRIORITY_LESS_FAVORABLE);
     prctl(PR_SET_NAME, (unsigned long)"LPA DecodeThread", 0, 0, 0);
 
     ALOGV("mDecoderThreadEntry wait for signal \n");
