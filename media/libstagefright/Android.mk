@@ -99,6 +99,7 @@ LOCAL_SRC_FILES:=                         \
         mp4/TrackFragment.cpp             \
         ExtendedExtractor.cpp             \
         ExtendedUtils.cpp                 \
+        ExtendedPrefetchSource.cpp        \
         FMA2DPWriter.cpp                  \
 
 ifeq ($(DTS_CODEC_M_), true)
