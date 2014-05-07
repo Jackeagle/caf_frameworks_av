@@ -346,6 +346,9 @@ status_t AwesomePlayer::setDataSource_l(
     reset_l();
 
     mUri = uri;
+    if (uri) {
+        printFileName(uri);
+    }
 
     ExtendedUtils::prefetchSecurePool(uri);
 
@@ -383,6 +386,9 @@ status_t AwesomePlayer::setDataSource(
     Mutex::Autolock autoLock(mLock);
 
     reset_l();
+    if (fd) {
+       printFileName(fd);
+    }
 
     if (fd) {
         ExtendedUtils::prefetchSecurePool(fd);
