@@ -684,7 +684,9 @@ status_t SampleTable::findSyncSampleNear(
         case kFlagBefore:
         {
             if (x > start_sample_index) {
-                CHECK(left > 0);
+		if (left == 0) {
+		    left++;
+		}
 
                 x = mSyncSamples[left - 1];
 
