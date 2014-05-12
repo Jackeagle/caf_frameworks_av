@@ -808,7 +808,7 @@ int64_t AudioPlayer::getOutputPlayPositionUs_l() const
     uint32_t playedSamples = 0;
     if (mAudioSink != NULL) {
         mAudioSink->getPosition(&playedSamples);
-    } else {
+    } else if (mAudioTrack != NULL) {
         mAudioTrack->getPosition(&playedSamples);
     }
 
