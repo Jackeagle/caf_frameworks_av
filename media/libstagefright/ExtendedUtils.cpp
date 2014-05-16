@@ -577,16 +577,7 @@ void ExtendedUtils::helper_Mpeg4ExtractorCheckAC3EAC3(MediaBuffer *buffer,
 }
 
 int32_t ExtendedUtils::getEncoderTypeFlags() {
-    int32_t flags = 0;
-
-    char mDeviceName[PROPERTY_VALUE_MAX];
-    property_get("ro.board.platform",mDeviceName,"0");
-    if (!strncmp(mDeviceName, "msm8610", 7) ||
-        !strncmp(mDeviceName, "msm8226", 7)) {
-        flags |= OMXCodec::kHardwareCodecsOnly;
-    }
-    return flags;
-
+    return OMXCodec::kHardwareCodecsOnly;
 }
 
 void ExtendedUtils::prefetchSecurePool(const char *uri)
