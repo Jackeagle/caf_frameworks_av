@@ -58,6 +58,12 @@ struct NuPlayer : public AHandler {
 
     status_t setVideoScalingMode(int32_t mode);
 
+#ifdef QCOM_WFD_SINK
+    status_t setDecoderLatency(uint32_t decoderLatency);
+    status_t setFlushTimeStamp(uint64_t flushTimeStamp);
+#endif
+
+
 protected:
     virtual ~NuPlayer();
 
