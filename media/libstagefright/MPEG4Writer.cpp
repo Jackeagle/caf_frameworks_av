@@ -351,7 +351,8 @@ MPEG4Writer::MPEG4Writer(const char *filename)
       mLatitudex10000(0),
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
-      mStartTimeOffsetMs(-1) {
+      mStartTimeOffsetMs(-1),
+      mHFRRatio(1) {
 
     mFd = open(filename, O_CREAT | O_LARGEFILE | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR);
     if (mFd >= 0) {
@@ -376,7 +377,8 @@ MPEG4Writer::MPEG4Writer(int fd)
       mLatitudex10000(0),
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
-      mStartTimeOffsetMs(-1) {
+      mStartTimeOffsetMs(-1),
+      mHFRRatio(1) {
 }
 
 MPEG4Writer::~MPEG4Writer() {
@@ -472,6 +474,8 @@ status_t MPEG4Writer::addSource(const sp<MediaSource> &source) {
     Track *track = new Track(this, source, 1 + mTracks.size());
     mTracks.push_back(track);
 
+    mHFRRatio = ExtendedUtils::HFR::getHFRRatio(meta);
+
     return OK;
 }
 
@@ -512,7 +516,7 @@ int64_t MPEG4Writer::estimateMoovBoxSize(int32_t bitRate) {
 
     // If the estimation is wrong, we will pay the price of wasting
     // some reserved space. This should not happen so often statistically.
-    static const int32_t factor = mUse32BitOffset? 1: 2;
+    int32_t factor = mUse32BitOffset? 1: 2;
     static const int64_t MIN_MOOV_BOX_SIZE = 3 * 1024;  // 3 KB
     static const int64_t MAX_MOOV_BOX_SIZE = (180 * 3000000 * 6LL / 8000);
     int64_t size = MIN_MOOV_BOX_SIZE;
@@ -939,7 +943,7 @@ void MPEG4Writer::writeMvhdBox(int64_t durationUs) {
     writeInt32(0);             // version=0, flags=0
     writeInt32(now);           // creation time
     writeInt32(now);           // modification time
-    writeInt32(mTimeScale);    // mvhd timescale
+    writeInt32(mTimeScale / mHFRRatio);    // mvhd timescale
     int32_t duration = (durationUs * mTimeScale + 5E5) / 1E6;
     writeInt32(duration);
     writeInt32(0x10000);       // rate: 1.0
@@ -2564,7 +2568,7 @@ void MPEG4Writer::Track::bufferChunk(int64_t timestampUs) {
 }
 
 int64_t MPEG4Writer::Track::getDurationUs() const {
-    return mTrackDurationUs * mHFRRatio;
+    return mTrackDurationUs;
 }
 
 int64_t MPEG4Writer::Track::getEstimatedTrackSizeBytes() const {
@@ -2889,7 +2893,7 @@ void MPEG4Writer::Track::writeMdhdBox(uint32_t now) {
 
     int32_t timeScale = mTimeScale / mHFRRatio;
     mOwner->writeInt32(timeScale);    // media timescale
-    int32_t mdhdDuration = (trakDurationUs * timeScale + 5E5) / 1E6;
+    int32_t mdhdDuration = (trakDurationUs * mTimeScale + 5E5) / 1E6;
     mOwner->writeInt32(mdhdDuration);  // use media timescale
     // Language follows the three letter standard ISO-639-2/T
     // 'e', 'n', 'g' for "English", for instance.
