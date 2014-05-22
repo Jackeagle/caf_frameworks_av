@@ -638,9 +638,13 @@ status_t AudioFlinger::EffectModule::setEnabled_l(bool enabled)
     if (chain != NULL) {
        if (effectStateChanged && chain->isForLPATrack()) {
           sp<ThreadBase> thread = mThread.promote();
-          unlock();//Acquire locks in certain sequence to avoid deadlock
-          thread->effectConfigChanged();
-          lock();
+          if (thread != NULL) {
+              unlock();//Acquire locks in certain sequence to avoid deadlock
+              thread->effectConfigChanged();
+              lock();
+          } else {
+              ALOGW("setEnabled_l(): cannot promote mixer thread");
+          }
        }
     } else {
         ALOGW("setEnabled_l() cannot promote chain");
