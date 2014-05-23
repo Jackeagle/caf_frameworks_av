@@ -395,7 +395,8 @@ ACodec::ACodec()
       mChannelMaskPresent(false),
       mChannelMask(0),
       mInSmoothStreamingMode(false),
-      mFrameAssemblyOneFrame(false) {
+      mFrameAssemblyOneFrame(false),
+      mEnableSmoothStreaming(false) {
 
     mUseCase = "";
     mUseCaseFlag = false;
@@ -1618,9 +1619,10 @@ status_t ACodec::setupVideoDecoder(
     if (err != OK) {
         return err;
     }
-
-    ExtendedCodec::enableSmoothStreaming(
+    if(mEnableSmoothStreaming) {
+        ExtendedCodec::enableSmoothStreaming(
             mOMX, mNode, &mInSmoothStreamingMode, mComponentName.c_str());
+    }
 
     return OK;
 }

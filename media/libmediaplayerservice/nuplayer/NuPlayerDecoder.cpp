@@ -91,6 +91,7 @@ void NuPlayer::Decoder::configure(const sp<AMessage> &format, bool wfdSink) {
     bool needDedicatedLooper = !strncasecmp(mime.c_str(), "video/", 6);
 
     mCodec = new ACodec;
+    mCodec->mEnableSmoothStreaming = true;
 
 #ifdef FEATURE_WFD_SINK
     if (!needDedicatedLooper && wfdSink) //Audio for Wfd sink
