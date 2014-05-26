@@ -49,6 +49,7 @@ struct ACodec : public AHierarchicalStateMachine {
         kWhatBuffersAllocated    = 'allc',
         kWhatOMXDied             = 'OMXd',
     };
+    bool mEnableSmoothStreaming;
 
     ACodec();
 
