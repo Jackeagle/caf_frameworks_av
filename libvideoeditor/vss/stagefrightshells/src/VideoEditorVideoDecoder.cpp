@@ -1018,6 +1018,8 @@ M4OSA_ERR VideoEditorVideoDecoder_create(M4OSA_Context *pContext,
         pDecShellContext->m_pVideoStreamhandler->m_videoWidth);
     decoderMetadata->setInt32(kKeyHeight,
         pDecShellContext->m_pVideoStreamhandler->m_videoHeight);
+    //select the preferred YUV format(YUV420P) as the output format of decoding component
+    decoderMetadata->setInt32(kKeyColorFormat, OMX_COLOR_FormatYUV420Planar);
 
     // Create the decoder source
     pDecShellContext->mReaderSource = new VideoEditorVideoDecoderSource(
@@ -1034,6 +1036,30 @@ M4OSA_ERR VideoEditorVideoDecoder_create(M4OSA_Context *pContext,
     pDecShellContext->mVideoDecoder = OMXCodec::Create(
         pDecShellContext->mClient.interface(),
         decoderMetadata, false, pDecShellContext->mReaderSource);
+    //  if failed on preferred output format(YUV420P), try the format supported by
+    //  I420ColorConvertor module
+    if(NULL == pDecShellContext->mVideoDecoder.get()){
+        ALOGV("fall back to the output YUV format supported by I420ColorConvertor module\n");
+        pDecShellContext->mI420ColorConverter = new I420ColorConverter;
+        if (pDecShellContext->mI420ColorConverter->isLoaded()) {
+            decoderOutput = pDecShellContext->mI420ColorConverter->getDecoderOutputFormat();
+            if (decoderOutput == OMX_COLOR_FormatYUV420Planar) {
+                delete pDecShellContext->mI420ColorConverter;
+                pDecShellContext->mI420ColorConverter = NULL;
+            }
+            else{
+                decoderMetadata->setInt32(kKeyColorFormat, decoderOutput);
+                // Create the decoder again
+                pDecShellContext->mVideoDecoder = OMXCodec::Create(
+                    pDecShellContext->mClient.interface(),
+                    decoderMetadata, false, pDecShellContext->mReaderSource);
+            }
+        }
+        else{
+            delete pDecShellContext->mI420ColorConverter;
+            pDecShellContext->mI420ColorConverter = NULL;
+        }
+    }
     VIDEOEDITOR_CHECK(NULL != pDecShellContext->mVideoDecoder.get(),
         M4ERR_SF_DECODER_RSRC_FAIL);
 
@@ -1049,18 +1075,7 @@ M4OSA_ERR VideoEditorVideoDecoder_create(M4OSA_Context *pContext,
     pDecShellContext->mVideoDecoder->getFormat()->setInt32(kKeyHeight,
         pDecShellContext->m_pVideoStreamhandler->m_videoHeight);
 
-    // Get the color converter
-    pDecShellContext->mI420ColorConverter = new I420ColorConverter;
-    if (pDecShellContext->mI420ColorConverter->isLoaded()) {
-        decoderOutput = pDecShellContext->mI420ColorConverter->getDecoderOutputFormat();
-    }
-
-    if (decoderOutput == OMX_COLOR_FormatYUV420Planar) {
-        delete pDecShellContext->mI420ColorConverter;
-        pDecShellContext->mI420ColorConverter = NULL;
-    }
-
-    ALOGI("decoder output format = 0x%X\n", decoderOutput);
+    ALOGI("decoder output format = 0x%X\n", colorFormat);
 
     // Configure the buffer pool from the metadata
     err = VideoEditorVideoDecoder_configureFromMetadata(pDecShellContext,
