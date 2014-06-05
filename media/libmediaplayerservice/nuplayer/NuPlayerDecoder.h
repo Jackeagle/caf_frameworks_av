@@ -32,7 +32,7 @@ struct NuPlayer::Decoder : public AHandler {
     Decoder(const sp<AMessage> &notify,
             const sp<NativeWindowWrapper> &nativeWindow = NULL);
 
-    void configure(const sp<AMessage> &format, bool WfdSink = false);
+    void configure(const sp<AMessage> &format, bool bUseMPQWrapper = false);
     sp<AMessage> makeFormat(sp<MetaData> &meta);
     void signalFlush();
     void signalResume();

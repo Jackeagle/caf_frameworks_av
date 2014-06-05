@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2014, The Linux Foundation. All rights reserveds reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,18 +17,19 @@
  * limitations under the License.
  */
 
-#ifndef NUPLAYER_RENDERER_H_
+#ifndef HLS_TUNNEL_RENDERER_H_
 
-#define NUPLAYER_RENDERER_H_
+#define HLS_TUNNEL_RENDERER_H_
 
 #include "NuPlayer.h"
+#include "NuPlayerRenderer.h"
 
 namespace android {
 
 struct ABuffer;
 
-struct NuPlayer::Renderer : public AHandler {
-    Renderer(const sp<MediaPlayerBase::AudioSink> &sink,
+struct NuPlayer::HLSRenderer : public NuPlayer::Renderer {
+    HLSRenderer(const sp<MediaPlayerBase::AudioSink> &sink,
              const sp<AMessage> &notify);
 
     void queueBuffer(
@@ -56,6 +60,7 @@ struct NuPlayer::Renderer : public AHandler {
     void pause();
     void resume();
 #endif /* QCOM_WFD_SINK */
+
     enum {
         kWhatEOS                 = 'eos ',
         kWhatFlushComplete       = 'fluC',
@@ -64,8 +69,7 @@ struct NuPlayer::Renderer : public AHandler {
     };
 
 protected:
-    virtual ~Renderer();
-
+    virtual ~HLSRenderer();
     virtual void onMessageReceived(const sp<AMessage> &msg);
 
 private:
@@ -116,6 +120,7 @@ private:
 
     int64_t mLastPositionUpdateUs;
     int64_t mVideoLateByUs;
+    int64_t mLastSentAudioSinkTSUs;
 
     bool onDrainAudioQueue();
     void postDrainAudioQueue(int64_t delayUs = 0);
@@ -148,13 +153,13 @@ private:
     virtual status_t setMediaPresence(bool audio, bool bValue);
 #else
     void registerStats(sp<NuPlayerStats> stats);
-    status_t setMediaPresence(bool audio, bool bValue);
+    virtual status_t setMediaPresence(bool audio, bool bValue);
 #endif /* QCOM_WFD_SINK */
   private:
 
-    DISALLOW_EVIL_CONSTRUCTORS(Renderer);
+    DISALLOW_EVIL_CONSTRUCTORS(HLSRenderer);
 };
 
 }  // namespace android
 
-#endif  // NUPLAYER_RENDERER_H_
+#endif  // HLS_TUNNEL_RENDERER_H_

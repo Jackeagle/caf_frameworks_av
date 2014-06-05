@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2014, The Linux Foundation. All rights reserveds reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,24 +18,28 @@
  */
 
 //#define LOG_NDEBUG 0
-#define LOG_TAG "NuPlayerRenderer"
+#define LOG_TAG "HLSTunnelRenderer"
 #include <utils/Log.h>
-
-#include "NuPlayerRenderer.h"
 
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
+#include "HLSRenderer.h"
 
 namespace android {
 
+//AV Sync window in micro-seconds
+#define TUNNEL_RENDERER_AV_SYNC_WINDOW 40000
+//Minimum buffering threshold for audio(in micro-seconds) before throttling can trigger.
+#define TUNNEL_AUDIO_MIN_DATA_LEAD		70000
 // static
-const int64_t NuPlayer::Renderer::kMinPositionUpdateDelayUs = 100000ll;
+const int64_t NuPlayer::HLSRenderer::kMinPositionUpdateDelayUs = 100000ll;
 
-NuPlayer::Renderer::Renderer(
+NuPlayer::HLSRenderer::HLSRenderer(
         const sp<MediaPlayerBase::AudioSink> &sink,
         const sp<AMessage> &notify)
-    : mAudioSink(sink),
+    : Renderer(sink, notify),
+      mAudioSink(sink),
       mNotify(notify),
       mNumFramesWritten(0),
       mDrainAudioQueuePending(false),
@@ -49,13 +56,16 @@ NuPlayer::Renderer::Renderer(
       mPaused(false),
       mVideoRenderingStarted(false),
       mLastPositionUpdateUs(-1ll),
-      mVideoLateByUs(0ll) {
+      mVideoLateByUs(0ll),
+      mLastSentAudioSinkTSUs(-1) {
+		  ALOGV("HLSRenderer::HLSRenderer TUNNEL_RENDERER_AV_SYNC_WINDOW %d",TUNNEL_RENDERER_AV_SYNC_WINDOW);
+		  ALOGV("HLSRenderer::HLSRenderer TUNNEL_AUDIO_MIN_DATA_LEAD %d",TUNNEL_AUDIO_MIN_DATA_LEAD);
 }
 
-NuPlayer::Renderer::~Renderer() {
+NuPlayer::HLSRenderer::~HLSRenderer() {
 }
 
-void NuPlayer::Renderer::queueBuffer(
+void NuPlayer::HLSRenderer::queueBuffer(
         bool audio,
         const sp<ABuffer> &buffer,
         const sp<AMessage> &notifyConsumed) {
@@ -66,8 +76,9 @@ void NuPlayer::Renderer::queueBuffer(
     msg->post();
 }
 
-void NuPlayer::Renderer::queueEOS(bool audio, status_t finalResult) {
+void NuPlayer::HLSRenderer::queueEOS(bool audio, status_t finalResult) {
     CHECK_NE(finalResult, (status_t)OK);
+    ALOGV("HLSRenderer::queueEOS audio? %d",audio);
 
     sp<AMessage> msg = new AMessage(kWhatQueueEOS, id());
     msg->setInt32("audio", static_cast<int32_t>(audio));
@@ -75,15 +86,17 @@ void NuPlayer::Renderer::queueEOS(bool audio, status_t finalResult) {
     msg->post();
 }
 
-void NuPlayer::Renderer::flush(bool audio) {
+void NuPlayer::HLSRenderer::flush(bool audio) {
     {
         Mutex::Autolock autoLock(mFlushLock);
         if (audio) {
             CHECK(!mFlushingAudio);
             mFlushingAudio = true;
+            ALOGV("HLSRenderer::flush audio");
         } else {
             CHECK(!mFlushingVideo);
             mFlushingVideo = true;
+            ALOGV("HLSRenderer::flush video");
         }
     }
 
@@ -92,7 +105,10 @@ void NuPlayer::Renderer::flush(bool audio) {
     msg->post();
 }
 
-void NuPlayer::Renderer::signalTimeDiscontinuity() {
+void NuPlayer::HLSRenderer::signalTimeDiscontinuity() {
+	ALOGV("HLSRenderer::signalTimeDiscontinuity");
+	ALOGV("HLSRenderer::signalTimeDiscontinuity audio queue has %d entries, video has %d entries",
+			mAudioQueue.size(), mVideoQueue.size());
     CHECK(mAudioQueue.empty());
     CHECK(mVideoQueue.empty());
     mAnchorTimeMediaUs = -1;
@@ -100,15 +116,15 @@ void NuPlayer::Renderer::signalTimeDiscontinuity() {
     mSyncQueues = mHasAudio && mHasVideo;
 }
 
-void NuPlayer::Renderer::pause() {
+void NuPlayer::HLSRenderer::pause() {
     (new AMessage(kWhatPause, id()))->post();
 }
 
-void NuPlayer::Renderer::resume() {
+void NuPlayer::HLSRenderer::resume() {
     (new AMessage(kWhatResume, id()))->post();
 }
 
-void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
+void NuPlayer::HLSRenderer::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatDrainAudioQueue:
         {
@@ -119,8 +135,10 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             mDrainAudioQueuePending = false;
+            ALOGV("HLSRenderer::onMessageReceived kWhatDrainAudioQueue");
 
             if (onDrainAudioQueue()) {
+#if 0
                 uint32_t numFramesPlayed;
                 CHECK_EQ(mAudioSink->getPosition(&numFramesPlayed),
                          (status_t)OK);
@@ -133,6 +151,22 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
                 int64_t delayUs =
                     mAudioSink->msecsPerFrame()
                         * numFramesPendingPlayout * 1000ll;
+#else
+				uint32_t audioTsMsec = 0;
+				int64_t delayUs = 0;
+				if(mAudioSink.get() != NULL) {
+					if (mAudioSink->getPosition(&audioTsMsec) == OK) {
+						ALOGV("HLSRenderer::onMessageReceived kWhatDrainAudioQueue mLastSentAudioSinkTSUs %lld audioTsMsec %d",
+						mLastSentAudioSinkTSUs,audioTsMsec);
+						delayUs = mLastSentAudioSinkTSUs - (audioTsMsec*1000);
+						ALOGV("AudioDataLead %lld Us",delayUs);
+						if(delayUs < TUNNEL_AUDIO_MIN_DATA_LEAD) {
+							ALOGV("HLSRenderer::onMessageReceived kWhatDrainAudioQueue audioDataLead < TUNNEL_AUDIO_MIN_DATA_LEAD..not throttling...");
+							delayUs = 0;
+						}
+					}
+				}
+#endif
 
                 // Let's give it more data after about half that time
                 // has elapsed.
@@ -150,6 +184,7 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             mDrainVideoQueuePending = false;
+            ALOGV("HLSRenderer::onMessageReceived kWhatDrainVideoQueue");
 
             onDrainVideoQueue();
 
@@ -199,33 +234,40 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
     }
 }
 
-void NuPlayer::Renderer::postDrainAudioQueue(int64_t delayUs) {
+void NuPlayer::HLSRenderer::postDrainAudioQueue(int64_t delayUs) {
+	ALOGV("HLSRenderer::postDrainAudioQueue delayUs %lld",delayUs);
     if (mDrainAudioQueuePending || mSyncQueues || mPaused) {
+		ALOGV("HLSRenderer::postDrainAudioQueue returning from (mDrainAudioQueuePending || mSyncQueues || mPaused)check");
         return;
     }
 
     if (mAudioQueue.empty()) {
+		ALOGV("HLSRenderer::postDrainAudioQueue mAudioQueue is empty");
         return;
     }
 
     mDrainAudioQueuePending = true;
     sp<AMessage> msg = new AMessage(kWhatDrainAudioQueue, id());
     msg->setInt32("generation", mAudioQueueGeneration);
+    ALOGV("HLSRenderer::postDrainAudioQueue posting kWhatDrainAudioQueue with delayUs %lld",delayUs);
     msg->post(delayUs);
 }
 
-void NuPlayer::Renderer::signalAudioSinkChanged() {
+void NuPlayer::HLSRenderer::signalAudioSinkChanged() {
     (new AMessage(kWhatAudioSinkChanged, id()))->post();
 }
 
-bool NuPlayer::Renderer::onDrainAudioQueue() {
+bool NuPlayer::HLSRenderer::onDrainAudioQueue() {
     uint32_t numFramesPlayed;
     if (mAudioSink->getPosition(&numFramesPlayed) != OK) {
         return false;
     }
+	ALOGV("HLSRenderer::onDrainAudioQueue numFramesPlayed %d (TS in Msec)",numFramesPlayed);
 
+#if 0
     ssize_t numFramesAvailableToWrite =
         mAudioSink->frameCount() - (mNumFramesWritten - numFramesPlayed);
+#endif
 
 #if 0
     if (numFramesAvailableToWrite == mAudioSink->frameCount()) {
@@ -236,6 +278,7 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
     }
 #endif
 
+#if 0
     size_t numBytesAvailableToWrite =
         numFramesAvailableToWrite * mAudioSink->frameSize();
 
@@ -298,18 +341,68 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
         size_t copiedFrames = copy / mAudioSink->frameSize();
         mNumFramesWritten += copiedFrames;
     }
+#else
+		QueueEntry *entry = &*mAudioQueue.begin();
+		if (entry->mBuffer == NULL) {
+			// EOS
+			notifyEOS(true /* audio */, entry->mFinalResult);
+			mAudioQueue.erase(mAudioQueue.begin());
+			entry = NULL;
+			ALOGV("Audio EOS..");
+			return false;
+		}
+		int64_t mediaTimeUs = 0;
+		if (entry->mOffset == 0) {
+			CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
+			ALOGV("Received audio buffer with timeUs %lld", mediaTimeUs);
+			uint32_t nCurrAudioTsMsec;
+			CHECK_EQ(mAudioSink->getPosition(&nCurrAudioTsMsec), (status_t)OK);
+			mAnchorTimeMediaUs = (nCurrAudioTsMsec*1000);
+			ALOGV("onDrainAudioQueue mAnchorTimeMediaUs %lld nCurrAudioTsMsec %d",mAnchorTimeMediaUs,nCurrAudioTsMsec);
+			int64_t nAudioLeadInMsec = (mediaTimeUs/1000) - nCurrAudioTsMsec;
+			ALOGV("onDrainAudioQueue nAudioLeadInMsec %lld",nAudioLeadInMsec);
+			ALOGV("onDrainAudioQueue  mAudioSink->latency() %d",mAudioSink->latency());
+
+			int64_t realTimeOffsetUs =
+				(mAudioSink->latency() / 2  /* XXX */
+				+ nAudioLeadInMsec) * 1000ll;
+			ALOGV("onDrainAudioQueue realTimeOffsetUs %lld",realTimeOffsetUs);
+			int64_t clock = ALooper::GetNowUs();
+			ALOGV("onDrainAudioQueue clock %lld",clock);
+			//mAnchorTimeRealUs = clock + realTimeOffsetUs;
+			//ALOGV("onDrainAudioQueue mAnchorTimeRealUs =clock + realTimeOffsetUs %lld",mAnchorTimeRealUs);
+			mAnchorTimeRealUs = clock;
+			ALOGV("onDrainAudioQueue mAnchorTimeRealUs =ALooper::GetNowUs() %lld",mAnchorTimeRealUs);
+		}
+        size_t copy = entry->mBuffer->size() - entry->mOffset;
+        ALOGV("onDrainAudioQueue Audio Buffer TS being sent to audio sink %lld buffer size %d",mediaTimeUs,copy);
+        CHECK_EQ(mAudioSink->write(entry->mBuffer->data() + entry->mOffset, copy),(ssize_t)copy);
+        entry->mOffset += copy;
+        mLastSentAudioSinkTSUs = mediaTimeUs;
+        ALOGV("onDrainAudioQueue copy %d updated offset %d",copy,entry->mOffset);
+        if (entry->mOffset == entry->mBuffer->size()) {
+			entry->mNotifyConsumed->post();
+			mAudioQueue.erase(mAudioQueue.begin());
+			entry = NULL;
+		} else {
+			ALOGE("onDrainAudioQueue, please check as could not write size worth of data to audio sink...");
+		}
+#endif
 
     notifyPosition();
 
     return !mAudioQueue.empty();
 }
 
-void NuPlayer::Renderer::postDrainVideoQueue() {
+void NuPlayer::HLSRenderer::postDrainVideoQueue() {
+	ALOGV("HLSRenderer::postDrainVideoQueue");
     if (mDrainVideoQueuePending || mSyncQueues || mPaused) {
+		ALOGV("HLSRenderer::postDrainVideoQueue returning from (mDrainVideoQueuePending || mSyncQueues || mPaused) check");
         return;
     }
 
     if (mVideoQueue.empty()) {
+		ALOGV("HLSRenderer::postDrainVideoQueue returning from mVideoQueue.empty() check");
         return;
     }
 
@@ -323,9 +416,11 @@ void NuPlayer::Renderer::postDrainVideoQueue() {
     if (entry.mBuffer == NULL) {
         // EOS doesn't carry a timestamp.
         delayUs = 0;
+        ALOGV("HLSRenderer::postDrainVideoQueue video EOS");
     } else {
         int64_t mediaTimeUs;
         CHECK(entry.mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
+        ALOGV("HLSRenderer::postDrainVideoQueue video mediaTimeUs %lld mAnchorTimeMediaUs %lld",mediaTimeUs,mAnchorTimeMediaUs);
 
         if (mAnchorTimeMediaUs < 0) {
             delayUs = 0;
@@ -333,22 +428,33 @@ void NuPlayer::Renderer::postDrainVideoQueue() {
             if (!mHasAudio) {
                 mAnchorTimeMediaUs = mediaTimeUs;
                 mAnchorTimeRealUs = ALooper::GetNowUs();
+                ALOGV("HLSRenderer::postDrainVideoQueue set mAnchorTimeMediaUs %lld mAnchorTimeRealUs %lld",
+			mAnchorTimeMediaUs,mAnchorTimeRealUs);
             }
         } else {
+			ALOGV("HLSRenderer::postDrainVideoQueue calculating realTimeUs = (mediaTimeUs(%lld)- mAnchorTimeMediaUs(%lld)) + mAnchorTimeRealUs(%lld)",
+					mediaTimeUs,mAnchorTimeMediaUs,mAnchorTimeRealUs);
+
             int64_t realTimeUs =
                 (mediaTimeUs - mAnchorTimeMediaUs) + mAnchorTimeRealUs;
-
-            delayUs = realTimeUs - ALooper::GetNowUs();
+            ALOGV("HLSRenderer::postDrainVideoQueue realTimeUs %lld",realTimeUs);
+            int64_t clock = ALooper::GetNowUs();
+            ALOGV("HLSRenderer::postDrainVideoQueue clock %lld",clock);
+            delayUs = realTimeUs - clock;
+            ALOGV("HLSRenderer::postDrainVideoQueue delayUs(realTimeUs - clock) %lld",delayUs);
         }
     }
+    ALOGV("HLSRenderer::postDrainVideoQueue posting kWhatDrainVideoQueue");
 
     msg->post(delayUs);
 
     mDrainVideoQueuePending = true;
 }
 
-void NuPlayer::Renderer::onDrainVideoQueue() {
+void NuPlayer::HLSRenderer::onDrainVideoQueue() {
+	ALOGV("HLSRenderer::onDrainVideoQueue");
     if (mVideoQueue.empty()) {
+		ALOGV("HLSRenderer::onDrainVideoQueue mVideoQueue empty");
         return;
     }
 
@@ -363,6 +469,7 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
         entry = NULL;
 
         mVideoLateByUs = 0ll;
+        ALOGV("HLSRenderer::onDrainVideoQueue video EOS..");
 
         notifyPosition();
         return;
@@ -370,17 +477,22 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
 
     int64_t mediaTimeUs;
     CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
+    ALOGV("HLSRenderer::onDrainVideoQueue video mediaTimeUs %lld mAnchorTimeMediaUs %lld mAnchorTimeRealUs %lld",mediaTimeUs,mAnchorTimeMediaUs,mAnchorTimeRealUs);
 
     int64_t realTimeUs = mediaTimeUs - mAnchorTimeMediaUs + mAnchorTimeRealUs;
-    mVideoLateByUs = ALooper::GetNowUs() - realTimeUs;
+    ALOGV("HLSRenderer::onDrainVideoQueue realTimeUs %lld",realTimeUs);
+    int64_t clock = ALooper::GetNowUs();
+    ALOGV("HLSRenderer::onDrainVideoQueue clock %lld",clock);
 
-    bool tooLate = (mVideoLateByUs > 40000);
+    mVideoLateByUs =  clock - realTimeUs;
+    ALOGV("HLSRenderer::onDrainVideoQueue mVideoLateByUs(clock - realTimeUs) %lld",mVideoLateByUs);
+
+    bool tooLate = (mVideoLateByUs > TUNNEL_RENDERER_AV_SYNC_WINDOW);
 
     if (tooLate) {
-        ALOGV("video late by %lld us (%.2f secs)",
-             mVideoLateByUs, mVideoLateByUs / 1E6);
+        ALOGV("video mediaTimeUs %lld late by %lld msec",mediaTimeUs,mVideoLateByUs/1000);
     } else {
-        ALOGV("rendering video at media time %.2f secs", mediaTimeUs / 1E6);
+        ALOGV("rendering video at media time mediaTimeUs %lld ", mediaTimeUs);
     }
 
     entry->mNotifyConsumed->setInt32("render", !tooLate);
@@ -396,21 +508,23 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
     notifyPosition();
 }
 
-void NuPlayer::Renderer::notifyVideoRenderingStart() {
+void NuPlayer::HLSRenderer::notifyVideoRenderingStart() {
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kWhatVideoRenderingStart);
+    ALOGV("HLSRenderer::notifyVideoRenderingStart");
     notify->post();
 }
 
-void NuPlayer::Renderer::notifyEOS(bool audio, status_t finalResult) {
+void NuPlayer::HLSRenderer::notifyEOS(bool audio, status_t finalResult) {
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kWhatEOS);
     notify->setInt32("audio", static_cast<int32_t>(audio));
     notify->setInt32("finalResult", finalResult);
+    ALOGV("HLSRenderer::notifyEOS audio? %d",audio);
     notify->post();
 }
 
-void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
+void NuPlayer::HLSRenderer::onQueueBuffer(const sp<AMessage> &msg) {
     int32_t audio;
     CHECK(msg->findInt32("audio", &audio));
 
@@ -435,12 +549,15 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
     entry.mNotifyConsumed = notifyConsumed;
     entry.mOffset = 0;
     entry.mFinalResult = OK;
+    ALOGV("HLSRenderer::onQueueBuffer");
 
     if (audio) {
         mAudioQueue.push_back(entry);
+        ALOGV("HLSRenderer::onQueueBuffer calling postDrainAudioQueue");
         postDrainAudioQueue();
     } else {
         mVideoQueue.push_back(entry);
+        ALOGV("HLSRenderer::onQueueBuffer calling postDrainVideoQueue");
         postDrainVideoQueue();
     }
 
@@ -465,8 +582,10 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
             ->findInt64("timeUs", &firstVideoTimeUs));
 
     int64_t diff = firstVideoTimeUs - firstAudioTimeUs;
+    ALOGV("HLSRenderer::onQueueBuffer diff %lld = firstVideoTimeUs %lld - firstAudioTimeUs %lld",
+		diff,firstVideoTimeUs,firstAudioTimeUs);
 
-    ALOGV("queueDiff = %.2f secs", diff / 1E6);
+    ALOGV("queueDiff = %lld msec", diff / 1000);
 
     if (diff > 100000ll) {
         // Audio data starts More than 0.1 secs before video.
@@ -474,13 +593,14 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
 
         (*mAudioQueue.begin()).mNotifyConsumed->post();
         mAudioQueue.erase(mAudioQueue.begin());
+        ALOGV("dropping some audio as Audio data starts More than 0.1 secs before video");
         return;
     }
 
     syncQueuesDone();
 }
 
-void NuPlayer::Renderer::syncQueuesDone() {
+void NuPlayer::HLSRenderer::syncQueuesDone() {
     if (!mSyncQueues) {
         return;
     }
@@ -488,15 +608,17 @@ void NuPlayer::Renderer::syncQueuesDone() {
     mSyncQueues = false;
 
     if (!mAudioQueue.empty()) {
+		ALOGV("syncQueuesDone calling postDrainAudioQueue");
         postDrainAudioQueue();
     }
 
     if (!mVideoQueue.empty()) {
+		ALOGV("syncQueuesDone calling postDrainVideoQueue");
         postDrainVideoQueue();
     }
 }
 
-void NuPlayer::Renderer::onQueueEOS(const sp<AMessage> &msg) {
+void NuPlayer::HLSRenderer::onQueueEOS(const sp<AMessage> &msg) {
     int32_t audio;
     CHECK(msg->findInt32("audio", &audio));
 
@@ -513,14 +635,16 @@ void NuPlayer::Renderer::onQueueEOS(const sp<AMessage> &msg) {
 
     if (audio) {
         mAudioQueue.push_back(entry);
+        ALOGV("onQueueEOS audio calling postDrainAudioQueue");
         postDrainAudioQueue();
     } else {
         mVideoQueue.push_back(entry);
+        ALOGV("onQueueEOS video calling postDrainVideoQueue");
         postDrainVideoQueue();
     }
 }
 
-void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
+void NuPlayer::HLSRenderer::onFlush(const sp<AMessage> &msg) {
     int32_t audio;
     CHECK(msg->findInt32("audio", &audio));
 
@@ -533,8 +657,10 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
     // Therefore we'll stop syncing the queues if at least one of them
     // is flushed.
     syncQueuesDone();
+    ALOGV("HLSRenderer::onFlush..");
 
     if (audio) {
+		ALOGV("HLSRenderer::onFlush audio");
         flushQueue(&mAudioQueue);
 
         Mutex::Autolock autoLock(mFlushLock);
@@ -543,6 +669,7 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
         mDrainAudioQueuePending = false;
         ++mAudioQueueGeneration;
     } else {
+		ALOGV("HLSRenderer::onFlush video");
         flushQueue(&mVideoQueue);
 
         Mutex::Autolock autoLock(mFlushLock);
@@ -555,7 +682,8 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
     notifyFlushComplete(audio);
 }
 
-void NuPlayer::Renderer::flushQueue(List<QueueEntry> *queue) {
+void NuPlayer::HLSRenderer::flushQueue(List<QueueEntry> *queue) {
+	ALOGV("HLSRenderer::flushQueue");
     while (!queue->empty()) {
         QueueEntry *entry = &*queue->begin();
 
@@ -568,14 +696,17 @@ void NuPlayer::Renderer::flushQueue(List<QueueEntry> *queue) {
     }
 }
 
-void NuPlayer::Renderer::notifyFlushComplete(bool audio) {
+void NuPlayer::HLSRenderer::notifyFlushComplete(bool audio) {
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kWhatFlushComplete);
     notify->setInt32("audio", static_cast<int32_t>(audio));
+    ALOGV("HLSRenderer::notifyFlushComplete audio? %d",audio);
+    ALOGV("HLSRenderer::notifyFlushComplete audio queue has %d entries, video has %d entries",
+			mAudioQueue.size(), mVideoQueue.size());
     notify->post();
 }
 
-bool NuPlayer::Renderer::dropBufferWhileFlushing(
+bool NuPlayer::HLSRenderer::dropBufferWhileFlushing(
         bool audio, const sp<AMessage> &msg) {
     bool flushing = false;
 
@@ -591,6 +722,7 @@ bool NuPlayer::Renderer::dropBufferWhileFlushing(
     if (!flushing) {
         return false;
     }
+    ALOGV("HLSRenderer::dropBufferWhileFlushing audio? %d",audio);
 
     sp<AMessage> notifyConsumed;
     if (msg->findMessage("notifyConsumed", &notifyConsumed)) {
@@ -600,17 +732,22 @@ bool NuPlayer::Renderer::dropBufferWhileFlushing(
     return true;
 }
 
-void NuPlayer::Renderer::onAudioSinkChanged() {
+void NuPlayer::HLSRenderer::onAudioSinkChanged() {
     CHECK(!mDrainAudioQueuePending);
     mNumFramesWritten = 0;
+    ALOGV("HLSRenderer::onAudioSinkChanged: TODO");
+#if 0
     uint32_t written;
     if (mAudioSink->getFramesWritten(&written) == OK) {
         mNumFramesWritten = written;
     }
+#endif
 }
 
-void NuPlayer::Renderer::notifyPosition() {
+void NuPlayer::HLSRenderer::notifyPosition() {
+	ALOGV("HLSRenderer::notifyPosition");
     if (mAnchorTimeRealUs < 0 || mAnchorTimeMediaUs < 0) {
+		ALOGV("HLSRenderer::notifyPosition anchor times not set...returning");
         return;
     }
 
@@ -628,10 +765,11 @@ void NuPlayer::Renderer::notifyPosition() {
     notify->setInt32("what", kWhatPosition);
     notify->setInt64("positionUs", positionUs);
     notify->setInt64("videoLateByUs", mVideoLateByUs);
+    ALOGV("HLSRenderer::notifyPosition positionUs %lld mVideoLateByUs %lld",positionUs,mVideoLateByUs);
     notify->post();
 }
 
-void NuPlayer::Renderer::onPause() {
+void NuPlayer::HLSRenderer::onPause() {
     CHECK(!mPaused);
 
     mDrainAudioQueuePending = false;
@@ -650,7 +788,8 @@ void NuPlayer::Renderer::onPause() {
     mPaused = true;
 }
 
-void NuPlayer::Renderer::onResume() {
+void NuPlayer::HLSRenderer::onResume() {
+	ALOGV("HLSRenderer::onResume");
     if (!mPaused) {
         return;
     }
@@ -662,15 +801,17 @@ void NuPlayer::Renderer::onResume() {
     mPaused = false;
 
     if (!mAudioQueue.empty()) {
+		ALOGV("HLSRenderer::onResume calling postDrainAudioQueue");
         postDrainAudioQueue();
     }
 
     if (!mVideoQueue.empty()) {
+		ALOGV("HLSRenderer::onResume calling postDrainVideoQueue");
         postDrainVideoQueue();
     }
 }
 
-status_t NuPlayer::Renderer::setMediaPresence(bool audio, bool bValue)
+status_t NuPlayer::HLSRenderer::setMediaPresence(bool audio, bool bValue)
 {
    if (audio)
    {
@@ -685,4 +826,3 @@ status_t NuPlayer::Renderer::setMediaPresence(bool audio, bool bValue)
    return OK;
 }
 }  // namespace android
-

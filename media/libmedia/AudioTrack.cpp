@@ -826,8 +826,22 @@ status_t AudioTrack::getPosition(uint32_t *position)
 {
     if (position == NULL) return BAD_VALUE;
     AutoMutex lock(mLock);
-    *position = mFlushed ? 0 : mCblk->server;
-
+    if(mCblk) {
+    	*position = mFlushed ? 0 : mCblk->server;
+	} else {
+		*position = 0;
+		ALOGV("AudioTrack::getPosition mCblk is  NULL... checking mDirectTrack");
+		if (mDirectTrack != NULL) {
+			uint64_t tstamp = 0;
+			tstamp = mDirectTrack->getTimeStamp();
+			ALOGV("mDirectTrack->getTimeStamp %lld Us", tstamp);
+			*position = tstamp / 1000;
+			ALOGV("Updated *position %ld Ms", (*position));
+    	} else {
+			ALOGE("mCblk and mDirectTrack are NULL...");
+			return BAD_VALUE;
+		}
+	}
     return NO_ERROR;
 }
 
