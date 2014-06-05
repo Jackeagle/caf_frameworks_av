@@ -67,9 +67,6 @@ extern const char *MEDIA_MIMETYPE_VIDEO_H263;
 extern const char *MEDIA_MIMETYPE_VIDEO_MPEG2;
 extern const char *MEDIA_MIMETYPE_VIDEO_RAW;
 
-#ifdef DTS_CODEC_M_
-extern const char *MEDIA_MIMETYPE_AUDIO_DTS;
-#endif
 extern const char *MEDIA_MIMETYPE_AUDIO_AMR_NB;
 extern const char *MEDIA_MIMETYPE_AUDIO_AMR_WB;
 extern const char *MEDIA_MIMETYPE_AUDIO_MPEG;           // layer III

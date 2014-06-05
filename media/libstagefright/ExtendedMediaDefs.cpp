@@ -63,4 +63,8 @@ const char *MEDIA_MIMETYPE_CONTAINER_QCFLV = "video/qc-flv";
 const char *MEDIA_MIMETYPE_VIDEO_VPX = "video/x-vnd.on2.vp8"; //backward compatibility
 const char *MEDIA_MIMETYPE_CONTAINER_QTIFLAC = "audio/qti-flac";
 
+#ifdef DTS_CODEC_M_
+const char *MEDIA_MIMETYPE_AUDIO_DTS = "audio/dts";
+#endif
+
 }  // namespace android
