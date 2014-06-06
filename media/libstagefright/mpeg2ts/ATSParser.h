@@ -90,8 +90,9 @@ struct ATSParser : public RefBase {
     void signalEOS(status_t finalResult);
 
     enum SourceType {
-        VIDEO,
-        AUDIO
+        VIDEO = 0,
+        AUDIO = 1,
+        NUM_SOURCE_TYPES = 2
     };
     sp<MediaSource> getSource(SourceType type);
 
