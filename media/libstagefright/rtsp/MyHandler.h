@@ -164,6 +164,7 @@ struct MyHandler : public AHandler {
         }
 
         mSessionHost = host;
+        mAUTimeoutCheck = true;
     }
 
     void connect() {
@@ -223,6 +224,10 @@ struct MyHandler : public AHandler {
 
     bool isSeekable() const {
         return mSeekable;
+    }
+
+    void setAUTimeoutCheck(bool value) {
+        mAUTimeoutCheck = value;
     }
 
     void pause() {
@@ -959,7 +964,18 @@ struct MyHandler : public AHandler {
                 }
 
                 mNumAccessUnitsReceived = 0;
-                msg->post(kAccessUnitTimeoutUs);
+
+                // The access unit timeout check should happen only during playback and
+                // the posting of AU timeout check should not happen, if pause is not called from
+                // RTSPSource when the stream is nearing EOS
+                if (mAUTimeoutCheck) {
+                    ALOGV("Posting AU timeout check mCheckPending:%d", mCheckPending);
+                    msg->post(kAccessUnitTimeoutUs);
+                } else {
+                    ALOGI("Not Posting AU timeout check mAUTimeoutCheck:%d", mAUTimeoutCheck);
+                    mAUTimeoutCheck = true;
+                    break;
+                }
                 break;
             }
 
@@ -1559,6 +1575,7 @@ private:
     Vector<TrackInfo> mTracks;
 
     bool mPlayResponseParsed;
+    bool mAUTimeoutCheck;
 
     void setupTrack(size_t index) {
         sp<APacketSource> source =
