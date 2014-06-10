@@ -37,6 +37,10 @@
 
 #include "include/AwesomePlayer.h"
 
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include "QCMetaData.h"
+#endif
+
 namespace android {
 
 AudioPlayer::AudioPlayer(
@@ -184,8 +188,6 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             } else {
                 offloadInfo.duration_us = -1;
             }
-            int32_t bitWidth = 16;
-            format->findInt32(kKeySampleBits, &bitWidth);
 
             offloadInfo.sample_rate = mSampleRate;
             offloadInfo.channel_mask = channelMask;
@@ -194,7 +196,12 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             offloadInfo.bit_rate = avgBitRate;
             offloadInfo.has_video = ((mCreateFlags & HAS_VIDEO) != 0);
             offloadInfo.is_streaming = ((mCreateFlags & IS_STREAMING) != 0);
+
+#ifdef ENABLE_AV_ENHANCEMENTS
+            int32_t bitWidth = 16;
+            format->findInt32(kKeySampleBits, &bitWidth);
             offloadInfo.bit_width = bitWidth;
+#endif
         }
 
         status_t err = mAudioSink->open(
