@@ -483,7 +483,7 @@ void ExtendedUtils::helper_addMediaCodec(Vector<MediaCodecList::CodecInfo> &mCod
     info->mIsEncoder = encoder;
     ssize_t index = mTypes.indexOfKey(type);
     uint32_t bit = mTypes.valueAt(index);
-    info->mTypes |= 1ul << bit;
+    info->mTypes = 1ul << bit;
     info->mQuirks = quirks;
 }
 
