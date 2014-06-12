@@ -32,7 +32,6 @@
 #include <utils/threads.h>
 #include "AudioPolicyService.h"
 #include "ServiceUtilities.h"
-#include <hardware_legacy/power.h>
 #include <media/AudioEffect.h>
 #include <media/EffectsFactoryApi.h>
 
@@ -42,6 +41,7 @@
 #include <hardware/audio_policy.h>
 #include <audio_effects/audio_effects_conf.h>
 #include <media/AudioParameter.h>
+#include <powermanager/PowerManager.h>
 
 namespace android {
 
@@ -667,7 +667,7 @@ status_t AudioPolicyService::onTransact(
 
 AudioPolicyService::AudioCommandThread::AudioCommandThread(String8 name,
                                                            const wp<AudioPolicyService>& service)
-    : Thread(false), mName(name), mService(service)
+    : Thread(false), mName(name), mService(service), mDeathRecipient(new PMDeathRecipient(this))
 {
     mpToneGenerator = NULL;
 }
@@ -676,7 +676,11 @@ AudioPolicyService::AudioCommandThread::AudioCommandThread(String8 name,
 AudioPolicyService::AudioCommandThread::~AudioCommandThread()
 {
     if (!mAudioCommands.isEmpty()) {
-        release_wake_lock(mName.string());
+        releaseWakeLock_l();
+    }
+    if (mPowerManager != 0) {
+        sp<IBinder> binder = mPowerManager->asBinder();
+        binder->unlinkToDeath(mDeathRecipient);
     }
     mAudioCommands.clear();
     delete mpToneGenerator;
@@ -701,6 +705,10 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                 AudioCommand *command = mAudioCommands[0];
                 mAudioCommands.removeAt(0);
                 mLastCommand = *command;
+                // release delayed commands wake lock
+                if (mAudioCommands.isEmpty()) {
+                    releaseWakeLock_l();
+                }
 
                 switch (command->mCommand) {
                 case START_TONE: {
@@ -794,10 +802,6 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                 waitTime = mAudioCommands[0]->mTime - curTime;
                 break;
             }
-        }
-        // release delayed commands wake lock
-        if (mAudioCommands.isEmpty()) {
-            release_wake_lock(mName.string());
         }
         ALOGV("AudioCommandThread() going to sleep");
         mWaitWorkCV.waitRelative(mLock, waitTime);
@@ -979,7 +983,7 @@ void AudioPolicyService::AudioCommandThread::insertCommand_l(AudioCommand *comma
 
     // acquire wake lock to make sure delayed commands are processed
     if (mAudioCommands.isEmpty()) {
-        acquire_wake_lock(PARTIAL_WAKE_LOCK, mName.string());
+        acquireWakeLock_l();
     }
 
     // check same pending commands with later time stamps and eliminate them
@@ -1083,6 +1087,78 @@ void AudioPolicyService::AudioCommandThread::exit()
         mWaitWorkCV.signal();
     }
     requestExitAndWait();
+}
+
+void AudioPolicyService::AudioCommandThread::getPowerManager_l()
+{
+    if (mPowerManager == 0) {
+        // use checkService() to avoid blocking if power service is not up yet
+        sp<IBinder> binder =
+            defaultServiceManager()->checkService(String16("power"));
+        if (binder == 0) {
+            ALOGW("AudioCommandThread,cannot connect to the power manager service");
+        } else {
+            mPowerManager = interface_cast<IPowerManager>(binder);
+            binder->linkToDeath(mDeathRecipient);
+        }
+    }
+}
+
+void AudioPolicyService::AudioCommandThread::acquireWakeLock()
+{
+    Mutex::Autolock _l(mLock);
+    acquireWakeLock_l();
+}
+
+void AudioPolicyService::AudioCommandThread::acquireWakeLock_l()
+{
+    getPowerManager_l();
+    if (mPowerManager != 0) {
+        sp<IBinder> binder = new BBinder();
+        status_t status;
+        status = mPowerManager->acquireWakeLock(POWERMANAGER_PARTIAL_WAKE_LOCK,
+                 binder,
+                 String16(mName.string()),
+                 String16("media"));
+        if (status == NO_ERROR) {
+            mWakeLockToken = binder;
+        }
+        ALOGV("acquireWakeLock_l():status:%d, thread:%s",
+                                    status, mName.string());
+    }
+}
+
+void AudioPolicyService::AudioCommandThread::releaseWakeLock()
+{
+    Mutex::Autolock _l(mLock);
+    releaseWakeLock_l();
+}
+
+void AudioPolicyService::AudioCommandThread::releaseWakeLock_l()
+{
+    if (mWakeLockToken != 0) {
+        ALOGV("releaseWakeLock_l(), thread:%s", mName.string());
+        if (mPowerManager != 0) {
+            mPowerManager->releaseWakeLock(mWakeLockToken, 0);
+        }
+        mWakeLockToken.clear();
+    }
+}
+
+void AudioPolicyService::AudioCommandThread::clearPowerManager()
+{
+    Mutex::Autolock _l(mLock);
+    releaseWakeLock_l();
+    mPowerManager.clear();
+}
+
+void AudioPolicyService::AudioCommandThread::PMDeathRecipient::binderDied(const wp<IBinder>& who)
+{
+    sp<AudioCommandThread> thread = mThread.promote();
+    if (thread != 0) {
+        thread->clearPowerManager();
+    }
+    ALOGW("power manager service died !!!");
 }
 
 void AudioPolicyService::AudioCommandThread::AudioCommand::dump(char* buffer, size_t size)
