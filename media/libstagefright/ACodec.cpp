@@ -666,10 +666,12 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
         return err;
     }
 
-    //add an extra buffer to display queue to get around dequeue+wait
-    //blocking too long (more than 1 Vsync) in case BufferQeuue is in
-    //sync-mode and advertizes only 1 buffer
-    (*minUndequeuedBuffers)++;
+    // Add extra buffer to display queue to get around dequeue+wait
+    // blocking too long in case BufferQueue is in sync-mode and advertises
+    // only 1 buffer. Also, restrict to 2 extra buffers for > 1080p
+    (*minUndequeuedBuffers) +=
+        (def.format.video.nFrameWidth * def.format.video.nFrameHeight > 1088 * 1920)
+        ? 2 : 3;
     ALOGI("NOTE: Overriding minUndequeuedBuffers to %lu",*minUndequeuedBuffers);
 
     // XXX: Is this the right logic to use?  It's not clear to me what the OMX
