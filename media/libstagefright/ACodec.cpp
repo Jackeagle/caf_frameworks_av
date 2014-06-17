@@ -1298,7 +1298,18 @@ status_t ACodec::configureCodec(
         }
 #ifdef DTS_CODEC_M_
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)) {
-        err = DTSUtils::setupDecoder(mOMX, mNode);
+        ALOGV(" (DTS) mime == MEDIA_MIMETYPE_AUDIO_DTS");
+        int32_t numChannels, sampleRate;
+        if (!msg->findInt32("channel-count", &numChannels)
+                || !msg->findInt32("sample-rate", &sampleRate)) {
+            ALOGE("missing channel count or sample rate for DTS decoder");
+            err = INVALID_OPERATION;
+        } else {
+            err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate);
+        }
+        if (err != OK) {
+            return err;
+        }
 #endif
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
         int32_t numChannels, sampleRate;

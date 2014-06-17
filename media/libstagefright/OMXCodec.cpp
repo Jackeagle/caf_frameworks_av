@@ -735,7 +735,13 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         setRawAudioFormat(kPortIndexInput, sampleRate, numChannels);
 #ifdef DTS_CODEC_M_
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_DTS, mMIME)) {
-        status_t err = DTSUtils::setupDecoder(mOMX, mNode);
+        ALOGV(" (DTS) mime == MEDIA_MIMETYPE_AUDIO_DTS");
+        int32_t numChannels, sampleRate;
+        CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
+        CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
+
+        status_t err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate);
+
         if (err != OK) {
             return err;
         }
@@ -4820,6 +4826,8 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 mOutputFormat->setInt32(
                         kKeyChannelCount,
                         actualChannels);
+
+                ALOGV("** actualSamplingRate == %d", params.nSamplingRate);
 
                 mOutputFormat->setInt32(kKeySampleRate, params.nSamplingRate);
             } else if (audio_def->eEncoding == OMX_AUDIO_CodingAMR) {

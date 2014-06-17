@@ -25,7 +25,7 @@
 
 namespace android {
 
-status_t DTSUtils::setupDecoder(sp<IOMX> omx, IOMX::node_id node)
+status_t DTSUtils::setupDecoder(sp<IOMX> omx, IOMX::node_id node, int32_t sampleRate)
 {
     ALOGV("(DTS) +setupDecoder()");
 
@@ -62,7 +62,36 @@ status_t DTSUtils::setupDecoder(sp<IOMX> omx, IOMX::node_id node)
             ALOGV("(DTS)     -> node->getParameter() :  node = %d  nSpkrOut = 0x%x (%d)  result = 0x%x", (int)node, (int)myDtsDecParam.nSpkrOut, (int)myDtsDecParam.nSpkrOut, (int)result);
         }
     }
-    ALOGV("(DTS) -setupDecoder() : result = 0x%x", (int)result);
+
+    ALOGV("(DTS) -setupDecoder() : nSpkrOut result = 0x%x", (int)result);
+
+    // initialize myPcmParam
+    OMX_AUDIO_PARAM_PCMMODETYPE myPcmParam;
+    memset(&myPcmParam, 0, sizeof(myPcmParam));
+    InitOMXParams(&myPcmParam);
+    myPcmParam.nPortIndex = 1;
+
+    result = omx->getParameter(node, (OMX_INDEXTYPE)OMX_IndexParamAudioPcm, &myPcmParam, sizeof(myPcmParam));
+    ALOGV("(DTS)     -> omx->getParameter() :  node = %d  nSamplingRate = %d  result = 0x%x", (int)node, (int)myPcmParam.nSamplingRate, (int)result);
+
+    if (result == OK)
+    {
+        myPcmParam.nSamplingRate = sampleRate;
+        // call Android's OMX setParameter wrapper
+        ALOGV("(DTS)     -> Attempting to set sampling rate : nSamplingRate = 0x%x (%d)", (int)myPcmParam.nSamplingRate, (int)myPcmParam.nSamplingRate);
+        result = omx->setParameter(node, (OMX_INDEXTYPE)OMX_IndexParamAudioPcm, &myPcmParam, sizeof(myPcmParam));
+        ALOGV("(DTS)     -> omx->setParameter() :  node = %d  result = 0x%x", (int)node, (int)result);
+
+        if (result == OK)
+        {
+            // make sure the param got set
+            result = omx->getParameter(node, (OMX_INDEXTYPE)OMX_IndexParamAudioPcm, &myPcmParam, sizeof(myPcmParam));
+            ALOGV("(DTS)     -> node->getParameter() :  node = %d  nSamplingRate = 0x%x (%d)  result = 0x%x", (int)node, (int)myPcmParam.nSamplingRate, (int)myPcmParam.nSamplingRate, (int)result);
+        }
+    }
+
+    ALOGV("(DTS) -setupDecoder() : nSamplingRate result = 0x%x", (int)result);
+
     return result;
 }
 
