@@ -595,8 +595,9 @@ void AudioTrack::pause()
     if (isOffloaded()) {
         if (mOutput != 0) {
             uint32_t halFrames;
+            // here can be slightly off
             AudioSystem::getRenderPosition(mOutput, &halFrames, &mPausedPosition);
-            ALOGV("AudioTrack::pause for offload, cache current position");
+            ALOGV("AudioTrack::pause for offload, cache current position %u", mPausedPosition);
         }
     }
 }
@@ -677,6 +678,19 @@ uint32_t AudioTrack::getSampleRate() const
     }
 
     AutoMutex lock(mLock);
+
+    // sample rate can be updated during playback by the offloaded decoder so we need to
+    // query the HAL and update if needed.
+// FIXME use Proxy return channel to update the rate from server and avoid polling here
+    if (isOffloaded()) {
+        if (mOutput != 0) {
+            uint32_t sampleRate = 0;
+            status_t status = AudioSystem::getSamplingRate(mOutput, mStreamType, &sampleRate);
+            if (status == NO_ERROR) {
+                mSampleRate = sampleRate;
+            }
+        }
+    }
     return mSampleRate;
 }
 
@@ -1183,13 +1197,13 @@ status_t AudioTrack::obtainBuffer(Buffer* audioBuffer, int32_t waitCount)
     }
 
     const struct timespec *requested;
+    struct timespec timeout;
     if (waitCount == -1) {
         requested = &ClientProxy::kForever;
     } else if (waitCount == 0) {
         requested = &ClientProxy::kNonBlocking;
     } else if (waitCount > 0) {
         long long ms = WAIT_PERIOD_MS * (long long) waitCount;
-        struct timespec timeout;
         timeout.tv_sec = ms / 1000;
         timeout.tv_nsec = (int) (ms % 1000) * 1000000;
         requested = &timeout;
@@ -1528,6 +1542,7 @@ nsecs_t AudioTrack::processAudioBuffer(const sp<AudioTrackThread>& thread)
     }
     size_t misalignment = mProxy->getMisalignment();
     uint32_t sequence = mSequence;
+    sp<AudioTrackClientProxy> proxy = mProxy;
 
     // These fields don't need to be cached, because they are assigned only by set():
     //     mTransfer, mCbf, mUserData, mFormat, mFrameSize, mFrameSizeAF, mFlags
@@ -1569,16 +1584,14 @@ nsecs_t AudioTrack::processAudioBuffer(const sp<AudioTrackThread>& thread)
 
     if (waitStreamEnd) {
         AutoMutex lock(mLock);
-
         sp<AudioTrackClientProxy> proxy = mProxy;
         sp<IMemory> iMem = mCblkMemory;
-
         struct timespec timeout;
         timeout.tv_sec = WAIT_STREAM_END_TIMEOUT_SEC;
         timeout.tv_nsec = 0;
-
         mLock.unlock();
-        status_t status = mProxy->waitStreamEndDone(&timeout);
+
+        status_t status =mProxy->waitStreamEndDone(&timeout);
         mLock.lock();
         switch (status) {
         case NO_ERROR:
@@ -1594,16 +1607,17 @@ nsecs_t AudioTrack::processAudioBuffer(const sp<AudioTrackThread>& thread)
             mLock.unlock();
             mCbf(EVENT_STREAM_END, mUserData, NULL);
             mLock.lock();
+            
             if (mState == STATE_STOPPING) {
-                mState = STATE_STOPPED;
-                if (status != DEAD_OBJECT) {
-                   return NS_INACTIVE;
-                }
+            mState = STATE_STOPPED;
+            if (status != DEAD_OBJECT) {
+                return NS_INACTIVE;
             }
-            return 0;
-        default:
-            return 0;
         }
+        return 0;
+     default:
+        return 0;
+       }
     }
 
     // if inactive, then don't run me again until re-started
