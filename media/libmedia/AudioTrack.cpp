@@ -114,7 +114,8 @@ AudioTrack::AudioTrack(
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
-      mPausedPosition(0)
+      mPausedPosition(0),
+      mUseSmallBuf(false)
 {
     mStatus = set(streamType, sampleRate, format, channelMask,
             frameCount, flags, cbf, user, notificationFrames,
@@ -140,7 +141,8 @@ AudioTrack::AudioTrack(
       mIsTimed(false),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
-      mPausedPosition(0)
+      mPausedPosition(0),
+      mUseSmallBuf(false)
 {
     mStatus = set(streamType, sampleRate, format, channelMask,
             0 /*frameCount*/, flags, cbf, user, notificationFrames,
@@ -362,6 +364,8 @@ status_t AudioTrack::set(
                                     sampleRate, format, channelMask,
                                     flags,
                                     offloadInfo);
+    if (offloadInfo && offloadInfo->use_small_bufs)
+        mUseSmallBuf = true;
 
     if (output == 0) {
         ALOGE("Could not get audio output for stream type %d", streamType);
@@ -807,6 +811,13 @@ status_t AudioTrack::getPosition(uint32_t *position) const
     AutoMutex lock(mLock);
     if (isOffloaded()) {
         uint32_t dspFrames = 0;
+
+        if (mUseSmallBuf) {
+            // IAudioTrack::stop() isn't synchronous; we don't know when presentation completes
+            *position = (mState == STATE_STOPPED || mState == STATE_FLUSHED) ? 0 :
+                         (mProxy->getPosition()/(mChannelCount * audio_bytes_per_sample(mFormat)));
+            return NO_ERROR;
+        }
 
         if ((mState == STATE_PAUSED) || (mState == STATE_PAUSED_STOPPING)) {
             ALOGV("getPosition called in paused state, return cached position %u", mPausedPosition);
