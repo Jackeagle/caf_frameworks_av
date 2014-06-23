@@ -598,7 +598,7 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         return false;
     }
 
-    // check whether it is ELD/LD/main content -> no offloading
+    // check whether it is ELD/LD content -> no offloading
     // FIXME: this should depend on audio DSP capabilities. mapMimeToAudioFormat() should use the
     // metadata to refine the AAC format and the audio HAL should only list supported profiles.
     int32_t aacaot = -1;
