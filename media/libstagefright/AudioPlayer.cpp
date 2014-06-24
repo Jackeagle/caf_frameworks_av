@@ -37,6 +37,10 @@
 
 #include "include/AwesomePlayer.h"
 
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include "QCMetaData.h"
+#endif
+
 namespace android {
 
 AudioPlayer::AudioPlayer(
@@ -184,8 +188,6 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             } else {
                 offloadInfo.duration_us = -1;
             }
-            int32_t bitWidth = 16;
-            format->findInt32(kKeySampleBits, &bitWidth);
 
             offloadInfo.sample_rate = mSampleRate;
             offloadInfo.channel_mask = channelMask;
@@ -194,7 +196,12 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             offloadInfo.bit_rate = avgBitRate;
             offloadInfo.has_video = ((mCreateFlags & HAS_VIDEO) != 0);
             offloadInfo.is_streaming = ((mCreateFlags & IS_STREAMING) != 0);
+
+#ifdef ENABLE_AV_ENHANCEMENTS
+            int32_t bitWidth = 16;
+            format->findInt32(kKeySampleBits, &bitWidth);
             offloadInfo.bit_width = bitWidth;
+#endif
         }
 
         status_t err = mAudioSink->open(
@@ -815,16 +822,27 @@ int64_t AudioPlayer::getRealTimeUsLocked() const {
     }
 }
 
-int64_t AudioPlayer::getOutputPlayPositionUs_l() const
+int64_t AudioPlayer::getOutputPlayPositionUs_l()
 {
     uint32_t playedSamples = 0;
+    uint32_t sampleRate = 0;
     if (mAudioSink != NULL) {
         mAudioSink->getPosition(&playedSamples);
+        sampleRate = mAudioSink->getSampleRate();
     } else if (mAudioTrack != NULL) {
         mAudioTrack->getPosition(&playedSamples);
+        sampleRate = mAudioTrack->getSampleRate();
+    }
+    if (sampleRate != 0) {
+        mSampleRate = sampleRate;
     }
 
-    const int64_t playedUs = (static_cast<int64_t>(playedSamples) * 1000000 ) / mSampleRate;
+    int64_t playedUs;
+    if (mSampleRate != 0) {
+        playedUs = (static_cast<int64_t>(playedSamples) * 1000000 ) / mSampleRate;
+    } else {
+        playedUs = 0;
+    }
 
     // HAL position is relative to the first buffer we sent at mStartPosUs
     const int64_t renderedDuration = mStartPosUs + playedUs;

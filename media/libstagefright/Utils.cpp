@@ -38,6 +38,7 @@
 
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMediaDefs.h"
+#include "QCMetaData.h"
 #endif
 
 namespace android {
@@ -520,7 +521,7 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     if (meta->findInt32(kKeyIsADTS, &isADTS)) {
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_FORMAT), 0x02 /*SND_AUDIOSTREAMFORMAT_MP4ADTS*/);
     }
-
+#ifdef ENABLE_AV_ENHANCEMENTS
     if (meta->findInt32(kKeyMinBlkSize, &minBlkSize)) {
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MIN_BLK_SIZE), minBlkSize);
     }
@@ -533,6 +534,7 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     if (meta->findInt32(kKeyMaxFrmSize, &maxFrmSize)) {
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MAX_FRAME_SIZE), maxFrmSize);
     }
+#endif
 
     ALOGV("sendMetaDataToHal: bitRate %d, sampleRate %d, chanMask %d,"
           "delaySample %d, paddingSample %d", bitRate, sampleRate,
@@ -662,11 +664,13 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
      }
     info.bit_rate = brate;
 
+#ifdef ENABLE_AV_ENHANCEMENTS
     int32_t bitWidth = 16;
     if (!meta->findInt32(kKeySampleBits, &bitWidth)) {
         ALOGV("bits per sample not set, using default %d", bitWidth);
     }
     info.bit_width = bitWidth;
+#endif
 
     info.stream_type = streamType;
     info.has_video = hasVideo;
