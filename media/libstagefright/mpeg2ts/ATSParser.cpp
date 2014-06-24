@@ -501,8 +501,19 @@ ATSParser::Stream::Stream(
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::PCM_AUDIO);
             break;
+		case STREAMTYPE_AC3_AUDIO:
+			ALOGV("STREAMTYPE_AC3_AUDIO");
+			mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::AC3_AUDIO);
+			break;
+		case STREAMTYPE_EAC3_AUDIO:
+			ALOGV("STREAMTYPE_EAC3_AUDIO");
+			mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::EAC3_AUDIO);
+			break;
 
         default:
+		ALOGE("Unknown stream type %d",streamType);
             break;
     }
 
@@ -600,6 +611,8 @@ bool ATSParser::Stream::isAudio() const {
         case STREAMTYPE_MPEG2_AUDIO:
         case STREAMTYPE_MPEG2_AUDIO_ADTS:
         case STREAMTYPE_PCM_AUDIO:
+        case STREAMTYPE_AC3_AUDIO:
+        case STREAMTYPE_EAC3_AUDIO:
             return true;
 
         default:

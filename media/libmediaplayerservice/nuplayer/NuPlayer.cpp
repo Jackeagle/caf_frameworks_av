@@ -23,6 +23,7 @@
 
 #ifdef QCOM_WFD_SINK
 #include "WFDRenderer.h"
+#include "HLSRenderer.h"
 #endif //QCOM_WFD_SINK
 #include "HTTPLiveSource.h"
 #include "NuPlayerDecoder.h"
@@ -77,7 +78,8 @@ NuPlayer::NuPlayer()
       mNumFramesDropped(0ll),
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
       mWFDSinkSession(false),
-      mIsSecureInputBuffers(false) {
+      mIsSecureInputBuffers(false),
+      mIsHLSSession(false) {
 }
 
 NuPlayer::~NuPlayer() {
@@ -129,10 +131,20 @@ void NuPlayer::setDataSource(
     sp<Source> source;
     if (IsHTTPLiveURL(url)) {
         source = new HTTPLiveSource(url, headers, mUIDValid, mUID);
+        char prop[PROPERTY_VALUE_MAX];
+        ALOGV("checking media.use.stock.hls property");
+        if (property_get("media.use.stock.hls", prop, NULL)
+            		&& (!strcmp(prop, "1") || !strcasecmp(prop, "true"))) {
+			ALOGV("using stock HLS...");
+		} else {
+        mIsHLSSession = true;
+        ALOGV("using tunnel HLS renderer...");
+    }
     }
 #ifdef QCOM_WFD_SINK
    else if(!strncasecmp(url, "rtp://wfd", 9)) {
           //Load the WFD source library here.
+           ALOGV("NuPlayer::setDataSource calling LoadCreateSource");
            source = LoadCreateSource(url, headers, mUIDValid, mUID, true);
            if (source != NULL) {
               mWFDSinkSession = true;
@@ -272,8 +284,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             sp<RefBase> obj;
             CHECK(msg->findObject("sink", &obj));
-
-            mAudioSink = static_cast<MediaPlayerBase::AudioSink *>(obj.get());
+	    mAudioSink = static_cast<MediaPlayerBase::AudioSink *>(obj.get());
             break;
         }
 
@@ -297,6 +308,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 ALOGV("creating WFDRenderer in NU player");
                 mRenderer = new WFDRenderer(
                         mAudioSink,
+                        new AMessage(kWhatRendererNotify, id()));
+            } else if(mIsHLSSession) {
+				ALOGV("creating HLSRenderer in NUPlayer for HLS");
+				mRenderer = new HLSRenderer(
+				                        mAudioSink,
                         new AMessage(kWhatRendererNotify, id()));
             }
             else {
@@ -334,10 +350,22 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             if (mNativeWindow != NULL) {
                 instantiateDecoder(false, &mVideoDecoder);
+                ALOGV("kWhatScanSources mIsHLSSession %d mRenderer %u",mIsHLSSession,mRenderer.get());
+                #ifdef QCOM_WFD_SINK
+                if(mIsHLSSession && (mRenderer.get()!= NULL) ) {
+					((HLSRenderer*)mRenderer.get())->setMediaPresence(false,true);
+				}
+				#endif
             }
 
             if (mAudioSink != NULL) {
                 instantiateDecoder(true, &mAudioDecoder);
+                ALOGV("kWhatScanSources mIsHLSSession %d mRenderer %u",mIsHLSSession,mRenderer.get());
+                #ifdef QCOM_WFD_SINK
+                if(mIsHLSSession && (mRenderer.get()!= NULL) ) {
+					((HLSRenderer*)mRenderer.get())->setMediaPresence(true,true);
+				}
+				#endif
             }
 
             if (!mHadAnySourcesBefore
@@ -699,6 +727,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatPause:
         {
             CHECK(mRenderer != NULL);
+		ALOGV("NuPlayer kWhatPause calling mRenderer->pause()");
             mRenderer->pause();
 #ifdef QCOM_WFD_SINK
             if(mWFDSinkSession) {
@@ -712,6 +741,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatResume:
         {
             CHECK(mRenderer != NULL);
+		ALOGV("NuPlayer kWhatResume calling mRenderer->resume");
             mRenderer->resume();
 #ifdef QCOM_WFD_SINK
             if(mWFDSinkSession) {
@@ -850,8 +880,13 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
            (*decoder)->setSink(mAudioSink, mRenderer);
          }
          (*decoder)->configure(format,true);
-     }
-     else
+     } else if(mIsHLSSession) {
+		 ALOGV("NuPlayer::instantiateDecoder mIsHLSSession is true...");
+		 ALOGV("NuPlayer::instantiateDecoder calling setSink on decoder with mAudioSink and mRenderer..");
+		 (*decoder)->setSink(mAudioSink, mRenderer);
+		 ALOGV("NuPlayer::instantiateDecoder calling configure on decoder with bUseMPQWrapper as true...");
+		 (*decoder)->configure(format,true);
+	 } else
 #endif //QCOM_WFD_SINK
      {
         (*decoder)->configure(format);
@@ -893,7 +928,7 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
                 ALOGE("Nuplayer NULL buffer in message");
                 return err;
             } else {
-                ALOGV("Nuplayer buffer in message %d %d",
+                ALOGV("Nuplayer buffer in message %u %d",
                 accessUnit->data(), accessUnit->capacity());
             }
         }
@@ -1057,7 +1092,7 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
         CHECK(buffer->meta()->findInt64("timeUs", &mediaTimeUs));
 
         if (mediaTimeUs < skipUntilMediaTimeUs) {
-            ALOGV("dropping %s buffer at time %lld as requested.",
+            ALOGV("renderBuffer dropping %s buffer at time %lld as requested.",
                  audio ? "audio" : "video",
                  mediaTimeUs);
 

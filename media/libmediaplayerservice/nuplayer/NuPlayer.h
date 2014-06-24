@@ -82,6 +82,7 @@ private:
 #ifdef QCOM_WFD_SINK
     struct WFDRenderer;
     struct MPQHALWrapper;
+    struct HLSRenderer;
 #endif //QCOM_WFD_SINK
     struct RTSPSource;
     struct StreamingSource;
@@ -153,6 +154,7 @@ private:
 #ifdef QCOM_WFD_SINK
     bool mWFDSinkSession;
     bool mIsSecureInputBuffers;
+    bool mIsHLSSession;
 #endif //QCOM_WFD_SINK
 
     status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);

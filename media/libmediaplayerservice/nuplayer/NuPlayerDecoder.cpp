@@ -48,7 +48,7 @@ NuPlayer::Decoder::Decoder(
 NuPlayer::Decoder::~Decoder() {
 }
 
-void NuPlayer::Decoder::configure(const sp<AMessage> &format, bool wfdSink) {
+void NuPlayer::Decoder::configure(const sp<AMessage> &format, bool bUseMPQWrapper) {
     CHECK(mCodec == NULL);
 
     AString mime;
@@ -80,10 +80,11 @@ void NuPlayer::Decoder::configure(const sp<AMessage> &format, bool wfdSink) {
     mCodec = new ACodec;
 
 #ifdef QCOM_WFD_SINK
-    if (!needDedicatedLooper && wfdSink) //Audio for Wfd sink
+    if (!needDedicatedLooper && bUseMPQWrapper) //Audio through MPQ HAL
     {
         // For wfd Audio we use the MPQ Hal Wrapper
         //free the ACodec allocated above.
+        ALOGV("NuPlayer::Decoder::configure.. using MPQHALWrapper for audio");
         mCodec = NULL;
         mCreateMPQAudioHALwrapper = true;
         mMPQWrapper = new MPQHALWrapper(mAudioSink,mRenderer);
