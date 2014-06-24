@@ -30,7 +30,6 @@
 #include <media/IAudioPolicyService.h>
 #include <media/ToneGenerator.h>
 #include <media/AudioEffect.h>
-#include <powermanager/IPowerManager.h>
 
 namespace android {
 
@@ -196,13 +195,6 @@ private:
                     void        releaseOutputCommand(audio_io_handle_t output);
 
                     void        insertCommand_l(AudioCommand *command, int delayMs = 0);
-    protected:
-                    void        acquireWakeLock();
-                    void        acquireWakeLock_l();
-                    void        releaseWakeLock();
-                    void        releaseWakeLock_l();
-                    void        getPowerManager_l();
-                    void        clearPowerManager();
 
     private:
         // descriptor for requested tone playback event
@@ -257,17 +249,6 @@ private:
         public:
             audio_io_handle_t mIO;
         };
-        class PMDeathRecipient : public IBinder::DeathRecipient {
-        public:
-                        PMDeathRecipient(const wp<AudioCommandThread>& thread) : mThread(thread) {}
-            virtual     ~PMDeathRecipient() {}
-            // IBinder::DeathRecipient
-            virtual     void        binderDied(const wp<IBinder>& who);
-        private:
-                        PMDeathRecipient(const PMDeathRecipient&);
-                        PMDeathRecipient& operator = (const PMDeathRecipient&);
-            wp<AudioCommandThread> mThread;
-        };
 
         Mutex   mLock;
         Condition mWaitWorkCV;
@@ -276,9 +257,6 @@ private:
         AudioCommand mLastCommand;          // last processed command (used by dump)
         String8 mName;                      // string used by wake lock fo delayed commands
         wp<AudioPolicyService> mService;
-        sp<IPowerManager>       mPowerManager;
-        sp<IBinder>             mWakeLockToken;
-        const sp<PMDeathRecipient> mDeathRecipient;
     };
 
     class EffectDesc {
