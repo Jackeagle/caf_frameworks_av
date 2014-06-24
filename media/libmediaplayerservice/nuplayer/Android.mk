@@ -15,6 +15,7 @@ LOCAL_SRC_FILES:=                       \
         StreamingSource.cpp             \
         MPQHALWrapper.cpp               \
         WFDRenderer.cpp                 \
+        HLSRenderer.cpp			\
         mp4/MP4Source.cpp
 
 LOCAL_CFLAGS := $(libnuplayer-wfd-def)
