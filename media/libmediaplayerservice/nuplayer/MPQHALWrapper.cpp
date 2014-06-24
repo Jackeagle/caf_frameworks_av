@@ -34,7 +34,7 @@
 #include <media/stagefright/ACodec.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaData.h>
-
+#include <media/stagefright/MediaErrors.h>
 #define MAX_MPQ_HAL_BUFFER_SIZE 64000
 #define MPQ_AUDIO_SESSION_ID 3
 
@@ -321,9 +321,13 @@ void NuPlayer::MPQHALWrapper::onInputBufferFilled(const sp<AMessage> &msg) {
 
         ALOGV("saw error %d instead of an input buffer", err);
         buffer.clear();
+        if( (mRenderer != NULL) && ( err == ERROR_END_OF_STREAM) ) {
+			ALOGV("triggering audio eos...");
+		mRenderer->queueEOS(true, err);
+	}
         return;
     } else {
-       ALOGE("there is a buffer");
+       ALOGV("there is a buffer");
     }
     // request for next buffer before processing the current buffer
     postFillThisBuffer();
