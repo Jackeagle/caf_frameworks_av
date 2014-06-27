@@ -2821,6 +2821,7 @@ void OMXCodec::onCmdComplete(OMX_COMMANDTYPE cmd, OMX_U32 data) {
 
                 if (mPortStatus[kPortIndexInput] == ENABLED
                     && mPortStatus[kPortIndexOutput] == ENABLED) {
+                    setState(EXECUTING);
                     CODEC_LOGV("Finished flushing both ports, now continuing from"
                          " seek-time.");
 
@@ -4203,11 +4204,6 @@ status_t OMXCodec::read(
 
     if (mState == ERROR) {
         return UNKNOWN_ERROR;
-    }
-
-    if (seeking) {
-        CHECK_EQ((int)mState, (int)FLUSHING);
-        setState(EXECUTING);
     }
 
     if (mFilledBuffers.empty()) {
