@@ -3523,12 +3523,6 @@ status_t OMXCodec::waitForBufferFilled_l() {
         return mBufferFilled.wait(mLock);
     }
     status_t err = mBufferFilled.waitRelative(mLock, kBufferFilledEventTimeOutNs);
-    if ((err == -ETIMEDOUT) && (mPaused == true)){
-        // When the audio playback is paused, the fill buffer maybe timed out
-        // if input data is not available to decode. Hence, considering the
-        // timed out as a valid case.
-        err = OK;
-    }
     if (err != OK) {
         CODEC_LOGE("Timed out waiting for output buffers: %d/%d",
             countBuffersWeOwn(mPortBuffers[kPortIndexInput]),
@@ -4189,6 +4183,13 @@ status_t OMXCodec::read(
 
     while (mState != ERROR && !mNoMoreOutputData && mFilledBuffers.empty()) {
         if ((err = waitForBufferFilled_l()) != OK) {
+            if ((err == -ETIMEDOUT) && (mPaused == true) && !mIsVideo) {
+                // When the audio playback is paused, the fill buffer maybe timed out
+                // if input data is not available to decode. Hence, considering the
+                // timed out as a valid case.
+                ALOGV("returned OK instead of timedout from read() as mPaused is true");
+                err = OK;
+            }
             return err;
         }
     }
@@ -4886,10 +4887,11 @@ status_t OMXCodec::pause() {
        CHECK_EQ(err, (status_t)OK);
        setState(PAUSING);
 
-       mPaused = true;
        while (mState != PAUSED && mState != ERROR) {
            mAsyncCompletion.wait(mLock);
        }
+       if(mState != ERROR)
+          mPaused = true;
        return mState == ERROR ? UNKNOWN_ERROR : OK;
    } else {
        mPaused = true;
