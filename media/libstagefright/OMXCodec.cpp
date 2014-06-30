@@ -421,12 +421,20 @@ sp<MediaSource> OMXCodec::Create(
     const char *mime;
     bool success = meta->findCString(kKeyMIMEType, &mime);
     CHECK(success);
-
+    ExtendedCodec::kHEVCCodecType hevc_codectype = ExtendedCodec::kCodecType_None;
     Vector<CodecNameAndQuirks> matchingCodecs;
+
+    hevc_codectype = ExtendedCodec::useHEVCDecoder(mime);
 
     if (ExtendedCodec::useHWAACDecoder(mime)) {
         findMatchingCodecs(mime, createEncoder,
             "OMX.qcom.audio.decoder.multiaac", flags, &matchingCodecs);
+    } else if (hevc_codectype == ExtendedCodec::kCodecType_SWHEVC) {
+               findMatchingCodecs(mime, createEncoder,
+                   "OMX.qcom.video.decoder.hevcswvdec", flags, &matchingCodecs);
+    } else if (hevc_codectype == ExtendedCodec::kCodecType_HWHEVC) {
+               findMatchingCodecs(mime, createEncoder,
+                   "OMX.qcom.video.decoder.hevc", flags, &matchingCodecs);
     } else {
         findMatchingCodecs(
             mime, createEncoder, matchComponentName, flags, &matchingCodecs);
