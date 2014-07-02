@@ -491,10 +491,17 @@ sp<MediaSource> OMXCodec::Create(
             }
 
             ALOGV("Failed to configure codec '%s'", componentName);
+            codec->resetUsecase();
         }
     }
 
     return NULL;
+}
+
+void OMXCodec::resetUsecase(void) {
+    if(mUseCaseFlag) {
+        ResourceManager::AudioConcurrencyInfo::resetParameter(mUseCase, mUseCaseFlag, mFlags);
+    }
 }
 
 status_t OMXCodec::parseAVCCodecSpecificData(
@@ -586,7 +593,6 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
     if(err != OK) {
         return err;
     }
-
     if (!(mFlags & kIgnoreCodecSpecificData)) {
         uint32_t type;
         const void *data;
@@ -1706,8 +1712,7 @@ OMXCodec::~OMXCodec() {
     setState(DEAD);
 
     clearCodecSpecificData();
-
-    ResourceManager::AudioConcurrencyInfo::resetParameter(mUseCase, mUseCaseFlag, mFlags);
+    resetUsecase();
 
     free(mComponentName);
     mComponentName = NULL;

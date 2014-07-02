@@ -301,6 +301,7 @@ private:
     void onSignalEndOfInputStream();
 
     DISALLOW_EVIL_CONSTRUCTORS(ACodec);
+    void resetUsecase(void);
 };
 
 }  // namespace android
