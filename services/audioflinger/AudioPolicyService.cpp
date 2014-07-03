@@ -675,9 +675,6 @@ AudioPolicyService::AudioCommandThread::AudioCommandThread(String8 name,
 
 AudioPolicyService::AudioCommandThread::~AudioCommandThread()
 {
-    if (!mAudioCommands.isEmpty()) {
-        release_wake_lock(mName.string());
-    }
     mAudioCommands.clear();
     delete mpToneGenerator;
 }
@@ -794,10 +791,6 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                 waitTime = mAudioCommands[0]->mTime - curTime;
                 break;
             }
-        }
-        // release delayed commands wake lock
-        if (mAudioCommands.isEmpty()) {
-            release_wake_lock(mName.string());
         }
         ALOGV("AudioCommandThread() going to sleep");
         mWaitWorkCV.waitRelative(mLock, waitTime);
@@ -977,10 +970,6 @@ void AudioPolicyService::AudioCommandThread::insertCommand_l(AudioCommand *comma
     Vector <AudioCommand *> removedCommands;
     command->mTime = systemTime() + milliseconds(delayMs);
 
-    // acquire wake lock to make sure delayed commands are processed
-    if (mAudioCommands.isEmpty()) {
-        acquire_wake_lock(PARTIAL_WAKE_LOCK, mName.string());
-    }
 
     // check same pending commands with later time stamps and eliminate them
     for (i = mAudioCommands.size()-1; i >= 0; i--) {
