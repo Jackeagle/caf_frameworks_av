@@ -1051,9 +1051,9 @@ status_t OMXCodec::setVideoInputFormat(
     } else {
         status_t err = ExtendedCodec::setVideoInputFormat(mime, &compressionFormat);
         if(err != OK) {
-        ALOGE("Not a supported video mime type: %s", mime);
-        CHECK(!"Should not be here. Not a supported video mime type.");
-    }
+            ALOGE("Not a supported video mime type: %s", mime);
+            CHECK(!"Should not be here. Not a supported video mime type.");
+        }
     }
 
     OMX_COLOR_FORMATTYPE colorFormat;
@@ -1164,8 +1164,16 @@ status_t OMXCodec::setVideoInputFormat(
         }
 
         default:
-            CHECK(!"Support for this compressionFormat to be implemented.");
+        {
+            bool retVal = ExtendedCodec::checkIfCompressionHEVC((int)compressionFormat);
+            if (retVal) {
+                CHECK_EQ(ExtendedCodec::setupHEVCEncoderParameters(meta, mOMX,
+                         mNode, mComponentName, kPortIndexOutput, this), (status_t)OK);
+            } else {
+                CHECK(!"Support for this compressionFormat to be implemented.");
+            }
             break;
+        }
     }
     return OK;
 }
@@ -5017,7 +5025,13 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 mOutputFormat->setCString(
                         kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
             } else {
-                CHECK(!"Unknown compression format.");
+                AString mimeType;
+                if (OK == ExtendedCodec::handleSupportedVideoFormats(
+                        video_def->eCompressionFormat, &mimeType)) {
+                    mOutputFormat->setCString(kKeyMIMEType, mimeType.c_str());
+                } else {
+                    CHECK(!"Unknown compression format.");
+                }
             }
 
             mOutputFormat->setInt32(kKeyWidth, video_def->nFrameWidth);
