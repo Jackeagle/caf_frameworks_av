@@ -66,15 +66,17 @@ void ExtendedUtils::HFR::setHFRIfEnabled(
         sp<MetaData> &meta) {
     const char *hfr_str = params.get("video-hfr");
     int32_t hfr = -1;
-    if ( hfr_str != NULL && 3 < strlen(hfr_str)) {
-        hfr = atoi(&hfr_str[3]);
+    if ( hfr_str != NULL ) {
+        hfr = atoi(hfr_str);
     }
     if (hfr < 0) {
         ALOGW("Invalid hfr value(%d) set from app. Disabling HFR.", hfr);
         hfr = 0;
     }
 
-    if(hfr_str && !strncmp(hfr_str,"hsr",3)) {
+    const char *hsr_str = params.get("video-hsr");
+
+    if(hsr_str && !strncmp(hsr_str,"on",2)) {
          ALOGI("HSR [%d] ON",hfr);
          meta->setInt32(kKeyHSR, hfr);
     } else {
