@@ -1,5 +1,5 @@
 /*
- ** Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ ** Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
  ** Not a Contribution.
  **
  ** Copyright 2010, The Android Open Source Project.
@@ -41,7 +41,11 @@ enum camcorder_quality {
     CAMCORDER_QUALITY_WQVGA = 11,
     CAMCORDER_QUALITY_4kUHD = 12,
     CAMCORDER_QUALITY_4kDCI = 13,
-    CAMCORDER_QUALITY_LIST_END = 13,
+    CAMCORDER_QUALITY_HEVC720P = 14,
+    CAMCORDER_QUALITY_HEVC1080P = 15,
+    CAMCORDER_QUALITY_HEVC4kUHD = 16,
+    CAMCORDER_QUALITY_HEVC4kDCI = 17,
+    CAMCORDER_QUALITY_LIST_END = 17,
 
     CAMCORDER_QUALITY_TIME_LAPSE_LIST_START = 1000,
     CAMCORDER_QUALITY_TIME_LAPSE_LOW  = 1000,
