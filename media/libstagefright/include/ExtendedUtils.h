@@ -215,6 +215,8 @@ struct ExtendedUtils {
 
     //helper function to parse rtp port range form system property
     static void parseRtpPortRangeFromSystemProperty(unsigned *start, unsigned *end);
+
+    static bool isVideoMuxFormatSupported(const char *mime);
 };
 
 class VSyncLocker : public RefBase {
