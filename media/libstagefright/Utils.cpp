@@ -36,6 +36,7 @@
 #include <media/AudioParameter.h>
 #include <media/stagefright/ExtendedCodec.h>
 
+#include "include/ExtendedUtils.h"
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMediaDefs.h"
 #include "QCMetaData.h"
@@ -449,14 +450,32 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
         if (mime.startsWith("video/")) { // do we need to be stricter than this?
             sp<ABuffer> csd1;
             if (msg->findBuffer("csd-1", &csd1)) {
-                char avcc[1024]; // that oughta be enough, right?
-                size_t outsize = reassembleAVCC(csd0, csd1, avcc);
-                meta->setData(kKeyAVCC, kKeyAVCC, avcc, outsize);
+                if (strncasecmp(mime.c_str(), MEDIA_MIMETYPE_VIDEO_HEVC, strlen(MEDIA_MIMETYPE_VIDEO_HEVC))) {
+                    char avcc[1024];
+                    size_t outsize = reassembleAVCC(csd0, csd1, avcc);
+                    meta->setData(kKeyAVCC, kKeyAVCC, avcc, outsize);
+                }
             } else {
-                int csd0size = csd0->size();
-                char esds[csd0size + 31];
-                reassembleESDS(csd0, esds);
-                meta->setData(kKeyESDS, kKeyESDS, esds, sizeof(esds));
+                if (mime.startsWith(MEDIA_MIMETYPE_VIDEO_HEVC)) {
+                    ALOGV("writing HVCC key value pair");
+                    char hvcc[1024];
+                    int curOffset = 0;
+                    void* reassembledHVCC;
+                    size_t reassembledHVCCBuffSize = 0;
+                    if (ExtendedUtils::HEVCMuxer::makeHEVCCodecSpecificData(
+                        csd0->data(), csd0->size(),
+                        &reassembledHVCC, &reassembledHVCCBuffSize) == OK) {
+                        meta->setData(kKeyHVCC, kKeyHVCC, reassembledHVCC, reassembledHVCCBuffSize);
+                        free(reassembledHVCC);
+                    } else {
+                        ALOGE("Failed to reassemble HVCC data");
+                    }
+                } else {
+                    int csd0size = csd0->size();
+                    char esds[csd0size + 31];
+                    reassembleESDS(csd0, esds);
+                    meta->setData(kKeyESDS, kKeyESDS, esds, sizeof(esds));
+               }
             }
         } else if (mime.startsWith("audio/")) {
             int csd0size = csd0->size();

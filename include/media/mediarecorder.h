@@ -1,5 +1,5 @@
 /*
- ** Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ ** Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
  ** Not a Contribution.
  **
  ** Copyright (C) 2008 The Android Open Source Project
@@ -96,6 +96,7 @@ enum video_encoder {
     VIDEO_ENCODER_H263 = 1,
     VIDEO_ENCODER_H264 = 2,
     VIDEO_ENCODER_MPEG_4_SP = 3,
+    VIDEO_ENCODER_H265 = 4,
 
     VIDEO_ENCODER_LIST_END // must be the last - used to validate the video encoder type
 };

@@ -163,6 +163,8 @@ enum {
     kKeyCryptoDefaultIVSize = 'cryS',  // int32_t
 
     kKeyPssh              = 'pssh',  // raw data
+
+    kKeyHVCC              = 'hvcc',  // raw data
 };
 
 enum {

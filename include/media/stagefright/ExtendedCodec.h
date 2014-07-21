@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -95,6 +95,16 @@ struct ExtendedCodec {
 
     static status_t handleSupportedAudioFormats(
             int format, AString* mime);
+
+    static status_t handleSupportedVideoFormats(
+            int format, AString* mime);
+
+    static bool checkIfCompressionHEVC(int format);
+
+    static status_t setupHEVCEncoderParameters(
+            const sp<MetaData> &meta, const sp<IOMX> &omx,
+            IOMX::node_id node, const char* componentName,
+            int portIndex, const sp<OMXCodec> &target);
 
     static const char* overrideComponentName(
             uint32_t quirks, const sp<MetaData> &meta);
