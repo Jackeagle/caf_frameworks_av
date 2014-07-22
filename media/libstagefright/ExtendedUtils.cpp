@@ -674,7 +674,9 @@ void VSyncLocker::VSyncEvent() {
         }
     } while (!mExitVsyncEvent);
     mDisplayEventReceiver.setVsyncRate(0);
-    mLooper->removeFd(mDisplayEventReceiver.getFd());
+    if (mLooper != NULL) {
+        mLooper->removeFd(mDisplayEventReceiver.getFd());
+    }
 }
 
 void VSyncLocker::signalVSync() {
