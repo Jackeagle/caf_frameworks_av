@@ -385,11 +385,6 @@ status_t AudioTrack::set(
     mFlags = flags;
     mCbf = cbf;
 
-    if (cbf != NULL) {
-        mAudioTrackThread = new AudioTrackThread(*this, threadCanCallJava);
-        mAudioTrackThread->run("AudioTrack", ANDROID_PRIORITY_AUDIO, 0 /*stack*/);
-    }
-
     // create the IAudioTrack
     status_t status = createTrack_l(streamType,
                                   sampleRate,
@@ -399,6 +394,11 @@ status_t AudioTrack::set(
                                   sharedBuffer,
                                   output,
                                   0 /*epoch*/);
+
+    if (cbf != NULL && status == NO_ERROR) {
+        mAudioTrackThread = new AudioTrackThread(*this, threadCanCallJava);
+        mAudioTrackThread->run("AudioTrack", ANDROID_PRIORITY_AUDIO, 0 /*stack*/);
+    }
 
     if (status != NO_ERROR) {
         if (mAudioTrackThread != 0) {
@@ -1425,7 +1425,10 @@ nsecs_t AudioTrack::processAudioBuffer(const sp<AudioTrackThread>& thread)
     // Currently the AudioTrack thread is not created if there are no callbacks.
     // Would it ever make sense to run the thread, even without callbacks?
     // If so, then replace this by checks at each use for mCbf != NULL.
-    LOG_ALWAYS_FATAL_IF(mCblk == NULL);
+    if (mCblk == NULL) {
+        ALOGE("mCblk is NULL");
+        return NS_NEVER;
+    }
 
     mLock.lock();
     if (mAwaitBoost) {
