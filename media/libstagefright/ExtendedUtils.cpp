@@ -650,6 +650,31 @@ void ExtendedUtils::drainSecurePool()
     }
 }
 
+void ExtendedUtils::applyPreRotation(
+        const CameraParameters& params, sp<MetaData> &meta) {
+
+    // Camera pre-rotates video buffers. Width and Height of
+    // of the image will be flipped if rotation is 90 or 270.
+    // Encoder must be made aware of the flip in this case.
+    const char *pRotation = params.get("video-rotation");
+    int32_t preRotation = pRotation ? atoi(pRotation) : 0;
+    bool flip = preRotation % 180;
+
+    if (flip) {
+        int32_t width = 0;
+        int32_t height = 0;
+        meta->findInt32(kKeyWidth, &width);
+        meta->findInt32(kKeyHeight, &height);
+
+        // width assigned to height is intentional
+        meta->setInt32(kKeyWidth,       height);
+        meta->setInt32(kKeyStride,      height);
+        meta->setInt32(kKeyHeight,      width);
+        meta->setInt32(kKeySliceHeight, width);
+    }
+}
+
+
 }
 #else //ENABLE_AV_ENHANCEMENTS
 
@@ -758,6 +783,9 @@ void ExtendedUtils::prefetchSecurePool() {}
 void ExtendedUtils::createSecurePool() {}
 
 void ExtendedUtils::drainSecurePool() {}
+
+void ExtendedUtils::applyPreRotation(
+        const CameraParameters&, sp<MetaData>&) {}
 
 }
 #endif //ENABLE_AV_ENHANCEMENTS
