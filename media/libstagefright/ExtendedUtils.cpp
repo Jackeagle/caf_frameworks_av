@@ -1135,6 +1135,10 @@ int32_t ExtendedUtils::getEncoderTypeFlags() {
 
 void ExtendedUtils::prefetchSecurePool(const char *uri)
 {
+    if (!uri) {
+        return;
+    }
+
     if (!strncasecmp("widevine://", uri, 11)) {
         ALOGV("Widevine streaming content\n");
         createSecurePool();
