@@ -34,7 +34,7 @@
 #include <media/stagefright/foundation/AString.h>
 #include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MPEG4Writer.h>
-
+#include <media/stagefright/OMXCodec.h>
 #include <media/MediaRecorderBase.h>
 #include <media/stagefright/MediaExtractor.h>
 #include <camera/CameraParameters.h>
@@ -163,7 +163,18 @@ struct ExtendedUtils {
         static bool isCustomAVSyncEnabled();
 
         static bool isMpeg4DPSupportedByHardware();
+
+        static void checkMemCpyOptimization(bool *avoidMemCpy,
+                                            int32_t *additionalBuffersToAdd = NULL);
+
+        static void adjustInterleaveDuration(uint32_t *interleaveDuration);
     };
+
+    static bool checkCopyFlagInBuffer(MediaBuffer *buffer);
+
+    static void checkAndSetIfBufferNeedsToBeCopied(Vector<OMXCodec::BufferInfo> *buffers,
+                                                   OMXCodec::BufferInfo **info,
+                                                   int32_t additionalBuff);
 
     //set B frames for MPEG4
     static void setBFrames(OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, int32_t &numBFrames,
