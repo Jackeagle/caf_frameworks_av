@@ -380,6 +380,11 @@ private:
     bool mReturnedRetry;
     int64_t mLastSeekTimeUs;
     ReadOptions::SeekMode mLastSeekMode;
+
+    bool mAvoidMemCpy;
+    int32_t mAdditionalBuffers;
+
+    friend class ExtendedUtils;
 };
 
 struct CodecCapabilities {
