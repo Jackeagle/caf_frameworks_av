@@ -387,6 +387,7 @@ private:
     bool mNumBFrames;
     bool mInSmoothStreamingMode;
     bool mNeedsGeometryUpdate;
+    void resetUsecase(void);
 };
 
 struct CodecCapabilities {

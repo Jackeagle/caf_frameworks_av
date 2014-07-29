@@ -3336,9 +3336,7 @@ void ACodec::UninitializedState::stateEntered() {
     mCodec->mFlags = 0;
     mCodec->mComponentName.clear();
 
-    ResourceManager::AudioConcurrencyInfo::resetParameter(
-        mCodec->mUseCase, mCodec->mUseCaseFlag);
-
+    mCodec->resetUsecase();
 }
 
 bool ACodec::UninitializedState::onMessageReceived(const sp<AMessage> &msg) {
@@ -3623,6 +3621,7 @@ bool ACodec::LoadedState::onConfigureComponent(
               mCodec->mComponentName.c_str(), err);
 
         mCodec->signalError(OMX_ErrorUndefined, err);
+        mCodec->resetUsecase();
         return false;
     }
 
@@ -3647,6 +3646,13 @@ bool ACodec::LoadedState::onConfigureComponent(
     }
 
     return true;
+}
+
+void ACodec::resetUsecase(void) {
+    if(mUseCaseFlag) {
+        ResourceManager::AudioConcurrencyInfo::resetParameter(
+            mUseCase, mUseCaseFlag);
+    }
 }
 
 void ACodec::LoadedState::onCreateInputSurface(
