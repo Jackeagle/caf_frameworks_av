@@ -521,7 +521,8 @@ sp<PlaylistFetcher> LiveSession::addFetcher(const char *uri) {
 
 status_t LiveSession::fetchFile(
         const char *url, sp<ABuffer> *out,
-        int64_t range_offset, int64_t range_length) {
+        int64_t range_offset, int64_t range_length,
+        String8 *actualUrl) {
     *out = NULL;
     ALOGI("fetchFile: %s", url);
     sp<DataSource> source;
@@ -606,6 +607,12 @@ status_t LiveSession::fetchFile(
     }
 
     *out = buffer;
+    if (actualUrl != NULL) {
+        *actualUrl = source->getUri();
+        if (actualUrl->isEmpty()) {
+            *actualUrl = url;
+        }
+    }
 
     return OK;
 }
@@ -617,7 +624,8 @@ sp<M3UParser> LiveSession::fetchPlaylist(
     *unchanged = false;
 
     sp<ABuffer> buffer;
-    status_t err = fetchFile(url, &buffer);
+    String8 actualUrl;
+    status_t err = fetchFile(url, &buffer, 0, -1, &actualUrl);
 
     if (err != OK) {
         return NULL;
@@ -650,7 +658,7 @@ sp<M3UParser> LiveSession::fetchPlaylist(
 #endif
 
     sp<M3UParser> playlist =
-        new M3UParser(url, buffer->data(), buffer->size());
+        new M3UParser(actualUrl.string(), buffer->data(), buffer->size());
 
     if (playlist->initCheck() != OK) {
         ALOGE("failed to parse .m3u8 playlist");
