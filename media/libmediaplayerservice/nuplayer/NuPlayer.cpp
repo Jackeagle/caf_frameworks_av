@@ -47,6 +47,7 @@
 
 #include "ESDS.h"
 #include <media/stagefright/Utils.h>
+#include "ExtendedUtils.h"
 
 namespace android {
 
@@ -689,7 +690,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 instantiateDecoder(false, &mVideoDecoder);
             }
 
-            if (mAudioSink != NULL) {
+            if (mAudioSink != NULL && !ExtendedUtils::ShellProp::isAudioDisabled(false)) {
                 if (mOffloadAudio) {
                     // open audio sink early under offload mode.
                     sp<AMessage> format = mSource->getFormat(true /*audio*/);
