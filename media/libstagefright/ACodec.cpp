@@ -15,24 +15,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2014 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  *
  * This file was modified by Dolby Laboratories, Inc. The portions of the
  * code that are surrounded by "DOLBY..." are copyrighted and
@@ -83,19 +65,9 @@
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
 #endif
-#ifdef DTS_CODEC_M_
-#include "include/DTSUtils.h"
-#include "include/OMX_Audio_DTS.h"
-#endif
+
 
 namespace android {
-
-// OMX Spec defines less than 50 color formats. If the query for
-// color format is executed for more than kMaxColorFormatSupported,
-// the query will fail to avoid looping forever.
-// 1000 is more than enough for us to tell whether the omx
-// component in question is buggy or not.
-const static uint32_t kMaxColorFormatSupported = 1000;
 
 template<class T>
 static void InitOMXParams(T *params) {
@@ -426,8 +398,7 @@ ACodec::ACodec()
       mDequeueCounter(0),
       mStoreMetaDataInOutputBuffers(false),
       mMetaDataBuffersToSubmit(0),
-      mRepeatFrameDelayUs(-1ll),
-      mHaveNativeWindow(false) {
+      mRepeatFrameDelayUs(-1ll) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -692,6 +663,12 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
                 strerror(-err), -err);
         return err;
     }
+
+    //add an extra buffer to display queue to get around dequeue+wait
+    //blocking too long (more than 1 Vsync) in case BufferQeuue is in
+    //sync-mode and advertizes only 1 buffer
+    (*minUndequeuedBuffers)++;
+    ALOGI("NOTE: Overriding minUndequeuedBuffers to %lu",*minUndequeuedBuffers);
 
     // XXX: Is this the right logic to use?  It's not clear to me what the OMX
     // buffer counts refer to - how do they account for the renderer holding on
@@ -1044,10 +1021,6 @@ status_t ACodec::setComponentRole(
             "audio_decoder.flac", "audio_encoder.flac" },
         { MEDIA_MIMETYPE_AUDIO_MSGSM,
             "audio_decoder.gsm", "audio_encoder.gsm" },
-#ifdef DTS_CODEC_M_
-        { MEDIA_MIMETYPE_AUDIO_DTS,
-            "audio_decoder.dts", "audio_encoder.dts" },
-#endif
     };
 
     static const size_t kNumMimeToRole =
@@ -1183,11 +1156,11 @@ status_t ACodec::configureCodec(
 
     // Always try to enable dynamic output buffers on native surface
     sp<RefBase> obj;
-    mHaveNativeWindow = msg->findObject("native-window", &obj) &&
-                        obj != NULL;
+    int32_t haveNativeWindow = msg->findObject("native-window", &obj) &&
+            obj != NULL;
     mStoreMetaDataInOutputBuffers = false;
     bool bAdaptivePlaybackMode = false;
-    if (!encoder && video && mHaveNativeWindow) {
+    if (!encoder && video && haveNativeWindow) {
         int32_t preferAdaptive = 0;
         if (msg->findInt32("prefer-adaptive-playback", &preferAdaptive)
                 && preferAdaptive == 1) {
@@ -1296,21 +1269,6 @@ status_t ACodec::configureCodec(
                     sampleRate,
                     numChannels);
         }
-#ifdef DTS_CODEC_M_
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)) {
-        ALOGV(" (DTS) mime == MEDIA_MIMETYPE_AUDIO_DTS");
-        int32_t numChannels, sampleRate;
-        if (!msg->findInt32("channel-count", &numChannels)
-                || !msg->findInt32("sample-rate", &sampleRate)) {
-            ALOGE("missing channel count or sample rate for DTS decoder");
-            err = INVALID_OPERATION;
-        } else {
-            err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate);
-        }
-        if (err != OK) {
-            return err;
-        }
-#endif
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
         int32_t numChannels, sampleRate;
         if (!msg->findInt32("channel-count", &numChannels)
@@ -1809,41 +1767,12 @@ status_t ACodec::setSupportedOutputFormat() {
     InitOMXParams(&format);
     format.nPortIndex = kPortIndexOutput;
     format.nIndex = 0;
-    int32_t colorFormat;
 
     status_t err = mOMX->getParameter(
             mNode, OMX_IndexParamVideoPortFormat,
             &format, sizeof(format));
     CHECK_EQ(err, (status_t)OK);
     CHECK_EQ((int)format.eCompressionFormat, (int)OMX_VIDEO_CodingUnused);
-
-    if (mHaveNativeWindow == false) {
-        colorFormat = OMX_COLOR_FormatYUV420Planar;
-
-        OMX_U32 index = 0;
-        format.nIndex = index;
-        while (true) {
-            if (OMX_ErrorNone != mOMX->getParameter(
-                    mNode, OMX_IndexParamVideoPortFormat,
-                    &format, sizeof(format))) {
-                break;
-            }
-            // Make sure that omx component does not overwrite
-            // the incremented index (bug 2897413).
-            CHECK_EQ(index, format.nIndex);
-            if (format.eColorFormat == colorFormat) {
-                ALOGV("Found supported color format: %d", format.eColorFormat);
-                break;  // colorFormat is supported!
-            }
-            ++index;
-            format.nIndex = index;
-
-            if (index >= kMaxColorFormatSupported) {
-                ALOGE("More than %ld color formats are supported???", index);
-                break;
-            }
-        }
-    }
 
     return mOMX->setParameter(
             mNode, OMX_IndexParamVideoPortFormat,
@@ -3774,7 +3703,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
 
     AString mime;
-
+    int32_t encoder = false;
     AString componentName;
     uint32_t quirks = 0;
     if (msg->findString("componentName", &componentName)) {
@@ -3789,7 +3718,6 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     } else {
         CHECK(msg->findString("mime", &mime));
 
-        int32_t encoder;
         if (!msg->findInt32("encoder", &encoder)) {
             encoder = false;
         }
@@ -3817,6 +3745,45 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         status_t err = omx->allocateNode(componentName.c_str(), observer, &node);
         androidSetThreadPriority(tid, prevPriority);
 
+        if(err == OK && node != NULL) {
+            // set component name
+            mCodec->mComponentName = componentName;
+            mCodec->mFlags = 0;
+
+            if (componentName.endsWith(".secure")) {
+                mCodec->mFlags |= kFlagIsSecure;
+                mCodec->mFlags |= kFlagPushBlankBuffersToNativeWindowOnShutdown;
+            }
+
+            mCodec->mQuirks = quirks;
+            mCodec->mOMX = omx;
+            mCodec->mNode = node;
+        }
+
+        if ((err == OK) && !encoder && !strncasecmp(mime.c_str(), "video/", 6)) {
+            int32_t width=0, height=0;
+            if (msg->findInt32("width", &width)
+                    && msg->findInt32("height", &height)) {
+                //set and check if resolution is supported
+                OMX_VIDEO_CODINGTYPE compressionFormat;
+                err = GetVideoCodingTypeFromMime(mime.c_str(), &compressionFormat);
+
+                if (err != OK) {
+                    err = ExtendedCodec::setVideoOutputFormat(mime.c_str(),
+                                                              &compressionFormat);
+                }
+
+                if (err == OK) {
+                    err = mCodec->setVideoFormatOnPort(kPortIndexInput, width,
+                                                       height, compressionFormat);
+                }
+
+                if(err != OK) {
+                    ALOGE("setVideoFormatOnPort Failed");
+                }
+            }
+        }
+
         if (err == OK) {
             break;
         }
@@ -3838,18 +3805,6 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
 
     notify = new AMessage(kWhatOMXMessage, mCodec->id());
     observer->setNotificationMessage(notify);
-
-    mCodec->mComponentName = componentName;
-    mCodec->mFlags = 0;
-
-    if (componentName.endsWith(".secure")) {
-        mCodec->mFlags |= kFlagIsSecure;
-        mCodec->mFlags |= kFlagPushBlankBuffersToNativeWindowOnShutdown;
-    }
-
-    mCodec->mQuirks = quirks;
-    mCodec->mOMX = omx;
-    mCodec->mNode = node;
 
     {
         sp<AMessage> notify = mCodec->mNotify->dup();
@@ -3963,19 +3918,6 @@ bool ACodec::LoadedState::onConfigureComponent(
 
     CHECK(mCodec->mNode != NULL);
 
-    AString mime;
-    CHECK(msg->findString("mime", &mime));
-
-    status_t err = mCodec->configureCodec(mime.c_str(), msg);
-
-    if (err != OK) {
-        ALOGE("[%s] configureCodec returning error %d",
-              mCodec->mComponentName.c_str(), err);
-
-        mCodec->signalError(OMX_ErrorUndefined, err);
-        return false;
-    }
-
     sp<RefBase> obj;
     if (msg->findObject("native-window", &obj)
             && strncmp("OMX.google.", mCodec->mComponentName.c_str(), 11)) {
@@ -3989,6 +3931,19 @@ bool ACodec::LoadedState::onConfigureComponent(
                 NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW);
     }
     CHECK_EQ((status_t)OK, mCodec->initNativeWindow());
+
+    AString mime;
+    CHECK(msg->findString("mime", &mime));
+
+    status_t err = mCodec->configureCodec(mime.c_str(), msg);
+
+    if (err != OK) {
+        ALOGE("[%s] configureCodec returning error %d",
+              mCodec->mComponentName.c_str(), err);
+
+        mCodec->signalError(OMX_ErrorUndefined, err);
+        return false;
+    }
 
     {
         sp<AMessage> notify = mCodec->mNotify->dup();

@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -212,7 +214,9 @@ AwesomePlayer::AwesomePlayer()
       mTextDriver(NULL),
       mOffloadAudio(false),
       mAudioTearDown(false),
-      mReadRetry(false) {
+      mReadRetry(false),
+      mIsFirstFrameAfterResume(false),
+      mCustomAVSync(false) {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -241,6 +245,8 @@ AwesomePlayer::AwesomePlayer()
     reset();
 
     mLateAVSyncMargin = ExtendedUtils::ShellProp::getMaxAVSyncLateMargin();
+
+    mCustomAVSync = ExtendedUtils::ShellProp::isCustomAVSyncEnabled();
 }
 
 AwesomePlayer::~AwesomePlayer() {
@@ -1079,7 +1085,7 @@ status_t AwesomePlayer::fallbackToSWDecoder() {
     int64_t curTimeUs;
     status_t err = OK;
 
-    ALOGI("play_l() cannot create offload output, fallback to sw decode");
+    ALOGD("copl:play_l() cannot create offload output, fallback to sw decode");
     getPosition(&curTimeUs);
 
     delete mAudioPlayer;
@@ -1123,7 +1129,7 @@ void AwesomePlayer::createAudioPlayer_l()
             cachedDurationUs > AUDIO_SINK_MIN_DEEP_BUFFER_DURATION_US))) {
         flags |= AudioPlayer::ALLOW_DEEP_BUFFERING;
     }
-    if (isStreamingHTTP()) {
+    if (isStreamingHTTP() || isWidevineContent()) {
         flags |= AudioPlayer::IS_STREAMING;
     }
     if (mVideoSource != NULL) {
@@ -1344,6 +1350,7 @@ status_t AwesomePlayer::pause_l(bool at_eos) {
         mAudioPlayer->pause(at_eos /* playPendingSamples */);
         // send us a reminder to tear down the AudioPlayer if paused for too long.
         if (mOffloadAudio) {
+            ALOGD("copl: pause, arm a tear down timer for %lld us", kOffloadPauseMaxUs);
             postAudioTearDownEvent(kOffloadPauseMaxUs);
         }
         modifyFlags(AUDIO_RUNNING, CLEAR);
@@ -1598,6 +1605,10 @@ status_t AwesomePlayer::initAudioDecoder() {
     ATRACE_CALL();
 
     sp<MetaData> meta = mAudioTrack->getFormat();
+    sp<MetaData> vMeta;
+    if (mVideoTrack != NULL && mVideoSource != NULL) {
+        vMeta = mVideoTrack->getFormat();
+    }
 
     const char *mime;
     CHECK(meta->findCString(kKeyMIMEType, &mime));
@@ -1610,12 +1621,17 @@ status_t AwesomePlayer::initAudioDecoder() {
         streamType = mAudioSink->getAudioStreamType();
     }
 
-    mOffloadAudio = canOffloadStream(meta, (mVideoSource != NULL),
-                                     isStreamingHTTP(), streamType);
+    mOffloadAudio = canOffloadStream(meta, (mVideoSource != NULL), vMeta,
+                                     (isStreamingHTTP() || isWidevineContent()),
+                                     streamType);
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         ALOGV("createAudioPlayer: bypass OMX (raw)");
         mAudioSource = mAudioTrack;
+        // For PCM offload fallback
+        if (mOffloadAudio) {
+            mOmxSource = mAudioSource;
+        }
     } else {
         // If offloading we still create a OMX decoder as a fall-back
         // but we don't start it
@@ -1625,16 +1641,29 @@ status_t AwesomePlayer::initAudioDecoder() {
                 mAudioTrack);
 
         if (mOffloadAudio) {
-            ALOGV("createAudioPlayer: bypass OMX (offload)");
+            ALOGD("use compress offload playback path(copl)");
             mAudioSource = mAudioTrack;
         } else {
             mAudioSource = mOmxSource;
         }
     }
 
+    int64_t durationUs = -1;
+    mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs);
+
+    if (!mOffloadAudio && mAudioSource != NULL) {
+        ALOGI("Could not offload audio decode, try pcm offload");
+        sp<MetaData> format = mAudioSource->getFormat();
+        if (durationUs >= 0) {
+            format->setInt64(kKeyDuration, durationUs);
+        }
+        mOffloadAudio = canOffloadStream(format, (mVideoSource != NULL), vMeta,
+                                    (isStreamingHTTP() || isWidevineContent()),
+                                     streamType);
+    }
+
     if (mAudioSource != NULL) {
-        int64_t durationUs;
-        if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
+        if (durationUs >= 0) {
             Mutex::Autolock autoLock(mMiscStateLock);
             if (mDurationUs < 0 || durationUs > mDurationUs) {
                 mDurationUs = durationUs;
@@ -1862,8 +1891,8 @@ void AwesomePlayer::onVideoEvent() {
             mVideoBuffer = NULL;
         }
 
-        if (mSeeking == SEEK && isStreamingHTTP() && mAudioSource != NULL
-                && !(mFlags & SEEK_PREVIEW)) {
+        if (mSeeking == SEEK && (isStreamingHTTP() || mOffloadAudio)
+                && mAudioSource != NULL && !(mFlags & SEEK_PREVIEW)) {
             // We're going to seek the video source first, followed by
             // the audio source.
             // In order to avoid jumps in the DataSource offset caused by
@@ -1886,11 +1915,18 @@ void AwesomePlayer::onVideoEvent() {
         if (mSeeking != NO_SEEK) {
             ALOGV("seeking to %lld us (%.2f secs)", mSeekTimeUs, mSeekTimeUs / 1E6);
 
+            MediaSource::ReadOptions::SeekMode seekmode = (mSeeking == SEEK_VIDEO_ONLY)
+                                                          ? MediaSource::ReadOptions::SEEK_NEXT_SYNC
+                                                          : MediaSource::ReadOptions::SEEK_CLOSEST_SYNC;
+            // Seek to the next key-frame after resume for http streaming
+            if (mCachedSource != NULL && mIsFirstFrameAfterResume) {
+                seekmode = MediaSource::ReadOptions::SEEK_NEXT_SYNC;
+                mIsFirstFrameAfterResume = false;
+            }
+
             options.setSeekTo(
                     mSeekTimeUs,
-                    mSeeking == SEEK_VIDEO_ONLY
-                        ? MediaSource::ReadOptions::SEEK_NEXT_SYNC
-                        : MediaSource::ReadOptions::SEEK_CLOSEST_SYNC);
+                    seekmode);
         }
         for (;;) {
             status_t err = mVideoSource->read(&mVideoBuffer, &options);
@@ -1942,6 +1978,20 @@ void AwesomePlayer::onVideoEvent() {
                 mVideoBuffer->release();
                 mVideoBuffer = NULL;
                 continue;
+            }
+
+            if (mCustomAVSync) {
+                int width = 0;
+                int height = 0;
+                sp<MetaData> meta = mVideoSource->getFormat();
+                CHECK(meta->findInt32(kKeyWidth, &width));
+                CHECK(meta->findInt32(kKeyHeight, &height));
+
+                if (((height * width) >= (720 * 1280)) && (mStats.mConsecutiveFramesDropped >= 5) && !(mFlags & NO_AVSYNC))
+                {
+                    ALOGE("DISABLED AVSync as there are 5 consecutive frame drops");
+                    modifyFlags(NO_AVSYNC,SET);
+                }
             }
 
             break;
@@ -2072,13 +2122,19 @@ void AwesomePlayer::onVideoEvent() {
             }
         }
 
+        if ((latenessUs < mLateAVSyncMargin) && (mFlags & NO_AVSYNC))
+        {
+            ALOGE("ENABLED AVSync as the video frames are intime with audio");
+            modifyFlags(NO_AVSYNC,CLEAR);
+        }
+
         if (latenessUs > mLateAVSyncMargin) {
             // We're more than 40ms late.
             ALOGV("we're late by %lld us (%.2f secs)",
                  latenessUs, latenessUs / 1E6);
 
-            if (!(mFlags & SLOW_DECODER_HACK)
-                    || mSinceLastDropped > FRAME_DROP_FREQ)
+            if ((!(mFlags & SLOW_DECODER_HACK)
+                    || (mSinceLastDropped > FRAME_DROP_FREQ)) && !(mFlags & NO_AVSYNC))
             {
                 ALOGV("we're late by %lld us (%.2f secs) dropping "
                      "one after %d frames",
@@ -2995,6 +3051,22 @@ bool AwesomePlayer::isStreamingHTTP() const {
     return mCachedSource != NULL || mWVMExtractor != NULL;
 }
 
+bool AwesomePlayer::isWidevineContent() const {
+    if (mWVMExtractor != NULL) {
+        return true;
+    }
+
+    sp<MetaData> fileMeta = mExtractor->getMetaData();
+    const char *containerMime;
+    if (fileMeta != NULL &&
+        fileMeta->findCString(kKeyMIMEType, &containerMime) &&
+        !strcasecmp(containerMime, "video/wvm")) {
+       return true;
+    }
+
+    return false;
+}
+
 status_t AwesomePlayer::dump(int fd, const Vector<String16> &args) const {
     Mutex::Autolock autoLock(mStatsLock);
 
@@ -3097,7 +3169,7 @@ void AwesomePlayer::onAudioTearDownEvent() {
     }
     mAudioTearDownEventPending = false;
 
-    ALOGV("onAudioTearDownEvent");
+    ALOGD("copl:onAudioTearDownEvent");
 
     // stream info is cleared by reset_l() so copy what we need
     mAudioTearDownWasPlaying = (mFlags & PLAYING);
@@ -3135,6 +3207,85 @@ void AwesomePlayer::onAudioTearDownEvent() {
 
     // Call prepare for the host decoding
     beginPrepareAsync_l();
+}
+
+// suspend() will release the decoders, the renderers and the buffers allocated for decoders
+// Releasing decoders eliminates draining power in suspended state.
+status_t AwesomePlayer::suspend() {
+    ALOGV("suspend()");
+    Mutex::Autolock autoLock(mLock);
+
+    // Set PAUSE to DrmManagerClient which will be set START in play_l()
+    if (mDecryptHandle != NULL) {
+        mDrmManagerClient->setPlaybackStatus(mDecryptHandle,
+                    Playback::PAUSE, 0);
+    }
+
+    cancelPlayerEvents();
+    if (mQueueStarted) {
+        mQueue.stop();
+        mQueueStarted = false;
+    }
+
+    // Shutdown audio decoder first
+    if ((mAudioPlayer == NULL || !(mFlags & AUDIOPLAYER_STARTED))
+            && mAudioSource != NULL) {
+        mAudioSource->stop();
+    }
+    mAudioSource.clear();
+    mOmxSource.clear();
+    delete mAudioPlayer;
+    mAudioPlayer = NULL;
+    modifyFlags(AUDIO_RUNNING | AUDIOPLAYER_STARTED, CLEAR);
+
+    // Shutdown the video decoder
+    mVideoRenderer.clear();
+    if (mVideoSource != NULL) {
+        shutdownVideoDecoder_l();
+    }
+    modifyFlags(PLAYING, CLEAR);
+    mVideoRenderingStarted = false;
+
+    // Disconnect the source
+    if (mCachedSource != NULL) {
+        status_t err = mCachedSource->disconnectWhileSuspend();
+        if (err != OK) {
+            return err;
+        }
+    }
+
+    return OK;
+}
+
+status_t AwesomePlayer::resume() {
+    ALOGV("resume()");
+    Mutex::Autolock autoLock(mLock);
+
+    // Reconnect the source
+    status_t err = mCachedSource->connectWhileResume();
+
+    if (mVideoTrack != NULL && mVideoSource == NULL) {
+        status_t err = initVideoDecoder();
+        if (err != OK) {
+            return err;
+        }
+    }
+
+    if (mAudioTrack != NULL && mAudioSource == NULL) {
+        status_t err = initAudioDecoder();
+        if (err != OK) {
+            return err;
+        }
+    }
+
+    mIsFirstFrameAfterResume = true;
+
+    if (!mQueueStarted) {
+        mQueue.start();
+        mQueueStarted = true;
+    }
+
+    return OK;
 }
 
 inline void AwesomePlayer::logFirstFrame() {

@@ -1406,7 +1406,10 @@ struct MyHandler : public AHandler {
         CHECK(GetAttribute(range.c_str(), "npt", &val));
 
         float npt1, npt2;
-        if (!ASessionDescription::parseNTPRange(val.c_str(), &npt1, &npt2)) {
+        int64_t durationUs;
+        if (!ASessionDescription::parseNTPRange(val.c_str(), &npt1, &npt2)
+            && !mSessionDesc->getDurationUs(&durationUs)
+            && (durationUs==0)) {
             // This is a live stream and therefore not seekable.
 
             ALOGI("This is a live stream");
@@ -1430,7 +1433,7 @@ struct MyHandler : public AHandler {
 
             size_t trackIndex = 0;
             while (trackIndex < mTracks.size()
-                    && !(val == mTracks.editItemAt(trackIndex).mURL)) {
+                    && !(mTracks.editItemAt(trackIndex).mURL.endsWith(val.c_str()))) {
                 ++trackIndex;
             }
             CHECK_LT(trackIndex, mTracks.size());

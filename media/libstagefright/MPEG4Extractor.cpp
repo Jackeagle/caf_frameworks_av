@@ -15,24 +15,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2014 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  *
  * This file was modified by Dolby Laboratories, Inc. The portions of the
  * code that are surrounded by "DOLBY..." are copyrighted and
@@ -362,19 +344,7 @@ static const char *FourCC2MIME(uint32_t fourcc) {
 
         case FOURCC('s', 'a', 'w', 'b'):
             return MEDIA_MIMETYPE_AUDIO_AMR_WB;
-#ifdef DTS_CODEC_M_
-        case FOURCC('d', 't', 's', 'c'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
 
-        case FOURCC('d', 't', 's', 'h'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
-
-        case FOURCC('d', 't', 's', 'l'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
-
-        case FOURCC('d', 't', 's', 'e'):
-            return MEDIA_MIMETYPE_AUDIO_DTS;
-#endif
         case FOURCC('m', 'p', '4', 'v'):
             return MEDIA_MIMETYPE_VIDEO_MPEG4;
 
@@ -395,6 +365,14 @@ static const char *FourCC2MIME(uint32_t fourcc) {
 
         case FOURCC('s', 'e', 'v', 'c'):
             return MEDIA_MIMETYPE_AUDIO_EVRC;
+
+        case FOURCC('d', 't', 's', 'c'):
+        case FOURCC('d', 't', 's', 'h'):
+        case FOURCC('d', 't', 's', 'l'):
+            return MEDIA_MIMETYPE_AUDIO_DTS;
+
+        case FOURCC('d', 't', 's', 'e'):
+            return MEDIA_MIMETYPE_AUDIO_DTS_LBR;
 #endif
        #ifdef DOLBY_UDC
         case FOURCC('a', 'c', '-', '3'):
@@ -1329,12 +1307,10 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
         case FOURCC('s', 'a', 'w', 'b'):
         case FOURCC('s', 'e', 'v', 'c'):
         case FOURCC('s', 'q', 'c', 'p'):
-#ifdef DTS_CODEC_M_
         case FOURCC('d', 't', 's', 'c'):
         case FOURCC('d', 't', 's', 'h'):
         case FOURCC('d', 't', 's', 'l'):
         case FOURCC('d', 't', 's', 'e'):
-#endif
         #ifdef DOLBY_UDC
         case FOURCC('a', 'c', '-', '3'):
         case FOURCC('e', 'c', '-', '3'):

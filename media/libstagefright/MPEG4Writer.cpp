@@ -1786,17 +1786,15 @@ status_t MPEG4Writer::Track::stop() {
 
     status_t err = (status_t) dummy;
 
-    if (!mPaused) {
-        ALOGD("Stopping %s track source", mIsAudio? "Audio": "Video");
-        {
-            status_t status = mSource->stop();
-            if (err == OK && status != OK && status != ERROR_END_OF_STREAM) {
-                err = status;
-            }
+    ALOGD("Stopping %s track source", mIsAudio? "Audio": "Video");
+    {
+        status_t status = mSource->stop();
+        if (err == OK && status != OK && status != ERROR_END_OF_STREAM) {
+            err = status;
         }
-
-        ALOGD("%s track stopped", mIsAudio? "Audio": "Video");
     }
+
+    ALOGD("%s track stopped", mIsAudio? "Audio": "Video");
     return err;
 }
 
@@ -2203,11 +2201,6 @@ status_t MPEG4Writer::Track::threadEntry() {
         }
 
         if (mResumed) {
-            int64_t durExcludingEarlierPausesUs = timestampUs - previousPausedDurationUs;
-            CHECK_GE(durExcludingEarlierPausesUs, 0ll);
-            int64_t pausedDurationUs = durExcludingEarlierPausesUs - mTrackDurationUs;
-            CHECK_GE(pausedDurationUs, lastDurationUs);
-            previousPausedDurationUs += pausedDurationUs - lastDurationUs;
             mResumed = false;
         }
 
