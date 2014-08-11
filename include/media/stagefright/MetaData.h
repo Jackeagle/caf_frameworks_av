@@ -171,6 +171,7 @@ enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
     kTypeD263        = 'd263',
+    kTypeHVCC        = 'hvcc',
 };
 
 class MetaData : public RefBase {
