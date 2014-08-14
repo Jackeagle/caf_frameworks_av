@@ -492,6 +492,7 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     int32_t channelMask = 0;
     int32_t delaySamples = 0;
     int32_t paddingSamples = 0;
+    int32_t isADTS = 0;
 
     AudioParameter param = AudioParameter();
 
@@ -509,6 +510,9 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     }
     if (meta->findInt32(kKeyEncoderPadding, &paddingSamples)) {
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_PADDING_SAMPLES), paddingSamples);
+    }
+    if (meta->findInt32(kKeyIsADTS, &isADTS)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FORMAT), 0x02 /*SND_AUDIOSTREAMFORMAT_MP4ADTS*/);
     }
 
     ALOGV("sendMetaDataToHal: bitRate %d, sampleRate %d, chanMask %d,"
@@ -581,6 +585,10 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         ALOGE(" Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format !", mime);
         return false;
     } else {
+        // Override audio format for PCM offload
+        if (info.format == AUDIO_FORMAT_PCM_16_BIT) {
+            info.format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+        }
         ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
     }
 
