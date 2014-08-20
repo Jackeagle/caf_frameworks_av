@@ -151,6 +151,9 @@ struct ExtendedUtils {
     static void createSecurePool();
 
     static void drainSecurePool();
+
+    static void applyPreRotation(
+            const CameraParameters& params, sp<MetaData> &meta);
 };
 
 }
