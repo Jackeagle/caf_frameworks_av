@@ -217,6 +217,10 @@ struct ExtendedUtils {
     static void parseRtpPortRangeFromSystemProperty(unsigned *start, unsigned *end);
 
     static bool isVideoMuxFormatSupported(const char *mime);
+
+    static void printFileName(int fd);
+
+    static void printFileName(const char *uri);
 };
 
 class VSyncLocker : public RefBase {
