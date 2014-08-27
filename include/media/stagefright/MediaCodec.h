@@ -121,6 +121,10 @@ struct MediaCodec : public AHandler {
 
     status_t setParameters(const sp<AMessage> &params);
 
+    // This is used to get graphicBuffer with the index obtained from
+    // calling dequeueOutputBuffer()
+    sp<GraphicBuffer> getOutputGraphicBufferFromIndex(size_t index);
+
 protected:
     virtual ~MediaCodec();
     virtual void onMessageReceived(const sp<AMessage> &msg);
