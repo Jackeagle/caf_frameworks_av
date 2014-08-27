@@ -84,6 +84,8 @@ struct ACodec : public AHierarchicalStateMachine {
         DISALLOW_EVIL_CONSTRUCTORS(PortDescription);
     };
 
+friend class MediaCodec;
+
 protected:
     virtual ~ACodec();
 
@@ -194,6 +196,8 @@ private:
 
     bool mChannelMaskPresent;
     int32_t mChannelMask;
+
+    bool mUseUndequeuedBufs;
 
     status_t setCyclicIntraMacroblockRefresh(const sp<AMessage> &msg, int32_t mode);
     status_t allocateBuffersOnPort(OMX_U32 portIndex);
