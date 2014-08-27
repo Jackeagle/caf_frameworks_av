@@ -358,7 +358,8 @@ MPEG4Writer::MPEG4Writer(const char *filename)
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
       mStartTimeOffsetMs(-1),
-      mHFRRatio(1) {
+      mHFRRatio(1),
+      mIsVideoHEVC(false) {
 
     //Check if reduce memcpy flag is enabled, if so adjust interleave duration
     ExtendedUtils::ShellProp::adjustInterleaveDuration(&mInterleaveDurationUs);
@@ -387,7 +388,8 @@ MPEG4Writer::MPEG4Writer(int fd)
       mLongitudex10000(0),
       mAreGeoTagsAvailable(false),
       mStartTimeOffsetMs(-1),
-      mHFRRatio(1) {
+      mHFRRatio(1),
+      mIsVideoHEVC(false) {
 
     //Check if reduce memcpy flag is enabled, if so adjust interleave duration
     ExtendedUtils::ShellProp::adjustInterleaveDuration(&mInterleaveDurationUs);
