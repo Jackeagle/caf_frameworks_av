@@ -84,8 +84,6 @@ struct ACodec : public AHierarchicalStateMachine {
         DISALLOW_EVIL_CONSTRUCTORS(PortDescription);
     };
 
-friend class MediaCodec;
-
 protected:
     virtual ~ACodec();
 
@@ -204,8 +202,6 @@ private:
     int32_t mMetaDataBuffersToSubmit;
 
     int64_t mRepeatFrameDelayUs;
-
-    bool mUseUndequeuedBufs;
 
     status_t setCyclicIntraMacroblockRefresh(const sp<AMessage> &msg, int32_t mode);
     status_t allocateBuffersOnPort(OMX_U32 portIndex);
