@@ -393,7 +393,8 @@ ACodec::ACodec()
       mEncoderPadding(0),
       mChannelMaskPresent(false),
       mChannelMask(0),
-      mInSmoothStreamingMode(false) {
+      mInSmoothStreamingMode(false),
+      mUseUndequeuedBufs(false) {
 
     mUseCase = "";
     mUseCaseFlag = false;
@@ -719,7 +720,11 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         cancelEnd = mBuffers[kPortIndexOutput].size();
     } else {
         // Return the last two buffers to the native window.
-        cancelStart = def.nBufferCountActual - minUndequeuedBufs;
+        if (mUseUndequeuedBufs) {
+          cancelStart = def.nBufferCountActual;
+        } else {
+          cancelStart = def.nBufferCountActual - minUndequeuedBufs;
+        }
         cancelEnd = def.nBufferCountActual;
     }
 
@@ -1133,6 +1138,13 @@ status_t ACodec::configureCodec(
         err = setMinBufferSize(kPortIndexInput, (size_t)maxInputSize);
     } else if (!strcmp("OMX.Nvidia.aac.decoder", mComponentName.c_str())) {
         err = setMinBufferSize(kPortIndexInput, 8192);  // XXX
+    }
+
+    int32_t useUndequeuedBufs;
+    if (msg->findInt32("moz-use-undequeued-bufs", &useUndequeuedBufs)) {
+        mUseUndequeuedBufs = true;
+    } else {
+        mUseUndequeuedBufs = false;
     }
 
     return err;
