@@ -60,6 +60,7 @@ public:
 
     status_t start(MetaData *params);
     status_t stop();
+    status_t stopSource();
     status_t pause();
     bool reachedEOS();
 
@@ -210,6 +211,7 @@ private:
     volatile bool mPaused;
     volatile bool mResumed;
     volatile bool mStarted;
+    bool mAvoidMemCpyEnabled;
     bool mIsAvc;
     bool mIsAudio;
     bool mIsMPEG4;
@@ -358,6 +360,9 @@ MPEG4Writer::MPEG4Writer(const char *filename)
       mStartTimeOffsetMs(-1),
       mHFRRatio(1) {
 
+    //Check if reduce memcpy flag is enabled, if so adjust interleave duration
+    ExtendedUtils::ShellProp::adjustInterleaveDuration(&mInterleaveDurationUs);
+
     mFd = open(filename, O_CREAT | O_LARGEFILE | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR);
     if (mFd >= 0) {
         mInitCheck = OK;
@@ -383,6 +388,9 @@ MPEG4Writer::MPEG4Writer(int fd)
       mAreGeoTagsAvailable(false),
       mStartTimeOffsetMs(-1),
       mHFRRatio(1) {
+
+    //Check if reduce memcpy flag is enabled, if so adjust interleave duration
+    ExtendedUtils::ShellProp::adjustInterleaveDuration(&mInterleaveDurationUs);
 }
 
 MPEG4Writer::~MPEG4Writer() {
@@ -508,6 +516,7 @@ status_t MPEG4Writer::startTracks(MetaData *params) {
             for (List<Track *>::iterator it2 = mTracks.begin();
                  it2 != it; ++it2) {
                 (*it2)->stop();
+                (*it2)->stopSource();
             }
 
             return err;
@@ -876,6 +885,15 @@ status_t MPEG4Writer::reset() {
     }
 
     stopWriterThread();
+
+    for (List<Track *>::iterator it = mTracks.begin();
+          it != mTracks.end(); ++it) {
+        status_t status = (*it)->stopSource();
+        if (err == OK && status != OK) {
+            ALOGE("Something wrong while stopping source");
+            err = status;
+        }
+    }
 
     // Do not write out movie header on error.
     if (err != OK) {
@@ -1385,7 +1403,8 @@ MPEG4Writer::Track::Track(
       mGotAllCodecSpecificData(false),
       mReachedEOS(false),
       mRotation(0),
-      mHFRRatio(1) {
+      mHFRRatio(1),
+      mAvoidMemCpyEnabled(0) {
     const char *mime;
     mMeta->findCString(kKeyMIMEType, &mime);
 
@@ -1397,6 +1416,8 @@ MPEG4Writer::Track::Track(
 
     getCodecSpecificDataFromInputFormatIfPossible();
     setTimeScale();
+
+    ExtendedUtils::ShellProp::checkMemCpyOptimization(&mAvoidMemCpyEnabled);
 }
 
 void MPEG4Writer::Track::updateTrackSizeEstimate() {
@@ -1825,10 +1846,17 @@ status_t MPEG4Writer::Track::stop() {
 
     status_t err = (status_t) dummy;
 
+    return err;
+}
+
+// source stop is extracted from track stop to make sure all the buffers
+// queued for writing are released before stop on source is called
+status_t MPEG4Writer::Track::stopSource() {
     ALOGD("Stopping %s track source", mIsAudio? "Audio": "Video");
-    {
+    status_t err = OK;
+    if (!mPaused) {
         status_t status = mSource->stop();
-        if (err == OK && status != OK && status != ERROR_END_OF_STREAM) {
+        if (status != OK && status != ERROR_END_OF_STREAM) {
             err = status;
         }
     }
@@ -2200,15 +2228,25 @@ status_t MPEG4Writer::Track::threadEntry() {
             continue;
         }
 
-        // Make a deep copy of the MediaBuffer and Metadata and release
-        // the original as soon as we can
-        MediaBuffer *copy = new MediaBuffer(buffer->range_length());
-        memcpy(copy->data(), (uint8_t *)buffer->data() + buffer->range_offset(),
-                buffer->range_length());
-        copy->set_range(0, buffer->range_length());
-        meta_data = new MetaData(*buffer->meta_data().get());
-        buffer->release();
-        buffer = NULL;
+        MediaBuffer *copy = NULL;
+
+        bool copyIndication = 1;
+        if (mAvoidMemCpyEnabled && !this->isAudio()) {
+            copyIndication = ExtendedUtils::checkCopyFlagInBuffer(buffer);
+        }
+
+        if (copyIndication) {
+            copy = new MediaBuffer(buffer->range_length());
+            memcpy(copy->data(), (uint8_t *)buffer->data() + buffer->range_offset(),
+                    buffer->range_length());
+            copy->set_range(0, buffer->range_length());
+            meta_data = new MetaData(*buffer->meta_data().get());
+            buffer->release();
+            buffer = NULL;
+        } else {
+            copy = buffer;
+            meta_data = new MetaData(*buffer->meta_data().get());
+        }
 
         if (mIsAvc || mIsHEVC) {
             StripStartcode(copy);

@@ -65,6 +65,7 @@ static const uint8_t kHEVCNalUnitTypePicParamSet = 0x22;
 #include <linux/msm_ion.h>
 #define MEM_DEVICE "/dev/ion"
 #define MEM_HEAP_ID ION_CP_MM_HEAP_ID
+#define FLAG_COPY_ENABLE 'CpEn'
 
 #include <media/stagefright/foundation/ALooper.h>
 
@@ -813,6 +814,101 @@ bool ExtendedUtils::ShellProp::isMpeg4DPSupportedByHardware() {
     return false;
 }
 
+void ExtendedUtils::ShellProp::checkMemCpyOptimization(bool *avoidMemCpy,
+                                           int32_t *addAdditionalBuffers) {
+    if (avoidMemCpy == NULL) {
+        ALOGE("Invalid i\p passed");
+        return;
+    }
+
+    *avoidMemCpy = false;
+
+    //look for the writer property
+    char prop[PROPERTY_VALUE_MAX] = {0};
+    property_get("mm.avoidmemcpy.enable", prop, "0");
+    if (!strncmp(prop, "true", 4) || atoi(prop)) {
+        *avoidMemCpy = true;
+    }
+
+    // check and set addAdditionalBuffer even if avoidMemCpy flag is false
+    if (addAdditionalBuffers == NULL) {
+        return;
+    }
+
+    property_get("mm.avoidmemcpy.addbuffers", prop, "0");
+    *addAdditionalBuffers = atoi(prop);
+
+    if (*addAdditionalBuffers <= 0) {
+        *addAdditionalBuffers = 0;
+        *avoidMemCpy = false;
+    }
+    ALOGV("ShellProp::checkMemCpyOptimization :: AvoidMemCpyEnable (%s)
+           Additional buffers added (%d)", *avoidMemCpy? "TRUE" : "FALSE",
+           *addAdditionalBuffers);
+}
+
+void ExtendedUtils::ShellProp::adjustInterleaveDuration(uint32_t *interleaveDuration) {
+    bool avoidMemCpyEnable = false;
+    ShellProp::checkMemCpyOptimization(&avoidMemCpyEnable);
+
+    // modify interleave only if avoidMemCpyEnable is enabled, because it's already initialized
+    if (avoidMemCpyEnable) {
+        char prop[PROPERTY_VALUE_MAX] = {0};
+        property_get("mm.avoidmemcpy.interleavedur", prop, "0");
+        uint32_t newInterleaveVal = atoi(prop);
+
+        if(newInterleaveVal > 0) {
+            *interleaveDuration = newInterleaveVal;
+        }
+    }
+
+    ALOGV("adjustInterleaveDuration :: interleavingDuration (%d)", *interleaveDuration);
+}
+
+bool ExtendedUtils::checkCopyFlagInBuffer(MediaBuffer *buffer) {
+    int32_t copyIndication = 0;
+
+    if (buffer != NULL) {
+        buffer->meta_data()->findInt32(FLAG_COPY_ENABLE, &copyIndication);
+    }
+
+    return (bool)copyIndication;
+}
+
+void ExtendedUtils::checkAndSetIfBufferNeedsToBeCopied(Vector<OMXCodec::BufferInfo> *buffers,
+                                                       OMXCodec::BufferInfo **info,
+                                                       int32_t additionalBuff) {
+    ALOGV("checkAndSetIfBufferNeedsToBeCopied called");
+
+    if (!buffers || !(*info)) {
+        ALOGE("Invalid i\p passed");
+        return;
+    }
+
+    int withUs = 0, withComponent = 0, withClient = 0;
+    for (size_t i = 0; i < buffers->size(); ++i) {
+        OMXCodec::BufferInfo *tmpBuf = &buffers->editItemAt(i);
+        if (tmpBuf->mStatus == OMXCodec::OWNED_BY_US) {
+            ++withUs;
+        } else if(tmpBuf->mStatus == OMXCodec::OWNED_BY_CLIENT) {
+            ++withClient;
+        } else if(tmpBuf->mStatus == OMXCodec::OWNED_BY_COMPONENT) {
+            ++withComponent;
+        }
+    }
+
+    ALOGV("read:: Buffers Owned by Us (%d) Client (%d) Component (%d)",
+           withUs, withClient, withComponent);
+
+    if (withClient < additionalBuff) {
+        //indicate not to copy unless we run out of extra buffers
+        (*info)->mMediaBuffer->meta_data()->setInt32(FLAG_COPY_ENABLE, 0);
+    } else {
+        (*info)->mMediaBuffer->meta_data()->setInt32(FLAG_COPY_ENABLE, 1);
+    }
+    return;
+}
+
 void ExtendedUtils::setBFrames(
         OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, int32_t &numBFrames,
         const char* componentName) {
@@ -1425,6 +1521,18 @@ bool ExtendedUtils::ShellProp::isMpeg4DPSupportedByHardware() {
     return false;
 }
 
+void ExtendedUtils::ShellProp::adjustInterleaveDuration(uint32_t *interleaveDuration) {
+}
+
+bool ExtendedUtils::checkCopyFlagInBuffer(MediaBuffer *buffer) {
+    return false;
+}
+
+void ExtendedUtils::checkAndSetIfBufferNeedsToBeCopied(Vector<OMXCodec::BufferInfo> *buffers,
+                                                       OMXCodec::BufferInfo **info,
+                                                       int32_t additionalBuff) {
+}
+
 void ExtendedUtils::setBFrames(
         OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, int32_t &numBFrames,
         const char* componentName) {
@@ -1488,6 +1596,16 @@ void ExtendedUtils::prefetchSecurePool() {}
 void ExtendedUtils::createSecurePool() {}
 
 void ExtendedUtils::drainSecurePool() {}
+
+void ExtendedUtils::ShellProp::checkMemCpyOptimization(bool *avoidMemCpy,
+                                            int32_t *addAdditionalBuffer) {
+    if (avoidMemCpy != NULL) {
+        *avoidMemCpy = false;
+    }
+    if (addAdditionalBuffer != NULL) {
+        *addAdditionalBuffer = 0;
+    }
+}
 
 VSyncLocker::VSyncLocker() {}
 
