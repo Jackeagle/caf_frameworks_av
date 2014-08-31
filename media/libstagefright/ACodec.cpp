@@ -398,7 +398,8 @@ ACodec::ACodec()
       mDequeueCounter(0),
       mStoreMetaDataInOutputBuffers(false),
       mMetaDataBuffersToSubmit(0),
-      mRepeatFrameDelayUs(-1ll) {
+      mRepeatFrameDelayUs(-1ll),
+      mUseUndequeuedBufs(false) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -747,7 +748,11 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         cancelEnd = mBuffers[kPortIndexOutput].size();
     } else {
         // Return the required minimum undequeued buffers to the native window.
-        cancelStart = bufferCount - minUndequeuedBuffers;
+        if (mUseUndequeuedBufs) {
+          cancelStart = bufferCount;
+        } else {
+          cancelStart = bufferCount - minUndequeuedBuffers;
+        }
         cancelEnd = bufferCount;
     }
 
@@ -1370,6 +1375,13 @@ status_t ACodec::configureCodec(
         err = setMinBufferSize(kPortIndexInput, (size_t)maxInputSize);
     } else if (!strcmp("OMX.Nvidia.aac.decoder", mComponentName.c_str())) {
         err = setMinBufferSize(kPortIndexInput, 8192);  // XXX
+    }
+
+    int32_t useUndequeuedBufs;
+    if (msg->findInt32("moz-use-undequeued-bufs", &useUndequeuedBufs)) {
+        mUseUndequeuedBufs = true;
+    } else {
+        mUseUndequeuedBufs = false;
     }
 
     return err;
