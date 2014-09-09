@@ -2054,12 +2054,12 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
-    //add an extra buffer to display queue to get around dequeue+wait
-    //blocking too long (more than 1 Vsync) in case BufferQeuue is in
-    //sync-mode and advertizes only 1 buffer
-    //NOTE: This is not necessary for 30fps content, but adding a buffer
-    //      regardless this root-cause is identified in SF
-    minUndequeuedBufs++;
+    // Add extra buffer to display queue to get around dequeue+wait
+    // blocking too long in case BufferQueue is in sync-mode and advertises
+    // only 1 buffer. Also, restrict to 2 extra buffers for > 1080p
+    minUndequeuedBufs +=
+        (def.format.video.nFrameWidth * def.format.video.nFrameHeight > 1088 * 1920)
+        ? 2 : 3;
     ALOGI("NOTE: Overriding minUndequeuedBufs to %d",minUndequeuedBufs);
 
     // XXX: Is this the right logic to use?  It's not clear to me what the OMX
