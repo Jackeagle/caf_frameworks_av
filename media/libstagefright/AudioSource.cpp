@@ -36,8 +36,8 @@
 
 namespace android {
 // Treat time out as an error if we have not received any output
-// buffers after 1 seconds
-const static int64_t WaitLockEventTimeOutNs = 1000000000LL;
+// buffers after 2 seconds
+const static int64_t WaitLockEventTimeOutNs = 2000000000LL;
 static void AudioRecordCallbackFunction(int event, void *user, void *info) {
     AudioSource *source = (AudioSource *) user;
     switch (event) {
