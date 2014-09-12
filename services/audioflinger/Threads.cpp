@@ -72,6 +72,7 @@
 #include <media/nbaio/SourceAudioBufferProvider.h>
 
 #include <powermanager/PowerManager.h>
+#include <hardware_legacy/power.h>
 
 #include <common_time/cc_helper.h>
 #include <common_time/local_clock.h>
@@ -703,6 +704,9 @@ void AudioFlinger::ThreadBase::acquireWakeLock_l(int uid)
             mWakeLockToken = binder;
         }
         ALOGV("acquireWakeLock_l() %s status %d", mName, status);
+    } else {
+        acquire_wake_lock(PARTIAL_WAKE_LOCK, mName);
+        ALOGV("acquireWakeLock_l() %s", mName);
     }
 }
 
@@ -721,6 +725,9 @@ void AudioFlinger::ThreadBase::releaseWakeLock_l()
                     true /* FIXME force oneway contrary to .aidl */);
         }
         mWakeLockToken.clear();
+    } else {
+        ALOGV("releaseWakeLock_l() %s", mName);
+        release_wake_lock(mName);
     }
 }
 
