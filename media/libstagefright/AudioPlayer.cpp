@@ -85,7 +85,7 @@ AudioPlayer::AudioPlayer(
       mCreateFlags(flags),
       mPauseRequired(false) {
 #ifdef DTS_CODEC_M_
-      mIsHpxPreprocessed = false;
+      mIsHpxPreprocessed(false);
 #endif
 }
 
