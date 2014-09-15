@@ -14,6 +14,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by DTS, Inc. The portions of the
+ * code modified by DTS, Inc are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2014 DTS, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -65,6 +84,9 @@ AudioPlayer::AudioPlayer(
       mStartPosUs(0),
       mCreateFlags(flags),
       mPauseRequired(false) {
+#ifdef DTS_CODEC_M_
+      mIsHpxPreprocessed = false;
+#endif
 }
 
 AudioPlayer::~AudioPlayer() {
@@ -129,6 +151,16 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
     success = format->findInt32(kKeyChannelCount, &numChannels);
     CHECK(success);
 
+#ifdef DTS_CODEC_M_
+    const char *decoderComponent;
+    success = format->findCString(kKeyDecoderComponent, &decoderComponent);
+    if (success && strstr(decoderComponent, "dts")) {
+        int32_t hpxProcessed=0;
+        success = format->findInt32(kKeyHPXProcessed, &hpxProcessed);
+        mIsHpxPreprocessed = hpxProcessed ? 1 : 0;
+    }
+#endif
+
     if(!format->findInt32(kKeyChannelMask, &channelMask)) {
         // log only when there's a risk of ambiguity of channel mask selection
         ALOGI_IF(numChannels > 2,
@@ -180,6 +212,7 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             offloadInfo.bit_rate = avgBitRate;
             offloadInfo.has_video = ((mCreateFlags & HAS_VIDEO) != 0);
             offloadInfo.is_streaming = ((mCreateFlags & IS_STREAMING) != 0);
+            offloadInfo.is_hpx_preprocessed = mIsHpxPreprocessed;
         }
 
         status_t err = mAudioSink->open(
@@ -559,6 +592,9 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                 mIsFirstBuffer = false;
             } else {
                 if(!mSourcePaused) {
+#ifdef DTS_CODEC_M_
+                    updateHpxPreProcessedState();
+#endif
                     err = mSource->read(&mInputBuffer, &options);
                     if (err == OK && mInputBuffer == NULL && mSourcePaused) {
                         ALOGV("mSourcePaused, return 0 from fillBuffer");
@@ -866,6 +902,28 @@ bool AudioPlayer::getMediaTimeMapping(
 
     return mPositionTimeRealUs != -1 && mPositionTimeMediaUs != -1;
 }
+
+#ifdef DTS_CODEC_M_
+void AudioPlayer::updateHpxPreProcessedState()
+{
+    sp<MetaData> format = mSource->getFormat();
+    const char *decoderComponent;
+    int hpxProcessed;
+    bool success = format->findCString(kKeyDecoderComponent, &decoderComponent);
+    if (success && strstr(decoderComponent, "dts")) {
+        CHECK(format->findInt32(kKeyHPXProcessed, &hpxProcessed));
+        int isHpxPreprocessed = hpxProcessed ? 1 : 0;
+        if (mIsHpxPreprocessed != isHpxPreprocessed) {
+            ALOGV("updateHpxPreProcessedState: hpxProcessed CHANGED to %d", hpxProcessed);
+            mIsHpxPreprocessed = isHpxPreprocessed;
+            if(mIsHpxPreprocessed == true)
+                AudioSystem::setParameters((audio_io_handle_t)0, String8("hpx_processed=true"));
+            else
+                AudioSystem::setParameters((audio_io_handle_t)0, String8("hpx_processed=false"));
+        }
+    }
+}
+#endif
 
 status_t AudioPlayer::seekTo(int64_t time_us) {
     Mutex::Autolock autoLock(mLock);
