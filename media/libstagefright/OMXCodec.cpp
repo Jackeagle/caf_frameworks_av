@@ -13,24 +13,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2014 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  *
  * This file was modified by Dolby Laboratories, Inc. The portions of the
  * code that are surrounded by "DOLBY..." are copyrighted and
@@ -89,10 +71,6 @@
 #endif
 #include "include/avc_utils.h"
 #include "include/ExtendedUtils.h"
-#ifdef DTS_CODEC_M_
-#include "include/DTSUtils.h"
-#include "include/OMX_Audio_DTS.h"
-#endif
 
 #ifdef QTI_FLAC_DECODER
 #include "include/FLACDecoder.h"
@@ -733,19 +711,6 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
 
         setRawAudioFormat(kPortIndexInput, sampleRate, numChannels);
-#ifdef DTS_CODEC_M_
-    } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_DTS, mMIME)) {
-        ALOGV(" (DTS) mime == MEDIA_MIMETYPE_AUDIO_DTS");
-        int32_t numChannels, sampleRate;
-        CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
-        CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-
-        status_t err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate);
-
-        if (err != OK) {
-            return err;
-        }
-#endif
     } else {
         if (mIsEncoder && !mIsVideo) {
             int32_t numChannels, sampleRate;
@@ -1678,10 +1643,6 @@ void OMXCodec::setComponentRole(
             "audio_decoder.flac", "audio_encoder.flac" },
         { MEDIA_MIMETYPE_AUDIO_MSGSM,
             "audio_decoder.gsm", "audio_encoder.gsm" },
-#ifdef DTS_CODEC_M_
-        { MEDIA_MIMETYPE_AUDIO_DTS,
-            "audio_decoder.dts", NULL },
-#endif
     };
 
     static const size_t kNumMimeToRole =
@@ -3566,25 +3527,6 @@ void OMXCodec::fillOutputBuffer(BufferInfo *info) {
         return;
     }
 
-#ifdef DTS_CODEC_M_
-    if(strstr(mComponentName, "dts")) {
-        OMX_AUDIO_PARAM_DTSDECTYPE myDtsDecParam;
-        memset(&myDtsDecParam, 0, sizeof(myDtsDecParam));
-        InitOMXParams(&myDtsDecParam);
-
-        status_t ret = mOMX->getParameter(mNode,
-                       (OMX_INDEXTYPE)OMX_IndexParamAudioDTSDec,
-                       &myDtsDecParam, sizeof(myDtsDecParam));
-        if(ret == OK) {
-            mOutputFormat->setInt32(kKeyHPXProcessed,
-                            (myDtsDecParam.nRepTypes == 4) ? true : false);
-        } else {
-            mOutputFormat->setInt32(kKeyHPXProcessed, false);
-        }
-        ALOGV("isHPXProcessed %d myDtsDecParam.nRepTypes %lu", (myDtsDecParam.nRepTypes == 4) ? true : false, myDtsDecParam.nRepTypes);
-    }
-#endif
-
     info->mStatus = OWNED_BY_COMPONENT;
 }
 
@@ -4873,17 +4815,10 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                 // codecs appear to output stereo even if the input data is
                 // mono. If we know the codec lies about this information,
                 // use the actual number of channels instead.
-
-                int32_t actualChannels = (mQuirks & kDecoderLiesAboutNumberOfChannels)
-                                         ? numChannels : params.nChannels;
-
-                ALOGV("** actualChannels == %d", actualChannels);
-
                 mOutputFormat->setInt32(
                         kKeyChannelCount,
-                        actualChannels);
-
-                ALOGV("** actualSamplingRate == %d", params.nSamplingRate);
+                        (mQuirks & kDecoderLiesAboutNumberOfChannels)
+                            ? numChannels : params.nChannels);
 
                 mOutputFormat->setInt32(kKeySampleRate, params.nSamplingRate);
             } else if (audio_def->eEncoding == OMX_AUDIO_CodingAMR) {
