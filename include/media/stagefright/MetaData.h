@@ -163,12 +163,15 @@ enum {
     kKeyCryptoDefaultIVSize = 'cryS',  // int32_t
 
     kKeyPssh              = 'pssh',  // raw data
+
+    kKeyHVCC              = 'hvcc',  // raw data
 };
 
 enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
     kTypeD263        = 'd263',
+    kTypeHVCC        = 'hvcc',
 };
 
 class MetaData : public RefBase {
