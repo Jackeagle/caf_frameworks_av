@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  *
  * Copyright (C) 2009 The Android Open Source Project
@@ -366,6 +366,8 @@ private:
             unsigned *profile, unsigned *level);
 
     status_t stopOmxComponent_l();
+    status_t flushBuffersOnError();
+    status_t releaseMediaBuffersOn(OMX_U32 portIndex);
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
