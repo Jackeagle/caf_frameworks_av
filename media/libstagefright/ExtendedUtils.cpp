@@ -658,3 +658,28 @@ int32_t ExtendedUtils::checkIsInterlace(sp<MetaData> &meta) {
 
 }
 #endif //ENABLE_AV_ENHANCEMENTS
+
+// Methods with identical implementation with & without ENABLE_AV_ENHANCEMENTS
+namespace android {
+
+bool ExtendedUtils::isVideoMuxFormatSupported(const char *mime) {
+    if (mime == NULL) {
+        ALOGE("NULL video mime type");
+        return false;
+    }
+
+    if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_MPEG4, mime)
+            || !strcasecmp(MEDIA_MIMETYPE_VIDEO_H263, mime)
+            || !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime)
+#ifdef ENABLE_AV_ENCHANCEMENTS
+            || !strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)) {
+#else
+            ) {
+#endif
+        return true;
+    }
+
+    return false;
+}
+
+}
