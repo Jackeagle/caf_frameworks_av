@@ -1019,6 +1019,17 @@ void ExtendedUtils::setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat)
     meta->setInt32(kKeyPcmFormat, pcmFormat);
 }
 
+bool ExtendedUtils::UseQCHWAACDecoder(const char *mime) {
+    if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_AAC, strlen(MEDIA_MIMETYPE_AUDIO_AAC))) {
+        char value[PROPERTY_VALUE_MAX] = {0};
+        if (property_get("media.aaccodectype", value, 0) && (atoi(value) == 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 //- returns NULL if we dont really need a new extractor (or cannot),
 //  valid extractor is returned otherwise
 //- caller needs to check for NULL
@@ -1928,6 +1939,11 @@ int32_t ExtendedUtils::getPCMFormat(const sp<MetaData> &meta) {
 void ExtendedUtils::setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat) {
     ARG_TOUCH(meta);
     ARG_TOUCH(pcmFormat);
+}
+
+bool ExtendedUtils::UseQCHWAACDecoder(const char *mime) {
+    ARG_TOUCH(mime);
+    return false;
 }
 
 sp<MediaExtractor> ExtendedUtils::MediaExtractor_CreateIfNeeded(
