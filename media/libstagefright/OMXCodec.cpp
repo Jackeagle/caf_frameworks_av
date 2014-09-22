@@ -4242,7 +4242,31 @@ status_t OMXCodec::read(
 
     info->mMediaBuffer->add_ref();
     if (mSkipCutBuffer != NULL) {
+        // Get original MediaBuffer length.
+        size_t original_len = info->mMediaBuffer->range_length();
+        // SkipCutBuffer might cut MediaBuffer data.
         mSkipCutBuffer->submit(info->mMediaBuffer);
+        // Get MediaBuffer length after SkipCutBuffer::submit() call.
+        size_t result_len = info->mMediaBuffer->range_length();
+        int32_t numchannels = 0;
+        int32_t audioSampleRate = 0;
+        int64_t timeUs = 0;
+        // If SkipCutBuffer cut MediaBuffer data, progress its time the period
+        // that SkipCutBuffer cut.
+        if (original_len > result_len &&
+            mOutputFormat->findInt32(kKeyChannelCount, &numchannels) &&
+            mOutputFormat->findInt32(kKeySampleRate, &audioSampleRate) &&
+            info->mMediaBuffer->meta_data()->findInt64(kKeyTime, &timeUs)) {
+            if (numchannels > 0 && audioSampleRate > 0) {
+                // Calculate number of cut frames.
+                int64_t frames = (original_len - result_len) / (numchannels * sizeof(int16_t));
+                // Convert frames to time.
+                int64_t cutUs = (frames * 1000000LL) / audioSampleRate;
+                timeUs = timeUs + cutUs;
+                // Update MediaBuffer time.
+                info->mMediaBuffer->meta_data()->setInt64(kKeyTime, timeUs);
+            }
+        }
     }
     *buffer = info->mMediaBuffer;
 
