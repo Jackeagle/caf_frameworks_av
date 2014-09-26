@@ -587,6 +587,11 @@ int addSubEffect(cnode *root)
         return -EINVAL;
     }
     d = malloc(sizeof(effect_descriptor_t));
+    if (!d) {
+        ALOGE("failed to allocate effect descriptor");
+        return -EINVAL;
+    }
+
     if (l->desc->get_descriptor(&uuid, d) != 0) {
         char s[40];
         uuidToString(&uuid, s, 40);
@@ -660,8 +665,12 @@ int loadEffect(cnode *root)
         ALOGW("loadEffect() invalid uuid %s", node->value);
         return -EINVAL;
     }
-
     d = malloc(sizeof(effect_descriptor_t));
+    if (!d) {
+        ALOGE("failed to allocate effect descriptor");
+        return -EINVAL;
+    }
+
     if (l->desc->get_descriptor(&uuid, d) != 0) {
         char s[40];
         uuidToString(&uuid, s, 40);
