@@ -144,6 +144,8 @@ struct ExtendedUtils {
     static void setArbitraryModeIfInterlaced(
             const uint8_t *ptr, const sp<MetaData> &meta);
 
+    static bool isVideoMuxFormatSupported(const char *mime);
+
     static int32_t checkIsInterlace(sp<MetaData> &meta);
 };
 
