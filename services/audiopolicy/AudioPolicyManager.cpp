@@ -367,6 +367,12 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
                 }
             }
 #endif
+            if (audio_is_a2dp_device(device)) {
+               AudioParameter param;
+               param.add(String8("a2dp_connected"), String8("true"));
+               mpClientInterface->setParameters(0, param.toString());
+            }
+
             if (index >= 0) {
                 sp<HwModule> module = getModuleForDevice(device);
                 if (module == 0) {
@@ -433,6 +439,12 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
                 }
             }
 #endif
+            if (audio_is_a2dp_device(device)) {
+               AudioParameter param;
+               param.add(String8("a2dp_connected"), String8("false"));
+               mpClientInterface->setParameters(0, param.toString());
+            }
+
             checkOutputsForDevice(devDesc, state, outputs, address);
             } break;
 
@@ -4240,7 +4252,7 @@ status_t AudioPolicyManager::checkOutputsForDevice(const sp<DeviceDescriptor> de
         }
 
         if (profiles.isEmpty()) {
-            ALOGW("checkOutputsForDevice(): No output available for device %04x", device);
+            ALOGE("checkOutputsForDevice(): No output available for device %04x", device);
             return BAD_VALUE;
         }
     } else { // Disconnect
@@ -4675,17 +4687,15 @@ audio_io_handle_t AudioPolicyManager::getA2dpOutput()
             return mOutputs.keyAt(i);
         }
     }
-
-    return 0;
+    DeviceVector deviceList = mAvailableOutputDevices.getDevicesFromType(AUDIO_DEVICE_OUT_ALL_A2DP);
+        if (!deviceList.isEmpty()) {
+             return 1;
+        } else
+             return 0;
 }
 
 void AudioPolicyManager::checkA2dpSuspend()
 {
-    audio_io_handle_t a2dpOutput = getA2dpOutput();
-    if (a2dpOutput == 0) {
-        mA2dpSuspended = false;
-        return;
-    }
 
     bool isScoConnected =
             (mAvailableInputDevices.types() & AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) != 0;
@@ -4708,7 +4718,6 @@ void AudioPolicyManager::checkA2dpSuspend()
              ((mPhoneState != AUDIO_MODE_IN_CALL) &&
               (mPhoneState != AUDIO_MODE_RINGTONE))) {
 
-            mpClientInterface->restoreOutput(a2dpOutput);
             mA2dpSuspended = false;
         }
     } else {
@@ -4718,7 +4727,6 @@ void AudioPolicyManager::checkA2dpSuspend()
              ((mPhoneState == AUDIO_MODE_IN_CALL) ||
               (mPhoneState == AUDIO_MODE_RINGTONE))) {
 
-            mpClientInterface->suspendOutput(a2dpOutput);
             mA2dpSuspended = true;
         }
     }
@@ -4740,7 +4748,6 @@ audio_devices_t AudioPolicyManager::getNewOutputDevice(audio_io_handle_t output,
             return outputDesc->device();
         }
     }
-
     // check the following by order of priority to request a routing change if necessary:
     // 1: the strategy enforced audible is active and enforced on the output:
     //      use device for strategy enforced audible
@@ -4999,7 +5006,7 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
             // when not in a phone call, phone strategy should route STREAM_VOICE_CALL to A2DP
             if (!isInCall() &&
                     (mForceUse[AUDIO_POLICY_FORCE_FOR_MEDIA] != AUDIO_POLICY_FORCE_NO_BT_A2DP) &&
-                    (getA2dpOutput() != 0) && !mA2dpSuspended) {
+                    !mA2dpSuspended) {
                 device = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP;
                 if (device) break;
                 device = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES;
@@ -5037,7 +5044,7 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
             // A2DP speaker when forcing to speaker output
             if (!isInCall() &&
                     (mForceUse[AUDIO_POLICY_FORCE_FOR_MEDIA] != AUDIO_POLICY_FORCE_NO_BT_A2DP) &&
-                    (getA2dpOutput() != 0) && !mA2dpSuspended) {
+                    !mA2dpSuspended) {
                 device = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER;
                 if (device) break;
             }
@@ -5126,7 +5133,7 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
         }
         if ((device2 == AUDIO_DEVICE_NONE) &&
                 (mForceUse[AUDIO_POLICY_FORCE_FOR_MEDIA] != AUDIO_POLICY_FORCE_NO_BT_A2DP) &&
-                (getA2dpOutput() != 0) && !mA2dpSuspended) {
+                !mA2dpSuspended) {
             device2 = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP;
             if (device2 == AUDIO_DEVICE_NONE) {
                 device2 = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES;
