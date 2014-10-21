@@ -35,6 +35,10 @@
 
 #include "include/AwesomePlayer.h"
 
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include "QCMetaData.h"
+#endif
+
 namespace android {
 
 AudioPlayer::AudioPlayer(
@@ -149,6 +153,19 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             ALOGV("Mime type \"%s\" mapped to audio_format 0x%x", mime, audioFormat);
         }
     }
+#ifdef ENABLE_AV_ENHANCEMENTS
+    /* Audio format PCM needs to be updated based on bit-width
+     * since they all share same mime "audio/raw".
+     * Extend this to 24/32 bit when supported.
+     */
+    if (audioFormat == AUDIO_FORMAT_PCM_16_BIT) {
+        int32_t bitWidth = 16;
+        if (format->findInt32(kKeySampleBits, &bitWidth) && bitWidth == 8) {
+            audioFormat = AUDIO_FORMAT_PCM_8_BIT;
+            ALOGD("Bit-width:8,update audio_format to 0x%x", audioFormat);
+        }
+    }
+#endif
 
     int avgBitRate = -1;
     format->findInt32(kKeyBitRate, &avgBitRate);
