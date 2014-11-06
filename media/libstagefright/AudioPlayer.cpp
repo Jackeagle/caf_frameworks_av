@@ -101,8 +101,7 @@ AudioPlayer::AudioPlayer(
 #ifdef DOLBY_UDC
       mDolbyProcessedAudio(false),
 #endif //DOLBY_END
-      mPauseRequired(false),
-      mUseSmallBufs(false) {
+      mPauseRequired(false) {
 }
 
 AudioPlayer::~AudioPlayer() {
@@ -387,10 +386,10 @@ void AudioPlayer::pause(bool playPendingSamples) {
             mSourcePaused = true;
         }
     }
+    ALOGD("Pause Playback at %lld",getMediaTimeUs());
 #ifdef DOLBY_UDC
     updateDolbyProcessedAudioState();
 #endif // DOLBY_END
-    ALOGI("Pause Playback at %lld",getMediaTimeUs());
 }
 
 status_t AudioPlayer::resume() {

@@ -58,7 +58,7 @@ struct ElementaryStreamQueue {
         MPEG4_VIDEO,
         PCM_AUDIO,
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
-        EC3,
+        DDP_EC3_AUDIO,
 #endif // DOLBY_END
     };
 

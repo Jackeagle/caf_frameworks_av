@@ -19,11 +19,6 @@
 ** licensed separately, as follows:
 **
 **  (C) 2011-2014 Dolby Laboratories, Inc.
-** This file was modified by DTS, Inc. The portions of the
-** code that are surrounded by "DTS..." are copyrighted and
-** licensed separately, as follows:
-**
-**  (C) 2013 DTS, Inc.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -35,7 +30,8 @@
 ** distributed under the License is distributed on an "AS IS" BASIS,
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
-** limitations under the License
+** limitations under the License.
+**
 */
 
 
@@ -1173,10 +1169,6 @@ sp<AudioFlinger::EffectHandle> AudioFlinger::ThreadBase::createEffect_l(
 #ifdef DOLBY_DAP
             EffectDapController::instance()->effectCreated(effect, this);
 #endif // DOLBY_END
-#ifdef HW_ACC_EFFECTS
-            if (mHwAccEffectsSessionId == sessionId)
-                effect->setHwAccEffect(mHwAccEffectsId);
-#endif
         }
         // create effect handle and connect it to effect module
         handle = new EffectHandle(effect, client, effectClient, priority);
@@ -2388,14 +2380,6 @@ void AudioFlinger::PlaybackThread::threadLoop_exit()
     // When a thread is closed set associated volume to 0
     EffectDapController::instance()->updatePregain(mType, mOutput->flags, 0);
 #endif // DOLBY_END
-
-    {
-        Mutex::Autolock _l(mLock);
-        for (size_t i = 0; i < mTracks.size(); i++) {
-            sp<Track> track = mTracks[i];
-            track->invalidate();
-        }
-    }
 }
 
 /*
