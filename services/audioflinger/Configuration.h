@@ -31,9 +31,7 @@
 
 // uncomment to enable fast mixer to take performance samples for later statistical analysis
 #define FAST_MIXER_STATISTICS
-
-// uncomment to allow fast tracks at non-native sample rate
-//#define FAST_TRACKS_AT_NON_NATIVE_SAMPLE_RATE
+// FIXME rename to FAST_THREAD_STATISTICS
 
 // uncomment for debugging timing problems related to StateQueue::push()
 //#define STATE_QUEUE_DUMP

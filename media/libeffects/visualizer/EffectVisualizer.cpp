@@ -16,8 +16,9 @@
 
 #define LOG_TAG "EffectVisualizer"
 //#define LOG_NDEBUG 0
-#include <cutils/log.h>
+#include <log/log.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <new>
@@ -206,7 +207,8 @@ int Visualizer_init(VisualizerContext *pContext)
     pContext->mScalingMode = VISUALIZER_SCALING_MODE_NORMALIZED;
 
     // measurement initialization
-    pContext->mChannelCount = popcount(pContext->mConfig.inputCfg.channels);
+    pContext->mChannelCount =
+            audio_channel_count_from_out_mask(pContext->mConfig.inputCfg.channels);
     pContext->mMeasurementMode = MEASUREMENT_MODE_NONE;
     pContext->mMeasurementWindowSizeInBuffers = MEASUREMENT_WINDOW_MAX_SIZE_IN_BUFFERS;
     pContext->mMeasurementBufferIdx = 0;
@@ -226,8 +228,8 @@ int Visualizer_init(VisualizerContext *pContext)
 //
 
 int VisualizerLib_Create(const effect_uuid_t *uuid,
-                         int32_t sessionId,
-                         int32_t ioId,
+                         int32_t /*sessionId*/,
+                         int32_t /*ioId*/,
                          effect_handle_t *pHandle) {
     int ret;
     int i;
@@ -418,7 +420,7 @@ int Visualizer_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
         return -EINVAL;
     }
 
-//    ALOGV("Visualizer_command command %d cmdSize %d",cmdCode, cmdSize);
+//    ALOGV("Visualizer_command command %" PRIu32 " cmdSize %" PRIu32, cmdCode, cmdSize);
 
     switch (cmdCode) {
     case EFFECT_CMD_INIT:
@@ -484,19 +486,19 @@ int Visualizer_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
         }
         switch (*(uint32_t *)p->data) {
         case VISUALIZER_PARAM_CAPTURE_SIZE:
-            ALOGV("get mCaptureSize = %d", pContext->mCaptureSize);
+            ALOGV("get mCaptureSize = %" PRIu32, pContext->mCaptureSize);
             *((uint32_t *)p->data + 1) = pContext->mCaptureSize;
             p->vsize = sizeof(uint32_t);
             *replySize += sizeof(uint32_t);
             break;
         case VISUALIZER_PARAM_SCALING_MODE:
-            ALOGV("get mScalingMode = %d", pContext->mScalingMode);
+            ALOGV("get mScalingMode = %" PRIu32, pContext->mScalingMode);
             *((uint32_t *)p->data + 1) = pContext->mScalingMode;
             p->vsize = sizeof(uint32_t);
             *replySize += sizeof(uint32_t);
             break;
         case VISUALIZER_PARAM_MEASUREMENT_MODE:
-            ALOGV("get mMeasurementMode = %d", pContext->mMeasurementMode);
+            ALOGV("get mMeasurementMode = %" PRIu32, pContext->mMeasurementMode);
             *((uint32_t *)p->data + 1) = pContext->mMeasurementMode;
             p->vsize = sizeof(uint32_t);
             *replySize += sizeof(uint32_t);
@@ -520,19 +522,19 @@ int Visualizer_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
         switch (*(uint32_t *)p->data) {
         case VISUALIZER_PARAM_CAPTURE_SIZE:
             pContext->mCaptureSize = *((uint32_t *)p->data + 1);
-            ALOGV("set mCaptureSize = %d", pContext->mCaptureSize);
+            ALOGV("set mCaptureSize = %" PRIu32, pContext->mCaptureSize);
             break;
         case VISUALIZER_PARAM_SCALING_MODE:
             pContext->mScalingMode = *((uint32_t *)p->data + 1);
-            ALOGV("set mScalingMode = %d", pContext->mScalingMode);
+            ALOGV("set mScalingMode = %" PRIu32, pContext->mScalingMode);
             break;
         case VISUALIZER_PARAM_LATENCY:
             pContext->mLatency = *((uint32_t *)p->data + 1);
-            ALOGV("set mLatency = %d", pContext->mLatency);
+            ALOGV("set mLatency = %" PRIu32, pContext->mLatency);
             break;
         case VISUALIZER_PARAM_MEASUREMENT_MODE:
             pContext->mMeasurementMode = *((uint32_t *)p->data + 1);
-            ALOGV("set mMeasurementMode = %d", pContext->mMeasurementMode);
+            ALOGV("set mMeasurementMode = %" PRIu32, pContext->mMeasurementMode);
             break;
         default:
             *(int32_t *)pReplyData = -EINVAL;
@@ -544,56 +546,57 @@ int Visualizer_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
         break;
 
 
-    case VISUALIZER_CMD_CAPTURE:
-        if (pReplyData == NULL || *replySize != pContext->mCaptureSize) {
-            ALOGV("VISUALIZER_CMD_CAPTURE() error *replySize %d pContext->mCaptureSize %d",
-                    *replySize, pContext->mCaptureSize);
+    case VISUALIZER_CMD_CAPTURE: {
+        uint32_t captureSize = pContext->mCaptureSize;
+        if (pReplyData == NULL || *replySize != captureSize) {
+            ALOGV("VISUALIZER_CMD_CAPTURE() error *replySize %" PRIu32 " captureSize %" PRIu32,
+                    *replySize, captureSize);
             return -EINVAL;
         }
         if (pContext->mState == VISUALIZER_STATE_ACTIVE) {
-            int32_t latencyMs = pContext->mLatency;
             const uint32_t deltaMs = Visualizer_getDeltaTimeMsFromUpdatedTime(pContext);
-            latencyMs -= deltaMs;
-            if (latencyMs < 0) {
-                latencyMs = 0;
-            }
-            const uint32_t deltaSmpl = pContext->mConfig.inputCfg.samplingRate * latencyMs / 1000;
-
-            int32_t capturePoint = pContext->mCaptureIdx - pContext->mCaptureSize - deltaSmpl;
-            int32_t captureSize = pContext->mCaptureSize;
-            if (capturePoint < 0) {
-                int32_t size = -capturePoint;
-                if (size > captureSize) {
-                    size = captureSize;
-                }
-                memcpy(pReplyData,
-                       pContext->mCaptureBuf + CAPTURE_BUF_SIZE + capturePoint,
-                       size);
-                pReplyData = (char *)pReplyData + size;
-                captureSize -= size;
-                capturePoint = 0;
-            }
-            memcpy(pReplyData,
-                   pContext->mCaptureBuf + capturePoint,
-                   captureSize);
-
 
             // if audio framework has stopped playing audio although the effect is still
             // active we must clear the capture buffer to return silence
             if ((pContext->mLastCaptureIdx == pContext->mCaptureIdx) &&
-                    (pContext->mBufferUpdateTime.tv_sec != 0)) {
-                if (deltaMs > MAX_STALL_TIME_MS) {
+                    (pContext->mBufferUpdateTime.tv_sec != 0) &&
+                    (deltaMs > MAX_STALL_TIME_MS)) {
                     ALOGV("capture going to idle");
                     pContext->mBufferUpdateTime.tv_sec = 0;
-                    memset(pReplyData, 0x80, pContext->mCaptureSize);
+                    memset(pReplyData, 0x80, captureSize);
+            } else {
+                int32_t latencyMs = pContext->mLatency;
+                latencyMs -= deltaMs;
+                if (latencyMs < 0) {
+                    latencyMs = 0;
                 }
+                const uint32_t deltaSmpl =
+                    pContext->mConfig.inputCfg.samplingRate * latencyMs / 1000;
+                int32_t capturePoint = pContext->mCaptureIdx - captureSize - deltaSmpl;
+
+                if (capturePoint < 0) {
+                    uint32_t size = -capturePoint;
+                    if (size > captureSize) {
+                        size = captureSize;
+                    }
+                    memcpy(pReplyData,
+                           pContext->mCaptureBuf + CAPTURE_BUF_SIZE + capturePoint,
+                           size);
+                    pReplyData = (char *)pReplyData + size;
+                    captureSize -= size;
+                    capturePoint = 0;
+                }
+                memcpy(pReplyData,
+                       pContext->mCaptureBuf + capturePoint,
+                       captureSize);
             }
+
             pContext->mLastCaptureIdx = pContext->mCaptureIdx;
         } else {
-            memset(pReplyData, 0x80, pContext->mCaptureSize);
+            memset(pReplyData, 0x80, captureSize);
         }
 
-        break;
+        } break;
 
     case VISUALIZER_CMD_MEASURE: {
         uint16_t peakU16 = 0;
@@ -603,7 +606,7 @@ int Visualizer_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
         // measurements aren't relevant anymore and shouldn't bias the new one)
         const int32_t delayMs = Visualizer_getDeltaTimeMsFromUpdatedTime(pContext);
         if (delayMs > DISCARD_MEASUREMENTS_TIME_MS) {
-            ALOGV("Discarding measurements, last measurement is %dms old", delayMs);
+            ALOGV("Discarding measurements, last measurement is %" PRId32 "ms old", delayMs);
             for (uint32_t i=0 ; i<pContext->mMeasurementWindowSizeInBuffers ; i++) {
                 pContext->mPastMeasurements[i].mIsValid = false;
                 pContext->mPastMeasurements[i].mPeakU16 = 0;
@@ -637,14 +640,14 @@ int Visualizer_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
         } else {
             pIntReplyData[MEASUREMENT_IDX_PEAK] = (int32_t) (2000 * log10(peakU16 / 32767.0f));
         }
-        ALOGV("VISUALIZER_CMD_MEASURE peak=%d (%dmB), rms=%.1f (%dmB)",
+        ALOGV("VISUALIZER_CMD_MEASURE peak=%" PRIu16 " (%" PRId32 "mB), rms=%.1f (%" PRId32 "mB)",
                 peakU16, pIntReplyData[MEASUREMENT_IDX_PEAK],
                 rms, pIntReplyData[MEASUREMENT_IDX_RMS]);
         }
         break;
 
     default:
-        ALOGW("Visualizer_command invalid command %d",cmdCode);
+        ALOGW("Visualizer_command invalid command %" PRIu32, cmdCode);
         return -EINVAL;
     }
 
@@ -678,13 +681,13 @@ const struct effect_interface_s gVisualizerInterface = {
 // This is the only symbol that needs to be exported
 __attribute__ ((visibility ("default")))
 audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
-    tag : AUDIO_EFFECT_LIBRARY_TAG,
-    version : EFFECT_LIBRARY_API_VERSION,
-    name : "Visualizer Library",
-    implementor : "The Android Open Source Project",
-    create_effect : VisualizerLib_Create,
-    release_effect : VisualizerLib_Release,
-    get_descriptor : VisualizerLib_GetDescriptor,
+    .tag = AUDIO_EFFECT_LIBRARY_TAG,
+    .version = EFFECT_LIBRARY_API_VERSION,
+    .name = "Visualizer Library",
+    .implementor = "The Android Open Source Project",
+    .create_effect = VisualizerLib_Create,
+    .release_effect = VisualizerLib_Release,
+    .get_descriptor = VisualizerLib_GetDescriptor,
 };
 
 }; // extern "C"

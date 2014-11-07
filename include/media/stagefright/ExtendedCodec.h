@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -32,6 +32,7 @@
 
 #include <android/native_window.h>
 #include <media/IOMX.h>
+#include <media/MediaCodecInfo.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -60,7 +61,7 @@ struct ExtendedCodec {
             const sp<MetaData> &meta, sp<AMessage> *format);
 
     static uint32_t getComponentQuirks (
-            const MediaCodecList *list, size_t index);
+            const sp<MediaCodecInfo> &info);
 
     static status_t setAudioFormat(
             const sp<MetaData> &meta, const char* mime,
@@ -72,11 +73,7 @@ struct ExtendedCodec {
             sp<IOMX> OMXhandle,IOMX::node_id nodeID,
             bool isEncoder);
 
-    static status_t setVideoInputFormat(
-            const char *mime,
-            OMX_VIDEO_CODINGTYPE *compressionFormat);
-
-    static status_t setVideoOutputFormat(
+    static status_t setVideoFormat(
             const char *mime,
             OMX_VIDEO_CODINGTYPE *compressionFormat);
 
@@ -85,17 +82,33 @@ struct ExtendedCodec {
             sp<IOMX> OMXhandle,
             IOMX::node_id nodeID,
             int portIndex,
-            int* channelCount);
+            int* channelCount,
+            int* sampleRate);
 
     static status_t handleSupportedAudioFormats(
             int format, AString* mime);
 
+    static status_t handleSupportedVideoFormats(
+            int format, AString* mime);
+
+    static bool checkIfCompressionHEVC(int format);
+
+    static status_t setupHEVCEncoderParameters(
+            const sp<MetaData> &meta, const sp<IOMX> &omx,
+            IOMX::node_id node, const char* componentName,
+            int portIndex, const sp<OMXCodec> &target);
+
     static const char* overrideComponentName(
-            uint32_t quirks, const sp<MetaData> &meta);
+            uint32_t quirks, const sp<MetaData> &meta,
+            const char *mime, bool isEncoder);
 
     static void overrideComponentName(
             uint32_t quirks, const sp<AMessage> &msg,
-            AString* componentName);
+            AString* componentName, AString* mime,
+            int32_t isEncoder);
+
+    static void overrideMimeType(
+        const sp<AMessage> &msg, AString* mime);
 
     static void getRawCodecSpecificData(
             const sp<MetaData> &meta,
@@ -135,15 +148,9 @@ struct ExtendedCodec {
             sp<IOMX> OMXhandle, const uint32_t flags,
             IOMX::node_id nodeID, const char* componentName);
 
-    static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
-
-    static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
-
     static void enableSmoothStreaming(
             const sp<IOMX> &omx, IOMX::node_id nodeID, bool* isEnabled,
             const char* componentName);
-
-    static bool useHWAACDecoder(const char *mime);
 
     static bool isSourcePauseRequired(const char *componentName);
 
@@ -175,6 +182,10 @@ private:
     static status_t setDIVXFormat(
             const sp<AMessage> &msg, const char* mime,
             sp<IOMX> OMXhandle,IOMX::node_id nodeID, int port_index);
+
+    static status_t setAMRWBPLUSFormat(
+            int32_t numChannels, int32_t sampleRate,
+            sp<IOMX> OMXhandle, IOMX::node_id nodeID);
 
 };
 

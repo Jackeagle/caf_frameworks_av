@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2014, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  * Copyright (C) 2007 The Android Open Source Project
  *
@@ -21,12 +21,12 @@
 #include <sys/time.h>
 
 namespace android {
-AudioResamplerQTI::AudioResamplerQTI(int bitDepth,
+AudioResamplerQTI::AudioResamplerQTI(int format,
         int inChannelCount, int32_t sampleRate)
-    :AudioResampler(bitDepth, inChannelCount, sampleRate, QTI_QUALITY),
+    :AudioResampler(inChannelCount, sampleRate, QTI_QUALITY),
     mOutFrameCount(0), mTmpBuf(0), mFrameIndex(0)
 {
-    stateSize = QCT_Resampler::MemAlloc(bitDepth, inChannelCount, sampleRate, sampleRate);
+    stateSize = QCT_Resampler::MemAlloc(format, inChannelCount, sampleRate, sampleRate);
     mState = new int16_t[stateSize];
     mVolume[0] = mVolume[1] = 0;
     mBuffer.frameCount = 0;

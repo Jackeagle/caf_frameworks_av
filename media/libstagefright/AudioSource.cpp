@@ -1,7 +1,5 @@
 /*
  * Copyright (C) 2010 The Android Open Source Project
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
- * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +14,9 @@
  * limitations under the License.
  */
 
+#include <inttypes.h>
+#include <stdlib.h>
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "AudioSource"
 #include <utils/Log.h>
@@ -28,7 +29,6 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <cutils/properties.h>
-#include <stdlib.h>
 #include <system/audio.h>
 
 namespace android {
@@ -55,12 +55,12 @@ AudioSource::AudioSource(
     : mStarted(false),
       mSampleRate(sampleRate),
       mPrevSampleTimeUs(0),
-      mRecPaused(false),
       mNumFramesReceived(0),
-      mNumClientOwnedBuffers(0),
       mFormat(AUDIO_FORMAT_PCM_16_BIT),
-      mMime(MEDIA_MIMETYPE_AUDIO_RAW) {
-
+      mMime(MEDIA_MIMETYPE_AUDIO_RAW),
+      mMaxBufferSize(kMaxBufferSize),
+      mNumClientOwnedBuffers(0),
+      mRecPaused(false) {
     ALOGV("sampleRate: %d, channelCount: %d", sampleRate, channelCount);
     CHECK(channelCount == 1 || channelCount == 2 || channelCount == 6);
 
@@ -69,20 +69,13 @@ AudioSource::AudioSource(
                                            sampleRate,
                                            AUDIO_FORMAT_PCM_16_BIT,
                                            audio_channel_in_mask_from_count(channelCount));
-
-    if ( NO_ERROR != AudioSystem::getInputBufferSize(
-        sampleRate, mFormat, channelCount, (size_t*)&mMaxBufferSize) ) {
-        mMaxBufferSize = kMaxBufferSize;
-        ALOGV("mMaxBufferSize = %d", mMaxBufferSize);
-    }
-
     if (status == OK) {
         // make sure that the AudioRecord callback never returns more than the maximum
         // buffer size
-        int frameCount = mMaxBufferSize / sizeof(int16_t) / channelCount;
+        uint32_t frameCount = kMaxBufferSize / sizeof(int16_t) / channelCount;
 
         // make sure that the AudioRecord total buffer size is large enough
-        int bufCount = 2;
+        size_t bufCount = 2;
         while ((bufCount * frameCount) < minFrameCount) {
             bufCount++;
         }
@@ -90,11 +83,10 @@ AudioSource::AudioSource(
         mRecord = new AudioRecord(
                     inputSource, sampleRate, AUDIO_FORMAT_PCM_16_BIT,
                     audio_channel_in_mask_from_count(channelCount),
-                    /* Enable ping-pong buffers */
-                    4 * mMaxBufferSize / sizeof(int16_t),
+                    (size_t) (bufCount * frameCount),
                     AudioRecordCallbackFunction,
                     this,
-                    frameCount);
+                    frameCount /*notificationFrames*/);
         mInitCheck = mRecord->initCheck();
         mAutoRampStartUs = kAutoRampStartUs;
         uint32_t playbackLatencyMs = 0;
@@ -120,15 +112,15 @@ AudioSource::AudioSource( audio_source_t inputSource, const sp<MetaData>& meta )
       mRecPaused(false) {
 
     const char * mime;
-    ALOGE("AudioSource CTOR tunnel capture: inputSource: %d", inputSource);
-    CHECK( meta->findCString( kKeyMIMEType, &mime ) );
+    ALOGV("AudioSource CTOR compress offload capture: inputSource: %d", inputSource);
+    CHECK(meta->findCString(kKeyMIMEType, &mime));
     mMime = mime;
-    int32_t sampleRate = 0; //these are the only supported values
-    int32_t channels = 0;      //for the below tunnel formats
-    CHECK( meta->findInt32( kKeyChannelCount, &channels ) );
-    CHECK( meta->findInt32( kKeySampleRate, &sampleRate ) );
+    int32_t sampleRate = 0;
+    int32_t channels = 0;
+    CHECK(meta->findInt32(kKeyChannelCount, &channels));
+    CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
     mSampleRate = sampleRate;
-    if ( !strcasecmp( mime, MEDIA_MIMETYPE_AUDIO_AMR_WB ) ) {
+    if (!strcasecmp( mime, MEDIA_MIMETYPE_AUDIO_AMR_WB)) {
         mFormat = AUDIO_FORMAT_AMR_WB;
         mMaxBufferSize = AMR_WB_FRAMESIZE*10;
     } else {
@@ -159,7 +151,6 @@ status_t AudioSource::initCheck() const {
 
 status_t AudioSource::start(MetaData *params) {
     Mutex::Autolock autoLock(mLock);
-
     if (mRecPaused) {
         mRecPaused = false;
         return OK;
@@ -191,6 +182,7 @@ status_t AudioSource::start(MetaData *params) {
 
     return err;
 }
+
 status_t AudioSource::pause() {
     ALOGV("AudioSource::Pause");
     mRecPaused = true;
@@ -208,7 +200,7 @@ void AudioSource::releaseQueuedFrames_l() {
 }
 
 void AudioSource::waitOutstandingEncodingFrames_l() {
-    ALOGV("waitOutstandingEncodingFrames_l: %lld", mNumClientOwnedBuffers);
+    ALOGV("waitOutstandingEncodingFrames_l: %" PRId64, mNumClientOwnedBuffers);
     while (mNumClientOwnedBuffers > 0) {
         mFrameEncodingCompletionCondition.wait(mLock);
     }
@@ -216,7 +208,6 @@ void AudioSource::waitOutstandingEncodingFrames_l() {
 
 status_t AudioSource::reset() {
     Mutex::Autolock autoLock(mLock);
-
     if (!mStarted) {
         return UNKNOWN_ERROR;
     }
@@ -226,6 +217,8 @@ status_t AudioSource::reset() {
     }
 
     mStarted = false;
+    mFrameAvailableCondition.signal();
+
     mRecord->stop();
     waitOutstandingEncodingFrames_l();
     releaseQueuedFrames_l();
@@ -241,7 +234,7 @@ sp<MetaData> AudioSource::getFormat() {
 
     sp<MetaData> meta = new MetaData;
     meta->setCString(kKeyMIMEType, mMime);
-    meta->setInt32(kKeySampleRate, mRecord->getSampleRate());
+    meta->setInt32(kKeySampleRate, mSampleRate);
     meta->setInt32(kKeyChannelCount, mRecord->channelCount());
     meta->setInt32(kKeyMaxInputSize, mMaxBufferSize);
 
@@ -281,7 +274,7 @@ void AudioSource::rampVolume(
 }
 
 status_t AudioSource::read(
-        MediaBuffer **out, const ReadOptions *options) {
+        MediaBuffer **out, const ReadOptions * /* options */) {
     Mutex::Autolock autoLock(mLock);
     *out = NULL;
 
@@ -317,7 +310,7 @@ status_t AudioSource::read(
 
             int32_t nFrames = mNumFramesReceived - autoRampStartFrames;
             rampVolume(nFrames, autoRampDurationFrames,
-                (uint8_t *) buffer->data(), buffer->range_length());
+                    (uint8_t *) buffer->data(), buffer->range_length());
         }
     }
 
@@ -344,7 +337,7 @@ void AudioSource::signalBufferReturned(MediaBuffer *buffer) {
 status_t AudioSource::dataCallback(const AudioRecord::Buffer& audioBuffer) {
     int64_t timeUs = systemTime() / 1000ll;
 
-    ALOGV("dataCallbackTimestamp: %lld us", timeUs);
+    ALOGV("dataCallbackTimestamp: %" PRId64 " us", timeUs);
     Mutex::Autolock autoLock(mLock);
     if (!mStarted) {
         ALOGW("Spurious callback from AudioRecord. Drop the audio data.");
@@ -353,8 +346,8 @@ status_t AudioSource::dataCallback(const AudioRecord::Buffer& audioBuffer) {
 
     // Drop retrieved and previously lost audio data.
     if (mNumFramesReceived == 0 && timeUs < mStartTimeUs) {
-        mRecord->getInputFramesLost();
-        ALOGV("Drop audio data at %lld/%lld us", timeUs, mStartTimeUs);
+        (void) mRecord->getInputFramesLost();
+        ALOGV("Drop audio data at %" PRId64 "/%" PRId64 " us", timeUs, mStartTimeUs);
         return OK;
     }
 
@@ -384,7 +377,7 @@ status_t AudioSource::dataCallback(const AudioRecord::Buffer& audioBuffer) {
     if (numLostBytes > 0) {
         // Loss of audio frames should happen rarely; thus the LOGW should
         // not cause a logging spam
-        ALOGW("Lost audio record data: %d bytes", numLostBytes);
+        ALOGW("Lost audio record data: %zu bytes", numLostBytes);
     }
 
     while (numLostBytes > 0) {
@@ -417,9 +410,9 @@ status_t AudioSource::dataCallback(const AudioRecord::Buffer& audioBuffer) {
 
 void AudioSource::queueInputBuffer_l(MediaBuffer *buffer, int64_t timeUs) {
     if (mRecPaused) {
-        if (!mBuffersReceived.empty())
+        if (!mBuffersReceived.empty()) {
             releaseQueuedFrames_l();
-
+        }
         buffer->release();
         return;
     }
@@ -432,7 +425,7 @@ void AudioSource::queueInputBuffer_l(MediaBuffer *buffer, int64_t timeUs) {
         recordDurationUs = ((1000000LL * (bufferSize / (2 * mRecord->channelCount()))) +
                     (mSampleRate >> 1)) / mSampleRate;
     } else if ( mFormat == AUDIO_FORMAT_AMR_WB) {
-       recordDurationUs = (bufferSize/AMR_WB_FRAMESIZE)*20;//20ms
+       recordDurationUs = (bufferSize/AMR_WB_FRAMESIZE)*20*1000;//20ms
     }
     timestampUs += recordDurationUs;
 

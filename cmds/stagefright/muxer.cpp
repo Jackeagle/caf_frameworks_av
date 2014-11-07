@@ -16,9 +16,11 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "muxer"
+#include <inttypes.h>
 #include <utils/Log.h>
 
 #include <binder/ProcessState.h>
+#include <media/IMediaHTTPService.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooper.h>
@@ -58,7 +60,7 @@ static int muxing(
         int trimEndTimeMs,
         int rotationDegrees) {
     sp<NuMediaExtractor> extractor = new NuMediaExtractor;
-    if (extractor->setDataSource(path) != OK) {
+    if (extractor->setDataSource(NULL /* httpService */, path) != OK) {
         fprintf(stderr, "unable to instantiate extractor. %s\n", path);
         return 1;
     }
@@ -198,7 +200,7 @@ static int muxing(
     trackIndexMap.clear();
 
     int64_t elapsedTimeUs = ALooper::GetNowUs() - muxerStartTimeUs;
-    fprintf(stderr, "SUCCESS: muxer generate the video in %lld ms\n",
+    fprintf(stderr, "SUCCESS: muxer generate the video in %" PRId64 " ms\n",
             elapsedTimeUs / 1000);
 
     return 0;

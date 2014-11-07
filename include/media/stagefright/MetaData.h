@@ -12,25 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This file was modified by DTS, Inc. The portions of the
- * code modified by DTS, Inc are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2014 DTS, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
  */
 
 #ifndef META_DATA_H_
@@ -67,15 +48,18 @@ enum {
     kKeyChannelCount      = '#chn',  // int32_t
     kKeyChannelMask       = 'chnm',  // int32_t
     kKeySampleRate        = 'srte',  // int32_t (audio sampling rate Hz)
-    kKeyExtSampleRate     = 'exsr',  // int32_t (extenstion audio sampling rate Hz)
     kKeyFrameRate         = 'frmR',  // int32_t (video frame rate fps)
     kKeyBitRate           = 'brte',  // int32_t (bps)
     kKeyESDS              = 'esds',  // raw data
     kKeyAACProfile        = 'aacp',  // int32_t
     kKeyAVCC              = 'avcc',  // raw data
+    kKeyHVCC              = 'hvcc',  // raw data
     kKeyD263              = 'd263',  // raw data
     kKeyVorbisInfo        = 'vinf',  // raw data
     kKeyVorbisBooks       = 'vboo',  // raw data
+    kKeyOpusHeader        = 'ohdr',  // raw data
+    kKeyOpusCodecDelay    = 'ocod',  // uint64_t (codec delay in ns)
+    kKeyOpusSeekPreRoll   = 'ospr',  // uint64_t (seek preroll in ns)
     kKeyWantsNALFragments = 'NALf',
     kKeyIsSyncFrame       = 'sync',  // int32_t (bool)
     kKeyIsCodecConfig     = 'conf',  // int32_t (bool)
@@ -183,20 +167,22 @@ enum {
 
     kKeyPssh              = 'pssh',  // raw data
 
-    kKeySampleBits        = 'sbit', // int32_t (audio sample bit-width)
-    kKeyMinBlkSize        = 'mibs', //int32_t
-    kKeyMaxBlkSize        = 'mabs', //int32_t
-    kKeyMinFrmSize        = 'mifs', //int32_t
-    kKeyMaxFrmSize        = 'mafs', //int32_t
-    kKeyMd5Sum            = 'md5s', //cstring
-#ifdef DTS_CODEC_M_
-    kKeyHPXProcessed      = 'hpxP',
-#endif
+    // Please see MediaFormat.KEY_IS_AUTOSELECT.
+    kKeyTrackIsAutoselect = 'auto', // bool (int32_t)
+    // Please see MediaFormat.KEY_IS_DEFAULT.
+    kKeyTrackIsDefault    = 'dflt', // bool (int32_t)
+    // Similar to MediaFormat.KEY_IS_FORCED_SUBTITLE but pertains to av tracks as well.
+    kKeyTrackIsForced     = 'frcd', // bool (int32_t)
+
+    // Indicate if it is OK to hold on to the MediaBuffer and not
+    // release it immediately
+    kKeyCanDeferRelease   = 'drel', // bool (int32_t)
 };
 
 enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
+    kTypeHVCC        = 'hvcc',
     kTypeD263        = 'd263',
 };
 
@@ -244,6 +230,8 @@ public:
 
     bool findData(uint32_t key, uint32_t *type,
                   const void **data, size_t *size) const;
+
+    bool hasData(uint32_t key) const;
 
     void dumpToLog() const;
 

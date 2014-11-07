@@ -28,8 +28,8 @@ namespace android {
 
 class AudioResamplerCubic : public AudioResampler {
 public:
-    AudioResamplerCubic(int bitDepth, int inChannelCount, int32_t sampleRate) :
-        AudioResampler(bitDepth, inChannelCount, sampleRate, MED_QUALITY) {
+    AudioResamplerCubic(int inChannelCount, int32_t sampleRate) :
+        AudioResampler(inChannelCount, sampleRate, MED_QUALITY) {
     }
     virtual void resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider);
@@ -43,7 +43,6 @@ private:
         int32_t a, b, c, y0, y1, y2, y3;
     } state;
     void init();
-    void reset ();
     void resampleMono16(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider);
     void resampleStereo16(int32_t* out, size_t outFrameCount,

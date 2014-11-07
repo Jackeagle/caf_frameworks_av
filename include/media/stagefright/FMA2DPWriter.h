@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  * Copyright (C) 2010 The Android Open Source Project *
  *
@@ -25,6 +25,7 @@
 #include <utils/threads.h>
 #include <media/AudioRecord.h>
 #include <utils/List.h>
+#include <utils/Vector.h>
 #include <semaphore.h>
 #include <media/mediarecorder.h>
 
@@ -36,14 +37,12 @@ namespace android {
 struct MediaSource;
 struct MetaData;
 
-struct audioBufferstruct {
-   public:
-   audioBufferstruct (void *buff, size_t bufflen)
-      :audioBuffer(buff), bufferlen(bufflen){}
+struct FMData {
+   FMData(void *buffer, size_t len) :audioBuffer(buffer), bufferLen(len) {}
 
    void  *audioBuffer;
-   size_t bufferlen;
- };
+   size_t bufferLen;
+};
 
 struct FMA2DPWriter : public MediaWriter {
     FMA2DPWriter();
@@ -60,10 +59,11 @@ protected:
     virtual ~FMA2DPWriter();
 
 private:
-    List<audioBufferstruct > mFreeQ,mDataQ;
-    Mutex mFreeQLock,mDataQLock;
-    sem_t mReaderThreadWakeupsem,mWriterThreadWakeupsem;
-    pthread_t mReaderThread,mWriterThread;
+    List<int32_t> mFreeList, mDataList;
+    Vector<FMData *> mFMDataPool;
+    Mutex mLock;
+    Condition mCondVar;
+    pthread_t mReaderThread, mWriterThread;
     bool mStarted;
     volatile bool mDone;
     int32_t mAudioChannels;

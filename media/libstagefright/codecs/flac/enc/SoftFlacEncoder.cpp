@@ -27,6 +27,12 @@
 #define FLAC_COMPRESSION_LEVEL_DEFAULT 5
 #define FLAC_COMPRESSION_LEVEL_MAX     8
 
+#if LOG_NDEBUG
+#define UNUSED_UNLESS_VERBOSE(x) (void)(x)
+#else
+#define UNUSED_UNLESS_VERBOSE(x)
+#endif
+
 namespace android {
 
 template<class T>
@@ -204,7 +210,7 @@ OMX_ERRORTYPE SoftFlacEncoder::internalSetParameter(
 
             mNumChannels = pcmParams->nChannels;
             mSampleRate = pcmParams->nSamplingRate;
-            ALOGV("will encode %ld channels at %ldHz", mNumChannels, mSampleRate);
+            ALOGV("will encode %d channels at %dHz", mNumChannels, mSampleRate);
 
             return configureEncoder();
         }
@@ -241,7 +247,7 @@ OMX_ERRORTYPE SoftFlacEncoder::internalSetParameter(
 
             if (defParams->nPortIndex == 0) {
                 if (defParams->nBufferSize > kMaxInputBufferSize) {
-                    ALOGE("Input buffer size must be at most %zu bytes",
+                    ALOGE("Input buffer size must be at most %d bytes",
                         kMaxInputBufferSize);
                     return OMX_ErrorUnsupportedSetting;
                 }
@@ -257,8 +263,8 @@ OMX_ERRORTYPE SoftFlacEncoder::internalSetParameter(
 }
 
 void SoftFlacEncoder::onQueueFilled(OMX_U32 portIndex) {
-
-    ALOGV("SoftFlacEncoder::onQueueFilled(portIndex=%ld)", portIndex);
+    UNUSED_UNLESS_VERBOSE(portIndex);
+    ALOGV("SoftFlacEncoder::onQueueFilled(portIndex=%d)", portIndex);
 
     if (mSignalledError) {
         return;
@@ -290,7 +296,7 @@ void SoftFlacEncoder::onQueueFilled(OMX_U32 portIndex) {
         }
 
         if (inHeader->nFilledLen > kMaxInputBufferSize) {
-            ALOGE("input buffer too large (%ld).", inHeader->nFilledLen);
+            ALOGE("input buffer too large (%d).", inHeader->nFilledLen);
             mSignalledError = true;
             notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
             return;
@@ -343,16 +349,17 @@ void SoftFlacEncoder::onQueueFilled(OMX_U32 portIndex) {
     }
 }
 
-
 FLAC__StreamEncoderWriteStatus SoftFlacEncoder::onEncodedFlacAvailable(
             const FLAC__byte buffer[],
-            size_t bytes, unsigned samples, unsigned current_frame) {
-    ALOGV("SoftFlacEncoder::onEncodedFlacAvailable(bytes=%d, samples=%d, curr_frame=%d)",
+            size_t bytes, unsigned samples,
+            unsigned current_frame) {
+    UNUSED_UNLESS_VERBOSE(current_frame);
+    ALOGV("SoftFlacEncoder::onEncodedFlacAvailable(bytes=%zu, samples=%u, curr_frame=%u)",
             bytes, samples, current_frame);
 
 #ifdef WRITE_FLAC_HEADER_IN_FIRST_BUFFER
     if (samples == 0) {
-        ALOGI(" saving %d bytes of header", bytes);
+        ALOGI(" saving %zu bytes of header", bytes);
         memcpy(mHeader + mHeaderOffset, buffer, bytes);
         mHeaderOffset += bytes;// will contain header size when finished receiving header
         return FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
@@ -363,7 +370,7 @@ FLAC__StreamEncoderWriteStatus SoftFlacEncoder::onEncodedFlacAvailable(
     if ((samples == 0) || !mEncoderWriteData) {
         // called by the encoder because there's header data to save, but it's not the role
         // of this component (unless WRITE_FLAC_HEADER_IN_FIRST_BUFFER is defined)
-        ALOGV("ignoring %d bytes of header data (samples=%d)", bytes, samples);
+        ALOGV("ignoring %zu bytes of header data (samples=%d)", bytes, samples);
         return FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
     }
 
@@ -384,9 +391,9 @@ FLAC__StreamEncoderWriteStatus SoftFlacEncoder::onEncodedFlacAvailable(
 #endif
 
     // write encoded data
-    ALOGV(" writing %d bytes of encoded data on output port", bytes);
+    ALOGV(" writing %zu bytes of encoded data on output port", bytes);
     if (bytes > outHeader->nAllocLen - outHeader->nOffset - outHeader->nFilledLen) {
-        ALOGE(" not enough space left to write encoded data, dropping %u bytes", bytes);
+        ALOGE(" not enough space left to write encoded data, dropping %zu bytes", bytes);
         // a fatal error would stop the encoding
         return FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
     }
@@ -405,7 +412,7 @@ FLAC__StreamEncoderWriteStatus SoftFlacEncoder::onEncodedFlacAvailable(
 
 
 OMX_ERRORTYPE SoftFlacEncoder::configureEncoder() {
-    ALOGV("SoftFlacEncoder::configureEncoder() numChannel=%ld, sampleRate=%ld",
+    ALOGV("SoftFlacEncoder::configureEncoder() numChannel=%d, sampleRate=%d",
             mNumChannels, mSampleRate);
 
     if (mSignalledError || (mFlacStreamEncoder == NULL)) {
@@ -444,8 +451,12 @@ return_result:
 
 // static
 FLAC__StreamEncoderWriteStatus SoftFlacEncoder::flacEncoderWriteCallback(
-            const FLAC__StreamEncoder *encoder, const FLAC__byte buffer[],
-            size_t bytes, unsigned samples, unsigned current_frame, void *client_data) {
+            const FLAC__StreamEncoder * /* encoder */,
+            const FLAC__byte buffer[],
+            size_t bytes,
+            unsigned samples,
+            unsigned current_frame,
+            void *client_data) {
     return ((SoftFlacEncoder*) client_data)->onEncodedFlacAvailable(
             buffer, bytes, samples, current_frame);
 }

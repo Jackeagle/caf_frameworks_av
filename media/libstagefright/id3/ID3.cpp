@@ -41,9 +41,9 @@ struct MemorySource : public DataSource {
     }
 
     virtual ssize_t readAt(off64_t offset, void *data, size_t size) {
-        off64_t available = (offset >= mSize) ? 0ll : mSize - offset;
+        off64_t available = (offset >= (off64_t)mSize) ? 0ll : mSize - offset;
 
-        size_t copy = (available > size) ? size : available;
+        size_t copy = (available > (off64_t)size) ? size : available;
         memcpy(data, mData + offset, copy);
 
         return copy;
@@ -56,14 +56,14 @@ private:
     DISALLOW_EVIL_CONSTRUCTORS(MemorySource);
 };
 
-ID3::ID3(const sp<DataSource> &source, bool ignoreV1)
+ID3::ID3(const sp<DataSource> &source, bool ignoreV1, off64_t offset)
     : mIsValid(false),
       mData(NULL),
       mSize(0),
       mFirstFrameOffset(0),
       mVersion(ID3_UNKNOWN),
       mRawSize(0) {
-    mIsValid = parseV2(source);
+    mIsValid = parseV2(source, offset);
 
     if (!mIsValid && !ignoreV1) {
         mIsValid = parseV1(source);
@@ -79,7 +79,7 @@ ID3::ID3(const uint8_t *data, size_t size, bool ignoreV1)
       mRawSize(0) {
     sp<MemorySource> source = new MemorySource(data, size);
 
-    mIsValid = parseV2(source);
+    mIsValid = parseV2(source, 0);
 
     if (!mIsValid && !ignoreV1) {
         mIsValid = parseV1(source);
@@ -115,7 +115,7 @@ bool ID3::ParseSyncsafeInteger(const uint8_t encoded[4], size_t *x) {
     return true;
 }
 
-bool ID3::parseV2(const sp<DataSource> &source) {
+bool ID3::parseV2(const sp<DataSource> &source, off64_t offset) {
 struct id3_header {
     char id[3];
     uint8_t version_major;
@@ -126,7 +126,7 @@ struct id3_header {
 
     id3_header header;
     if (source->readAt(
-                0, &header, sizeof(header)) != (ssize_t)sizeof(header)) {
+                offset, &header, sizeof(header)) != (ssize_t)sizeof(header)) {
         return false;
     }
 
@@ -172,7 +172,7 @@ struct id3_header {
     }
 
     if (size > kMaxMetadataSize) {
-        ALOGE("skipping huge ID3 metadata of size %d", size);
+        ALOGE("skipping huge ID3 metadata of size %zu", size);
         return false;
     }
 
@@ -185,7 +185,7 @@ struct id3_header {
     mSize = size;
     mRawSize = mSize + sizeof(header);
 
-    if (source->readAt(sizeof(header), mData, mSize) != (ssize_t)mSize) {
+    if (source->readAt(offset + sizeof(header), mData, mSize) != (ssize_t)mSize) {
         free(mData);
         mData = NULL;
 
@@ -468,49 +468,6 @@ void ID3::Iterator::getID(String8 *id) const {
     }
 }
 
-static void convertISO8859ToString8(
-        const uint8_t *data, size_t size,
-        String8 *s) {
-    size_t utf8len = 0;
-    for (size_t i = 0; i < size; ++i) {
-        if (data[i] == '\0') {
-            size = i;
-            break;
-        } else if (data[i] < 0x80) {
-            ++utf8len;
-        } else {
-            utf8len += 2;
-        }
-    }
-
-    if (utf8len == size) {
-        // Only ASCII characters present.
-
-        s->setTo((const char *)data, size);
-        return;
-    }
-
-    char *tmp = new char[utf8len];
-    char *ptr = tmp;
-    for (size_t i = 0; i < size; ++i) {
-        if (data[i] == '\0') {
-            break;
-        } else if (data[i] < 0x80) {
-            *ptr++ = data[i];
-        } else if (data[i] < 0xc0) {
-            *ptr++ = 0xc2;
-            *ptr++ = data[i];
-        } else {
-            *ptr++ = 0xc3;
-            *ptr++ = data[i] - 64;
-        }
-    }
-
-    s->setTo(tmp, utf8len);
-
-    delete[] tmp;
-    tmp = NULL;
-}
 
 // the 2nd argument is used to get the data following the \0 in a comment field
 void ID3::Iterator::getString(String8 *id, String8 *comment) const {
@@ -543,7 +500,9 @@ void ID3::Iterator::getstring(String8 *id, bool otherdata) const {
             return;
         }
 
-        convertISO8859ToString8(frameData, mFrameSize, id);
+        // this is supposed to be ISO-8859-1, but pass it up as-is to the caller, who will figure
+        // out the real encoding
+        id->setTo((const char*)frameData, mFrameSize);
         return;
     }
 
@@ -561,13 +520,13 @@ void ID3::Iterator::getstring(String8 *id, bool otherdata) const {
     }
 
     if (encoding == 0x00) {
-        // ISO 8859-1
-        convertISO8859ToString8(frameData + 1, n, id);
+        // supposedly ISO 8859-1
+        id->setTo((const char*)frameData + 1, n);
     } else if (encoding == 0x03) {
-        // UTF-8
+        // supposedly UTF-8
         id->setTo((const char *)(frameData + 1), n);
     } else if (encoding == 0x02) {
-        // UTF-16 BE, no byte order mark.
+        // supposedly UTF-16 BE, no byte order mark.
         // API wants number of characters, not number of bytes...
         int len = n / 2;
         const char16_t *framedata = (const char16_t *) (frameData + 1);
@@ -583,7 +542,7 @@ void ID3::Iterator::getstring(String8 *id, bool otherdata) const {
         if (framedatacopy != NULL) {
             delete[] framedatacopy;
         }
-    } else {
+    } else if (encoding == 0x01) {
         // UCS-2
         // API wants number of characters, not number of bytes...
         int len = n / 2;
@@ -602,7 +561,27 @@ void ID3::Iterator::getstring(String8 *id, bool otherdata) const {
             framedata++;
             len--;
         }
-        id->setTo(framedata, len);
+
+        // check if the resulting data consists entirely of 8-bit values
+        bool eightBit = true;
+        for (int i = 0; i < len; i++) {
+            if (framedata[i] > 0xff) {
+                eightBit = false;
+                break;
+            }
+        }
+        if (eightBit) {
+            // collapse to 8 bit, then let the media scanner client figure out the real encoding
+            char *frame8 = new char[len];
+            for (int i = 0; i < len; i++) {
+                frame8[i] = framedata[i];
+            }
+            id->setTo(frame8, len);
+            delete [] frame8;
+        } else {
+            id->setTo(framedata, len);
+        }
+
         if (framedatacopy != NULL) {
             delete[] framedatacopy;
         }
@@ -654,8 +633,8 @@ void ID3::Iterator::findFrame() {
             mFrameSize += 6;
 
             if (mOffset + mFrameSize > mParent.mSize) {
-                ALOGV("partial frame at offset %d (size = %d, bytes-remaining = %d)",
-                     mOffset, mFrameSize, mParent.mSize - mOffset - 6);
+                ALOGV("partial frame at offset %zu (size = %zu, bytes-remaining = %zu)",
+                    mOffset, mFrameSize, mParent.mSize - mOffset - (size_t)6);
                 return;
             }
 
@@ -695,8 +674,8 @@ void ID3::Iterator::findFrame() {
             mFrameSize = 10 + baseSize;
 
             if (mOffset + mFrameSize > mParent.mSize) {
-                ALOGV("partial frame at offset %d (size = %d, bytes-remaining = %d)",
-                     mOffset, mFrameSize, mParent.mSize - mOffset - 10);
+                ALOGV("partial frame at offset %zu (size = %zu, bytes-remaining = %zu)",
+                    mOffset, mFrameSize, mParent.mSize - mOffset - (size_t)10);
                 return;
             }
 

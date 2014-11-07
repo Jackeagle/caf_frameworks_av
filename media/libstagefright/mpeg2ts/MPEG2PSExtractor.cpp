@@ -12,25 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This file was modified by Dolby Laboratories, Inc. The portions of the
- * code that are surrounded by "DOLBY..." are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2011-2014 Dolby Laboratories, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
  */
 
 //#define LOG_NDEBUG 0
@@ -54,6 +35,8 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <utils/String8.h>
+
+#include <inttypes.h>
 
 namespace android {
 
@@ -149,7 +132,8 @@ sp<MediaSource> MPEG2PSExtractor::getTrack(size_t index) {
     return new WrappedTrack(this, mTracks.valueAt(index));
 }
 
-sp<MetaData> MPEG2PSExtractor::getTrackMetaData(size_t index, uint32_t flags) {
+sp<MetaData> MPEG2PSExtractor::getTrackMetaData(
+        size_t index, uint32_t /* flags */) {
     if (index >= mTracks.size()) {
         return NULL;
     }
@@ -427,7 +411,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             PTS |= br.getBits(15);
             CHECK_EQ(br.getBits(1), 1u);
 
-            ALOGV("PTS = %llu", PTS);
+            ALOGV("PTS = %" PRIu64, PTS);
             // ALOGI("PTS = %.2f secs", PTS / 90000.0f);
 
             optional_bytes_remaining -= 5;
@@ -444,7 +428,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
                 DTS |= br.getBits(15);
                 CHECK_EQ(br.getBits(1), 1u);
 
-                ALOGV("DTS = %llu", DTS);
+                ALOGV("DTS = %" PRIu64, DTS);
 
                 optional_bytes_remaining -= 5;
             }
@@ -462,7 +446,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             ESCR |= br.getBits(15);
             CHECK_EQ(br.getBits(1), 1u);
 
-            ALOGV("ESCR = %llu", ESCR);
+            ALOGV("ESCR = %" PRIu64, ESCR);
             /* unsigned ESCR_extension = */br.getBits(9);
 
             CHECK_EQ(br.getBits(1), 1u);
@@ -491,7 +475,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
 
         if (br.numBitsLeft() < dataLength * 8) {
             ALOGE("PES packet does not carry enough data to contain "
-                 "payload. (numBitsLeft = %d, required = %d)",
+                 "payload. (numBitsLeft = %zu, required = %u)",
                  br.numBitsLeft(), dataLength * 8);
 
             return ERROR_MALFORMED;
@@ -570,14 +554,6 @@ MPEG2PSExtractor::Track::Track(
             mode = ElementaryStreamQueue::MPEG_AUDIO;
             break;
 
-#if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
-        case ATSParser::STREAMTYPE_DDP_AC3_AUDIO:
-            mode = ElementaryStreamQueue::DDP_AC3_AUDIO;
-            break;
-        case ATSParser::STREAMTYPE_DDP_EC3_AUDIO:
-            mode = ElementaryStreamQueue::DDP_EC3_AUDIO;
-            break;
-#endif // DOLBY_END
         case ATSParser::STREAMTYPE_MPEG1_VIDEO:
         case ATSParser::STREAMTYPE_MPEG2_VIDEO:
             mode = ElementaryStreamQueue::MPEG_VIDEO;
@@ -652,7 +628,7 @@ status_t MPEG2PSExtractor::Track::read(
 
 status_t MPEG2PSExtractor::Track::appendPESData(
         unsigned PTS_DTS_flags,
-        uint64_t PTS, uint64_t DTS,
+        uint64_t PTS, uint64_t /* DTS */,
         const uint8_t *data, size_t size) {
     if (mQueue == NULL) {
         return OK;

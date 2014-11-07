@@ -16,10 +16,14 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "StagefrightMetadataRetriever"
+
+#include <inttypes.h>
+
 #include <utils/Log.h>
 
 #include "include/StagefrightMetadataRetriever.h"
 
+#include <media/IMediaHTTPService.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/ColorConverter.h>
 #include <media/stagefright/DataSource.h>
@@ -28,6 +32,9 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/OMXCodec.h>
 #include <media/stagefright/MediaDefs.h>
+#include <media/stagefright/Utils.h>
+#include "include/ExtendedUtils.h"
+#include <CharacterEncodingDetector.h>
 
 namespace android {
 
@@ -50,15 +57,17 @@ StagefrightMetadataRetriever::~StagefrightMetadataRetriever() {
 }
 
 status_t StagefrightMetadataRetriever::setDataSource(
-        const char *uri, const KeyedVector<String8, String8> *headers) {
-    ALOGV("setDataSource(%s)", uri);
+        const sp<IMediaHTTPService> &httpService,
+        const char *uri,
+        const KeyedVector<String8, String8> *headers) {
+    ALOGI("setDataSource(%s)", uriDebugString(uri, false).c_str());
 
     mParsedMetaData = false;
     mMetaData.clear();
     delete mAlbumArt;
     mAlbumArt = NULL;
 
-    mSource = DataSource::CreateFromURI(uri, headers);
+    mSource = DataSource::CreateFromURI(httpService, uri, headers);
 
     if (mSource == NULL) {
         ALOGE("Unable to create data source for '%s'.", uri);
@@ -83,7 +92,10 @@ status_t StagefrightMetadataRetriever::setDataSource(
         int fd, int64_t offset, int64_t length) {
     fd = dup(fd);
 
-    ALOGV("setDataSource(%d, %lld, %lld)", fd, offset, length);
+    ALOGV("setDataSource(%d, %" PRId64 ", %" PRId64 ")", fd, offset, length);
+    if (fd) {
+        ExtendedUtils::printFileName(fd);
+    }
 
     mParsedMetaData = false;
     mMetaData.clear();
@@ -241,7 +253,7 @@ static VideoFrame *extractVideoFrameWithCodecFlags(
             const char *mime;
             CHECK(trackMeta->findCString(kKeyMIMEType, &mime));
 
-            ALOGV("thumbNailTime = %lld us, timeUs = %lld us, mime = %s",
+            ALOGV("thumbNailTime = %" PRId64 " us, timeUs = %" PRId64 " us, mime = %s",
                  thumbNailTime, timeUs, mime);
         }
     }
@@ -324,7 +336,7 @@ static VideoFrame *extractVideoFrameWithCodecFlags(
 VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
         int64_t timeUs, int option) {
 
-    ALOGV("getFrameAtTime: %lld us option: %d", timeUs, option);
+    ALOGV("getFrameAtTime: %" PRId64 " us option: %d", timeUs, option);
 
     if (mExtractor.get() == NULL) {
         ALOGV("no extractor.");
@@ -377,10 +389,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     size_t dataSize;
     if (fileMeta->findData(kKeyAlbumArt, &type, &data, &dataSize)
             && mAlbumArt == NULL) {
-        mAlbumArt = new MediaAlbumArt;
-        mAlbumArt->mSize = dataSize;
-        mAlbumArt->mData = new uint8_t[dataSize];
-        memcpy(mAlbumArt->mData, data, dataSize);
+        mAlbumArt = MediaAlbumArt::fromData(dataSize, data);
     }
 
     VideoFrame *frame =
@@ -413,7 +422,7 @@ MediaAlbumArt *StagefrightMetadataRetriever::extractAlbumArt() {
     }
 
     if (mAlbumArt) {
-        return new MediaAlbumArt(*mAlbumArt);
+        return mAlbumArt->clone();
     }
 
     return NULL;
@@ -450,55 +459,71 @@ void StagefrightMetadataRetriever::parseMetaData() {
     struct Map {
         int from;
         int to;
+        const char *name;
     };
     static const Map kMap[] = {
-        { kKeyMIMEType, METADATA_KEY_MIMETYPE },
-        { kKeyCDTrackNumber, METADATA_KEY_CD_TRACK_NUMBER },
-        { kKeyDiscNumber, METADATA_KEY_DISC_NUMBER },
-        { kKeyAlbum, METADATA_KEY_ALBUM },
-        { kKeyArtist, METADATA_KEY_ARTIST },
-        { kKeyAlbumArtist, METADATA_KEY_ALBUMARTIST },
-        { kKeyAuthor, METADATA_KEY_AUTHOR },
-        { kKeyComposer, METADATA_KEY_COMPOSER },
-        { kKeyDate, METADATA_KEY_DATE },
-        { kKeyGenre, METADATA_KEY_GENRE },
-        { kKeyTitle, METADATA_KEY_TITLE },
-        { kKeyYear, METADATA_KEY_YEAR },
-        { kKeyWriter, METADATA_KEY_WRITER },
-        { kKeyCompilation, METADATA_KEY_COMPILATION },
-        { kKeyLocation, METADATA_KEY_LOCATION },
+        { kKeyMIMEType, METADATA_KEY_MIMETYPE, NULL },
+        { kKeyCDTrackNumber, METADATA_KEY_CD_TRACK_NUMBER, "tracknumber" },
+        { kKeyDiscNumber, METADATA_KEY_DISC_NUMBER, "discnumber" },
+        { kKeyAlbum, METADATA_KEY_ALBUM, "album" },
+        { kKeyArtist, METADATA_KEY_ARTIST, "artist" },
+        { kKeyAlbumArtist, METADATA_KEY_ALBUMARTIST, "albumartist" },
+        { kKeyAuthor, METADATA_KEY_AUTHOR, NULL },
+        { kKeyComposer, METADATA_KEY_COMPOSER, "composer" },
+        { kKeyDate, METADATA_KEY_DATE, NULL },
+        { kKeyGenre, METADATA_KEY_GENRE, "genre" },
+        { kKeyTitle, METADATA_KEY_TITLE, "title" },
+        { kKeyYear, METADATA_KEY_YEAR, "year" },
+        { kKeyWriter, METADATA_KEY_WRITER, "writer" },
+        { kKeyCompilation, METADATA_KEY_COMPILATION, "compilation" },
+        { kKeyLocation, METADATA_KEY_LOCATION, NULL },
     };
+
     static const size_t kNumMapEntries = sizeof(kMap) / sizeof(kMap[0]);
+
+    CharacterEncodingDetector *detector = new CharacterEncodingDetector();
 
     for (size_t i = 0; i < kNumMapEntries; ++i) {
         const char *value;
         if (meta->findCString(kMap[i].from, &value)) {
-            mMetaData.add(kMap[i].to, String8(value));
-            continue;
+            if (kMap[i].name) {
+                // add to charset detector
+                detector->addTag(kMap[i].name, value);
+            } else {
+                // directly add to output list
+                mMetaData.add(kMap[i].to, String8(value));
+            }
         }
-        //For some wma clips, Artist info exists in Author bytes instead of Artist byte
-        //Put the Author into Artist in this case
-        if((kMap[i].from == kKeyArtist) &&
-                meta->findCString(kKeyAuthor, &value))
-            mMetaData.add(kMap[i].to, String8(value));
-
     }
+
+    detector->detectAndConvert();
+    int size = detector->size();
+    if (size) {
+        for (int i = 0; i < size; i++) {
+            const char *name;
+            const char *value;
+            detector->getTag(i, &name, &value);
+            for (size_t j = 0; j < kNumMapEntries; ++j) {
+                if (kMap[j].name && !strcmp(kMap[j].name, name)) {
+                    mMetaData.add(kMap[j].to, String8(value));
+                }
+            }
+        }
+    }
+    delete detector;
 
     const void *data;
     uint32_t type;
     size_t dataSize;
     if (meta->findData(kKeyAlbumArt, &type, &data, &dataSize)
             && mAlbumArt == NULL) {
-        mAlbumArt = new MediaAlbumArt;
-        mAlbumArt->mSize = dataSize;
-        mAlbumArt->mData = new uint8_t[dataSize];
-        memcpy(mAlbumArt->mData, data, dataSize);
+        mAlbumArt = MediaAlbumArt::fromData(dataSize, data);
     }
 
     size_t numTracks = mExtractor->countTracks();
 
     char tmp[32];
-    sprintf(tmp, "%d", numTracks);
+    sprintf(tmp, "%zu", numTracks);
 
     mMetaData.add(METADATA_KEY_NUM_TRACKS, String8(tmp));
 
@@ -540,9 +565,13 @@ void StagefrightMetadataRetriever::parseMetaData() {
                 }
             } else if (!strcasecmp(mime, MEDIA_MIMETYPE_TEXT_3GPP)) {
                 const char *lang;
-                trackMeta->findCString(kKeyMediaLanguage, &lang);
-                timedTextLang.append(String8(lang));
-                timedTextLang.append(String8(":"));
+                bool success = trackMeta->findCString(kKeyMediaLanguage, &lang);
+                if (success) {
+                    timedTextLang.append(String8(lang));
+                    timedTextLang.append(String8(":"));
+                } else {
+                    ALOGE("No language found for timed text");
+                }
             }
         }
     }
@@ -555,7 +584,7 @@ void StagefrightMetadataRetriever::parseMetaData() {
     }
 
     // The duration value is a string representing the duration in ms.
-    sprintf(tmp, "%lld", (maxDurationUs + 500) / 1000);
+    sprintf(tmp, "%" PRId64, (maxDurationUs + 500) / 1000);
     mMetaData.add(METADATA_KEY_DURATION, String8(tmp));
 
     if (hasAudio) {
@@ -583,7 +612,7 @@ void StagefrightMetadataRetriever::parseMetaData() {
         if (mSource->getSize(&sourceSize) == OK) {
             int64_t avgBitRate = (int64_t)(sourceSize * 8E6 / maxDurationUs);
 
-            sprintf(tmp, "%lld", avgBitRate);
+            sprintf(tmp, "%" PRId64, avgBitRate);
             mMetaData.add(METADATA_KEY_BITRATE, String8(tmp));
         }
     }

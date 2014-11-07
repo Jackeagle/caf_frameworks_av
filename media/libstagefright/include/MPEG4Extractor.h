@@ -39,6 +39,14 @@ struct SidxEntry {
     uint32_t mDurationUs;
 };
 
+struct Trex {
+    uint32_t track_ID;
+    uint32_t default_sample_description_index;
+    uint32_t default_sample_duration;
+    uint32_t default_sample_size;
+    uint32_t default_sample_flags;
+};
+
 class MPEG4Extractor : public MediaExtractor {
 public:
     // Extractor assumes ownership of "source".
@@ -74,10 +82,11 @@ private:
     };
 
     Vector<SidxEntry> mSidxEntries;
-    uint64_t mSidxDuration;
     off64_t mMoofOffset;
 
     Vector<PsshInfo> mPssh;
+
+    Vector<Trex> mTrex;
 
     sp<DataSource> mDataSource;
     status_t mInitCheck;
@@ -95,7 +104,9 @@ private:
 
     status_t readMetaData();
     status_t parseChunk(off64_t *offset, int depth);
-    status_t parseMetaData(off64_t offset, size_t size);
+    status_t parseITunesMetaData(off64_t offset, size_t size);
+    status_t parse3GPPMetaData(off64_t offset, size_t size, int depth);
+    void parseID3v2MetaData(off64_t offset);
 
     status_t updateAudioTrackInfoFromESDS_MPEG4Audio(
             const void *esds_data, size_t esds_size);

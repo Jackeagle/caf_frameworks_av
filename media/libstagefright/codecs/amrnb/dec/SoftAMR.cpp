@@ -274,7 +274,7 @@ static size_t getFrameSize(unsigned FT) {
     return frameSize;
 }
 
-void SoftAMR::onQueueFilled(OMX_U32 portIndex) {
+void SoftAMR::onQueueFilled(OMX_U32 /* portIndex */) {
     List<BufferInfo *> &inQueue = getPortQueue(0);
     List<BufferInfo *> &outQueue = getPortQueue(1);
 
@@ -353,7 +353,7 @@ void SoftAMR::onQueueFilled(OMX_U32 portIndex) {
 
             size_t frameSize = getFrameSize(mode);
             if (inHeader->nFilledLen < frameSize) {
-                ALOGE("Filled length vs frameSize %d vs %d. Corrupt clip?",
+                ALOGE("Filled length vs frameSize %u vs %lu. Corrupt clip?",
                    inHeader->nFilledLen, frameSize);
 
                 notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
@@ -435,14 +435,7 @@ void SoftAMR::onQueueFilled(OMX_U32 portIndex) {
     }
 }
 
-void SoftAMR::onPortFlushCompleted(OMX_U32 portIndex) {
-        ALOGV("onPortFlushCompleted portindex %d, resetting frame ",portIndex);
-        if(portIndex == 0) {
-           if(mMode == MODE_NARROW)
-              Speech_Decode_Frame_reset(mState);
-           else
-              pvDecoder_AmrWb_Reset(mState, 0);
-        }
+void SoftAMR::onPortFlushCompleted(OMX_U32 /* portIndex */) {
 }
 
 void SoftAMR::onPortEnableCompleted(OMX_U32 portIndex, bool enabled) {

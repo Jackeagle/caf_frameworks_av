@@ -34,6 +34,7 @@ struct M3UParser : public RefBase {
     bool isVariantPlaylist() const;
     bool isComplete() const;
     bool isEvent() const;
+    size_t getDiscontinuitySeq() const;
 
     sp<AMessage> meta();
 
@@ -42,12 +43,11 @@ struct M3UParser : public RefBase {
 
     void pickRandomMediaItems();
     status_t selectTrack(size_t index, bool select);
-    status_t getTrackInfo(Parcel* reply) const;
+    size_t getTrackCount() const;
+    sp<AMessage> getTrackInfo(size_t index) const;
     ssize_t getSelectedIndex() const;
 
-    bool getAudioURI(size_t index, AString *uri) const;
-    bool getVideoURI(size_t index, AString *uri) const;
-    bool getSubtitleURI(size_t index, AString *uri) const;
+    bool getTypeURI(size_t index, const char *key, AString *uri) const;
 
 protected:
     virtual ~M3UParser();
@@ -67,6 +67,7 @@ private:
     bool mIsVariantPlaylist;
     bool mIsComplete;
     bool mIsEvent;
+    size_t mDiscontinuitySeq;
 
     sp<AMessage> mMeta;
     Vector<Item> mItems;
@@ -95,10 +96,14 @@ private:
 
     status_t parseMedia(const AString &line);
 
-    bool getTypeURI(size_t index, const char *key, AString *uri) const;
+    static status_t parseDiscontinuitySequence(const AString &line, size_t *seq);
 
     static status_t ParseInt32(const char *s, int32_t *x);
     static status_t ParseDouble(const char *s, double *x);
+
+    static bool isQuotedString(const AString &str);
+    static AString unquoteString(const AString &str);
+    static bool codecIsType(const AString &codec, const char *type);
 
     DISALLOW_EVIL_CONSTRUCTORS(M3UParser);
 };

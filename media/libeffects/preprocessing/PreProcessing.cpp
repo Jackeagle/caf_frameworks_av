@@ -77,7 +77,7 @@ struct preproc_ops_s {
     void (* enable)(preproc_effect_t *fx);
     void (* disable)(preproc_effect_t *fx);
     int (* set_parameter)(preproc_effect_t *fx, void *param, void *value);
-    int (* get_parameter)(preproc_effect_t *fx, void *param, size_t *size, void *value);
+    int (* get_parameter)(preproc_effect_t *fx, void *param, uint32_t *size, void *value);
     int (* set_device)(preproc_effect_t *fx, uint32_t device);
 };
 
@@ -291,7 +291,7 @@ int  AgcCreate(preproc_effect_t *effect)
 
 int AgcGetParameter(preproc_effect_t *effect,
                     void *pParam,
-                    size_t *pValueSize,
+                    uint32_t *pValueSize,
                     void *pValue)
 {
     int status = 0;
@@ -452,9 +452,9 @@ int  AecCreate(preproc_effect_t *effect)
     return 0;
 }
 
-int AecGetParameter(preproc_effect_t     *effect,
+int AecGetParameter(preproc_effect_t  *effect,
                     void              *pParam,
-                    size_t            *pValueSize,
+                    uint32_t          *pValueSize,
                     void              *pValue)
 {
     int status = 0;
@@ -575,9 +575,9 @@ int  NsCreate(preproc_effect_t *effect)
     return 0;
 }
 
-int NsGetParameter(preproc_effect_t     *effect,
+int NsGetParameter(preproc_effect_t  *effect,
                    void              *pParam,
-                   size_t            *pValueSize,
+                   uint32_t          *pValueSize,
                    void              *pValue)
 {
     int status = 0;
@@ -879,8 +879,8 @@ int Session_ReleaseEffect(preproc_session_t *session,
 int Session_SetConfig(preproc_session_t *session, effect_config_t *config)
 {
     uint32_t sr;
-    uint32_t inCnl = popcount(config->inputCfg.channels);
-    uint32_t outCnl = popcount(config->outputCfg.channels);
+    uint32_t inCnl = audio_channel_count_from_out_mask(config->inputCfg.channels);
+    uint32_t outCnl = audio_channel_count_from_out_mask(config->outputCfg.channels);
 
     if (config->inputCfg.samplingRate != config->outputCfg.samplingRate ||
         config->inputCfg.format != config->outputCfg.format ||
@@ -1035,7 +1035,7 @@ int Session_SetReverseConfig(preproc_session_t *session, effect_config_t *config
             config->inputCfg.format != AUDIO_FORMAT_PCM_16_BIT) {
         return -EINVAL;
     }
-    uint32_t inCnl = popcount(config->inputCfg.channels);
+    uint32_t inCnl = audio_channel_count_from_out_mask(config->inputCfg.channels);
     int status = session->apm->set_num_reverse_channels(inCnl);
     if (status < 0) {
         return -EINVAL;
@@ -1233,8 +1233,8 @@ int PreProcessingFx_Process(effect_handle_t     self,
             if (session->framesIn < session->frameCount) {
                 return 0;
             }
-            size_t frIn = session->framesIn;
-            size_t frOut = session->apmFrameCount;
+            spx_uint32_t frIn = session->framesIn;
+            spx_uint32_t frOut = session->apmFrameCount;
             if (session->inChannelCount == 1) {
                 speex_resampler_process_int(session->inResampler,
                                             0,
@@ -1290,8 +1290,8 @@ int PreProcessingFx_Process(effect_handle_t     self,
         }
 
         if (session->outResampler != NULL) {
-            size_t frIn = session->apmFrameCount;
-            size_t frOut = session->frameCount;
+            spx_uint32_t frIn = session->apmFrameCount;
+            spx_uint32_t frOut = session->frameCount;
             if (session->inChannelCount == 1) {
                 speex_resampler_process_int(session->outResampler,
                                     0,
@@ -1453,7 +1453,7 @@ int PreProcessingFx_Command(effect_handle_t  self,
 
             if (effect->ops->get_parameter) {
                 p->status = effect->ops->get_parameter(effect, p->data,
-                                                       (size_t  *)&p->vsize,
+                                                       &p->vsize,
                                                        p->data + voffset);
                 *replySize = sizeof(effect_param_t) + voffset + p->vsize;
             }
@@ -1754,8 +1754,8 @@ int PreProcessingFx_ProcessReverse(effect_handle_t     self,
             if (session->framesRev < session->frameCount) {
                 return 0;
             }
-            size_t frIn = session->framesRev;
-            size_t frOut = session->apmFrameCount;
+            spx_uint32_t frIn = session->framesRev;
+            spx_uint32_t frOut = session->apmFrameCount;
             if (session->inChannelCount == 1) {
                 speex_resampler_process_int(session->revResampler,
                                             0,
@@ -1892,13 +1892,13 @@ int PreProcessingLib_GetDescriptor(const effect_uuid_t *uuid,
 // This is the only symbol that needs to be exported
 __attribute__ ((visibility ("default")))
 audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
-    tag : AUDIO_EFFECT_LIBRARY_TAG,
-    version : EFFECT_LIBRARY_API_VERSION,
-    name : "Audio Preprocessing Library",
-    implementor : "The Android Open Source Project",
-    create_effect : PreProcessingLib_Create,
-    release_effect : PreProcessingLib_Release,
-    get_descriptor : PreProcessingLib_GetDescriptor
+    .tag = AUDIO_EFFECT_LIBRARY_TAG,
+    .version = EFFECT_LIBRARY_API_VERSION,
+    .name = "Audio Preprocessing Library",
+    .implementor = "The Android Open Source Project",
+    .create_effect = PreProcessingLib_Create,
+    .release_effect = PreProcessingLib_Release,
+    .get_descriptor = PreProcessingLib_GetDescriptor
 };
 
 }; // extern "C"

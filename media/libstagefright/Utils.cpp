@@ -1,7 +1,5 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
- * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +17,13 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "Utils"
 #include <utils/Log.h>
+#include <ctype.h>
 
 #include "include/ESDS.h"
 
 #include <arpa/inet.h>
 #include <cutils/properties.h>
+#include <media/openmax/OMX_Audio.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -36,8 +36,13 @@
 #include <media/AudioParameter.h>
 #include <media/stagefright/ExtendedCodec.h>
 
+#include "include/ExtendedUtils.h"
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMediaDefs.h"
+#include "QCMetaData.h"
+#if defined(FLAC_OFFLOAD_ENABLED) || defined(PCM_OFFLOAD_ENABLED_24)
+#include "audio_defs.h"
+#endif
 #endif
 
 namespace android {
@@ -90,6 +95,11 @@ status_t convertMetaDataToMessage(
         msg->setInt64("durationUs", durationUs);
     }
 
+    int avgBitRate;
+    if (meta->findInt32(kKeyBitRate, &avgBitRate)) {
+        msg->setInt32("bit-rate", avgBitRate);
+    }
+
     int32_t isSync;
     if (meta->findInt32(kKeyIsSyncFrame, &isSync) && isSync != 0) {
         msg->setInt32("is-sync-frame", 1);
@@ -108,6 +118,35 @@ status_t convertMetaDataToMessage(
                 && meta->findInt32(kKeySARHeight, &sarHeight)) {
             msg->setInt32("sar-width", sarWidth);
             msg->setInt32("sar-height", sarHeight);
+        }
+
+        int32_t colorFormat;
+        if (meta->findInt32(kKeyColorFormat, &colorFormat)) {
+            msg->setInt32("color-format", colorFormat);
+        }
+
+        int32_t stride;
+        if (meta->findInt32(kKeyStride, &stride)) {
+            msg->setInt32("stride", stride);
+        }
+
+        int32_t sliceHeight;
+        if (meta->findInt32(kKeySliceHeight, &sliceHeight)) {
+            msg->setInt32("slice-height", sliceHeight);
+        }
+
+        int32_t cropLeft, cropTop, cropRight, cropBottom;
+        if (meta->findRect(kKeyCropRect,
+                           &cropLeft,
+                           &cropTop,
+                           &cropRight,
+                           &cropBottom)) {
+            msg->setRect("crop", cropLeft, cropTop, cropRight, cropBottom);
+        }
+
+        int32_t rotationDegrees;
+        if (meta->findInt32(kKeyRotation, &rotationDegrees)) {
+            msg->setInt32("rotation-degrees", rotationDegrees);
         }
     } else if (!strncasecmp("audio/", mime, 6)) {
         int32_t numChannels, sampleRate;
@@ -135,11 +174,21 @@ status_t convertMetaDataToMessage(
         if (meta->findInt32(kKeyIsADTS, &isADTS)) {
             msg->setInt32("is-adts", true);
         }
+
+        int32_t aacProfile = -1;
+        if (meta->findInt32(kKeyAACAOT, &aacProfile)) {
+            msg->setInt32("aac-profile", aacProfile);
+        }
     }
 
     int32_t maxInputSize;
     if (meta->findInt32(kKeyMaxInputSize, &maxInputSize)) {
         msg->setInt32("max-input-size", maxInputSize);
+    }
+
+    int32_t rotationDegrees;
+    if (meta->findInt32(kKeyRotation, &rotationDegrees)) {
+        msg->setInt32("rotation-degrees", rotationDegrees);
     }
 
     uint32_t type;
@@ -223,6 +272,56 @@ status_t convertMetaDataToMessage(
         buffer->meta()->setInt32("csd", true);
         buffer->meta()->setInt64("timeUs", 0);
         msg->setBuffer("csd-1", buffer);
+    } else if (meta->findData(kKeyHVCC, &type, &data, &size)) {
+        const uint8_t *ptr = (const uint8_t *)data;
+
+        CHECK(size >= 7);
+        CHECK_EQ((unsigned)ptr[0], 1u);  // configurationVersion == 1
+        uint8_t profile = ptr[1] & 31;
+        uint8_t level = ptr[12];
+        ptr += 22;
+        size -= 22;
+
+
+        size_t numofArrays = (char)ptr[0];
+        ptr += 1;
+        size -= 1;
+        size_t j = 0, i = 0;
+
+        sp<ABuffer> buffer = new ABuffer(1024);
+        buffer->setRange(0, 0);
+
+        for (i = 0; i < numofArrays; i++) {
+            ptr += 1;
+            size -= 1;
+
+            //Num of nals
+            size_t numofNals = U16_AT(ptr);
+
+            ptr += 2;
+            size -= 2;
+
+            for (j = 0; j < numofNals; j++) {
+                CHECK(size >= 2);
+                size_t length = U16_AT(ptr);
+
+                ptr += 2;
+                size -= 2;
+
+                CHECK(size >= length);
+
+                memcpy(buffer->data() + buffer->size(), "\x00\x00\x00\x01", 4);
+                memcpy(buffer->data() + buffer->size() + 4, ptr, length);
+                buffer->setRange(0, buffer->size() + 4 + length);
+
+                ptr += length;
+                size -= length;
+            }
+        }
+        buffer->meta()->setInt32("csd", true);
+        buffer->meta()->setInt64("timeUs", 0);
+        msg->setBuffer("csd-0", buffer);
+
     } else if (meta->findData(kKeyESDS, &type, &data, &size)) {
         ESDS esds((const char *)data, size);
         CHECK_EQ(esds.InitCheck(), (status_t)OK);
@@ -258,6 +357,13 @@ status_t convertMetaDataToMessage(
         buffer->meta()->setInt32("csd", true);
         buffer->meta()->setInt64("timeUs", 0);
         msg->setBuffer("csd-1", buffer);
+    } else if (meta->findData(kKeyOpusHeader, &type, &data, &size)) {
+        sp<ABuffer> buffer = new ABuffer(size);
+        memcpy(buffer->data(), data, size);
+
+        buffer->meta()->setInt32("csd", true);
+        buffer->meta()->setInt64("timeUs", 0);
+        msg->setBuffer("csd-0", buffer);
     }
 
     ExtendedCodec::convertMetaDataToMessage(meta, &msg);
@@ -285,7 +391,7 @@ static size_t reassembleAVCC(const sp<ABuffer> &csd0, const sp<ABuffer> csd1, ch
                 // there can't be another param here, so use all the rest
                 i = csd0->size();
             }
-            ALOGV("block at %d, last was %d", i, lastparamoffset);
+            ALOGV("block at %zu, last was %d", i, lastparamoffset);
             if (lastparamoffset > 0) {
                 int size = i - lastparamoffset;
                 avcc[avccidx++] = size >> 8;
@@ -316,7 +422,7 @@ static size_t reassembleAVCC(const sp<ABuffer> &csd0, const sp<ABuffer> csd1, ch
                 // there can't be another param here, so use all the rest
                 i = csd1->size();
             }
-            ALOGV("block at %d, last was %d", i, lastparamoffset);
+            ALOGV("block at %zu, last was %d", i, lastparamoffset);
             if (lastparamoffset > 0) {
                 int size = i - lastparamoffset;
                 avcc[avccidx++] = size >> 8;
@@ -377,6 +483,9 @@ static void reassembleESDS(const sp<ABuffer> &csd0, char *esds) {
 
 void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     AString mime;
+    if(msg == NULL)
+        return;
+
     if (msg->findString("mime", &mime)) {
         meta->setCString(kKeyMIMEType, mime.c_str());
     } else {
@@ -408,6 +517,25 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
                 && msg->findInt32("sar-height", &sarHeight)) {
             meta->setInt32(kKeySARWidth, sarWidth);
             meta->setInt32(kKeySARHeight, sarHeight);
+        }
+
+        int32_t colorFormat;
+        if (msg->findInt32("color-format", &colorFormat)) {
+            meta->setInt32(kKeyColorFormat, colorFormat);
+        }
+
+        int32_t cropLeft, cropTop, cropRight, cropBottom;
+        if (msg->findRect("crop",
+                          &cropLeft,
+                          &cropTop,
+                          &cropRight,
+                          &cropBottom)) {
+            meta->setRect(kKeyCropRect, cropLeft, cropTop, cropRight, cropBottom);
+        }
+
+        int32_t rotationDegrees;
+        if (msg->findInt32("rotation-degrees", &rotationDegrees)) {
+            meta->setInt32(kKeyRotation, rotationDegrees);
         }
     } else if (mime.startsWith("audio/")) {
         int32_t numChannels;
@@ -447,7 +575,23 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     if (msg->findBuffer("csd-0", &csd0)) {
         if (mime.startsWith("video/")) { // do we need to be stricter than this?
             sp<ABuffer> csd1;
-            if (msg->findBuffer("csd-1", &csd1)) {
+
+            if (mime.startsWith(MEDIA_MIMETYPE_VIDEO_HEVC)) {
+                ALOGV("writing HVCC key value pair");
+                char hvcc[1024];
+                void* reassembledHVCC = NULL;
+                size_t reassembledHVCCBuffSize = 0;
+                if (ExtendedUtils::HEVCMuxer::makeHEVCCodecSpecificData(
+                    csd0->data(), csd0->size(),
+                    &reassembledHVCC, &reassembledHVCCBuffSize) == OK) {
+                    if (reassembledHVCC != NULL) {
+                        meta->setData(kKeyHVCC, kKeyHVCC, reassembledHVCC, reassembledHVCCBuffSize);
+                        free(reassembledHVCC);
+                    }
+                } else {
+                    ALOGE("Failed to reassemble HVCC data");
+                }
+            } else if (msg->findBuffer("csd-1", &csd1)) {
                 char avcc[1024]; // that oughta be enough, right?
                 size_t outsize = reassembleAVCC(csd0, csd1, avcc);
                 meta->setData(kKeyAVCC, kKeyAVCC, avcc, outsize);
@@ -463,6 +607,11 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
             reassembleESDS(csd0, esds);
             meta->setData(kKeyESDS, kKeyESDS, esds, sizeof(esds));
         }
+    }
+
+    int32_t timeScale;
+    if (msg->findInt32("time-scale", &timeScale)) {
+        meta->setInt32(kKeyTimeScale, timeScale);
     }
 
     // XXX TODO add whatever other keys there are
@@ -497,7 +646,6 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     int32_t channelMask = 0;
     int32_t delaySamples = 0;
     int32_t paddingSamples = 0;
-    int32_t isADTS = 0;
 
     AudioParameter param = AudioParameter();
 
@@ -516,9 +664,23 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     if (meta->findInt32(kKeyEncoderPadding, &paddingSamples)) {
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_PADDING_SAMPLES), paddingSamples);
     }
-    if (meta->findInt32(kKeyIsADTS, &isADTS)) {
-        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FORMAT), 0x02 /*SND_AUDIOSTREAMFORMAT_MP4ADTS*/);
+#ifdef ENABLE_AV_ENHANCEMENTS
+#ifdef FLAC_OFFLOAD_ENABLED
+    int32_t minBlkSize, maxBlkSize, minFrmSize, maxFrmSize; //FLAC params
+    if (meta->findInt32(kKeyMinBlkSize, &minBlkSize)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MIN_BLK_SIZE), minBlkSize);
     }
+    if (meta->findInt32(kKeyMaxBlkSize, &maxBlkSize)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MAX_BLK_SIZE), maxBlkSize);
+    }
+    if (meta->findInt32(kKeyMinFrmSize, &minFrmSize)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MIN_FRAME_SIZE), minFrmSize);
+    }
+    if (meta->findInt32(kKeyMaxFrmSize, &maxFrmSize)) {
+        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MAX_FRAME_SIZE), maxFrmSize);
+    }
+#endif
+#endif
 
     ALOGV("sendMetaDataToHal: bitRate %d, sampleRate %d, chanMask %d,"
           "delaySample %d, paddingSample %d", bitRate, sampleRate,
@@ -540,14 +702,17 @@ static const struct mime_conv_t mimeLookup[] = {
     { MEDIA_MIMETYPE_AUDIO_AMR_WB,      AUDIO_FORMAT_AMR_WB },
     { MEDIA_MIMETYPE_AUDIO_AAC,         AUDIO_FORMAT_AAC },
     { MEDIA_MIMETYPE_AUDIO_VORBIS,      AUDIO_FORMAT_VORBIS },
+    { MEDIA_MIMETYPE_AUDIO_OPUS,        AUDIO_FORMAT_OPUS},
 #ifdef ENABLE_AV_ENHANCEMENTS
     { MEDIA_MIMETYPE_AUDIO_AC3,         AUDIO_FORMAT_AC3 },
     { MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS, AUDIO_FORMAT_AMR_WB_PLUS },
     { MEDIA_MIMETYPE_AUDIO_DTS,         AUDIO_FORMAT_DTS },
-    { MEDIA_MIMETYPE_AUDIO_EAC3,        AUDIO_FORMAT_EAC3 },
+    { MEDIA_MIMETYPE_AUDIO_EAC3,        AUDIO_FORMAT_E_AC3 },
     { MEDIA_MIMETYPE_AUDIO_EVRC,        AUDIO_FORMAT_EVRC },
     { MEDIA_MIMETYPE_AUDIO_QCELP,       AUDIO_FORMAT_QCELP },
     { MEDIA_MIMETYPE_AUDIO_WMA,         AUDIO_FORMAT_WMA },
+    { MEDIA_MIMETYPE_AUDIO_FLAC,        AUDIO_FORMAT_FLAC },
+    { MEDIA_MIMETYPE_CONTAINER_QTIFLAC, AUDIO_FORMAT_FLAC },
 #endif
     { 0, AUDIO_FORMAT_INVALID }
 };
@@ -566,17 +731,53 @@ const struct mime_conv_t* p = &mimeLookup[0];
     return BAD_VALUE;
 }
 
+struct aac_format_conv_t {
+    OMX_AUDIO_AACPROFILETYPE eAacProfileType;
+    audio_format_t format;
+};
+
+static const struct aac_format_conv_t profileLookup[] = {
+    { OMX_AUDIO_AACObjectMain,        AUDIO_FORMAT_AAC_MAIN},
+    { OMX_AUDIO_AACObjectLC,          AUDIO_FORMAT_AAC_LC},
+    { OMX_AUDIO_AACObjectSSR,         AUDIO_FORMAT_AAC_SSR},
+    { OMX_AUDIO_AACObjectLTP,         AUDIO_FORMAT_AAC_LTP},
+    { OMX_AUDIO_AACObjectHE,          AUDIO_FORMAT_AAC_HE_V1},
+    { OMX_AUDIO_AACObjectScalable,    AUDIO_FORMAT_AAC_SCALABLE},
+    { OMX_AUDIO_AACObjectERLC,        AUDIO_FORMAT_AAC_ERLC},
+    { OMX_AUDIO_AACObjectLD,          AUDIO_FORMAT_AAC_LD},
+    { OMX_AUDIO_AACObjectHE_PS,       AUDIO_FORMAT_AAC_HE_V2},
+    { OMX_AUDIO_AACObjectELD,         AUDIO_FORMAT_AAC_ELD},
+    { OMX_AUDIO_AACObjectNull,        AUDIO_FORMAT_AAC},
+};
+
+void mapAACProfileToAudioFormat( audio_format_t& format, uint64_t eAacProfile)
+{
+const struct aac_format_conv_t* p = &profileLookup[0];
+    while (p->eAacProfileType != OMX_AUDIO_AACObjectNull) {
+        if (eAacProfile == p->eAacProfileType) {
+            format = p->format;
+            return;
+        }
+        ++p;
+    }
+    format = AUDIO_FORMAT_AAC;
+    return;
+}
+
 bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData>& vMeta,
                       bool isStreaming, audio_stream_type_t streamType)
 {
     const char *mime;
+    if (meta == NULL) {
+        return false;
+    }
     CHECK(meta->findCString(kKeyMIMEType, &mime));
 
     if (hasVideo) {
         const char *vMime;
         CHECK(vMeta->findCString(kKeyMIMEType, &vMime));
 #ifdef ENABLE_AV_ENHANCEMENTS
-        if (!strncmp(vMime, MEDIA_MIMETYPE_VIDEO_HEVC, 10)) {
+        if (!strncmp(vMime, MEDIA_MIMETYPE_VIDEO_HEVC, strlen(MEDIA_MIMETYPE_VIDEO_HEVC))) {
             ALOGD("Do not offload HEVC audio+video playback");
             return false;
         }
@@ -586,13 +787,25 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
     audio_offload_info_t info = AUDIO_INFO_INITIALIZER;
 
     info.format = AUDIO_FORMAT_INVALID;
+    int32_t bitWidth = 16;
+#ifdef ENABLE_AV_ENHANCEMENTS
+#ifdef PCM_OFFLOAD_ENABLED_24
+    if(meta->findInt32(kKeySampleBits, &bitWidth) && 24 == bitWidth)
+        ALOGV("%s Bits per sample is 24", __func__);
+    else
+        ALOGW("%s No Sample Bit info in meta data", __func__);
+#endif
+#endif
     if (mapMimeToAudioFormat(info.format, mime) != OK) {
         ALOGE(" Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format !", mime);
         return false;
     } else {
         // Override audio format for PCM offload
         if (info.format == AUDIO_FORMAT_PCM_16_BIT) {
-            info.format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+            if (16 == bitWidth)
+                info.format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+            else if (24 == bitWidth)
+                info.format = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
         }
         ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
     }
@@ -603,15 +816,11 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         return false;
     }
 
-    // check whether it is ELD/LD/main content -> no offloading
-    // FIXME: this should depend on audio DSP capabilities. mapMimeToAudioFormat() should use the
-    // metadata to refine the AAC format and the audio HAL should only list supported profiles.
+    // Redefine aac format according to its profile
+    // Offloading depends on audio DSP capabilities.
     int32_t aacaot = -1;
     if (meta->findInt32(kKeyAACAOT, &aacaot)) {
-        if (aacaot == 23 || aacaot == 39 || aacaot == 1) {
-            ALOGV("track of type '%s' is ELD/LD/main content", mime);
-            return false;
-        }
+        mapAACProfileToAudioFormat(info.format,(OMX_AUDIO_AACPROFILETYPE) aacaot);
     }
 
     int32_t srate = -1;
@@ -621,7 +830,7 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
     info.sample_rate = srate;
 
     int32_t cmask = 0;
-    if (!meta->findInt32(kKeyChannelMask, &cmask)) {
+    if (!meta->findInt32(kKeyChannelMask, &cmask) || (cmask == 0)) {
         ALOGV("track of type '%s' does not publish channel mask", mime);
 
         // Try a channel count instead
@@ -646,7 +855,7 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
      }
     info.bit_rate = brate;
 
-
+    info.bit_width = bitWidth;
     info.stream_type = streamType;
     info.has_video = hasVideo;
     info.is_streaming = isStreaming;
@@ -654,6 +863,54 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
     // Check if offload is possible for given format, stream type, sample rate,
     // bit rate, duration, video and streaming
     return AudioSystem::isOffloadSupported(info);
+}
+
+AString uriDebugString(const AString &uri, bool incognito) {
+    if (incognito) {
+        return AString("<URI suppressed>");
+    }
+
+    char prop[PROPERTY_VALUE_MAX];
+    if (property_get("media.stagefright.log-uri", prop, "false") &&
+        (!strcmp(prop, "1") || !strcmp(prop, "true"))) {
+        return uri;
+    }
+
+    // find scheme
+    AString scheme;
+    const char *chars = uri.c_str();
+    for (size_t i = 0; i < uri.size(); i++) {
+        const char c = chars[i];
+        if (!isascii(c)) {
+            break;
+        } else if (isalpha(c)) {
+            continue;
+        } else if (i == 0) {
+            // first character must be a letter
+            break;
+        } else if (isdigit(c) || c == '+' || c == '.' || c =='-') {
+            continue;
+        } else if (c != ':') {
+            break;
+        }
+        scheme = AString(uri, 0, i);
+        scheme.append("://<suppressed>");
+        return scheme;
+    }
+    return AString("<no-scheme URI suppressed>");
+}
+
+void printFileName(int fd)
+{
+    if (fd) {
+        char symName[40] = {0};
+        char fileName[256] = {0};
+        snprintf(symName, sizeof(symName), "/proc/%d/fd/%d", getpid(), fd);
+
+        if (readlink( symName, fileName, (sizeof(fileName) - 1)) != -1 ) {
+            ALOGD("printFileName fd(%d) -> %s", fd, fileName);
+        }
+    }
 }
 
 }  // namespace android

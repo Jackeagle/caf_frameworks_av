@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2014, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  * Copyright (C) 2007 The Android Open Source Project
  *
@@ -27,7 +27,7 @@ namespace android {
 
 class AudioResamplerQTI : public AudioResampler {
 public:
-    AudioResamplerQTI(int bitDepth, int inChannelCount, int32_t sampleRate);
+    AudioResamplerQTI(int format, int inChannelCount, int32_t sampleRate);
     ~AudioResamplerQTI();
     void resample(int32_t* out, size_t outFrameCount,
                   AudioBufferProvider* provider);

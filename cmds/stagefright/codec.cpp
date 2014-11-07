@@ -16,6 +16,7 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "codec"
+#include <inttypes.h>
 #include <utils/Log.h>
 
 #include "SimplePlayer.h"
@@ -23,6 +24,7 @@
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
 #include <media/ICrypto.h>
+#include <media/IMediaHTTPService.h>
 #include <media/IMediaPlayerService.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
@@ -75,7 +77,7 @@ static int decode(
     static int64_t kTimeout = 500ll;
 
     sp<NuMediaExtractor> extractor = new NuMediaExtractor;
-    if (extractor->setDataSource(path) != OK) {
+    if (extractor->setDataSource(NULL /* httpService */, path) != OK) {
         fprintf(stderr, "unable to instantiate extractor.\n");
         return 1;
     }
@@ -291,13 +293,13 @@ static int decode(
         CHECK_EQ((status_t)OK, state->mCodec->release());
 
         if (state->mIsAudio) {
-            printf("track %d: %lld bytes received. %.2f KB/sec\n",
+            printf("track %zu: %" PRId64 " bytes received. %.2f KB/sec\n",
                    i,
                    state->mNumBytesDecoded,
                    state->mNumBytesDecoded * 1E6 / 1024 / elapsedTimeUs);
         } else {
-            printf("track %d: %lld frames decoded, %.2f fps. %lld bytes "
-                   "received. %.2f KB/sec\n",
+            printf("track %zu: %" PRId64 " frames decoded, %.2f fps. %" PRId64
+                    " bytes received. %.2f KB/sec\n",
                    i,
                    state->mNumBuffersDecoded,
                    state->mNumBuffersDecoded * 1E6 / elapsedTimeUs,

@@ -63,6 +63,7 @@ struct AwesomePlayer {
     void setUID(uid_t uid);
 
     status_t setDataSource(
+            const sp<IMediaHTTPService> &httpService,
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
 
@@ -142,8 +143,6 @@ private:
         TEXTPLAYER_INITIALIZED  = 0x20000,
 
         SLOW_DECODER_HACK   = 0x40000,
-
-        NO_AVSYNC   = 0x80000,
     };
 
     mutable Mutex mLock;
@@ -164,6 +163,7 @@ private:
     SystemTimeSource mSystemTimeSource;
     TimeSource *mTimeSource;
 
+    sp<IMediaHTTPService> mHTTPService;
     String8 mUri;
     KeyedVector<String8, String8> mUriHeaders;
 
@@ -176,6 +176,7 @@ private:
     bool mVideoRendererIsPreview;
     int32_t mMediaRenderingStartGeneration;
     int32_t mStartGeneration;
+    ssize_t mActiveVideoTrackIndex;
 
     ssize_t mActiveAudioTrackIndex;
     sp<MediaSource> mAudioTrack;
@@ -194,6 +195,7 @@ private:
 
     int64_t mTimeSourceDeltaUs;
     int64_t mVideoTimeUs;
+    int64_t mVideoFrameDeltaUs;
 
     enum SeekType {
         NO_SEEK,
@@ -250,11 +252,13 @@ private:
 
     int64_t mLastVideoTimeUs;
     TimedTextDriver *mTextDriver;
+    ssize_t mActiveTextTrackIndex;
 
     sp<WVMExtractor> mWVMExtractor;
     sp<MediaExtractor> mExtractor;
 
     status_t setDataSource_l(
+            const sp<IMediaHTTPService> &httpService,
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
 
@@ -328,7 +332,6 @@ private:
     void printStats();
     int64_t getTimeOfDayUs();
     bool mStatistics;
-    int64_t mLateAVSyncMargin;
 
     struct TrackStat {
         String8 mMIME;
@@ -393,8 +396,6 @@ private:
 
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
-    bool mReadRetry;
-    bool mCustomAVSync;
 };
 
 }  // namespace android

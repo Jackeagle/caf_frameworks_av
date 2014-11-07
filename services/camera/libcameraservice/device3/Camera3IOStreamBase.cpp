@@ -18,8 +18,7 @@
 #define ATRACE_TAG ATRACE_TAG_CAMERA
 //#define LOG_NDEBUG 0
 
-// This is needed for stdint.h to define INT64_MAX in C++
-#define __STDC_LIMIT_MACROS
+#include <inttypes.h>
 
 #include <utils/Log.h>
 #include <utils/Trace.h>
@@ -35,7 +34,8 @@ Camera3IOStreamBase::Camera3IOStreamBase(int id, camera3_stream_type_t type,
         Camera3Stream(id, type,
                 width, height, maxSize, format),
         mTotalBufferCount(0),
-        mDequeuedBufferCount(0),
+        mHandoutTotalBufferCount(0),
+        mHandoutOutputBufferCount(0),
         mFrameCount(0),
         mLastTimestamp(0) {
 
@@ -54,10 +54,10 @@ Camera3IOStreamBase::~Camera3IOStreamBase() {
 
 bool Camera3IOStreamBase::hasOutstandingBuffersLocked() const {
     nsecs_t signalTime = mCombinedFence->getSignalTime();
-    ALOGV("%s: Stream %d: Has %d outstanding buffers,"
-            " buffer signal time is %lld",
-            __FUNCTION__, mId, mDequeuedBufferCount, signalTime);
-    if (mDequeuedBufferCount > 0 || signalTime == INT64_MAX) {
+    ALOGV("%s: Stream %d: Has %zu outstanding buffers,"
+            " buffer signal time is %" PRId64,
+            __FUNCTION__, mId, mHandoutTotalBufferCount, signalTime);
+    if (mHandoutTotalBufferCount > 0 || signalTime == INT64_MAX) {
         return true;
     }
     return false;
@@ -70,13 +70,13 @@ void Camera3IOStreamBase::dump(int fd, const Vector<String16> &args) const {
     lines.appendFormat("      Dims: %d x %d, format 0x%x\n",
             camera3_stream::width, camera3_stream::height,
             camera3_stream::format);
-    lines.appendFormat("      Max size: %d\n", mMaxSize);
+    lines.appendFormat("      Max size: %zu\n", mMaxSize);
     lines.appendFormat("      Usage: %d, max HAL buffers: %d\n",
             camera3_stream::usage, camera3_stream::max_buffers);
-    lines.appendFormat("      Frames produced: %d, last timestamp: %lld ns\n",
+    lines.appendFormat("      Frames produced: %d, last timestamp: %" PRId64 " ns\n",
             mFrameCount, mLastTimestamp);
-    lines.appendFormat("      Total buffers: %d, currently dequeued: %d\n",
-            mTotalBufferCount, mDequeuedBufferCount);
+    lines.appendFormat("      Total buffers: %zu, currently dequeued: %zu\n",
+            mTotalBufferCount, mHandoutTotalBufferCount);
     write(fd, lines.string(), lines.size());
 }
 
@@ -105,6 +105,14 @@ size_t Camera3IOStreamBase::getBufferCountLocked() {
     return mTotalBufferCount;
 }
 
+size_t Camera3IOStreamBase::getHandoutOutputBufferCountLocked() {
+    return mHandoutOutputBufferCount;
+}
+
+size_t Camera3IOStreamBase::getHandoutInputBufferCountLocked() {
+    return (mHandoutTotalBufferCount - mHandoutOutputBufferCount);
+}
+
 status_t Camera3IOStreamBase::disconnectLocked() {
     switch (mState) {
         case STATE_IN_RECONFIG:
@@ -118,9 +126,9 @@ status_t Camera3IOStreamBase::disconnectLocked() {
             return -ENOTCONN;
     }
 
-    if (mDequeuedBufferCount > 0) {
-        ALOGE("%s: Can't disconnect with %d buffers still dequeued!",
-                __FUNCTION__, mDequeuedBufferCount);
+    if (mHandoutTotalBufferCount > 0) {
+        ALOGE("%s: Can't disconnect with %zu buffers still dequeued!",
+                __FUNCTION__, mHandoutTotalBufferCount);
         return INVALID_OPERATION;
     }
 
@@ -131,7 +139,8 @@ void Camera3IOStreamBase::handoutBufferLocked(camera3_stream_buffer &buffer,
                                               buffer_handle_t *handle,
                                               int acquireFence,
                                               int releaseFence,
-                                              camera3_buffer_status_t status) {
+                                              camera3_buffer_status_t status,
+                                              bool output) {
     /**
      * Note that all fences are now owned by HAL.
      */
@@ -145,14 +154,25 @@ void Camera3IOStreamBase::handoutBufferLocked(camera3_stream_buffer &buffer,
     buffer.status = status;
 
     // Inform tracker about becoming busy
-    if (mDequeuedBufferCount == 0 && mState != STATE_IN_CONFIG &&
+    if (mHandoutTotalBufferCount == 0 && mState != STATE_IN_CONFIG &&
             mState != STATE_IN_RECONFIG) {
+        /**
+         * Avoid a spurious IDLE->ACTIVE->IDLE transition when using buffers
+         * before/after register_stream_buffers during initial configuration
+         * or re-configuration.
+         *
+         * TODO: IN_CONFIG and IN_RECONFIG checks only make sense for <HAL3.2
+         */
         sp<StatusTracker> statusTracker = mStatusTracker.promote();
         if (statusTracker != 0) {
             statusTracker->markComponentActive(mStatusId);
         }
     }
-    mDequeuedBufferCount++;
+    mHandoutTotalBufferCount++;
+
+    if (output) {
+        mHandoutOutputBufferCount++;
+    }
 }
 
 status_t Camera3IOStreamBase::getBufferPreconditionCheckLocked() const {
@@ -161,15 +181,6 @@ status_t Camera3IOStreamBase::getBufferPreconditionCheckLocked() const {
             mState != STATE_IN_CONFIG && mState != STATE_IN_RECONFIG) {
         ALOGE("%s: Stream %d: Can't get buffers in unconfigured state %d",
                 __FUNCTION__, mId, mState);
-        return INVALID_OPERATION;
-    }
-
-    // Only limit dequeue amount when fully configured
-    if (mState == STATE_CONFIGURED &&
-            mDequeuedBufferCount == camera3_stream::max_buffers) {
-        ALOGE("%s: Stream %d: Already dequeued maximum number of simultaneous"
-                " buffers (%d)", __FUNCTION__, mId,
-                camera3_stream::max_buffers);
         return INVALID_OPERATION;
     }
 
@@ -184,7 +195,7 @@ status_t Camera3IOStreamBase::returnBufferPreconditionCheckLocked() const {
                 __FUNCTION__, mId, mState);
         return INVALID_OPERATION;
     }
-    if (mDequeuedBufferCount == 0) {
+    if (mHandoutTotalBufferCount == 0) {
         ALOGE("%s: Stream %d: No buffers outstanding to return", __FUNCTION__,
                 mId);
         return INVALID_OPERATION;
@@ -222,9 +233,20 @@ status_t Camera3IOStreamBase::returnAnyBufferLocked(
         mCombinedFence = Fence::merge(mName, mCombinedFence, releaseFence);
     }
 
-    mDequeuedBufferCount--;
-    if (mDequeuedBufferCount == 0 && mState != STATE_IN_CONFIG &&
+    if (output) {
+        mHandoutOutputBufferCount--;
+    }
+
+    mHandoutTotalBufferCount--;
+    if (mHandoutTotalBufferCount == 0 && mState != STATE_IN_CONFIG &&
             mState != STATE_IN_RECONFIG) {
+        /**
+         * Avoid a spurious IDLE->ACTIVE->IDLE transition when using buffers
+         * before/after register_stream_buffers during initial configuration
+         * or re-configuration.
+         *
+         * TODO: IN_CONFIG and IN_RECONFIG checks only make sense for <HAL3.2
+         */
         ALOGV("%s: Stream %d: All buffers returned; now idle", __FUNCTION__,
                 mId);
         sp<StatusTracker> statusTracker = mStatusTracker.promote();

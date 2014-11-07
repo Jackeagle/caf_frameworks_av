@@ -22,11 +22,14 @@ LOCAL_SRC_FILES:=               \
     StagefrightPlayer.cpp       \
     StagefrightRecorder.cpp     \
     TestPlayerStub.cpp          \
+    VideoFrameScheduler.cpp     \
 
 LOCAL_SHARED_LIBRARIES :=       \
     libbinder                   \
     libcamera_client            \
+    libcrypto                   \
     libcutils                   \
+    libdrmframework             \
     liblog                      \
     libdl                       \
     libgui                      \
@@ -45,20 +48,22 @@ LOCAL_STATIC_LIBRARIES :=       \
     libstagefright_rtsp         \
 
 LOCAL_C_INCLUDES :=                                                 \
-    $(call include-path-for, graphics corecg)                       \
     $(TOP)/frameworks/av/media/libstagefright/include               \
     $(TOP)/frameworks/av/media/libstagefright/rtsp                  \
     $(TOP)/frameworks/av/media/libstagefright/wifi-display          \
+    $(TOP)/frameworks/av/media/libstagefright/webm                  \
     $(TOP)/frameworks/native/include/media/openmax                  \
     $(TOP)/external/tremolo/Tremolo                                 \
 
 LOCAL_MODULE:= libmediaplayerservice
 
+LOCAL_32_BIT_ONLY := true
+
 ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
     LOCAL_CFLAGS += -DENABLE_AV_ENHANCEMENTS
     LOCAL_C_INCLUDES += $(TOP)/frameworks/av/include/media
     LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
-endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 

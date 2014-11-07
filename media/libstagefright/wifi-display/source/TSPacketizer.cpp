@@ -216,7 +216,7 @@ sp<ABuffer> TSPacketizer::Track::prependADTSHeader(
     uint8_t *ptr = dup->data();
 
     *ptr++ = 0xff;
-    *ptr++ = 0xf1;  // b11110001, ID=0, layer=0, protection_absent=1
+    *ptr++ = 0xf9;  // b11111001, ID=1(MPEG-2), layer=0, protection_absent=1
 
     *ptr++ =
         profile << 6
@@ -565,8 +565,9 @@ status_t TSPacketizer::packetize(
             }
         }
 
+        size_t numPaddingBytes = sizeAvailableForPayload - numBytesOfPayload;
         ALOGV("packet 1 contains %zd padding bytes and %zd bytes of payload",
-              sizeAvailableForPayload - numBytesOfPayload, numBytesOfPayload);
+              numPaddingBytes, numBytesOfPayload);
 
         size_t numBytesOfPayloadRemaining = accessUnit->size() - numBytesOfPayload;
 

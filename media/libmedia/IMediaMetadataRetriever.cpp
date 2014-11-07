@@ -15,9 +15,12 @@
 ** limitations under the License.
 */
 
+#include <inttypes.h>
 #include <stdint.h>
 #include <sys/types.h>
+
 #include <binder/Parcel.h>
+#include <media/IMediaHTTPService.h>
 #include <media/IMediaMetadataRetriever.h>
 #include <utils/String8.h>
 #include <utils/KeyedVector.h>
@@ -84,17 +87,23 @@ public:
     }
 
     status_t setDataSource(
-            const char *srcUrl, const KeyedVector<String8, String8> *headers)
+            const sp<IMediaHTTPService> &httpService,
+            const char *srcUrl,
+            const KeyedVector<String8, String8> *headers)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IMediaMetadataRetriever::getInterfaceDescriptor());
+        data.writeInt32(httpService != NULL);
+        if (httpService != NULL) {
+            data.writeStrongBinder(httpService->asBinder());
+        }
         data.writeCString(srcUrl);
 
         if (headers == NULL) {
             data.writeInt32(0);
         } else {
             // serialize the headers
-            data.writeInt32(headers->size());
+            data.writeInt64(headers->size());
             for (size_t i = 0; i < headers->size(); ++i) {
                 data.writeString8(headers->keyAt(i));
                 data.writeString8(headers->valueAt(i));
@@ -118,7 +127,7 @@ public:
 
     sp<IMemory> getFrameAtTime(int64_t timeUs, int option)
     {
-        ALOGV("getTimeAtTime: time(%lld us) and option(%d)", timeUs, option);
+        ALOGV("getTimeAtTime: time(%" PRId64 " us) and option(%d)", timeUs, option);
         Parcel data, reply;
         data.writeInterfaceToken(IMediaMetadataRetriever::getInterfaceDescriptor());
         data.writeInt64(timeUs);
@@ -195,18 +204,26 @@ status_t BnMediaMetadataRetriever::onTransact(
         } break;
         case SET_DATA_SOURCE_URL: {
             CHECK_INTERFACE(IMediaMetadataRetriever, data, reply);
+
+            sp<IMediaHTTPService> httpService;
+            if (data.readInt32()) {
+                httpService =
+                    interface_cast<IMediaHTTPService>(data.readStrongBinder());
+            }
+
             const char* srcUrl = data.readCString();
 
             KeyedVector<String8, String8> headers;
-            int32_t numHeaders = data.readInt32();
-            for (int i = 0; i < numHeaders; ++i) {
+            size_t numHeaders = (size_t) data.readInt64();
+            for (size_t i = 0; i < numHeaders; ++i) {
                 String8 key = data.readString8();
                 String8 value = data.readString8();
                 headers.add(key, value);
             }
 
             reply->writeInt32(
-                    setDataSource(srcUrl, numHeaders > 0 ? &headers : NULL));
+                    setDataSource(
+                        httpService, srcUrl, numHeaders > 0 ? &headers : NULL));
 
             return NO_ERROR;
         } break;
@@ -222,7 +239,7 @@ status_t BnMediaMetadataRetriever::onTransact(
             CHECK_INTERFACE(IMediaMetadataRetriever, data, reply);
             int64_t timeUs = data.readInt64();
             int option = data.readInt32();
-            ALOGV("getTimeAtTime: time(%lld us) and option(%d)", timeUs, option);
+            ALOGV("getTimeAtTime: time(%" PRId64 " us) and option(%d)", timeUs, option);
 #ifndef DISABLE_GROUP_SCHEDULE_HACK
             setSchedPolicy(data);
 #endif

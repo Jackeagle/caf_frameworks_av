@@ -114,7 +114,9 @@ MidiFile::~MidiFile() {
 }
 
 status_t MidiFile::setDataSource(
-        const char* path, const KeyedVector<String8, String8> *) {
+        const sp<IMediaHTTPService> & /*httpService*/,
+        const char* path,
+        const KeyedVector<String8, String8> *) {
     ALOGV("MidiFile::setDataSource url=%s", path);
     Mutex::Autolock lock(mMutex);
 
@@ -210,6 +212,16 @@ status_t MidiFile::start()
         return ERROR_NOT_OPEN;
     }
 
+    if (mState == EAS_STATE_STOPPED) {
+        int mStartTime = (mPlayTime >= mDuration) ? 0 : mPlayTime;
+        if (EAS_Locate(mEasData, mEasHandle, mStartTime, false)
+                != EAS_SUCCESS) {
+            ALOGE("EAS_Locate failed");
+            return ERROR_EAS_FAILURE;
+        }
+        EAS_GetLocation(mEasData, mEasHandle, &mPlayTime);
+    }
+
     // resuming after pause?
     if (mPaused) {
         if (EAS_Resume(mEasData, mEasHandle) != EAS_SUCCESS) {
@@ -220,6 +232,10 @@ status_t MidiFile::start()
     }
 
     mRender = true;
+    // Due to the limitation of EAS_XXX interfaces design, there's no way
+    // to restart midi playback again once last track reaches EOS.
+    // Here introduces a hack to enforce start again
+    mState = EAS_STATE_PLAY;
     if (mState == EAS_STATE_PLAY) {
         sendEvent(MEDIA_STARTED);
     }
@@ -521,6 +537,7 @@ int MidiFile::render() {
             case EAS_STATE_STOPPED:
             {
                 ALOGV("MidiFile::render - stopped");
+                mPlayTime = mDuration;
                 sendEvent(MEDIA_PLAYBACK_COMPLETE);
                 break;
             }

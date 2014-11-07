@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  * Copyright (C) 2010 The Android Open Source Project
  *
@@ -34,6 +34,7 @@
 
 #include <media/AudioRecord.h>
 #include <media/AudioTrack.h>
+
 namespace android {
 
 #define BUFFER_POOL_SIZE 5
@@ -45,19 +46,13 @@ FMA2DPWriter::FMA2DPWriter()
     mSampleRate(0),
     mAudioFormat(AUDIO_FORMAT_PCM_16_BIT),
     mAudioSource(AUDIO_SOURCE_FM_RX_A2DP),
-    mBufferSize(0){
-    sem_init(&mReaderThreadWakeupsem,0,0);
-    sem_init(&mWriterThreadWakeupsem,0,0);
+    mBufferSize(0) {
 }
-
-
 
 FMA2DPWriter::~FMA2DPWriter() {
     if (mStarted) {
         stop();
     }
-    sem_destroy(&mReaderThreadWakeupsem);
-    sem_destroy(&mWriterThreadWakeupsem);
 }
 
 status_t FMA2DPWriter::initCheck() const {
@@ -70,23 +65,24 @@ status_t FMA2DPWriter::addSource(const sp<MediaSource> &source) {
    return OK;
 }
 
-status_t FMA2DPWriter::allocateBufferPool()
-{
-    Mutex::Autolock lock(mFreeQLock);
+status_t FMA2DPWriter::allocateBufferPool() {
+    Mutex::Autolock lock(mLock);
 
     for (int i = 0; i < BUFFER_POOL_SIZE; ++i) {
         int *buffer = new int[mBufferSize];
         if (buffer) {
-            audioBufferstruct audioBuffer(buffer, mBufferSize);
-            mFreeQ.push_back(audioBuffer);
+            FMData *fmBuffer = new FMData(buffer, mBufferSize);
+            mFMDataPool.add(fmBuffer);
+            mFreeList.push_back(i);
         } else {
-            ALOGE("fatal: failed to alloate buffer pool. Deleting partially created mFreeQ");
-            for ( List<audioBufferstruct>::iterator it = mFreeQ.begin();
-                  it != mFreeQ.end();) {
-                int *tempBuffer = (int *)it->audioBuffer;
-                it = mFreeQ.erase(it);
+            ALOGE("%s, fatal: failed to alloate buffer pool. Deleting partially created mFMDataPool", __func__);
+            for ( Vector<FMData *>::iterator it = mFMDataPool.begin();
+                  it != mFMDataPool.end();) {
+                int *tempBuffer = (int *)((*it)->audioBuffer);
+                it = mFMDataPool.erase(it);
                 delete tempBuffer;
             }
+            mFreeList.clear();
             return  NO_INIT;
         }
     }
@@ -94,20 +90,25 @@ status_t FMA2DPWriter::allocateBufferPool()
 }
 
 status_t FMA2DPWriter::start(MetaData *params) {
-
+    ALOGV("%s Entered", __func__);
     if (mStarted) {
         // Already started, does nothing
         return OK;
     }
 
-    if(!mStarted){
-        if(!params){
-            ALOGE("fatal:params cannot be null");
-            return NO_INIT;
+    if(!mStarted) {
+        if(params) {
+            params->findInt32(kKeyChannelCount, &mAudioChannels);
+            params->findInt32(kKeySampleRate, &mSampleRate);
         }
-        CHECK(params->findInt32(kKeyChannelCount, &mAudioChannels));
-        CHECK(mAudioChannels  == 1 || mAudioChannels  == 2);
-        CHECK(params->findInt32( kKeySampleRate, &mSampleRate ));
+        if (0 == mAudioChannels) {
+             ALOGD("%s set default channel count:%", __func__, mAudioChannels);
+             mAudioChannels = AUDIO_CHANNELS;
+        }
+        if (0 == mSampleRate) {
+             ALOGD("%s set default sample rate:%", __func__, SAMPLING_RATE);
+             mSampleRate = SAMPLING_RATE;
+        }
 
         if ( NO_ERROR != AudioSystem::getInputBufferSize(
                     mSampleRate, mAudioFormat, mAudioChannels, &mBufferSize) ){
@@ -133,7 +134,7 @@ status_t FMA2DPWriter::start(MetaData *params) {
     pthread_attr_destroy(&attr);
 
     mStarted = true;
-
+    ALOGV("%s Exit", __func__);
     return OK;
 }
 
@@ -143,42 +144,44 @@ status_t FMA2DPWriter::pause() {
 }
 
 status_t FMA2DPWriter::stop() {
+    ALOGV("%s Enter", __func__);
     if (!mStarted) {
         return OK;
     }
 
-    mDone = true;
+    {
+        Mutex::Autolock _l(mLock);
+        ALOGV("Exiting");
+        mDone = true;
+        mCondVar.signal();
+    }
 
     pthread_join(mReaderThread, NULL);
     pthread_join(mWriterThread, NULL);
-    for (List<audioBufferstruct>::iterator it = mDataQ.begin();
-                                            it != mDataQ.end();) {
-        int *tempBuffer = (int *)it->audioBuffer;
-        it = mDataQ.erase(it);
+    for (Vector<FMData *>::iterator it = mFMDataPool.begin();
+                                            it != mFMDataPool.end();) {
+        int *tempBuffer = (int *)((*it)->audioBuffer);
+        it = mFMDataPool.erase(it);
         delete tempBuffer;
     }
-    for (List<audioBufferstruct>::iterator it = mFreeQ.begin();
-                                            it != mFreeQ.end();) {
-        int *tempBuffer = (int *)it->audioBuffer;
-        it = mFreeQ.erase(it);
-        delete tempBuffer;
-    }
+    mFreeList.clear();
+    mDataList.clear();
     mStarted = false;
-
+    ALOGV("%s Exit", __func__);
     return OK;
 }
 
 void *FMA2DPWriter::ReaderThreadWrapper(void *me) {
-    return (void *) static_cast<FMA2DPWriter *>(me)->readerthread();
+    return (void *) (uintptr_t)static_cast<FMA2DPWriter *>(me)->readerthread();
 }
 
 void *FMA2DPWriter::WriterThreadWrapper(void *me) {
-    return (void *) static_cast<FMA2DPWriter *>(me)->writerthread();
+    return (void *) (uintptr_t)static_cast<FMA2DPWriter *>(me)->writerthread();
 }
 
 status_t FMA2DPWriter::readerthread() {
     status_t err = OK;
-    int framecount =((4*mBufferSize)/mAudioChannels)/sizeof(int16_t);
+    int framecount = ((4*mBufferSize)/mAudioChannels)/sizeof(int16_t);
     //sizeof(int16_t) is frame size for PCM stream
     int inChannel =
         (mAudioChannels == 2) ? AUDIO_CHANNEL_IN_STEREO :
@@ -194,6 +197,7 @@ status_t FMA2DPWriter::readerthread() {
                      inChannel,
                      framecount,
                      0);
+
     if(NULL == record.get()){
         ALOGE("fatal:Not able to open audiorecord");
         return UNKNOWN_ERROR;
@@ -207,46 +211,41 @@ status_t FMA2DPWriter::readerthread() {
         return UNKNOWN_ERROR;
     }
 
-    while (!mDone) {
-        mFreeQLock.lock();
-        if(mFreeQ.empty()){
-            mFreeQLock.unlock();
-            ALOGV("%s FreeQ empty", __func__);
-            sem_wait(&mReaderThreadWakeupsem);
-            ALOGV("%s FreeQ filled up", __func__);
-            continue;
-        }
-        List<audioBufferstruct>::iterator it = mFreeQ.begin();
-        audioBufferstruct buff ( it->audioBuffer,it->bufferlen);
-        mFreeQ.erase(it);
-        mFreeQLock.unlock();
+    while (true) {
+        {
+            Mutex::Autolock _l (mLock);
+            if(mDone)
+                break;
 
-        buff.bufferlen = record->read(buff.audioBuffer, mBufferSize);
-        ALOGV("%s read %d bytes", __func__, buff.bufferlen);
-        if (buff.bufferlen <= 0){
-            ALOGE("%s error in reading from audiorecord..bailing out.", __func__);
-            this ->notify(MEDIA_RECORDER_EVENT_ERROR, MEDIA_RECORDER_ERROR_UNKNOWN,
-                           ERROR_MALFORMED);
-            err = INVALID_OPERATION;
-            break;
-        }
+            if(mFreeList.empty()){
+                mCondVar.signal();
+                continue;
+            }
 
-        mDataQLock.lock();
-        if(mDataQ.empty()){
-            ALOGV("%s waking up reader", __func__);
-            sem_post(&mWriterThreadWakeupsem);
+            int32_t index = *(mFreeList.begin());
+            mFreeList.erase(mFreeList.begin());
+
+            int len = record->read(mFMDataPool.editItemAt(index)->audioBuffer, mBufferSize);
+            ALOGV("%s read %d bytes", __func__, len);
+            if (len <= 0){
+                ALOGE("%s error in reading from audiorecord..bailing out.", __func__);
+                this ->notify(MEDIA_RECORDER_EVENT_ERROR, MEDIA_RECORDER_ERROR_UNKNOWN,
+                              ERROR_MALFORMED);
+                err = INVALID_OPERATION;
+                break;
+            }
+
+            mDataList.push_back(index);
+            mCondVar.signal();
         }
-        mDataQ.push_back(buff);
-        mDataQLock.unlock();
     }
     record->stop();
     return err;
 }
 
-
 status_t FMA2DPWriter::writerthread(){
     status_t err = OK;
-    int framecount =(16*mBufferSize)/sizeof(int16_t);
+    int framecount = (16*mBufferSize)/sizeof(int16_t);
     //sizeof(int16_t) is frame size for PCM stream
     int outChannel = (mAudioChannels== 2) ? AUDIO_CHANNEL_OUT_STEREO :
         AUDIO_CHANNEL_OUT_MONO ;
@@ -274,39 +273,34 @@ status_t FMA2DPWriter::writerthread(){
         return UNKNOWN_ERROR;
     }
 
+    while (true) {
+        {
+            Mutex::Autolock _l (mLock);
+            if (mDone)
+                break;
 
-    while (!mDone) {
+            if(mDataList.empty()){
+                mCondVar.wait(mLock);
+                continue;
+            }
 
-        mDataQLock.lock();
-        if(mDataQ.empty()){
-            mDataQLock.unlock();
-            ALOGV("%s dataQ empty", __func__);
-            sem_wait(&mWriterThreadWakeupsem);
-            ALOGV("%s dataQ filled up", __func__);
-            continue;
+            int32_t index = *(mDataList.begin());
+            mDataList.erase(mDataList.begin());
+
+            size_t ret = audioTrack->write(mFMDataPool.editItemAt(index)->audioBuffer,
+                                           mFMDataPool.editItemAt(index)->bufferLen);
+            if (!ret) {
+                ALOGE("%s audio track write failure.. bailing out", __func__);
+                this->notify(MEDIA_RECORDER_EVENT_ERROR, MEDIA_RECORDER_ERROR_UNKNOWN,
+                              ERROR_MALFORMED);
+                err = INVALID_OPERATION;
+                break;
+            }
+            ALOGV("%s wrote %d bytes", __func__, ret);
+
+            mFreeList.push_back(index);
+            mCondVar.signal();
         }
-        List<audioBufferstruct>::iterator it = mDataQ.begin();
-        audioBufferstruct buff ( it->audioBuffer,it->bufferlen);
-        mDataQ.erase(it);
-        mDataQLock.unlock();
-
-        size_t retval = audioTrack->write(buff.audioBuffer, buff.bufferlen);
-        if(!retval){
-            ALOGE("%s audio track write failure.. bailing out", __func__);
-            this ->notify(MEDIA_RECORDER_EVENT_ERROR, MEDIA_RECORDER_ERROR_UNKNOWN,
-                           ERROR_MALFORMED);
-            err = INVALID_OPERATION;
-            break;
-        }
-        ALOGV("%s wrote %d bytes", __func__, buff.bufferlen);
-
-        mFreeQLock.lock();
-        if(mFreeQ.empty()){
-            ALOGV("%s WAKING UP READER", __func__);
-            sem_post(&mReaderThreadWakeupsem);
-        }
-        mFreeQ.push_back(buff);
-        mFreeQLock.unlock();
     }
     audioTrack->stop();
     return err;
@@ -316,6 +310,5 @@ bool FMA2DPWriter::reachedEOS() {
     //API not need for FMA2DPWriter
     return OK;
 }
-
 
 }  // namespace android

@@ -133,7 +133,8 @@ status_t SampleIterator::seekTo(uint32_t sampleIndex) {
     }
 
     status_t err;
-    if ((err = findSampleTime(sampleIndex, &mCurrentSampleTime)) != OK) {
+    if ((err = findSampleTimeAndDuration(
+            sampleIndex, &mCurrentSampleTime, &mCurrentSampleDuration)) != OK) {
         ALOGE("findSampleTime return error");
         return err;
     }
@@ -285,8 +286,8 @@ status_t SampleIterator::getSampleSizeDirect(
     return OK;
 }
 
-status_t SampleIterator::findSampleTime(
-        uint32_t sampleIndex, uint64_t *time) {
+status_t SampleIterator::findSampleTimeAndDuration(
+        uint32_t sampleIndex, uint32_t *time, uint32_t *duration) {
     if (sampleIndex >= mTable->mNumSampleSizes) {
         return ERROR_OUT_OF_RANGE;
     }
@@ -305,9 +306,11 @@ status_t SampleIterator::findSampleTime(
         ++mTimeToSampleIndex;
     }
 
-    *time = mTTSSampleTime + (uint64_t)mTTSDuration * ((uint64_t)sampleIndex - (uint64_t)mTTSSampleIndex);
+    *time = mTTSSampleTime + mTTSDuration * (sampleIndex - mTTSSampleIndex);
 
-    *time += (int32_t)mTable->getCompositionTimeOffset(sampleIndex);
+    *time += mTable->getCompositionTimeOffset(sampleIndex);
+
+    *duration = mTTSDuration;
 
     return OK;
 }

@@ -37,6 +37,8 @@ struct NuCachedSource2 : public DataSource {
 
     virtual ssize_t readAt(off64_t offset, void *data, size_t size);
 
+    virtual void disconnect();
+
     virtual status_t getSize(off64_t *size);
     virtual uint32_t flags();
 
@@ -64,9 +66,6 @@ struct NuCachedSource2 : public DataSource {
             String8 *cacheConfig,
             bool *disconnectAtHighwatermark);
 
-    virtual ssize_t readAtInternal(off64_t offset, void *data, size_t size, int32_t isNonBlocking);
-
-    virtual void enableNonBlockingRead(bool flag);
     virtual status_t disconnectWhileSuspend();
     virtual status_t connectWhileResume();
 
@@ -109,6 +108,7 @@ private:
     off64_t mLastAccessPos;
     sp<AMessage> mAsyncResult;
     bool mFetching;
+    bool mDisconnecting;
     int64_t mLastFetchTimeUs;
 
     int32_t mNumRetriesLeft;
@@ -122,8 +122,6 @@ private:
     int64_t mKeepAliveIntervalUs;
 
     bool mDisconnectAtHighwatermark;
-
-    bool mIsNonBlockingMode;
 
     void onMessageReceived(const sp<AMessage> &msg);
     void onFetch();

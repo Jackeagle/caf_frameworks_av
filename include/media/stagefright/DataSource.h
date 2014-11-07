@@ -31,38 +31,10 @@
 namespace android {
 
 struct AMessage;
+struct AString;
+struct IMediaHTTPService;
 class String8;
-class DataSource;
-
-class Sniffer : public RefBase {
-public:
-    Sniffer();
-
-    ////////////////////////////////////////////////////////////////////////////
-
-    bool sniff(DataSource *source, String8 *mimeType, float *confidence, sp<AMessage> *meta);
-
-    // The sniffer can optionally fill in "meta" with an AMessage containing
-    // a dictionary of values that helps the corresponding extractor initialize
-    // its state without duplicating effort already exerted by the sniffer.
-    typedef bool (*SnifferFunc)(
-            const sp<DataSource> &source, String8 *mimeType,
-            float *confidence, sp<AMessage> *meta);
-
-    //if isExtendedExtractor = true, store the location of the sniffer to register
-    void registerSniffer_l(SnifferFunc func);
-    void registerDefaultSniffers();
-
-    virtual ~Sniffer() {}
-
-private:
-    Mutex mSnifferMutex;
-    List<SnifferFunc> mSniffers;
-    List<SnifferFunc>::iterator extendedSnifferPosition;
-
-    Sniffer(const Sniffer &);
-    Sniffer &operator=(const Sniffer &);
-};
+struct HTTPBase;
 
 class DataSource : public RefBase {
 public:
@@ -71,14 +43,18 @@ public:
         kStreamedFromLocalHost = 2,
         kIsCachingDataSource   = 4,
         kIsHTTPBasedSource     = 8,
-        kSupportNonBlockingRead = 16,
     };
 
     static sp<DataSource> CreateFromURI(
+            const sp<IMediaHTTPService> &httpService,
             const char *uri,
-            const KeyedVector<String8, String8> *headers = NULL);
+            const KeyedVector<String8, String8> *headers = NULL,
+            String8 *contentType = NULL,
+            HTTPBase *httpSource = NULL);
 
-    DataSource() { mSniffer = new Sniffer(); }
+    static sp<DataSource> CreateMediaHTTP(const sp<IMediaHTTPService> &httpService);
+
+    DataSource() {}
 
     virtual status_t initCheck() const = 0;
 
@@ -129,7 +105,10 @@ public:
 protected:
     virtual ~DataSource() {}
 
-    sp<Sniffer> mSniffer;
+private:
+    static Mutex gSnifferMutex;
+    static List<SnifferFunc> gSniffers;
+    static bool gSniffersRegistered;
 
     static void RegisterSniffer_l(SnifferFunc func);
 

@@ -521,7 +521,7 @@ status_t ANetworkSession::Session::readMore() {
     return err;
 }
 
-void ANetworkSession::Session::dumpFragmentStats(const Fragment &frag) {
+void ANetworkSession::Session::dumpFragmentStats(const Fragment & /* frag */) {
 #if 0
     int64_t nowUs = ALooper::GetNowUs();
     int64_t delayMs = (nowUs - frag.mTimeUs) / 1000ll;
@@ -579,7 +579,7 @@ status_t ANetworkSession::Session::writeMore() {
 
         if (err == -EAGAIN) {
             if (!mOutFragments.empty()) {
-                ALOGI("%d datagrams remain queued.", mOutFragments.size());
+                ALOGI("%zu datagrams remain queued.", mOutFragments.size());
             }
             err = OK;
         }
@@ -623,7 +623,7 @@ status_t ANetworkSession::Session::writeMore() {
     CHECK_EQ(mState, CONNECTED);
     CHECK(!mOutFragments.empty());
 
-    ssize_t n;
+    ssize_t n = -1;
     while (!mOutFragments.empty()) {
         const Fragment &frag = *mOutFragments.begin();
 
