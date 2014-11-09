@@ -14,7 +14,6 @@ LOCAL_C_INCLUDES:= \
 
 LOCAL_SHARED_LIBRARIES := \
 	libstagefright liblog libutils libbinder libstagefright_foundation \
-        libandroid_runtime \
         libmedia
 
 LOCAL_MODULE:= libstagefright_http_support
