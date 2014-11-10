@@ -399,6 +399,7 @@ private:
     bool mCustomAVSync;
 
     sp<VSyncLocker> mVSyncLocker;
+    bool m_bProxyConfigured;
 };
 
 }  // namespace android

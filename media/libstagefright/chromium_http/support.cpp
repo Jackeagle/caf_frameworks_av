@@ -44,6 +44,7 @@
 #include <utils/Errors.h>
 #include <binder/IInterface.h>
 #include <binder/IServiceManager.h>
+#include "include/ExtendedUtils.h"
 
 namespace android {
 

@@ -118,6 +118,8 @@ struct ExtendedUtils {
         static bool isCustomAVSyncEnabled();
 
         static bool isMpeg4DPSupportedByHardware();
+
+        static bool getSTAProxyConfig(int32_t &port);
     };
 
     struct RTSPStream {
