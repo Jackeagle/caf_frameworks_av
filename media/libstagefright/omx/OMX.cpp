@@ -219,8 +219,6 @@ status_t OMX::listNodes(List<ComponentInfo> *list) {
 
 status_t OMX::allocateNode(
         const char *name, const sp<IOMXObserver> &observer, node_id *node) {
-    Mutex::Autolock autoLock(mLock);
-
     *node = 0;
 
     OMXNodeInstance *instance = new OMXNodeInstance(this, observer);
@@ -237,6 +235,8 @@ status_t OMX::allocateNode(
 
         return UNKNOWN_ERROR;
     }
+
+    Mutex::Autolock autoLock(mLock);
 
     *node = makeNodeID(instance);
     mDispatchers.add(*node, new CallbackDispatcher(instance));
