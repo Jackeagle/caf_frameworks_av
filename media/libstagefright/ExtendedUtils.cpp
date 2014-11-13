@@ -34,6 +34,7 @@
 #include <sys/types.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/foundation/ABitReader.h>
@@ -567,7 +568,7 @@ status_t ExtendedUtils::HEVCMuxer::makeHEVCCodecSpecificData(
 
     int count = 0;
     void *codecConfigData = malloc(*codecSpecificDataSize);
-    if (codecSpecificData == NULL) {
+    if (codecConfigData == NULL) {
         ALOGE("Failed to allocate memory, bailing out");
         return NO_MEMORY;
     }
@@ -827,6 +828,48 @@ void ExtendedUtils::ShellProp::getRtpPortRange(unsigned *start, unsigned *end) {
     ALOGV("rtp port_start = %u, port_end = %u", *start, *end);
 }
 
+bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
+    void* staLibHandle = NULL;
+
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.mm.sta.disable", value, "0");
+    // Return false if persist.disable.staproxy is set to 1
+    if (atoi(value)) {
+        ALOGW("Proxy is disabled using persist.disable.staproxy");
+        return false;
+    }
+
+    staLibHandle = dlopen("libstaapi.so", RTLD_NOW);
+    if (staLibHandle == NULL) {
+        ALOGW("libstaapi.so open dll error :%s", dlerror());
+        return false;
+    }
+    typedef bool (*fnIsProxySupported)();
+    typedef int (*fnGetPort)();
+
+    fnIsProxySupported isProxySupported = (fnIsProxySupported) dlsym(staLibHandle, "isSTAProxySupported");
+    if (isProxySupported == NULL) {
+        ALOGW("Not able to load the symbol");
+        return false;
+    }
+    if (isProxySupported()) {
+        fnGetPort getPort = (fnGetPort)dlsym(staLibHandle, "getSTAProxyAlwaysAccelerateServicePort");
+        if (getPort == NULL) {
+            ALOGW("Not able to load the symbol to get the STA proxy port");
+            return false;
+        }
+        port = getPort();
+        ALOGI("The STA proxy is running at port:%d", port );
+    } else {
+        ALOGW("STA Proxy is not supported");
+        return false;
+    }
+    if (staLibHandle != NULL) {
+        dlclose(staLibHandle);
+    }
+    return true;
+}
+
 void ExtendedUtils::setBFrames(
         OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, const char* componentName) {
     //ignore non QC components
@@ -938,16 +981,6 @@ bool ExtendedUtils::UseQCHWAACEncoder(audio_encoder Encoder,int32_t Channel,int3
     }
 
     return mIsQCHWAACEncoder;
-}
-
-bool ExtendedUtils::UseQCHWAACDecoder(const char *mime) {
-    if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_AAC, strlen(MEDIA_MIMETYPE_AUDIO_AAC))) {
-        char value[PROPERTY_VALUE_MAX] = {0};
-        if (property_get("media.aaccodectype", value, 0) && (atoi(value) == 1)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 
@@ -1702,6 +1735,10 @@ void ExtendedUtils::ShellProp::getRtpPortRange(unsigned *start, unsigned *end) {
     *end = kDefaultRtpPortRangeEnd;
 }
 
+bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
+    return false;
+}
+
 void ExtendedUtils::setBFrames(
         OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, const char* componentName) {
     ARG_TOUCH(mpeg4type);
@@ -1723,11 +1760,6 @@ bool ExtendedUtils::UseQCHWAACEncoder(audio_encoder Encoder,int32_t Channel,
     ARG_TOUCH(Channel);
     ARG_TOUCH(BitRate);
     ARG_TOUCH(SampleRate);
-    return false;
-}
-
-bool ExtendedUtils::UseQCHWAACDecoder(const char *mime) {
-    ARG_TOUCH(mime);
     return false;
 }
 

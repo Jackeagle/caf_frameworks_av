@@ -167,6 +167,8 @@ struct ExtendedUtils {
 
         //helper function to parse rtp port range form system property
         static void getRtpPortRange(unsigned *start, unsigned *end);
+
+        static bool getSTAProxyConfig(int32_t &port);
     };
 
     struct RTSPStream {
@@ -201,7 +203,6 @@ struct ExtendedUtils {
 
     static const int32_t kNumBFramesPerPFrame = 1;
     static bool mIsQCHWAACEncoder;
-
     //set B frames for MPEG4
     static void setBFrames(OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type,
             const char* componentName);
@@ -213,8 +214,6 @@ struct ExtendedUtils {
 
     static bool UseQCHWAACEncoder(audio_encoder Encoder = AUDIO_ENCODER_DEFAULT, int32_t Channel = 0,
             int32_t BitRate = 0, int32_t SampleRate = 0);
-
-    static bool UseQCHWAACDecoder(const char *mime);
 
     static sp<MediaExtractor> MediaExtractor_CreateIfNeeded(
             sp<MediaExtractor> defaultExt, const sp<DataSource> &source,

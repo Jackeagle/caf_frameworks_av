@@ -249,7 +249,7 @@ void OMXCodec::findMatchingCodecs(
     size_t index = 0;
 
 #ifdef ENABLE_AV_ENHANCEMENTS
-    //Check if application specially reuqested for aac hardware encoder/decoder
+    //Check if application specially reuqested for  aac hardware encoder
     //This is not a part of  mediacodec list
     if (matchComponentName &&
             !strncmp("OMX.qcom.audio.encoder.aac", matchComponentName, 26)) {
@@ -261,15 +261,13 @@ void OMXCodec::findMatchingCodecs(
         return;
     }
 
-    if (matchComponentName &&
-            !strncmp("OMX.qcom.audio.decoder.multiaac", matchComponentName, 31)) {
-        matchingCodecs->add();
+    if (matchComponentName && !strncmp("FLACDecoder", matchComponentName, 10)) {
+            matchingCodecs->add();
 
-        CodecNameAndQuirks *entry = &matchingCodecs->editItemAt(index);
-        entry->mName = String8("OMX.qcom.audio.decoder.multiaac");
-        entry->mQuirks |= kRequiresAllocateBufferOnInputPorts;
-        entry->mQuirks |= kRequiresAllocateBufferOnOutputPorts;
-        return;
+            CodecNameAndQuirks *entry = &matchingCodecs->editItemAt(index);
+            entry->mName = String8("FLACDecoder");
+            entry->mQuirks = 0;
+            return;
     }
 #endif
 
@@ -362,17 +360,6 @@ bool OMXCodec::findCodecQuirks(const char *componentName, uint32_t *quirks) {
         return false;
     }
 
-#ifdef ENABLE_AV_ENHANCEMENTS
-    //Check for aac hardware decoder
-    //This is not a part of  mediacodec list
-    if (componentName &&
-            !strncmp("OMX.qcom.audio.decoder.multiaac", componentName, 31)) {
-        *quirks |= kRequiresAllocateBufferOnInputPorts;
-        *quirks |= kRequiresAllocateBufferOnOutputPorts;
-        return true;
-    }
-#endif
-
     const sp<MediaCodecInfo> info = list->getCodecInfo(index);
     CHECK(info != NULL);
     *quirks = getComponentQuirks(info);
@@ -403,14 +390,12 @@ sp<MediaSource> OMXCodec::Create(
 
     Vector<CodecNameAndQuirks> matchingCodecs;
 
-    if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_AAC, 15) &&
-            ExtendedUtils::UseQCHWAACDecoder(mime)) {
+    if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10)) {
         findMatchingCodecs(mime, createEncoder,
-            "OMX.qcom.audio.decoder.multiaac", flags, &matchingCodecs);
-    } else {
+            "FLACDecoder", flags, &matchingCodecs);
+    } else
         findMatchingCodecs(
             mime, createEncoder, matchComponentName, flags, &matchingCodecs);
-    }
 
     if (matchingCodecs.isEmpty()) {
         ALOGV("No matching codecs! (mime: %s, createEncoder: %s, "
@@ -473,7 +458,21 @@ sp<MediaSource> OMXCodec::Create(
             }
         }
 
+        //STATS profiling
+        PlayerExtendedStats* tempPtr = NULL;
+        meta->findPointer(ExtendedStats::MEDIA_STATS_FLAG, (void**)&tempPtr);
+
+        bool isVideo = !strncasecmp("video/", mime, 6);
+        if (tempPtr) {
+            tempPtr->profileStart(STATS_PROFILE_ALLOCATE_NODE(isVideo));
+        }
+
         status_t err = omx->allocateNode(componentName, observer, &node);
+
+        if (tempPtr) {
+            tempPtr->profileStop(STATS_PROFILE_ALLOCATE_NODE(isVideo));
+        }
+
         if (err == OK) {
             ALOGD("Successfully allocated OMX node '%s'", componentName);
 
@@ -484,7 +483,16 @@ sp<MediaSource> OMXCodec::Create(
 
             observer->setCodec(codec);
 
-            err = codec->configureCodec(meta);
+            { //profile configure codec
+                ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_CONFIGURE_CODEC(isVideo),
+                             tempPtr == NULL ? NULL : tempPtr->getProfileTimes());
+                err = codec->configureCodec(meta);
+            }
+
+            /* set the stats pointer if we haven't yet and it exists */
+            if(codec->mPlayerExtendedStats == NULL && tempPtr)
+                codec->mPlayerExtendedStats = tempPtr;
+
             if (err == OK) {
                 return codec;
             }
@@ -1811,6 +1819,12 @@ status_t OMXCodec::allocateBuffers() {
 }
 
 status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
+    const char* type = portIndex == kPortIndexInput ?
+                                    STATS_PROFILE_ALLOCATE_INPUT(mIsVideo) :
+                                    STATS_PROFILE_ALLOCATE_OUTPUT(mIsVideo);
+    ExtendedStats::AutoProfile autoProfile(type, mPlayerExtendedStats == NULL ? NULL :
+                                           mPlayerExtendedStats->getProfileTimes());
+
     if (mNativeWindow != NULL && portIndex == kPortIndexOutput) {
         return allocateOutputBuffersFromNativeWindow();
     }
@@ -3454,6 +3468,9 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
         int64_t lastBufferTimeUs;
         CHECK(srcBuffer->meta_data()->findInt64(kKeyTime, &lastBufferTimeUs));
         CHECK(lastBufferTimeUs >= 0);
+
+        PLAYER_STATS(logBitRate, srcBuffer->range_length(), lastBufferTimeUs);
+
         if (mIsEncoder && mIsVideo) {
             mDecodingTimeList.push_back(lastBufferTimeUs);
         }
@@ -5030,9 +5047,13 @@ status_t OMXCodec::pause() {
 status_t OMXCodec::resumeLocked(bool drainInputBuf) {
    CODEC_LOGV("resume mState=%d", mState);
 
-   if (!strncmp(mComponentName, "OMX.qcom.", 9)) {
+   if (!strncmp(mComponentName, "OMX.qcom.", 9) && mPaused) {
         while (isIntermediateState(mState)) {
             mAsyncCompletion.wait(mLock);
+        }
+        if (mState == (status_t)EXECUTING) {
+            CODEC_LOGI("in EXECUTING state, return OK");
+            return OK;
         }
         CHECK_EQ(mState, (status_t)PAUSED);
         status_t err = mOMX->sendCommand(mNode,
