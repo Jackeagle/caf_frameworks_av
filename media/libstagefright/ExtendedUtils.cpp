@@ -1625,6 +1625,18 @@ void ExtendedUtils::RTSPStream::addSDES(int s, const sp<ABuffer> &buffer) {
     buffer->setRange(buffer->offset(), buffer->size() + offset);
 }
 
+int32_t ExtendedUtils::getEncoderTypeFlags() {
+    int32_t flags = 0;
+
+    char mDeviceName[PROPERTY_VALUE_MAX];
+    property_get("ro.board.platform", mDeviceName, "0");
+    if (!strncmp(mDeviceName, "msm8909", 7)) {
+        flags |= OMXCodec::kHardwareCodecsOnly;
+    }
+
+    return flags;
+}
+
 }
 #else //ENABLE_AV_ENHANCEMENTS
 
@@ -1800,6 +1812,10 @@ bool ExtendedUtils::checkDPFromCodecSpecificData(const uint8_t *data, size_t siz
 bool ExtendedUtils::checkDPFromVOLHeader(const uint8_t *data, size_t size) {
     ARG_TOUCH(data);
     ARG_TOUCH(size);
+    return false;
+}
+
+int32_t ExtendedUtils::getEncoderTypeFlags() {
     return false;
 }
 
