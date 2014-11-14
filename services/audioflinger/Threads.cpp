@@ -4652,9 +4652,12 @@ void AudioFlinger::OffloadThread::onAddNewTrack_l()
 void AudioFlinger::OffloadThread::onFatalError()
 {
     Mutex::Autolock _l(mLock);
-
-   // call invalidate, to recreate track on fatal error
-   invalidateTracks_l(AUDIO_STREAM_MUSIC);
+    size_t size = mTracks.size();
+    for (size_t i = 0; i < size; i++) {
+        sp<Track> t = mTracks[i];
+        t->signalError();
+    }
+    invalidateTracks_l(AUDIO_STREAM_MUSIC);
 }
 
 // ----------------------------------------------------------------------------
