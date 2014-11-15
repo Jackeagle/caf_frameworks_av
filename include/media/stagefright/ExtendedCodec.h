@@ -100,7 +100,7 @@ struct ExtendedCodec {
 
     static const char* overrideComponentName(
             uint32_t quirks, const sp<MetaData> &meta,
-            const char *mime, bool isEncoder);
+            const char *mime, bool isEncoder, const char *omxComponentName);
 
     static void overrideComponentName(
             uint32_t quirks, const sp<AMessage> &msg,
