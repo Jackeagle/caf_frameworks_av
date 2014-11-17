@@ -288,6 +288,7 @@ ExtendedStats::StatsFrameInfoPool::~StatsFrameInfoPool() {
 
 /* TimeBoundVector methods */
 void ExtendedStats::TimeBoundVector::add(StatsFrameInfoWrapper item) {
+    Mutex::Autolock lock(mLock);
     mList.add(item);
     mCurrBoundedSum += (item.infoPtr)->size;
     mTotalSizeSum += (item.infoPtr)->size;
@@ -317,6 +318,7 @@ void ExtendedStats::TimeBoundVector::add(StatsFrameInfoWrapper item) {
 }
 
 void ExtendedStats::TimeBoundVector::clear() {
+    Mutex::Autolock lock(mLock);
     for (uint32_t i = 0; i < mList.size(); i++) {
         delete mList.editItemAt(i).infoPtr;
         mList.editItemAt(i).infoPtr = 0;
