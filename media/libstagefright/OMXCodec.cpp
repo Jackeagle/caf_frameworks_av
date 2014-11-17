@@ -524,6 +524,57 @@ sp<MediaSource> OMXCodec::Create(
     return NULL;
 }
 
+status_t OMXCodec::parseHEVCCodecSpecificData(
+        const void *data, size_t size,
+        unsigned *profile, unsigned *level) {
+    const uint8_t *ptr = (const uint8_t *)data;
+
+    // verify minimum size and configurationVersion == 1.
+    if (size < 7 || ptr[0] != 1) {
+        return ERROR_MALFORMED;
+    }
+
+    *profile = (ptr[1] & 31);
+    *level = ptr[12];
+
+    ptr += 22;
+    size -= 22;
+
+    size_t numofArrays = (char)ptr[0];
+    ptr += 1;
+    size -= 1;
+    size_t j = 0, i = 0;
+    for (i = 0; i < numofArrays; i++) {
+        ptr += 1;
+        size -= 1;
+
+        // Num of nals
+        size_t numofNals = U16_AT(ptr);
+        ptr += 2;
+        size -= 2;
+
+        for (j = 0;j < numofNals;j++) {
+            if (size < 2) {
+                return ERROR_MALFORMED;
+            }
+
+            size_t length = U16_AT(ptr);
+
+            ptr += 2;
+            size -= 2;
+
+            if (size < length) {
+                return ERROR_MALFORMED;
+            }
+            addCodecSpecificData(ptr, length);
+
+            ptr += length;
+            size -= length;
+        }
+    }
+    return OK;
+}
+
 status_t OMXCodec::parseAVCCodecSpecificData(
         const void *data, size_t size,
         unsigned *profile, unsigned *level) {
@@ -642,6 +693,20 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             CODEC_LOGI(
                     "AVC profile = %u (%s), level = %u",
                     profile, AVCProfileToString(profile), level);
+        } else if (meta->findData(kKeyHVCC, &type, &data, &size)) {
+            // Parse the HEVCDecoderConfigurationRecord
+
+            unsigned profile, level;
+            status_t err;
+            if ((err = parseHEVCCodecSpecificData(
+                            data, size, &profile, &level)) != OK) {
+                ALOGE("Malformed HEVC codec specific data.");
+                return err;
+            }
+
+            CODEC_LOGI(
+                    "HEVC profile = %u , level = %u",
+                    profile, level);
         } else if (meta->findData(kKeyVorbisInfo, &type, &data, &size)) {
             addCodecSpecificData(data, size);
 
@@ -3312,7 +3377,8 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
 
         size_t size = specific->mSize;
 
-        if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mMIME)
+        if ((!strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mMIME) ||
+            !strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mMIME))
                 && !(mQuirks & kWantsNALFragments)) {
             static const uint8_t kNALStartCode[4] =
                     { 0x00, 0x00, 0x00, 0x01 };
