@@ -43,6 +43,7 @@ const char * const AudioParameter::keyHandleA2dpDevice = AUDIO_PARAMETER_KEY_HAN
 const char * const AudioParameter::keyADSPStatus = AUDIO_PARAMETER_KEY_ADSP_STATUS;
 const char * const AudioParameter::keySoundCardStatus = AUDIO_PARAMETER_KEY_SND_CARD_STATUS;
 const char * const AudioParameter::keyCanOpenProxy = AUDIO_PARAMETER_KEY_CAN_OPEN_PROXY;
+const char * const AudioParameter::keyDevShutdown = AUDIO_PARAMETER_KEY_DEV_SHUTDOWN;
 
 AudioParameter::AudioParameter(const String8& keyValuePairs)
 {
