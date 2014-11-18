@@ -879,18 +879,21 @@ ssize_t LiveSession::fetchFile(
     if (block_size > 0 && (range_length == -1 || (int64_t)(buffer->size() + block_size) < range_length)) {
         range_length = buffer->size() + block_size;
     }
+
+    size_t bufferOffset = buffer->offset();
     for (;;) {
         // Only resize when we don't know the size.
-        size_t bufferRemaining = buffer->capacity() - buffer->size();
+        size_t bufferRemaining = buffer->capacity() - buffer->size() - bufferOffset;
         if (bufferRemaining == 0 && getSizeErr != OK) {
             bufferRemaining = 32768;
 
             ALOGV("increasing download buffer to %zu bytes",
-                 buffer->size() + bufferRemaining);
+                 buffer->capacity() + bufferRemaining);
 
-            sp<ABuffer> copy = new ABuffer(buffer->size() + bufferRemaining);
-            memcpy(copy->data(), buffer->data(), buffer->size());
-            copy->setRange(0, buffer->size());
+            buffer->setRange(0, buffer->capacity());
+            sp<ABuffer> copy = new ABuffer(buffer->capacity() + bufferRemaining);
+            memcpy(copy->data(), buffer->data(), buffer->capacity());
+            copy->setRange(bufferOffset, buffer->capacity() - bufferOffset);
 
             buffer = copy;
         }
@@ -921,7 +924,7 @@ ssize_t LiveSession::fetchFile(
             break;
         }
 
-        buffer->setRange(0, buffer->size() + (size_t)n);
+        buffer->setRange(bufferOffset, buffer->size() + (size_t)n);
         bytesRead += n;
     }
 
