@@ -14,7 +14,10 @@ LOCAL_SRC_FILES:=                         \
         AwesomePlayer.cpp                 \
         CameraSource.cpp                  \
         CameraSourceTimeLapse.cpp         \
+        ClockEstimator.cpp                \
+        CodecBase.cpp                     \
         DataSource.cpp                    \
+        DataURISource.cpp                 \
         DRMExtractor.cpp                  \
         ESDS.cpp                          \
         FileSource.cpp                    \
@@ -30,8 +33,10 @@ LOCAL_SRC_FILES:=                         \
         MediaBufferGroup.cpp              \
         MediaCodec.cpp                    \
         MediaCodecList.cpp                \
+        MediaCodecSource.cpp              \
         MediaDefs.cpp                     \
         MediaExtractor.cpp                \
+        http/MediaHTTP.cpp                \
         MediaMuxer.cpp                    \
         MediaSource.cpp                   \
         MetaData.cpp                      \
@@ -57,25 +62,25 @@ LOCAL_SRC_FILES:=                         \
         WVMExtractor.cpp                  \
         XINGSeeker.cpp                    \
         avc_utils.cpp                     \
-        mp4/FragmentedMP4Parser.cpp       \
-        mp4/TrackFragment.cpp             \
         ExtendedExtractor.cpp             \
         ExtendedUtils.cpp                 \
-        FMA2DPWriter.cpp                  \
 
 LOCAL_C_INCLUDES:= \
+        $(TOP)/frameworks/av/include/media/ \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
         $(TOP)/frameworks/native/include/media/openmax \
-        $(TOP)/frameworks/native/services/connectivitymanager \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
+        $(TOP)/external/libvpx/libwebm \
+        $(TOP)/system/netd/include \
+        $(TOP)/external/icu/icu4c/source/common \
+        $(TOP)/external/icu/icu4c/source/i18n \
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
         libcamera_client \
-        libconnectivitymanager \
         libcutils \
         libdl \
         libdrmframework \
@@ -85,6 +90,8 @@ LOCAL_SHARED_LIBRARIES := \
         libicuuc \
         liblog \
         libmedia \
+        libnetd_client \
+        libopus \
         libsonivox \
         libssl \
         libstagefright_omx \
@@ -96,10 +103,21 @@ LOCAL_SHARED_LIBRARIES := \
         libz \
         libpowermanager
 
+#QTI FLAC Decoder
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
+LOCAL_SRC_FILES += FLACDecoder.cpp
+LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-flac
+LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio
+LOCAL_CFLAGS := -DQTI_FLAC_DECODER
+endif
+endif
+
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
         libstagefright_aacenc \
         libstagefright_matroska \
+        libstagefright_webm \
         libstagefright_timedtext \
         libvpx \
         libwebm \
@@ -108,18 +126,32 @@ LOCAL_STATIC_LIBRARIES := \
         libFLAC \
         libmedia_helper
 
+ifeq ($(TARGET_USES_QCOM_BSP), true)
+    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
+    LOCAL_CFLAGS += -DQCOM_BSP
+endif
+
 ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
        LOCAL_CFLAGS     += -DENABLE_AV_ENHANCEMENTS
        LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+       LOCAL_C_INCLUDES += $(TOP)/frameworks/av/media/libstagefright/include
        LOCAL_SRC_FILES  += ExtendedMediaDefs.cpp
+       LOCAL_SRC_FILES  += ExtendedWriter.cpp
+       LOCAL_SRC_FILES  += FMA2DPWriter.cpp
 endif #TARGET_ENABLE_AV_ENHANCEMENTS
 
-LOCAL_SRC_FILES += \
-        chromium_http_stub.cpp
-LOCAL_CPPFLAGS += -DCHROMIUM_AVAILABLE=1
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD_24)),true)
+       LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED_24
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+endif
+endif
 
-LOCAL_SHARED_LIBRARIES += libstlport
-include external/stlport/libstlport.mk
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_FLAC_OFFLOAD)),true)
+       LOCAL_CFLAGS     += -DFLAC_OFFLOAD_ENABLED
+endif
+endif
 
 LOCAL_SHARED_LIBRARIES += \
         libstagefright_enc_common \
@@ -132,13 +164,6 @@ LOCAL_CFLAGS += -Wno-multichar
 LOCAL_MODULE:= libstagefright
 
 LOCAL_MODULE_TAGS := optional
-
-
-ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
-       LOCAL_CFLAGS += -DENABLE_AV_ENHANCEMENTS
-       LOCAL_SRC_FILES  += ExtendedWriter.cpp
-       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
-endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS
 
 include $(BUILD_SHARED_LIBRARY)
 

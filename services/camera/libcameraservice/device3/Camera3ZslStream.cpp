@@ -18,6 +18,8 @@
 #define ATRACE_TAG ATRACE_TAG_CAMERA
 //#define LOG_NDEBUG 0
 
+#include <inttypes.h>
+
 #include <utils/Log.h>
 #include <utils/Trace.h>
 #include "Camera3ZslStream.h"
@@ -109,15 +111,17 @@ struct TimestampFinder : public RingBufferConsumer::RingBufferComparator {
 } // namespace anonymous
 
 Camera3ZslStream::Camera3ZslStream(int id, uint32_t width, uint32_t height,
-        int depth) :
+        int bufferCount) :
         Camera3OutputStream(id, CAMERA3_STREAM_BIDIRECTIONAL,
                             width, height,
                             HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED),
-        mDepth(depth) {
+        mDepth(bufferCount) {
 
-    sp<BufferQueue> bq = new BufferQueue();
-    mProducer = new RingBufferConsumer(bq, GRALLOC_USAGE_HW_CAMERA_ZSL, depth);
-    mConsumer = new Surface(bq);
+    sp<IGraphicBufferProducer> producer;
+    sp<IGraphicBufferConsumer> consumer;
+    BufferQueue::createBufferQueue(&producer, &consumer);
+    mProducer = new RingBufferConsumer(consumer, GRALLOC_USAGE_HW_CAMERA_ZSL, bufferCount);
+    mConsumer = new Surface(producer);
 }
 
 Camera3ZslStream::~Camera3ZslStream() {
@@ -172,7 +176,7 @@ status_t Camera3ZslStream::getInputBufferLocked(camera3_stream_buffer *buffer) {
      * in which case we reassign it to acquire_fence
      */
     handoutBufferLocked(*buffer, &(anb->handle), /*acquireFence*/fenceFd,
-                         /*releaseFence*/-1, CAMERA3_BUFFER_STATUS_OK);
+                         /*releaseFence*/-1, CAMERA3_BUFFER_STATUS_OK, /*output*/false);
 
     mBuffersInFlight.push_back(bufferItem);
 
@@ -271,7 +275,7 @@ void Camera3ZslStream::dump(int fd, const Vector<String16> &args) const {
     Camera3IOStreamBase::dump(fd, args);
 
     lines = String8();
-    lines.appendFormat("      Input buffers pending: %d, in flight %d\n",
+    lines.appendFormat("      Input buffers pending: %zu, in flight %zu\n",
             mInputBufferQueue.size(), mBuffersInFlight.size());
     write(fd, lines.string(), lines.size());
 }
@@ -296,8 +300,9 @@ status_t Camera3ZslStream::enqueueInputBufferByTimestamp(
     nsecs_t actual = pinnedBuffer->getBufferItem().mTimestamp;
 
     if (actual != timestamp) {
+        // TODO: this is problematic, we'll end up with using wrong result for this pinned buffer.
         ALOGW("%s: ZSL buffer candidate search didn't find an exact match --"
-              " requested timestamp = %lld, actual timestamp = %lld",
+              " requested timestamp = %" PRId64 ", actual timestamp = %" PRId64,
               __FUNCTION__, timestamp, actual);
     }
 
@@ -310,12 +315,26 @@ status_t Camera3ZslStream::enqueueInputBufferByTimestamp(
     return OK;
 }
 
-status_t Camera3ZslStream::clearInputRingBuffer() {
+status_t Camera3ZslStream::clearInputRingBuffer(nsecs_t* latestTimestamp) {
     Mutex::Autolock l(mLock);
 
+    return clearInputRingBufferLocked(latestTimestamp);
+}
+
+status_t Camera3ZslStream::clearInputRingBufferLocked(nsecs_t* latestTimestamp) {
+
+    if (latestTimestamp) {
+        *latestTimestamp = mProducer->getLatestTimestamp();
+    }
     mInputBufferQueue.clear();
 
     return mProducer->clear();
+}
+
+status_t Camera3ZslStream::disconnectLocked() {
+    clearInputRingBufferLocked(NULL);
+
+    return Camera3OutputStream::disconnectLocked();
 }
 
 status_t Camera3ZslStream::setTransform(int /*transform*/) {

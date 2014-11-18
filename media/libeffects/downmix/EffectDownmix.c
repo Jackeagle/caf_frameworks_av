@@ -16,7 +16,8 @@
 
 #define LOG_TAG "EffectDownmix"
 //#define LOG_NDEBUG 0
-#include <cutils/log.h>
+#include <log/log.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -29,25 +30,13 @@
 
 #define MINUS_3_DB_IN_Q19_12 2896 // -3dB = 0.707 * 2^12 = 2896
 
+// subset of possible audio_channel_mask_t values, and AUDIO_CHANNEL_OUT_* renamed to CHANNEL_MASK_*
 typedef enum {
-    CHANNEL_MASK_SURROUND = AUDIO_CHANNEL_OUT_SURROUND,
-    CHANNEL_MASK_QUAD_BACK = AUDIO_CHANNEL_OUT_QUAD,
-    // like AUDIO_CHANNEL_OUT_QUAD with *_SIDE_* instead of *_BACK_*, same channel order
-    CHANNEL_MASK_QUAD_SIDE =
-            AUDIO_CHANNEL_OUT_FRONT_LEFT |
-            AUDIO_CHANNEL_OUT_FRONT_RIGHT |
-            AUDIO_CHANNEL_OUT_SIDE_LEFT |
-            AUDIO_CHANNEL_OUT_SIDE_RIGHT,
-    CHANNEL_MASK_5POINT1_BACK = AUDIO_CHANNEL_OUT_5POINT1,
-    // like AUDIO_CHANNEL_OUT_5POINT1 with *_SIDE_* instead of *_BACK_*, same channel order
-    CHANNEL_MASK_5POINT1_SIDE =
-            AUDIO_CHANNEL_OUT_FRONT_LEFT |
-            AUDIO_CHANNEL_OUT_FRONT_RIGHT |
-            AUDIO_CHANNEL_OUT_FRONT_CENTER |
-            AUDIO_CHANNEL_OUT_LOW_FREQUENCY |
-            AUDIO_CHANNEL_OUT_SIDE_LEFT |
-            AUDIO_CHANNEL_OUT_SIDE_RIGHT,
-    CHANNEL_MASK_7POINT1_SIDE_BACK = AUDIO_CHANNEL_OUT_7POINT1,
+    CHANNEL_MASK_QUAD_BACK = AUDIO_CHANNEL_OUT_QUAD_BACK,
+    CHANNEL_MASK_QUAD_SIDE = AUDIO_CHANNEL_OUT_QUAD_SIDE,
+    CHANNEL_MASK_5POINT1_BACK = AUDIO_CHANNEL_OUT_5POINT1_BACK,
+    CHANNEL_MASK_5POINT1_SIDE = AUDIO_CHANNEL_OUT_5POINT1_SIDE,
+    CHANNEL_MASK_7POINT1 = AUDIO_CHANNEL_OUT_7POINT1,
 } downmix_input_channel_mask_t;
 
 // effect_handle_t interface implementation for downmix effect
@@ -61,13 +50,13 @@ const struct effect_interface_s gDownmixInterface = {
 // This is the only symbol that needs to be exported
 __attribute__ ((visibility ("default")))
 audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
-    tag : AUDIO_EFFECT_LIBRARY_TAG,
-    version : EFFECT_LIBRARY_API_VERSION,
-    name : "Downmix Library",
-    implementor : "The Android Open Source Project",
-    create_effect : DownmixLib_Create,
-    release_effect : DownmixLib_Release,
-    get_descriptor : DownmixLib_GetDescriptor,
+    .tag = AUDIO_EFFECT_LIBRARY_TAG,
+    .version = EFFECT_LIBRARY_API_VERSION,
+    .name = "Downmix Library",
+    .implementor = "The Android Open Source Project",
+    .create_effect = DownmixLib_Create,
+    .release_effect = DownmixLib_Release,
+    .get_descriptor = DownmixLib_GetDescriptor,
 };
 
 
@@ -99,7 +88,7 @@ const int kNbEffects = sizeof(gDescriptors) / sizeof(const effect_descriptor_t *
 // strictly for testing, logs the indices of the channels for a given mask,
 // uses the same code as Downmix_foldGeneric()
 void Downmix_testIndexComputation(uint32_t mask) {
-    ALOGI("Testing index computation for 0x%x:", mask);
+    ALOGI("Testing index computation for 0x%" PRIx32 ":", mask);
     // check against unsupported channels
     if (mask & kUnsupported) {
         ALOGE("Unsupported channels (top or front left/right of center)");
@@ -129,7 +118,7 @@ void Downmix_testIndexComputation(uint32_t mask) {
         hasBacks = true;
     }
 
-    const int numChan = popcount(mask);
+    const int numChan = audio_channel_count_from_out_mask(mask);
     const bool hasFC = ((mask & AUDIO_CHANNEL_OUT_FRONT_CENTER) == AUDIO_CHANNEL_OUT_FRONT_CENTER);
     const bool hasLFE =
             ((mask & AUDIO_CHANNEL_OUT_LOW_FREQUENCY) == AUDIO_CHANNEL_OUT_LOW_FREQUENCY);
@@ -220,7 +209,7 @@ int32_t DownmixLib_Create(const effect_uuid_t *uuid,
 
     *pHandle = (effect_handle_t) module;
 
-    ALOGV("DownmixLib_Create() %p , size %d", module, sizeof(downmix_module_t));
+    ALOGV("DownmixLib_Create() %p , size %zu", module, sizeof(downmix_module_t));
 
     return 0;
 }
@@ -254,7 +243,7 @@ int32_t DownmixLib_GetDescriptor(const effect_uuid_t *uuid, effect_descriptor_t 
         ALOGV("DownmixLib_GetDescriptor() i=%d", i);
         if (memcmp(uuid, &gDescriptors[i]->uuid, sizeof(effect_uuid_t)) == 0) {
             memcpy(pDescriptor, gDescriptors[i], sizeof(effect_descriptor_t));
-            ALOGV("EffectGetDescriptor - UUID matched downmix type %d, UUID = %x",
+            ALOGV("EffectGetDescriptor - UUID matched downmix type %d, UUID = %" PRIx32,
                  i, gDescriptors[i]->uuid.timeLow);
             return 0;
         }
@@ -328,7 +317,7 @@ static int Downmix_Process(effect_handle_t self,
           // bypass the optimized downmix routines for the common formats
           if (!Downmix_foldGeneric(
                   downmixInputChannelMask, pSrc, pDst, numFrames, accumulate)) {
-              ALOGE("Multichannel configuration 0x%x is not supported", downmixInputChannelMask);
+              ALOGE("Multichannel configuration 0x%" PRIx32 " is not supported", downmixInputChannelMask);
               return -EINVAL;
           }
           break;
@@ -339,20 +328,17 @@ static int Downmix_Process(effect_handle_t self,
         case CHANNEL_MASK_QUAD_SIDE:
             Downmix_foldFromQuad(pSrc, pDst, numFrames, accumulate);
             break;
-        case CHANNEL_MASK_SURROUND:
-            Downmix_foldFromSurround(pSrc, pDst, numFrames, accumulate);
-            break;
         case CHANNEL_MASK_5POINT1_BACK:
         case CHANNEL_MASK_5POINT1_SIDE:
             Downmix_foldFrom5Point1(pSrc, pDst, numFrames, accumulate);
             break;
-        case CHANNEL_MASK_7POINT1_SIDE_BACK:
+        case CHANNEL_MASK_7POINT1:
             Downmix_foldFrom7Point1(pSrc, pDst, numFrames, accumulate);
             break;
         default:
             if (!Downmix_foldGeneric(
                     downmixInputChannelMask, pSrc, pDst, numFrames, accumulate)) {
-                ALOGE("Multichannel configuration 0x%x is not supported", downmixInputChannelMask);
+                ALOGE("Multichannel configuration 0x%" PRIx32 " is not supported", downmixInputChannelMask);
                 return -EINVAL;
             }
             break;
@@ -380,7 +366,7 @@ static int Downmix_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdS
 
     pDownmixer = (downmix_object_t*) &pDwmModule->context;
 
-    ALOGV("Downmix_Command command %d cmdSize %d",cmdCode, cmdSize);
+    ALOGV("Downmix_Command command %" PRIu32 " cmdSize %" PRIu32, cmdCode, cmdSize);
 
     switch (cmdCode) {
     case EFFECT_CMD_INIT:
@@ -404,7 +390,7 @@ static int Downmix_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdS
         break;
 
     case EFFECT_CMD_GET_PARAM:
-        ALOGV("Downmix_Command EFFECT_CMD_GET_PARAM pCmdData %p, *replySize %d, pReplyData: %p",
+        ALOGV("Downmix_Command EFFECT_CMD_GET_PARAM pCmdData %p, *replySize %" PRIu32 ", pReplyData: %p",
                 pCmdData, *replySize, pReplyData);
         if (pCmdData == NULL || cmdSize < (int)(sizeof(effect_param_t) + sizeof(int32_t)) ||
                 pReplyData == NULL ||
@@ -413,7 +399,7 @@ static int Downmix_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdS
         }
         effect_param_t *rep = (effect_param_t *) pReplyData;
         memcpy(pReplyData, pCmdData, sizeof(effect_param_t) + sizeof(int32_t));
-        ALOGV("Downmix_Command EFFECT_CMD_GET_PARAM param %d, replySize %d",
+        ALOGV("Downmix_Command EFFECT_CMD_GET_PARAM param %" PRId32 ", replySize %" PRIu32,
                 *(int32_t *)rep->data, rep->vsize);
         rep->status = Downmix_getParameter(pDownmixer, *(int32_t *)rep->data, &rep->vsize,
                 rep->data + sizeof(int32_t));
@@ -421,8 +407,8 @@ static int Downmix_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdS
         break;
 
     case EFFECT_CMD_SET_PARAM:
-        ALOGV("Downmix_Command EFFECT_CMD_SET_PARAM cmdSize %d pCmdData %p, *replySize %d, " \
-                "pReplyData %p", cmdSize, pCmdData, *replySize, pReplyData);
+        ALOGV("Downmix_Command EFFECT_CMD_SET_PARAM cmdSize %d pCmdData %p, *replySize %" PRIu32
+                ", pReplyData %p", cmdSize, pCmdData, *replySize, pReplyData);
         if (pCmdData == NULL || (cmdSize < (int)(sizeof(effect_param_t) + sizeof(int32_t)))
                 || pReplyData == NULL || *replySize != (int)sizeof(int32_t)) {
             return -EINVAL;
@@ -471,7 +457,7 @@ static int Downmix_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdS
             return -EINVAL;
         }
         // FIXME change type if playing on headset vs speaker
-        ALOGV("Downmix_Command EFFECT_CMD_SET_DEVICE: 0x%08x", *(uint32_t *)pCmdData);
+        ALOGV("Downmix_Command EFFECT_CMD_SET_DEVICE: 0x%08" PRIx32, *(uint32_t *)pCmdData);
         break;
 
     case EFFECT_CMD_SET_VOLUME: {
@@ -491,7 +477,7 @@ static int Downmix_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdS
         if (pCmdData == NULL || cmdSize != (int)sizeof(uint32_t)) {
             return -EINVAL;
         }
-        ALOGV("Downmix_Command EFFECT_CMD_SET_AUDIO_MODE: %d", *(uint32_t *)pCmdData);
+        ALOGV("Downmix_Command EFFECT_CMD_SET_AUDIO_MODE: %" PRIu32, *(uint32_t *)pCmdData);
         break;
 
     case EFFECT_CMD_SET_CONFIG_REVERSE:
@@ -500,7 +486,7 @@ static int Downmix_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdS
         break;
 
     default:
-        ALOGW("Downmix_Command invalid command %d",cmdCode);
+        ALOGW("Downmix_Command invalid command %" PRIu32, cmdCode);
         return -EINVAL;
     }
 
@@ -629,7 +615,9 @@ int Downmix_Configure(downmix_module_t *pDwmModule, effect_config_t *pConfig, bo
         return -EINVAL;
     }
 
-    memcpy(&pDwmModule->config, pConfig, sizeof(effect_config_t));
+    if (&pDwmModule->config != pConfig) {
+        memcpy(&pDwmModule->config, pConfig, sizeof(effect_config_t));
+    }
 
     if (init) {
         pDownmixer->type = DOWNMIX_TYPE_FOLD;
@@ -641,7 +629,8 @@ int Downmix_Configure(downmix_module_t *pDwmModule, effect_config_t *pConfig, bo
             ALOGE("Downmix_Configure error: input channel mask can't be 0");
             return -EINVAL;
         }
-        pDownmixer->input_channel_count = popcount(pConfig->inputCfg.channels);
+        pDownmixer->input_channel_count =
+                audio_channel_count_from_out_mask(pConfig->inputCfg.channels);
     }
 
     Downmix_Reset(pDownmixer, init);
@@ -697,31 +686,31 @@ int Downmix_Reset(downmix_object_t *pDownmixer, bool init) {
  *
  *----------------------------------------------------------------------------
  */
-int Downmix_setParameter(downmix_object_t *pDownmixer, int32_t param, size_t size, void *pValue) {
+int Downmix_setParameter(downmix_object_t *pDownmixer, int32_t param, uint32_t size, void *pValue) {
 
     int16_t value16;
-    ALOGV("Downmix_setParameter, context %p, param %d, value16 %d, value32 %d",
+    ALOGV("Downmix_setParameter, context %p, param %" PRId32 ", value16 %" PRId16 ", value32 %" PRId32,
             pDownmixer, param, *(int16_t *)pValue, *(int32_t *)pValue);
 
     switch (param) {
 
       case DOWNMIX_PARAM_TYPE:
         if (size != sizeof(downmix_type_t)) {
-            ALOGE("Downmix_setParameter(DOWNMIX_PARAM_TYPE) invalid size %d, should be %d",
+            ALOGE("Downmix_setParameter(DOWNMIX_PARAM_TYPE) invalid size %" PRIu32 ", should be %zu",
                     size, sizeof(downmix_type_t));
             return -EINVAL;
         }
         value16 = *(int16_t *)pValue;
-        ALOGV("set DOWNMIX_PARAM_TYPE, type %d", value16);
+        ALOGV("set DOWNMIX_PARAM_TYPE, type %" PRId16, value16);
         if (!((value16 > DOWNMIX_TYPE_INVALID) && (value16 <= DOWNMIX_TYPE_LAST))) {
-            ALOGE("Downmix_setParameter invalid DOWNMIX_PARAM_TYPE value %d", value16);
+            ALOGE("Downmix_setParameter invalid DOWNMIX_PARAM_TYPE value %" PRId16, value16);
             return -EINVAL;
         } else {
             pDownmixer->type = (downmix_type_t) value16;
         break;
 
       default:
-        ALOGE("Downmix_setParameter unknown parameter %d", param);
+        ALOGE("Downmix_setParameter unknown parameter %" PRId32, param);
         return -EINVAL;
     }
 }
@@ -753,24 +742,24 @@ int Downmix_setParameter(downmix_object_t *pDownmixer, int32_t param, size_t siz
  *
  *----------------------------------------------------------------------------
  */
-int Downmix_getParameter(downmix_object_t *pDownmixer, int32_t param, size_t *pSize, void *pValue) {
+int Downmix_getParameter(downmix_object_t *pDownmixer, int32_t param, uint32_t *pSize, void *pValue) {
     int16_t *pValue16;
 
     switch (param) {
 
     case DOWNMIX_PARAM_TYPE:
       if (*pSize < sizeof(int16_t)) {
-          ALOGE("Downmix_getParameter invalid parameter size %d for DOWNMIX_PARAM_TYPE", *pSize);
+          ALOGE("Downmix_getParameter invalid parameter size %" PRIu32 " for DOWNMIX_PARAM_TYPE", *pSize);
           return -EINVAL;
       }
       pValue16 = (int16_t *)pValue;
       *pValue16 = (int16_t) pDownmixer->type;
       *pSize = sizeof(int16_t);
-      ALOGV("Downmix_getParameter DOWNMIX_PARAM_TYPE is %d", *pValue16);
+      ALOGV("Downmix_getParameter DOWNMIX_PARAM_TYPE is %" PRId16, *pValue16);
       break;
 
     default:
-      ALOGE("Downmix_getParameter unknown parameter %d", param);
+      ALOGE("Downmix_getParameter unknown parameter %" PRId16, param);
       return -EINVAL;
     }
 
@@ -816,65 +805,6 @@ void Downmix_foldFromQuad(int16_t *pSrc, int16_t*pDst, size_t numFrames, bool ac
             pDst[0] = clamp16((pSrc[0] + pSrc[2]) >> 1);
             // FR + RR
             pDst[1] = clamp16((pSrc[1] + pSrc[3]) >> 1);
-            pSrc += 4;
-            pDst += 2;
-            numFrames--;
-        }
-    }
-}
-
-
-/*----------------------------------------------------------------------------
- * Downmix_foldFromSurround()
- *----------------------------------------------------------------------------
- * Purpose:
- * downmix a "surround sound" (mono rear) signal to stereo
- *
- * Inputs:
- *  pSrc       surround signal to downmix
- *  numFrames  the number of surround frames to downmix
- *  accumulate whether to mix (when true) the result of the downmix with the contents of pDst,
- *               or overwrite pDst (when false)
- *
- * Outputs:
- *  pDst       downmixed stereo audio samples
- *
- *----------------------------------------------------------------------------
- */
-void Downmix_foldFromSurround(int16_t *pSrc, int16_t*pDst, size_t numFrames, bool accumulate) {
-    int32_t lt, rt, centerPlusRearContrib; // samples in Q19.12 format
-    // sample at index 0 is FL
-    // sample at index 1 is FR
-    // sample at index 2 is FC
-    // sample at index 3 is RC
-    // code is mostly duplicated between the two values of accumulate to avoid repeating the test
-    // for every sample
-    if (accumulate) {
-        while (numFrames) {
-            // centerPlusRearContrib = FC(-3dB) + RC(-3dB)
-            centerPlusRearContrib = (pSrc[2] * MINUS_3_DB_IN_Q19_12) + (pSrc[3] * MINUS_3_DB_IN_Q19_12);
-            // FL + centerPlusRearContrib
-            lt = (pSrc[0] << 12) + centerPlusRearContrib;
-            // FR + centerPlusRearContrib
-            rt = (pSrc[1] << 12) + centerPlusRearContrib;
-            // accumulate in destination
-            pDst[0] = clamp16(pDst[0] + (lt >> 13));
-            pDst[1] = clamp16(pDst[1] + (rt >> 13));
-            pSrc += 4;
-            pDst += 2;
-            numFrames--;
-        }
-    } else { // same code as above but without adding and clamping pDst[i] to itself
-        while (numFrames) {
-            // centerPlusRearContrib = FC(-3dB) + RC(-3dB)
-            centerPlusRearContrib = (pSrc[2] * MINUS_3_DB_IN_Q19_12) + (pSrc[3] * MINUS_3_DB_IN_Q19_12);
-            // FL + centerPlusRearContrib
-            lt = (pSrc[0] << 12) + centerPlusRearContrib;
-            // FR + centerPlusRearContrib
-            rt = (pSrc[1] << 12) + centerPlusRearContrib;
-            // store in destination
-            pDst[0] = clamp16(lt >> 13); // differs from when accumulate is true above
-            pDst[1] = clamp16(rt >> 13); // differs from when accumulate is true above
             pSrc += 4;
             pDst += 2;
             numFrames--;
@@ -1068,7 +998,7 @@ bool Downmix_foldGeneric(
         hasBacks = true;
     }
 
-    const int numChan = popcount(mask);
+    const int numChan = audio_channel_count_from_out_mask(mask);
     const bool hasFC = ((mask & AUDIO_CHANNEL_OUT_FRONT_CENTER) == AUDIO_CHANNEL_OUT_FRONT_CENTER);
     const bool hasLFE =
             ((mask & AUDIO_CHANNEL_OUT_LOW_FREQUENCY) == AUDIO_CHANNEL_OUT_LOW_FREQUENCY);

@@ -63,6 +63,7 @@ struct AwesomePlayer {
     void setUID(uid_t uid);
 
     status_t setDataSource(
+            const sp<IMediaHTTPService> &httpService,
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
 
@@ -103,6 +104,9 @@ struct AwesomePlayer {
     void postAudioSeekComplete();
     void postAudioTearDown();
     status_t dump(int fd, const Vector<String16> &args) const;
+
+    status_t suspend();
+    status_t resume();
 
 private:
     friend struct AwesomeEvent;
@@ -159,6 +163,7 @@ private:
     SystemTimeSource mSystemTimeSource;
     TimeSource *mTimeSource;
 
+    sp<IMediaHTTPService> mHTTPService;
     String8 mUri;
     KeyedVector<String8, String8> mUriHeaders;
 
@@ -171,6 +176,7 @@ private:
     bool mVideoRendererIsPreview;
     int32_t mMediaRenderingStartGeneration;
     int32_t mStartGeneration;
+    ssize_t mActiveVideoTrackIndex;
 
     ssize_t mActiveAudioTrackIndex;
     sp<MediaSource> mAudioTrack;
@@ -189,6 +195,7 @@ private:
 
     int64_t mTimeSourceDeltaUs;
     int64_t mVideoTimeUs;
+    int64_t mVideoFrameDeltaUs;
 
     enum SeekType {
         NO_SEEK,
@@ -204,6 +211,8 @@ private:
 
     bool mWatchForAudioSeekComplete;
     bool mWatchForAudioEOS;
+
+    bool mIsFirstFrameAfterResume;
 
     sp<TimedEventQueue::Event> mVideoEvent;
     bool mVideoEventPending;
@@ -231,6 +240,7 @@ private:
     void postAudioTearDownEvent(int64_t delayUs);
 
     status_t play_l();
+    status_t fallbackToSWDecoder();
 
     MediaBuffer *mVideoBuffer;
 
@@ -242,11 +252,13 @@ private:
 
     int64_t mLastVideoTimeUs;
     TimedTextDriver *mTextDriver;
+    ssize_t mActiveTextTrackIndex;
 
     sp<WVMExtractor> mWVMExtractor;
     sp<MediaExtractor> mExtractor;
 
     status_t setDataSource_l(
+            const sp<IMediaHTTPService> &httpService,
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
 
@@ -380,6 +392,7 @@ private:
     status_t selectTrack(size_t trackIndex, bool select);
 
     size_t countTracks() const;
+    bool isWidevineContent() const;
 
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);

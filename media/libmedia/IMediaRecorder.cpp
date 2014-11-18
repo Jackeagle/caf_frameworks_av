@@ -17,6 +17,10 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "IMediaRecorder"
+
+#include <inttypes.h>
+#include <unistd.h>
+
 #include <utils/Log.h>
 #include <binder/Parcel.h>
 #include <camera/ICamera.h>
@@ -24,8 +28,6 @@
 #include <media/IMediaRecorder.h>
 #include <gui/Surface.h>
 #include <gui/IGraphicBufferProducer.h>
-#include <unistd.h>
-
 
 namespace android {
 
@@ -36,6 +38,7 @@ enum {
     QUERY_SURFACE_MEDIASOURCE,
     RESET,
     STOP,
+    PAUSE,
     START,
     PREPARE,
     GET_MAX_AMPLITUDE,
@@ -167,7 +170,7 @@ public:
     }
 
     status_t setOutputFile(int fd, int64_t offset, int64_t length) {
-        ALOGV("setOutputFile(%d, %lld, %lld)", fd, offset, length);
+        ALOGV("setOutputFile(%d, %" PRId64 ", %" PRId64 ")", fd, offset, length);
         Parcel data, reply;
         data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
         data.writeFileDescriptor(fd);
@@ -256,6 +259,15 @@ public:
         return reply.readInt32();
     }
 
+    status_t pause()
+    {
+        ALOGV("pause");
+        Parcel data, reply;
+        data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
+        remote()->transact(PAUSE, data, &reply);
+        return reply.readInt32();
+    }
+
     status_t stop()
     {
         ALOGV("stop");
@@ -329,6 +341,12 @@ status_t BnMediaRecorder::onTransact(
             ALOGV("STOP");
             CHECK_INTERFACE(IMediaRecorder, data, reply);
             reply->writeInt32(stop());
+            return NO_ERROR;
+        } break;
+        case PAUSE: {
+            ALOGV("PAUSE");
+            CHECK_INTERFACE(IMediaRecorder, data, reply);
+            reply->writeInt32(pause());
             return NO_ERROR;
         } break;
         case START: {

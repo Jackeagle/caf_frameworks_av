@@ -17,15 +17,18 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "RingBufferConsumer"
 #define ATRACE_TAG ATRACE_TAG_GRAPHICS
+
+#include <inttypes.h>
+
 #include <utils/Log.h>
 
 #include <gui/RingBufferConsumer.h>
 
-#define BI_LOGV(x, ...) ALOGV("[%s] "x, mName.string(), ##__VA_ARGS__)
-#define BI_LOGD(x, ...) ALOGD("[%s] "x, mName.string(), ##__VA_ARGS__)
-#define BI_LOGI(x, ...) ALOGI("[%s] "x, mName.string(), ##__VA_ARGS__)
-#define BI_LOGW(x, ...) ALOGW("[%s] "x, mName.string(), ##__VA_ARGS__)
-#define BI_LOGE(x, ...) ALOGE("[%s] "x, mName.string(), ##__VA_ARGS__)
+#define BI_LOGV(x, ...) ALOGV("[%s] " x, mName.string(), ##__VA_ARGS__)
+#define BI_LOGD(x, ...) ALOGD("[%s] " x, mName.string(), ##__VA_ARGS__)
+#define BI_LOGI(x, ...) ALOGI("[%s] " x, mName.string(), ##__VA_ARGS__)
+#define BI_LOGW(x, ...) ALOGW("[%s] " x, mName.string(), ##__VA_ARGS__)
+#define BI_LOGE(x, ...) ALOGE("[%s] " x, mName.string(), ##__VA_ARGS__)
 
 #undef assert
 #define assert(x) ALOG_ASSERT((x), #x)
@@ -38,7 +41,8 @@ RingBufferConsumer::RingBufferConsumer(const sp<IGraphicBufferConsumer>& consume
         uint32_t consumerUsage,
         int bufferCount) :
     ConsumerBase(consumer),
-    mBufferCount(bufferCount)
+    mBufferCount(bufferCount),
+    mLatestTimestamp(0)
 {
     mConsumer->setConsumerUsageBits(consumerUsage);
     mConsumer->setMaxAcquiredBufferCount(bufferCount);
@@ -149,6 +153,14 @@ status_t RingBufferConsumer::clear() {
     return OK;
 }
 
+nsecs_t RingBufferConsumer::getLatestTimestamp() {
+    Mutex::Autolock _l(mMutex);
+    if (mBufferItemList.size() == 0) {
+        return 0;
+    }
+    return mLatestTimestamp;
+}
+
 void RingBufferConsumer::pinBufferLocked(const BufferItem& item) {
     List<RingBufferItem>::iterator it, end;
 
@@ -164,10 +176,10 @@ void RingBufferConsumer::pinBufferLocked(const BufferItem& item) {
     }
 
     if (it == end) {
-        BI_LOGE("Failed to pin buffer (timestamp %lld, framenumber %lld)",
+        BI_LOGE("Failed to pin buffer (timestamp %" PRId64 ", framenumber %" PRIu64 ")",
                  item.mTimestamp, item.mFrameNumber);
     } else {
-        BI_LOGV("Pinned buffer (frame %lld, timestamp %lld)",
+        BI_LOGV("Pinned buffer (frame %" PRIu64 ", timestamp %" PRId64 ")",
                 item.mFrameNumber, item.mTimestamp);
     }
 }
@@ -222,12 +234,12 @@ status_t RingBufferConsumer::releaseOldestBufferLocked(size_t* pinnedFrames) {
 
         if (err != OK) {
             BI_LOGE("Failed to add release fence to buffer "
-                    "(timestamp %lld, framenumber %lld",
+                    "(timestamp %" PRId64 ", framenumber %" PRIu64,
                     item.mTimestamp, item.mFrameNumber);
             return err;
         }
 
-        BI_LOGV("Attempting to release buffer timestamp %lld, frame %lld",
+        BI_LOGV("Attempting to release buffer timestamp %" PRId64 ", frame %" PRIu64,
                 item.mTimestamp, item.mFrameNumber);
 
         // item.mGraphicBuffer was populated with the proper graphic-buffer
@@ -241,7 +253,7 @@ status_t RingBufferConsumer::releaseOldestBufferLocked(size_t* pinnedFrames) {
             return err;
         }
 
-        BI_LOGV("Buffer timestamp %lld, frame %lld evicted",
+        BI_LOGV("Buffer timestamp %" PRId64 ", frame %" PRIu64 " evicted",
                 item.mTimestamp, item.mFrameNumber);
 
         size_t currentSize = mBufferItemList.size();
@@ -294,10 +306,17 @@ void RingBufferConsumer::onFrameAvailable() {
             return;
         }
 
-        BI_LOGV("New buffer acquired (timestamp %lld), "
-                "buffer items %u out of %d",
+        BI_LOGV("New buffer acquired (timestamp %" PRId64 "), "
+                "buffer items %zu out of %d",
                 item.mTimestamp,
                 mBufferItemList.size(), mBufferCount);
+
+        if (item.mTimestamp < mLatestTimestamp) {
+            BI_LOGE("Timestamp  decreases from %" PRId64 " to %" PRId64,
+                    mLatestTimestamp, item.mTimestamp);
+        }
+
+        mLatestTimestamp = item.mTimestamp;
 
         item.mGraphicBuffer = mSlots[item.mBuf].mGraphicBuffer;
     } // end of mMutex lock
@@ -321,7 +340,7 @@ void RingBufferConsumer::unpinBuffer(const BufferItem& item) {
 
             if (res != OK) {
                 BI_LOGE("Failed to add release fence to buffer "
-                        "(timestamp %lld, framenumber %lld",
+                        "(timestamp %" PRId64 ", framenumber %" PRIu64,
                         item.mTimestamp, item.mFrameNumber);
                 return;
             }
@@ -333,10 +352,10 @@ void RingBufferConsumer::unpinBuffer(const BufferItem& item) {
 
     if (it == end) {
         // This should never happen. If it happens, we have a bug.
-        BI_LOGE("Failed to unpin buffer (timestamp %lld, framenumber %lld)",
+        BI_LOGE("Failed to unpin buffer (timestamp %" PRId64 ", framenumber %" PRIu64 ")",
                  item.mTimestamp, item.mFrameNumber);
     } else {
-        BI_LOGV("Unpinned buffer (timestamp %lld, framenumber %lld)",
+        BI_LOGV("Unpinned buffer (timestamp %" PRId64 ", framenumber %" PRIu64 ")",
                  item.mTimestamp, item.mFrameNumber);
     }
 }

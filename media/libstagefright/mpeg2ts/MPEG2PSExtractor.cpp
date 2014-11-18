@@ -36,6 +36,8 @@
 #include <media/stagefright/Utils.h>
 #include <utils/String8.h>
 
+#include <inttypes.h>
+
 namespace android {
 
 struct MPEG2PSExtractor::Track : public MediaSource {
@@ -130,7 +132,8 @@ sp<MediaSource> MPEG2PSExtractor::getTrack(size_t index) {
     return new WrappedTrack(this, mTracks.valueAt(index));
 }
 
-sp<MetaData> MPEG2PSExtractor::getTrackMetaData(size_t index, uint32_t flags) {
+sp<MetaData> MPEG2PSExtractor::getTrackMetaData(
+        size_t index, uint32_t /* flags */) {
     if (index >= mTracks.size()) {
         return NULL;
     }
@@ -408,7 +411,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             PTS |= br.getBits(15);
             CHECK_EQ(br.getBits(1), 1u);
 
-            ALOGV("PTS = %llu", PTS);
+            ALOGV("PTS = %" PRIu64, PTS);
             // ALOGI("PTS = %.2f secs", PTS / 90000.0f);
 
             optional_bytes_remaining -= 5;
@@ -425,7 +428,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
                 DTS |= br.getBits(15);
                 CHECK_EQ(br.getBits(1), 1u);
 
-                ALOGV("DTS = %llu", DTS);
+                ALOGV("DTS = %" PRIu64, DTS);
 
                 optional_bytes_remaining -= 5;
             }
@@ -443,7 +446,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             ESCR |= br.getBits(15);
             CHECK_EQ(br.getBits(1), 1u);
 
-            ALOGV("ESCR = %llu", ESCR);
+            ALOGV("ESCR = %" PRIu64, ESCR);
             /* unsigned ESCR_extension = */br.getBits(9);
 
             CHECK_EQ(br.getBits(1), 1u);
@@ -472,7 +475,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
 
         if (br.numBitsLeft() < dataLength * 8) {
             ALOGE("PES packet does not carry enough data to contain "
-                 "payload. (numBitsLeft = %d, required = %d)",
+                 "payload. (numBitsLeft = %zu, required = %u)",
                  br.numBitsLeft(), dataLength * 8);
 
             return ERROR_MALFORMED;
@@ -625,7 +628,7 @@ status_t MPEG2PSExtractor::Track::read(
 
 status_t MPEG2PSExtractor::Track::appendPESData(
         unsigned PTS_DTS_flags,
-        uint64_t PTS, uint64_t DTS,
+        uint64_t PTS, uint64_t /* DTS */,
         const uint8_t *data, size_t size) {
     if (mQueue == NULL) {
         return OK;

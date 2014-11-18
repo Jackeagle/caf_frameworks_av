@@ -15,7 +15,7 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_MODULE:= libeffectproxy
-LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/soundfx
+LOCAL_MODULE_RELATIVE_PATH := soundfx
 LOCAL_MODULE_TAGS := optional
 
 
@@ -28,7 +28,8 @@ LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libdl libeffects
 
 LOCAL_C_INCLUDES := \
         system/media/audio_effects/include \
-        bionic/libc/include
+        bionic/libc/include \
+        frameworks/av/media/libeffects/factory
 
 include $(BUILD_SHARED_LIBRARY)
 

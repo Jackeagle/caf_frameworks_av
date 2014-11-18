@@ -144,7 +144,8 @@ enum media_player_states {
     MEDIA_PLAYER_STARTED            = 1 << 4,
     MEDIA_PLAYER_PAUSED             = 1 << 5,
     MEDIA_PLAYER_STOPPED            = 1 << 6,
-    MEDIA_PLAYER_PLAYBACK_COMPLETE  = 1 << 7
+    MEDIA_PLAYER_PLAYBACK_COMPLETE  = 1 << 7,
+    MEDIA_PLAYER_SUSPENDED          = 1 << 8
 };
 
 // Keep KEY_PARAMETER_* in sync with MediaPlayer.java.
@@ -161,6 +162,9 @@ enum media_parameter_keys {
     // Playback rate expressed in permille (1000 is normal speed), saved as int32_t, with negative
     // values used for rewinding or reverse playback.
     KEY_PARAMETER_PLAYBACK_RATE_PERMILLE = 1300,                // set only
+
+    // Set a Parcel containing the value of a parcelled Java AudioAttribute instance
+    KEY_PARAMETER_AUDIO_ATTRIBUTES = 1400                       // set only
 };
 
 // Keep INVOKE_ID_* in sync with MediaPlayer.java.
@@ -171,6 +175,7 @@ enum media_player_invoke_ids {
     INVOKE_ID_SELECT_TRACK = 4,
     INVOKE_ID_UNSELECT_TRACK = 5,
     INVOKE_ID_SET_VIDEO_SCALING_MODE = 6,
+    INVOKE_ID_GET_SELECTED_TRACK = 7
 };
 
 // Keep MEDIA_TRACK_TYPE_* in sync with MediaPlayer.java.
@@ -190,6 +195,8 @@ public:
     virtual void notify(int msg, int ext1, int ext2, const Parcel *obj) = 0;
 };
 
+struct IMediaHTTPService;
+
 class MediaPlayer : public BnMediaPlayerClient,
                     public virtual IMediaDeathNotifier
 {
@@ -200,6 +207,7 @@ public:
             void            disconnect();
 
             status_t        setDataSource(
+                    const sp<IMediaHTTPService> &httpService,
                     const char *url,
                     const KeyedVector<String8, String8> *headers);
 
@@ -221,13 +229,19 @@ public:
             status_t        getDuration(int *msec);
             status_t        reset();
             status_t        setAudioStreamType(audio_stream_type_t type);
+            status_t        getAudioStreamType(audio_stream_type_t *type);
             status_t        setLooping(int loop);
             bool            isLooping();
             status_t        setVolume(float leftVolume, float rightVolume);
             void            notify(int msg, int ext1, int ext2, const Parcel *obj = NULL);
-    static  status_t        decode(const char* url, uint32_t *pSampleRate, int* pNumChannels,
-                                   audio_format_t* pFormat,
-                                   const sp<IMemoryHeap>& heap, size_t *pSize);
+    static  status_t        decode(
+            const sp<IMediaHTTPService> &httpService,
+            const char* url,
+            uint32_t *pSampleRate,
+            int* pNumChannels,
+            audio_format_t* pFormat,
+            const sp<IMemoryHeap>& heap,
+            size_t *pSize);
     static  status_t        decode(int fd, int64_t offset, int64_t length, uint32_t *pSampleRate,
                                    int* pNumChannels, audio_format_t* pFormat,
                                    const sp<IMemoryHeap>& heap, size_t *pSize);
@@ -242,9 +256,8 @@ public:
             status_t        getParameter(int key, Parcel* reply);
             status_t        setRetransmitEndpoint(const char* addrString, uint16_t port);
             status_t        setNextMediaPlayer(const sp<MediaPlayer>& player);
-
-            status_t updateProxyConfig(
-                    const char *host, int32_t port, const char *exclusionList);
+            status_t        suspend();
+            status_t        resume();
 
 private:
             void            clear_l();
@@ -254,6 +267,7 @@ private:
             status_t        attachNewPlayer(const sp<IMediaPlayer>& player);
             status_t        reset_l();
             status_t        doSetRetransmitEndpoint(const sp<IMediaPlayer>& player);
+            status_t        checkStateForKeySet_l(int key);
 
     sp<IMediaPlayer>            mPlayer;
     thread_id_t                 mLockThreadId;
@@ -268,6 +282,7 @@ private:
     bool                        mPrepareSync;
     status_t                    mPrepareStatus;
     audio_stream_type_t         mStreamType;
+    Parcel*                     mAudioAttributesParcel;
     bool                        mLoop;
     float                       mLeftVolume;
     float                       mRightVolume;

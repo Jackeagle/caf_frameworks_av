@@ -54,8 +54,10 @@ status_t StagefrightPlayer::setUID(uid_t uid) {
 }
 
 status_t StagefrightPlayer::setDataSource(
-        const char *url, const KeyedVector<String8, String8> *headers) {
-    return mPlayer->setDataSource(url, headers);
+        const sp<IMediaHTTPService> &httpService,
+        const char *url,
+        const KeyedVector<String8, String8> *headers) {
+    return mPlayer->setDataSource(httpService, url, headers);
 }
 
 // Warning: The filedescriptor passed into this method will only be valid until
@@ -187,7 +189,7 @@ status_t StagefrightPlayer::getParameter(int key, Parcel *reply) {
 }
 
 status_t StagefrightPlayer::getMetadata(
-        const media::Metadata::Filter& ids, Parcel *records) {
+        const media::Metadata::Filter& /* ids */, Parcel *records) {
     using media::Metadata;
 
     uint32_t flags = mPlayer->flags();
@@ -215,6 +217,16 @@ status_t StagefrightPlayer::getMetadata(
 
 status_t StagefrightPlayer::dump(int fd, const Vector<String16> &args) const {
     return mPlayer->dump(fd, args);
+}
+
+status_t StagefrightPlayer::suspend() {
+    ALOGV("suspend");
+    return mPlayer->suspend();
+}
+
+status_t StagefrightPlayer::resume() {
+    ALOGV("resume");
+    return mPlayer->resume();
 }
 
 }  // namespace android

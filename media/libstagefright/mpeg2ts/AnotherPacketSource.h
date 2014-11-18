@@ -49,18 +49,25 @@ struct AnotherPacketSource : public MediaSource {
     // presentation timestamps since the last discontinuity (if any).
     int64_t getBufferedDurationUs(status_t *finalResult);
 
+    int64_t getEstimatedDurationUs();
+
     status_t nextBufferTime(int64_t *timeUs);
 
     void queueAccessUnit(const sp<ABuffer> &buffer);
 
     void queueDiscontinuity(
-            ATSParser::DiscontinuityType type, const sp<AMessage> &extra);
+            ATSParser::DiscontinuityType type,
+            const sp<AMessage> &extra,
+            bool discard);
 
     void signalEOS(status_t result);
 
     status_t dequeueAccessUnit(sp<ABuffer> *buffer);
 
     bool isFinished(int64_t duration) const;
+
+    sp<AMessage> getLatestEnqueuedMeta();
+    sp<AMessage> getLatestDequeuedMeta();
 
 protected:
     virtual ~AnotherPacketSource();
@@ -70,12 +77,18 @@ private:
     Condition mCondition;
 
     bool mIsAudio;
+    bool mIsVideo;
     sp<MetaData> mFormat;
     int64_t mLastQueuedTimeUs;
     List<sp<ABuffer> > mBuffers;
     status_t mEOSResult;
+    sp<AMessage> mLatestEnqueuedMeta;
+    sp<AMessage> mLatestDequeuedMeta;
+
+    size_t  mQueuedDiscontinuityCount;
 
     bool wasFormatChange(int32_t discontinuityType) const;
+    int64_t getBufferedDurationUs_l(status_t *finalResult);
 
     DISALLOW_EVIL_CONSTRUCTORS(AnotherPacketSource);
 };

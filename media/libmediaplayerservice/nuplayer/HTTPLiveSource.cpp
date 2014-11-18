@@ -24,6 +24,7 @@
 #include "LiveDataSource.h"
 #include "LiveSession.h"
 
+#include <media/IMediaHTTPService.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -34,13 +35,12 @@ namespace android {
 
 NuPlayer::HTTPLiveSource::HTTPLiveSource(
         const sp<AMessage> &notify,
+        const sp<IMediaHTTPService> &httpService,
         const char *url,
-        const KeyedVector<String8, String8> *headers,
-        bool uidValid, uid_t uid)
+        const KeyedVector<String8, String8> *headers)
     : Source(notify),
+      mHTTPService(httpService),
       mURL(url),
-      mUIDValid(uidValid),
-      mUID(uid),
       mFlags(0),
       mFinalResult(OK),
       mOffset(0),
@@ -62,25 +62,31 @@ NuPlayer::HTTPLiveSource::HTTPLiveSource(
 NuPlayer::HTTPLiveSource::~HTTPLiveSource() {
     if (mLiveSession != NULL) {
         mLiveSession->disconnect();
-        mLiveSession.clear();
 
+        mLiveLooper->unregisterHandler(mLiveSession->id());
+        mLiveLooper->unregisterHandler(id());
         mLiveLooper->stop();
+
+        mLiveSession.clear();
         mLiveLooper.clear();
     }
 }
 
 void NuPlayer::HTTPLiveSource::prepareAsync() {
-    mLiveLooper = new ALooper;
-    mLiveLooper->setName("http live");
-    mLiveLooper->start();
+    if (mLiveLooper == NULL) {
+        mLiveLooper = new ALooper;
+        mLiveLooper->setName("http live");
+        mLiveLooper->start();
+
+        mLiveLooper->registerHandler(this);
+    }
 
     sp<AMessage> notify = new AMessage(kWhatSessionNotify, id());
 
     mLiveSession = new LiveSession(
             notify,
             (mFlags & kFlagIncognito) ? LiveSession::kFlagIncognito : 0,
-            mUIDValid,
-            mUID);
+            mHTTPService);
 
     mLiveLooper->registerHandler(mLiveSession);
 
@@ -121,8 +127,12 @@ status_t NuPlayer::HTTPLiveSource::getDuration(int64_t *durationUs) {
     return mLiveSession->getDuration(durationUs);
 }
 
-status_t NuPlayer::HTTPLiveSource::getTrackInfo(Parcel *reply) const {
-    return mLiveSession->getTrackInfo(reply);
+size_t NuPlayer::HTTPLiveSource::getTrackCount() const {
+    return mLiveSession->getTrackCount();
+}
+
+sp<AMessage> NuPlayer::HTTPLiveSource::getTrackInfo(size_t trackIndex) const {
+    return mLiveSession->getTrackInfo(trackIndex);
 }
 
 status_t NuPlayer::HTTPLiveSource::selectTrack(size_t trackIndex, bool select) {
@@ -140,7 +150,7 @@ status_t NuPlayer::HTTPLiveSource::selectTrack(size_t trackIndex, bool select) {
     // LiveSession::selectTrack returns BAD_VALUE when selecting the currently
     // selected track, or unselecting a non-selected track. In this case it's an
     // no-op so we return OK.
-    return (err == OK || err == BAD_VALUE) ? OK : err;
+    return (err == OK || err == BAD_VALUE) ? (status_t)OK : err;
 }
 
 status_t NuPlayer::HTTPLiveSource::seekTo(int64_t seekTimeUs) {
@@ -201,7 +211,16 @@ void NuPlayer::HTTPLiveSource::onSessionNotify(const sp<AMessage> &msg) {
     switch (what) {
         case LiveSession::kWhatPrepared:
         {
-            notifyVideoSizeChanged(0, 0);
+            // notify the current size here if we have it, otherwise report an initial size of (0,0)
+            sp<AMessage> format = getFormat(false /* audio */);
+            int32_t width;
+            int32_t height;
+            if (format != NULL &&
+                    format->findInt32("width", &width) && format->findInt32("height", &height)) {
+                notifyVideoSizeChanged(format);
+            } else {
+                notifyVideoSizeChanged();
+            }
 
             uint32_t flags = FLAG_CAN_PAUSE;
             if (mLiveSession->isSeekable()) {

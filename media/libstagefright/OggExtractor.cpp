@@ -151,7 +151,7 @@ sp<MetaData> OggSource::getFormat() {
     return mExtractor->mImpl->getFormat();
 }
 
-status_t OggSource::start(MetaData *params) {
+status_t OggSource::start(MetaData * /* params */) {
     if (mStarted) {
         return INVALID_OPERATION;
     }
@@ -320,25 +320,29 @@ status_t MyVorbisExtractor::seekToTime(int64_t timeUs) {
     }
 
     size_t left = 0;
-    size_t right = mTableOfContents.size();
-    while (left < right) {
-        size_t center = left / 2 + right / 2 + (left & right & 1);
+    size_t right_plus_one = mTableOfContents.size();
+    while (left < right_plus_one) {
+        size_t center = left + (right_plus_one - left) / 2;
 
         const TOCEntry &entry = mTableOfContents.itemAt(center);
 
         if (timeUs < entry.mTimeUs) {
-            right = center;
+            right_plus_one = center;
         } else if (timeUs > entry.mTimeUs) {
             left = center + 1;
         } else {
-            left = right = center;
+            left = center;
             break;
         }
     }
 
+    if (left == mTableOfContents.size()) {
+        --left;
+    }
+
     const TOCEntry &entry = mTableOfContents.itemAt(left);
 
-    ALOGV("seeking to entry %d / %d at offset %lld",
+    ALOGV("seeking to entry %zu / %zu at offset %lld",
          left, mTableOfContents.size(), entry.mPageOffset);
 
     return seekToOffset(entry.mPageOffset);
@@ -381,7 +385,7 @@ ssize_t MyVorbisExtractor::readPage(off64_t offset, Page *page) {
     ssize_t n;
     if ((n = mSource->readAt(offset, header, sizeof(header)))
             < (ssize_t)sizeof(header)) {
-        ALOGV("failed to read %d bytes at offset 0x%016llx, got %ld bytes",
+        ALOGV("failed to read %zu bytes at offset 0x%016llx, got %zd bytes",
              sizeof(header), offset, n);
 
         if (n < 0) {
@@ -505,7 +509,7 @@ status_t MyVorbisExtractor::readNextPacket(MediaBuffer **out) {
                     packetSize);
 
             if (n < (ssize_t)packetSize) {
-                ALOGV("failed to read %d bytes at 0x%016llx, got %ld bytes",
+                ALOGV("failed to read %zu bytes at 0x%016llx, got %zd bytes",
                      packetSize, dataOffset, n);
                 return ERROR_IO;
             }
@@ -546,7 +550,7 @@ status_t MyVorbisExtractor::readNextPacket(MediaBuffer **out) {
                 buffer = NULL;
             }
 
-            ALOGV("readPage returned %ld", n);
+            ALOGV("readPage returned %zd", n);
 
             return n < 0 ? n : (status_t)ERROR_END_OF_STREAM;
         }
@@ -590,7 +594,7 @@ status_t MyVorbisExtractor::init() {
     if ((err = readNextPacket(&packet)) != OK) {
         return err;
     }
-    ALOGV("read packet of size %d\n", packet->range_length());
+    ALOGV("read packet of size %zu\n", packet->range_length());
     err = verifyHeader(packet, 1);
     packet->release();
     packet = NULL;
@@ -601,7 +605,7 @@ status_t MyVorbisExtractor::init() {
     if ((err = readNextPacket(&packet)) != OK) {
         return err;
     }
-    ALOGV("read packet of size %d\n", packet->range_length());
+    ALOGV("read packet of size %zu\n", packet->range_length());
     err = verifyHeader(packet, 3);
     packet->release();
     packet = NULL;
@@ -612,7 +616,7 @@ status_t MyVorbisExtractor::init() {
     if ((err = readNextPacket(&packet)) != OK) {
         return err;
     }
-    ALOGV("read packet of size %d\n", packet->range_length());
+    ALOGV("read packet of size %zu\n", packet->range_length());
     err = verifyHeader(packet, 5);
     packet->release();
     packet = NULL;
@@ -903,7 +907,7 @@ static void extractAlbumArt(
         return;
     }
 
-    ALOGV("got flac of size %d", flacSize);
+    ALOGV("got flac of size %zu", flacSize);
 
     uint32_t picType;
     uint32_t typeLen;
@@ -953,7 +957,7 @@ static void extractAlbumArt(
         goto exit;
     }
 
-    ALOGV("got image data, %d trailing bytes",
+    ALOGV("got image data, %zu trailing bytes",
          flacSize - 32 - typeLen - descLen - dataLen);
 
     fileMeta->setData(
@@ -998,7 +1002,7 @@ sp<MediaSource> OggExtractor::getTrack(size_t index) {
 }
 
 sp<MetaData> OggExtractor::getTrackMetaData(
-        size_t index, uint32_t flags) {
+        size_t index, uint32_t /* flags */) {
     if (index >= 1) {
         return NULL;
     }

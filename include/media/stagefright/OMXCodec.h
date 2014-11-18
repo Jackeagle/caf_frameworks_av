@@ -1,7 +1,4 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Not a Contribution.
- *
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +28,7 @@
 
 namespace android {
 
-struct MediaCodecList;
+struct MediaCodecInfo;
 class MemoryDealer;
 struct OMXCodecObserver;
 struct CodecProfileLevel;
@@ -120,9 +117,15 @@ struct OMXCodec : public MediaSource,
             Vector<CodecNameAndQuirks> *matchingCodecNamesAndQuirks);
 
     static uint32_t getComponentQuirks(
-            const MediaCodecList *list, size_t index);
+            const sp<MediaCodecInfo> &list);
 
     static bool findCodecQuirks(const char *componentName, uint32_t *quirks);
+
+    // If profile/level is set in the meta data, its value in the meta
+    // data will be used; otherwise, the default value will be used.
+    status_t getVideoProfileLevel(const sp<MetaData>& meta,
+            const CodecProfileLevel& defaultProfileLevel,
+            CodecProfileLevel& profileLevel);
 
 protected:
     virtual ~OMXCodec();
@@ -144,6 +147,9 @@ private:
         EXECUTING_TO_IDLE,
         IDLE_TO_LOADED,
         RECONFIGURING,
+        PAUSING,
+        FLUSHING,
+        PAUSED,
         ERROR
     };
 
@@ -175,6 +181,7 @@ private:
         size_t mSize;
         void *mData;
         MediaBuffer *mMediaBuffer;
+        bool mOutputCropChanged;
     };
 
     struct CodecSpecificData {
@@ -254,6 +261,8 @@ private:
             int32_t numChannels, int32_t sampleRate, int32_t bitRate,
             int32_t aacProfile, bool isADTS);
 
+    status_t setAC3Format(int32_t numChannels, int32_t sampleRate);
+
     void setG711Format(int32_t numChannels);
 
     status_t setVideoPortFormatType(
@@ -274,12 +283,6 @@ private:
 
     status_t isColorFormatSupported(
             OMX_COLOR_FORMATTYPE colorFormat, int portIndex);
-
-    // If profile/level is set in the meta data, its value in the meta
-    // data will be used; otherwise, the default value will be used.
-    status_t getVideoProfileLevel(const sp<MetaData>& meta,
-            const CodecProfileLevel& defaultProfileLevel,
-            CodecProfileLevel& profileLevel);
 
     status_t setVideoOutputFormat(
             const char *mime, const sp<MetaData>& meta);
@@ -354,8 +357,12 @@ private:
     status_t applyRotation();
     status_t waitForBufferFilled_l();
 
+    status_t resumeLocked(bool drainInputBuf);
     int64_t getDecodingTimeUs();
 
+    status_t parseHEVCCodecSpecificData(
+            const void *data, size_t size,
+            unsigned *profile, unsigned *level);
     status_t parseAVCCodecSpecificData(
             const void *data, size_t size,
             unsigned *profile, unsigned *level);
@@ -366,6 +373,8 @@ private:
     OMXCodec &operator=(const OMXCodec &);
 
     int32_t mNumBFrames;
+    bool mInSmoothStreamingMode;
+    bool mOutputCropChanged;
 };
 
 struct CodecCapabilities {

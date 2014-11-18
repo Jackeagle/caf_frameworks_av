@@ -36,6 +36,8 @@
 #include <media/IStreamSource.h>
 #include <utils/KeyedVector.h>
 
+#include <inttypes.h>
+
 namespace android {
 
 // I want the expression "y" evaluated even if verbose logging is off.
@@ -501,9 +503,10 @@ ATSParser::Stream::Stream(
                     ElementaryStreamQueue::MPEG4_VIDEO);
             break;
 
-        case STREAMTYPE_PCM_AUDIO:
+        case STREAMTYPE_LPCM_AC3:
+        case STREAMTYPE_AC3:
             mQueue = new ElementaryStreamQueue(
-                    ElementaryStreamQueue::PCM_AUDIO);
+                    ElementaryStreamQueue::AC3);
             break;
 
         default:
@@ -532,23 +535,9 @@ status_t ATSParser::Stream::parse(
 
     if (mExpectedContinuityCounter >= 0
             && (unsigned)mExpectedContinuityCounter != continuity_counter) {
-        ALOGI("discontinuity on stream pid 0x%04x", mElementaryPID);
+        ALOGI("discontinuity on stream pid 0x%04x, Ignored", mElementaryPID);
 
-        mPayloadStarted = false;
-        mBuffer->setRange(0, 0);
         mExpectedContinuityCounter = -1;
-
-#if 0
-        // Uncomment this if you'd rather see no corruption whatsoever on
-        // screen and suspend updates until we come across another IDR frame.
-
-        if (mStreamType == STREAMTYPE_H264) {
-            ALOGI("clearing video queue");
-            mQueue->clear(true /* clearFormat */);
-        }
-#endif
-
-        return OK;
     }
 
     mExpectedContinuityCounter = (continuity_counter + 1) & 0x0f;
@@ -581,7 +570,7 @@ status_t ATSParser::Stream::parse(
         // Increment in multiples of 64K.
         neededSize = (neededSize + 65535) & ~65535;
 
-        ALOGI("resizing buffer to %d bytes", neededSize);
+        ALOGI("resizing buffer to %zu bytes", neededSize);
 
         sp<ABuffer> newBuffer = new ABuffer(neededSize);
         memcpy(newBuffer->data(), mBuffer->data(), mBuffer->size());
@@ -613,7 +602,8 @@ bool ATSParser::Stream::isAudio() const {
         case STREAMTYPE_MPEG1_AUDIO:
         case STREAMTYPE_MPEG2_AUDIO:
         case STREAMTYPE_MPEG2_AUDIO_ADTS:
-        case STREAMTYPE_PCM_AUDIO:
+        case STREAMTYPE_LPCM_AC3:
+        case STREAMTYPE_AC3:
             return true;
 
         default:
@@ -659,7 +649,7 @@ void ATSParser::Stream::signalDiscontinuity(
     }
 
     if (mSource != NULL) {
-        mSource->queueDiscontinuity(type, extra);
+        mSource->queueDiscontinuity(type, extra, true);
     }
 }
 
@@ -742,7 +732,7 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
             PTS |= br->getBits(15);
             CHECK_EQ(br->getBits(1), 1u);
 
-            ALOGV("PTS = 0x%016llx (%.2f)", PTS, PTS / 90000.0);
+            ALOGV("PTS = 0x%016" PRIx64 " (%.2f)", PTS, PTS / 90000.0);
 
             optional_bytes_remaining -= 5;
 
@@ -758,7 +748,7 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
                 DTS |= br->getBits(15);
                 CHECK_EQ(br->getBits(1), 1u);
 
-                ALOGV("DTS = %llu", DTS);
+                ALOGV("DTS = %" PRIu64, DTS);
 
                 optional_bytes_remaining -= 5;
             }
@@ -776,7 +766,7 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
             ESCR |= br->getBits(15);
             CHECK_EQ(br->getBits(1), 1u);
 
-            ALOGV("ESCR = %llu", ESCR);
+            ALOGV("ESCR = %" PRIu64, ESCR);
             MY_LOGV("ESCR_extension = %u", br->getBits(9));
 
             CHECK_EQ(br->getBits(1), 1u);
@@ -806,7 +796,7 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
 
             if (br->numBitsLeft() < dataLength * 8) {
                 ALOGE("PES packet does not carry enough data to contain "
-                     "payload. (numBitsLeft = %d, required = %d)",
+                     "payload. (numBitsLeft = %zu, required = %u)",
                      br->numBitsLeft(), dataLength * 8);
 
                 return ERROR_MALFORMED;
@@ -826,7 +816,7 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
             size_t payloadSizeBits = br->numBitsLeft();
             CHECK_EQ(payloadSizeBits % 8, 0u);
 
-            ALOGV("There's %d bytes of payload.", payloadSizeBits / 8);
+            ALOGV("There's %zu bytes of payload.", payloadSizeBits / 8);
         }
     } else if (stream_id == 0xbe) {  // padding_stream
         CHECK_NE(PES_packet_length, 0u);
@@ -844,7 +834,7 @@ status_t ATSParser::Stream::flush() {
         return OK;
     }
 
-    ALOGV("flushing stream 0x%04x size = %d", mElementaryPID, mBuffer->size());
+    ALOGV("flushing stream 0x%04x size = %zu", mElementaryPID, mBuffer->size());
 
     ABitReader br(mBuffer->data(), mBuffer->size());
 
@@ -856,7 +846,7 @@ status_t ATSParser::Stream::flush() {
 }
 
 void ATSParser::Stream::onPayloadData(
-        unsigned PTS_DTS_flags, uint64_t PTS, uint64_t DTS,
+        unsigned PTS_DTS_flags, uint64_t PTS, uint64_t /* DTS */,
         const uint8_t *data, size_t size) {
 #if 0
     ALOGI("payload streamType 0x%02x, PTS = 0x%016llx, dPTS = %lld",
@@ -888,6 +878,12 @@ void ATSParser::Stream::onPayloadData(
                 ALOGV("Stream PID 0x%08x of type 0x%02x now has data.",
                      mElementaryPID, mStreamType);
 
+                const char *mime;
+                if (meta->findCString(kKeyMIMEType, &mime)
+                        && !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC)
+                        && !IsIDR(accessUnit)) {
+                    continue;
+                }
                 mSource = new AnotherPacketSource(meta);
                 mSource->queueAccessUnit(accessUnit);
             }
@@ -1166,7 +1162,7 @@ void ATSParser::parseAdaptationField(ABitReader *br, unsigned PID) {
 
             uint64_t PCR = PCR_base * 300 + PCR_ext;
 
-            ALOGV("PID 0x%04x: PCR = 0x%016llx (%.2f)",
+            ALOGV("PID 0x%04x: PCR = 0x%016" PRIx64 " (%.2f)",
                   PID, PCR, PCR / 27E6);
 
             // The number of bytes received by this parser up to and
@@ -1193,7 +1189,10 @@ status_t ATSParser::parseTS(ABitReader *br) {
     unsigned sync_byte = br->getBits(8);
     CHECK_EQ(sync_byte, 0x47u);
 
-    MY_LOGV("transport_error_indicator = %u", br->getBits(1));
+    if (br->getBits(1)) {  // transport_error_indicator
+        // silently ignore.
+        return OK;
+    }
 
     unsigned payload_unit_start_indicator = br->getBits(1);
     ALOGV("payload_unit_start_indicator = %u", payload_unit_start_indicator);
@@ -1258,8 +1257,8 @@ bool ATSParser::PTSTimeDeltaEstablished() {
 }
 
 void ATSParser::updatePCR(
-        unsigned PID, uint64_t PCR, size_t byteOffsetFromStart) {
-    ALOGV("PCR 0x%016llx @ %d", PCR, byteOffsetFromStart);
+        unsigned /* PID */, uint64_t PCR, size_t byteOffsetFromStart) {
+    ALOGV("PCR 0x%016" PRIx64 " @ %zu", PCR, byteOffsetFromStart);
 
     if (mNumPCRs == 2) {
         mPCR[0] = mPCR[1];

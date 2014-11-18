@@ -1,4 +1,4 @@
-/*Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -25,14 +25,16 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef QC_UTILS_H_
-#define QC_UTILS_H_
+#ifndef EXTENDED_UTILS_H_
+#define EXTENDED_UTILS_H_
 
 #include <utils/StrongPointer.h>
 #include <media/Metadata.h>
+#include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/foundation/AString.h>
 #include <media/stagefright/MediaCodecList.h>
+#include <media/stagefright/MPEG4Writer.h>
 
 #include <media/MediaRecorderBase.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -43,6 +45,9 @@
 #define MIN_BITERATE_AAC 24000
 #define MAX_BITERATE_AAC 192000
 
+#define IPV4 4
+#define IPV6 6
+
 namespace android {
 
 /*
@@ -52,7 +57,7 @@ namespace android {
 struct ExtendedUtils {
 
     /*
-     * This class is a placeholder for set of methods used
+     * This class is a placeholder for the set of methods used
      * to enable HFR (High Frame Rate) Recording
      *
      * HFR is a slow-motion recording feature where framerate
@@ -60,36 +65,89 @@ struct ExtendedUtils {
      * back at normal rate, giving a net result of slow-motion.
      * If HFR factor = N
      *   framerate (at capture and encoder) = N * actual value
-     *   timeStamps (at composition) = N * actual value
      *   bitrate = N * actual value
      *      (as the encoder still gets actual timestamps)
+     *   timeStamps (at composition) = actual value
+     *   timeScale (at composition) = actual value / N
+     *      (when parser re-generates timestamps, they will be
+     *       up-scaled by factor N, which results in slow-motion)
+     *
+     * HSR is a high-framerate recording variant where timestamps
+     * are not meddled with, yielding a video mux'ed at captured
+     * fps
      */
     struct HFR {
         // set kKeyHFR when 'video-hfr' paramater is enabled
+        // or set kKeyHSR when 'video-hsr' paramater is enabled
         static void setHFRIfEnabled(
                 const CameraParameters& params, sp<MetaData> &meta);
 
-        // recalculate fileduration when hfr is enabled
-        static status_t reCalculateFileDuration(
-                sp<MetaData> &meta, sp<MetaData> &enc_meta,
-                int64_t &maxFileDurationUs, int32_t frameRate,
-                video_encoder videoEncoder);
+        // recalculate file-duration when HFR is enabled
+        static status_t initializeHFR(
+                const sp<MetaData> &meta, sp<AMessage> &format,
+                int64_t &maxFileDurationUs, video_encoder videoEncoder);
 
-        // compute timestamp when hfr is enabled
-        static void reCalculateTimeStamp(
-                sp<MetaData> &meta, int64_t &timestampUs);
+        static void setHFRRatio(
+                sp<MetaData> &meta, const int32_t hfrRatio);
 
-        // recalculate frameRate and bitrate when hfr is enabled
-        static void reCalculateHFRParams(
-                const sp<MetaData> &meta, int32_t &frameRate,
-                int32_t &bitrate);
+        static int32_t getHFRRatio(
+                const sp<MetaData> &meta);
 
-        // Copy HFR params (bitrate,framerate) from output to
-        // to input format, if HFR is enabled
-        static void copyHFRParams(
-                const sp<MetaData> &inputFormat,
-                sp<MetaData> &outputFormat);
+        private:
+        // Query supported capabilities from target-specific profiles
+        static int32_t getHFRCapabilities(
+                video_encoder codec,
+                int& maxHFRWidth, int& maxHFRHeight, int& maxHFRFps,
+                int& maxBitrate);
     };
+
+    /*
+     * This class is a placeholder for set of methods used
+     * to enable HEVC muxing
+     */
+
+    struct HEVCParamSet {
+        HEVCParamSet(uint16_t length, const uint8_t *data)
+               : mLength(length), mData(data) {}
+
+        uint16_t mLength;
+        const uint8_t *mData;
+    };
+
+    struct HEVCMuxer {
+        static void writeHEVCFtypBox(MPEG4Writer *writer);
+
+        static status_t makeHEVCCodecSpecificData(const uint8_t *data,
+                  size_t size, void** codecSpecificData,
+                  size_t *codecSpecificDataSize);
+
+        static void beginHEVCBox(MPEG4Writer *writer);
+
+        static void writeHvccBox(MPEG4Writer *writer,
+                  void* codecSpecificData, size_t codecSpecificDataSize,
+                  bool useNalLengthFour);
+
+        static bool isVideoHEVC(const char* mime);
+
+        static bool getHEVCCodecConfigData(const sp<MetaData> &meta,
+                  const void **data, size_t *size);
+
+        private:
+
+        static status_t extractNALRBSPData(const uint8_t *data, size_t size,
+                  uint8_t **header, bool *alreadyFilled);
+
+        static status_t parserProfileTierLevel(const uint8_t *data, size_t size,
+                  uint8_t **header, bool *alreadyFilled);
+
+        static const uint8_t *parseHEVCParamSet(const uint8_t *data, size_t length,
+                  List<HEVCParamSet> &paramSetList, size_t *paramSetLen);
+
+        static size_t parseHEVCCodecSpecificData(const uint8_t *data, size_t size,
+                  List<HEVCParamSet> &vidParamSet, List<HEVCParamSet> &seqParamSet,
+                  List<HEVCParamSet> &picParamSet );
+    };
+
 
     /*
      * This class is a placeholder for methods to override
@@ -97,41 +155,70 @@ struct ExtendedUtils {
      */
     struct ShellProp {
         // check if shell property to disable audio is set
-        static bool isAudioDisabled();
+        static bool isAudioDisabled(bool isEncoder);
 
         //helper function to set encoding profiles
         static void setEncoderProfile(video_encoder &videoEncoder,
-                int32_t &videoEncoderProfile);
+                int32_t &videoEncoderProfile, int32_t &videoEncoderLevel);
 
         static bool isSmoothStreamingEnabled();
 
         static int64_t getMaxAVSyncLateMargin();
+
+        //helper function to parse rtp port range form system property
+        static void getRtpPortRange(unsigned *start, unsigned *end);
     };
 
+    struct RTSPStream {
+
+        static bool ParseURL_V6(
+                AString *host, const char **colonPos);
+
+        // Creates a pair of UDP datagram sockets bound to adjacent ports
+        // (the rtpSocket is bound to an even port, the rtcpSocket to the
+        // next higher port) for IPV6.
+        static void MakePortPair_V6(
+                int *rtpSocket, int *rtcpSocket, unsigned *rtpPort);
+
+        // In case we're behind NAT, fire off two UDP packets to the remote
+        // rtp/rtcp ports to poke a hole into the firewall for future incoming
+        // packets. We're going to send an RR/SDES RTCP packet to both of them.
+        static bool pokeAHole_V6(int rtpSocket, int rtcpSocket,
+                 const AString &transport, AString &sessionHost);
+
+        private:
+
+        static void bumpSocketBufferSize_V6(int s);
+
+        static bool GetAttribute(const char *s, const char *key, AString *value);
+
+        static void addRR(const sp<ABuffer> &buf);
+
+        static void addSDES(int s, const sp<ABuffer> &buffer);
+
+    };
+
+
+    static const int32_t kNumBFramesPerPFrame = 1;
+    static bool mIsQCHWAACEncoder;
+
     //set B frames for MPEG4
-    static void setBFrames(OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, int32_t &numBFrames,
+    static void setBFrames(OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type,
             const char* componentName);
 
     //set B frames for H264
-    static void setBFrames(OMX_VIDEO_PARAM_AVCTYPE &h264type, int32_t &numBFrames,
-            int32_t iFramesInterval, int32_t frameRate, const char* componentName);
+    static void setBFrames(OMX_VIDEO_PARAM_AVCTYPE &h264type,
+            const int32_t iFramesInterval, const int32_t frameRate,
+            const char* componentName);
 
-    static bool UseQCHWAACEncoder(audio_encoder Encoder, int32_t Channel,
-            int32_t BitRate, int32_t SampleRate);
+    static bool UseQCHWAACEncoder(audio_encoder Encoder = AUDIO_ENCODER_DEFAULT, int32_t Channel = 0,
+            int32_t BitRate = 0, int32_t SampleRate = 0);
+
+    static bool UseQCHWAACDecoder(const char *mime);
 
     static sp<MediaExtractor> MediaExtractor_CreateIfNeeded(
             sp<MediaExtractor> defaultExt, const sp<DataSource> &source,
             const char *mime);
-
-    //helper function to add media codecs with specific quirks
-    static void helper_addMediaCodec(Vector<MediaCodecList::CodecInfo> &mCodecInfos,
-                                     KeyedVector<AString, size_t> &mTypes,
-                                     bool encoder, const char *name,
-                                     const char *type, uint32_t quirks);
-
-    //helper function to calculate the value of quirks from strings
-    static uint32_t helper_getCodecSpecificQuirks(KeyedVector<AString, size_t> &mCodecQuirks,
-                                                  Vector<AString> quirks);
 
     static bool isAVCProfileSupported(int32_t profile);
 
@@ -141,10 +228,18 @@ struct ExtendedUtils {
 
     static bool checkIsThumbNailMode(const uint32_t flags, char* componentName);
 
-    //helper function for MPEG4 Extractor to check for AC3/EAC3 contents
-    static void helper_Mpeg4ExtractorCheckAC3EAC3(MediaBuffer *buffer, sp<MetaData> &format,
-                                                   size_t size);
+    static bool isVideoMuxFormatSupported(const char *mime);
+
+    static void printFileName(int fd);
+    static void applyPreRotation(
+            const CameraParameters& params, sp<MetaData> &meta);
+
+    static bool isAudioAMR(const char* mime);
+
+    static void updateVideoTrackInfoFromESDS_MPEG4Video(sp<MetaData> meta);
+    static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
+    static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
 };
 
 }
-#endif  //QC_UTILS_H_
+#endif  //EXTENDED_UTILS_H_

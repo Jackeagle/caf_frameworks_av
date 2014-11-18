@@ -53,9 +53,13 @@ enum {
     kKeyESDS              = 'esds',  // raw data
     kKeyAACProfile        = 'aacp',  // int32_t
     kKeyAVCC              = 'avcc',  // raw data
+    kKeyHVCC              = 'hvcc',  // raw data
     kKeyD263              = 'd263',  // raw data
     kKeyVorbisInfo        = 'vinf',  // raw data
     kKeyVorbisBooks       = 'vboo',  // raw data
+    kKeyOpusHeader        = 'ohdr',  // raw data
+    kKeyOpusCodecDelay    = 'ocod',  // uint64_t (codec delay in ns)
+    kKeyOpusSeekPreRoll   = 'ospr',  // uint64_t (seek preroll in ns)
     kKeyWantsNALFragments = 'NALf',
     kKeyIsSyncFrame       = 'sync',  // int32_t (bool)
     kKeyIsCodecConfig     = 'conf',  // int32_t (bool)
@@ -134,6 +138,7 @@ enum {
     kKeyRequiresSecureBuffers = 'secu',  // bool (int32_t)
 
     kKeyIsADTS            = 'adts',  // bool (int32_t)
+    kKeyAACAOT            = 'aaot',  // int32_t
 
     // If a MediaBuffer's data represents (at least partially) encrypted
     // data, the following fields aid in decryption.
@@ -161,11 +166,23 @@ enum {
     kKeyCryptoDefaultIVSize = 'cryS',  // int32_t
 
     kKeyPssh              = 'pssh',  // raw data
+
+    // Please see MediaFormat.KEY_IS_AUTOSELECT.
+    kKeyTrackIsAutoselect = 'auto', // bool (int32_t)
+    // Please see MediaFormat.KEY_IS_DEFAULT.
+    kKeyTrackIsDefault    = 'dflt', // bool (int32_t)
+    // Similar to MediaFormat.KEY_IS_FORCED_SUBTITLE but pertains to av tracks as well.
+    kKeyTrackIsForced     = 'frcd', // bool (int32_t)
+
+    // Indicate if it is OK to hold on to the MediaBuffer and not
+    // release it immediately
+    kKeyCanDeferRelease   = 'drel', // bool (int32_t)
 };
 
 enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
+    kTypeHVCC        = 'hvcc',
     kTypeD263        = 'd263',
 };
 
@@ -213,6 +230,8 @@ public:
 
     bool findData(uint32_t key, uint32_t *type,
                   const void **data, size_t *size) const;
+
+    bool hasData(uint32_t key) const;
 
     void dumpToLog() const;
 

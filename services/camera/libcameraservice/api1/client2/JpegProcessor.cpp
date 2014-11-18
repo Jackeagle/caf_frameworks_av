@@ -73,30 +73,43 @@ status_t JpegProcessor::updateStream(const Parameters &params) {
     }
 
     // Find out buffer size for JPEG
-    camera_metadata_ro_entry_t maxJpegSize =
-            params.staticInfo(ANDROID_JPEG_MAX_SIZE);
-    if (maxJpegSize.count == 0) {
-        ALOGE("%s: Camera %d: Can't find ANDROID_JPEG_MAX_SIZE!",
-                __FUNCTION__, mId);
+    ssize_t maxJpegSize = device->getJpegBufferSize(params.pictureWidth, params.pictureHeight);
+    if (maxJpegSize <= 0) {
+        ALOGE("%s: Camera %d: Jpeg buffer size (%zu) is invalid ",
+                __FUNCTION__, mId, maxJpegSize);
         return INVALID_OPERATION;
     }
 
     if (mCaptureConsumer == 0) {
         // Create CPU buffer queue endpoint
-        sp<BufferQueue> bq = new BufferQueue();
-        mCaptureConsumer = new CpuConsumer(bq, 1);
+        sp<IGraphicBufferProducer> producer;
+        sp<IGraphicBufferConsumer> consumer;
+        BufferQueue::createBufferQueue(&producer, &consumer);
+        mCaptureConsumer = new CpuConsumer(consumer, 1);
         mCaptureConsumer->setFrameAvailableListener(this);
         mCaptureConsumer->setName(String8("Camera2Client::CaptureConsumer"));
-        mCaptureWindow = new Surface(bq);
+        mCaptureWindow = new Surface(producer);
+    }
+
+    // Since ashmem heaps are rounded up to page size, don't reallocate if
+    // the capture heap isn't exactly the same size as the required JPEG buffer
+    const size_t HEAP_SLACK_FACTOR = 2;
+    if (mCaptureHeap == 0 ||
+            (mCaptureHeap->getSize() < static_cast<size_t>(maxJpegSize)) ||
+            (mCaptureHeap->getSize() >
+                    static_cast<size_t>(maxJpegSize) * HEAP_SLACK_FACTOR) ) {
         // Create memory for API consumption
-        mCaptureHeap = new MemoryHeapBase(maxJpegSize.data.i32[0], 0,
-                                       "Camera2Client::CaptureHeap");
+        mCaptureHeap.clear();
+        mCaptureHeap =
+                new MemoryHeapBase(maxJpegSize, 0, "Camera2Client::CaptureHeap");
         if (mCaptureHeap->getSize() == 0) {
             ALOGE("%s: Camera %d: Unable to allocate memory for capture",
                     __FUNCTION__, mId);
             return NO_MEMORY;
         }
     }
+    ALOGV("%s: Camera %d: JPEG capture heap now %d bytes; requested %d bytes",
+            __FUNCTION__, mId, mCaptureHeap->getSize(), maxJpegSize);
 
     if (mCaptureStreamId != NO_STREAM) {
         // Check if stream parameters have to change
@@ -132,8 +145,7 @@ status_t JpegProcessor::updateStream(const Parameters &params) {
         // Create stream for HAL production
         res = device->createStream(mCaptureWindow,
                 params.pictureWidth, params.pictureHeight,
-                HAL_PIXEL_FORMAT_BLOB, maxJpegSize.data.i32[0],
-                &mCaptureStreamId);
+                HAL_PIXEL_FORMAT_BLOB, &mCaptureStreamId);
         if (res != OK) {
             ALOGE("%s: Camera %d: Can't create output stream for capture: "
                     "%s (%d)", __FUNCTION__, mId,
@@ -200,50 +212,59 @@ status_t JpegProcessor::processNewCapture() {
     ATRACE_CALL();
     status_t res;
     sp<Camera2Heap> captureHeap;
+    sp<MemoryBase> captureBuffer;
 
     CpuConsumer::LockedBuffer imgBuffer;
 
-    res = mCaptureConsumer->lockNextBuffer(&imgBuffer);
-    if (res != OK) {
-        if (res != BAD_VALUE) {
-            ALOGE("%s: Camera %d: Error receiving still image buffer: "
-                    "%s (%d)", __FUNCTION__,
-                    mId, strerror(-res), res);
+    {
+        Mutex::Autolock l(mInputMutex);
+        if (mCaptureStreamId == NO_STREAM) {
+            ALOGW("%s: Camera %d: No stream is available", __FUNCTION__, mId);
+            return INVALID_OPERATION;
         }
-        return res;
-    }
 
-    ALOGV("%s: Camera %d: Still capture available", __FUNCTION__,
-            mId);
+        res = mCaptureConsumer->lockNextBuffer(&imgBuffer);
+        if (res != OK) {
+            if (res != BAD_VALUE) {
+                ALOGE("%s: Camera %d: Error receiving still image buffer: "
+                        "%s (%d)", __FUNCTION__,
+                        mId, strerror(-res), res);
+            }
+            return res;
+        }
 
-    if (imgBuffer.format != HAL_PIXEL_FORMAT_BLOB) {
-        ALOGE("%s: Camera %d: Unexpected format for still image: "
-                "%x, expected %x", __FUNCTION__, mId,
-                imgBuffer.format,
-                HAL_PIXEL_FORMAT_BLOB);
+        ALOGV("%s: Camera %d: Still capture available", __FUNCTION__,
+                mId);
+
+        if (imgBuffer.format != HAL_PIXEL_FORMAT_BLOB) {
+            ALOGE("%s: Camera %d: Unexpected format for still image: "
+                    "%x, expected %x", __FUNCTION__, mId,
+                    imgBuffer.format,
+                    HAL_PIXEL_FORMAT_BLOB);
+            mCaptureConsumer->unlockBuffer(imgBuffer);
+            return OK;
+        }
+
+        // Find size of JPEG image
+        size_t jpegSize = findJpegSize(imgBuffer.data, imgBuffer.width);
+        if (jpegSize == 0) { // failed to find size, default to whole buffer
+            jpegSize = imgBuffer.width;
+        }
+        size_t heapSize = mCaptureHeap->getSize();
+        if (jpegSize > heapSize) {
+            ALOGW("%s: JPEG image is larger than expected, truncating "
+                    "(got %zu, expected at most %zu bytes)",
+                    __FUNCTION__, jpegSize, heapSize);
+            jpegSize = heapSize;
+        }
+
+        // TODO: Optimize this to avoid memcopy
+        captureBuffer = new MemoryBase(mCaptureHeap, 0, jpegSize);
+        void* captureMemory = mCaptureHeap->getBase();
+        memcpy(captureMemory, imgBuffer.data, jpegSize);
+
         mCaptureConsumer->unlockBuffer(imgBuffer);
-        return OK;
     }
-
-    // Find size of JPEG image
-    size_t jpegSize = findJpegSize(imgBuffer.data, imgBuffer.width);
-    if (jpegSize == 0) { // failed to find size, default to whole buffer
-        jpegSize = imgBuffer.width;
-    }
-    size_t heapSize = mCaptureHeap->getSize();
-    if (jpegSize > heapSize) {
-        ALOGW("%s: JPEG image is larger than expected, truncating "
-                "(got %d, expected at most %d bytes)",
-                __FUNCTION__, jpegSize, heapSize);
-        jpegSize = heapSize;
-    }
-
-    // TODO: Optimize this to avoid memcopy
-    sp<MemoryBase> captureBuffer = new MemoryBase(mCaptureHeap, 0, jpegSize);
-    void* captureMemory = mCaptureHeap->getBase();
-    memcpy(captureMemory, imgBuffer.data, jpegSize);
-
-    mCaptureConsumer->unlockBuffer(imgBuffer);
 
     sp<CaptureSequencer> sequencer = mSequencer.promote();
     if (sequencer != 0) {
@@ -326,13 +347,13 @@ size_t JpegProcessor::findJpegSize(uint8_t* jpegBuffer, size_t maxSize) {
             size_t offset = size - MARKER_LENGTH;
             uint8_t *end = jpegBuffer + offset;
             if (checkJpegStart(jpegBuffer) && checkJpegEnd(end)) {
-                ALOGV("Found JPEG transport header, img size %d", size);
+                ALOGV("Found JPEG transport header, img size %zu", size);
                 return size;
             } else {
                 ALOGW("Found JPEG transport header with bad Image Start/End");
             }
         } else {
-            ALOGW("Found JPEG transport header with bad size %d", size);
+            ALOGW("Found JPEG transport header with bad size %zu", size);
         }
     }
 
@@ -348,15 +369,15 @@ size_t JpegProcessor::findJpegSize(uint8_t* jpegBuffer, size_t maxSize) {
         segment_t *segment = (segment_t*)(jpegBuffer + size);
         uint8_t type = checkJpegMarker(segment->marker);
         if (type == 0) { // invalid marker, no more segments, begin JPEG data
-            ALOGV("JPEG stream found beginning at offset %d", size);
+            ALOGV("JPEG stream found beginning at offset %zu", size);
             break;
         }
         if (type == EOI || size > maxSize - sizeof(segment_t)) {
-            ALOGE("Got premature End before JPEG data, offset %d", size);
+            ALOGE("Got premature End before JPEG data, offset %zu", size);
             return 0;
         }
         size_t length = ntohs(segment->length);
-        ALOGV("JFIF Segment, type %x length %x", type, length);
+        ALOGV("JFIF Segment, type %x length %zx", type, length);
         size += length + MARKER_LENGTH;
     }
 
@@ -376,10 +397,10 @@ size_t JpegProcessor::findJpegSize(uint8_t* jpegBuffer, size_t maxSize) {
     }
 
     if (size > maxSize) {
-        ALOGW("JPEG size %d too large, reducing to maxSize %d", size, maxSize);
+        ALOGW("JPEG size %zu too large, reducing to maxSize %zu", size, maxSize);
         size = maxSize;
     }
-    ALOGV("Final JPEG size %d", size);
+    ALOGV("Final JPEG size %zu", size);
     return size;
 }
 

@@ -38,8 +38,8 @@ class IOMX : public IInterface {
 public:
     DECLARE_META_INTERFACE(OMX);
 
-    typedef void *buffer_id;
-    typedef void *node_id;
+    typedef uint32_t buffer_id;
+    typedef uint32_t node_id;
 
     // Given a node_id and the calling process' pid, returns true iff
     // the implementation of the OMX interface lives in the same
@@ -86,6 +86,10 @@ public:
     virtual status_t prepareForAdaptivePlayback(
             node_id node, OMX_U32 portIndex, OMX_BOOL enable,
             OMX_U32 maxFrameWidth, OMX_U32 maxFrameHeight) = 0;
+
+   virtual status_t configureVideoTunnelMode(
+            node_id node, OMX_U32 portIndex, OMX_BOOL tunneled,
+            OMX_U32 audioHwSync, native_handle_t **sidebandHandle) = 0;
 
     virtual status_t enableGraphicBuffers(
             node_id node, OMX_U32 port_index, OMX_BOOL enable) = 0;
@@ -142,6 +146,9 @@ public:
     enum InternalOptionType {
         INTERNAL_OPTION_SUSPEND,  // data is a bool
         INTERNAL_OPTION_REPEAT_PREVIOUS_FRAME_DELAY,  // data is an int64_t
+        INTERNAL_OPTION_MAX_TIMESTAMP_GAP, // data is int64_t
+        INTERNAL_OPTION_START_TIME, // data is an int64_t
+        INTERNAL_OPTION_TIME_LAPSE, // data is an int64_t[2]
     };
     virtual status_t setInternalOption(
             node_id node,
@@ -181,8 +188,6 @@ struct omx_message {
             OMX_U32 range_length;
             OMX_U32 flags;
             OMX_TICKS timestamp;
-            OMX_PTR platform_private;
-            OMX_PTR data_ptr;
         } extended_buffer_data;
 
     } u;

@@ -16,6 +16,8 @@
 
 #define LOG_TAG "MtpProperty"
 
+#include <inttypes.h>
+#include <cutils/compiler.h>
 #include "MtpDataPacket.h"
 #include "MtpDebug.h"
 #include "MtpProperty.h"
@@ -189,9 +191,9 @@ void MtpProperty::write(MtpDataPacket& packet) {
             if (deviceProp)
                 writeValue(packet, mCurrentValue);
     }
-    packet.putUInt32(mGroupCode);
     if (!deviceProp)
-        packet.putUInt8(mFormFlag);
+        packet.putUInt32(mGroupCode);
+    packet.putUInt8(mFormFlag);
     if (mFormFlag == kFormRange) {
             writeValue(packet, mMinimumValue);
             writeValue(packet, mMaximumValue);
@@ -385,10 +387,10 @@ void MtpProperty::print(MtpPropertyValue& value, MtpString& buffer) {
             buffer.appendFormat("%d", value.u.u32);
             break;
         case MTP_TYPE_INT64:
-            buffer.appendFormat("%lld", value.u.i64);
+            buffer.appendFormat("%" PRId64, value.u.i64);
             break;
         case MTP_TYPE_UINT64:
-            buffer.appendFormat("%lld", value.u.u64);
+            buffer.appendFormat("%" PRIu64, value.u.u64);
             break;
         case MTP_TYPE_INT128:
             buffer.appendFormat("%08X%08X%08X%08X", value.u.i128[0], value.u.i128[1],
@@ -517,8 +519,14 @@ void MtpProperty::writeValue(MtpDataPacket& packet, MtpPropertyValue& value) {
 
 MtpPropertyValue* MtpProperty::readArrayValues(MtpDataPacket& packet, int& length) {
     length = packet.getUInt32();
-    if (length == 0)
+    // Fail if resulting array is over 2GB.  This is because the maximum array
+    // size may be less than SIZE_MAX on some platforms.
+    if ( CC_UNLIKELY(
+            length == 0 ||
+            length >= INT32_MAX / sizeof(MtpPropertyValue)) ) {
+        length = 0;
         return NULL;
+    }
     MtpPropertyValue* result = new MtpPropertyValue[length];
     for (int i = 0; i < length; i++)
         readValue(packet, result[i]);

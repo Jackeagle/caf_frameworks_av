@@ -40,6 +40,25 @@ unsigned parseUE(ABitReader *br) {
     return x + (1u << numZeroes) - 1;
 }
 
+signed parseSE(ABitReader *br) {
+    unsigned codeNum = parseUE(br);
+
+    return (codeNum & 1) ? (codeNum + 1) / 2 : -(codeNum / 2);
+}
+
+static void skipScalingList(ABitReader *br, size_t sizeOfScalingList) {
+    size_t lastScale = 8;
+    size_t nextScale = 8;
+    for (size_t j = 0; j < sizeOfScalingList; ++j) {
+        if (nextScale != 0) {
+            signed delta_scale = parseSE(br);
+            nextScale = (lastScale + delta_scale + 256) % 256;
+        }
+
+        lastScale = (nextScale == 0) ? lastScale : nextScale;
+    }
+}
+
 // Determine video dimensions from the sequence parameterset.
 void FindAVCDimensions(
         const sp<ABuffer> &seqParamSet,
@@ -63,7 +82,24 @@ void FindAVCDimensions(
         parseUE(&br);  // bit_depth_luma_minus8
         parseUE(&br);  // bit_depth_chroma_minus8
         br.skipBits(1);  // qpprime_y_zero_transform_bypass_flag
-        CHECK_EQ(br.getBits(1), 0u);  // seq_scaling_matrix_present_flag
+
+        if (br.getBits(1)) {  // seq_scaling_matrix_present_flag
+            for (size_t i = 0; i < 8; ++i) {
+                if (br.getBits(1)) {  // seq_scaling_list_present_flag[i]
+
+                    // WARNING: the code below has not ever been exercised...
+                    // need a real-world example.
+
+                    if (i < 6) {
+                        // ScalingList4x4[i],16,...
+                        skipScalingList(&br, 16);
+                    } else {
+                        // ScalingList8x8[i-6],64,...
+                        skipScalingList(&br, 64);
+                    }
+                }
+            }
+        }
     }
 
     parseUE(&br);  // log2_max_frame_num_minus4
@@ -251,9 +287,7 @@ status_t getNextNALUnit(
     return OK;
 }
 
-static sp<ABuffer> FindNAL(
-        const uint8_t *data, size_t size, unsigned nalType,
-        size_t *stopOffset) {
+static sp<ABuffer> FindNAL(const uint8_t *data, size_t size, unsigned nalType) {
     const uint8_t *nalStart;
     size_t nalSize;
     while (getNextNALUnit(&data, &size, &nalStart, &nalSize, true) == OK) {
@@ -293,7 +327,7 @@ sp<MetaData> MakeAVCCodecSpecificData(const sp<ABuffer> &accessUnit) {
     const uint8_t *data = accessUnit->data();
     size_t size = accessUnit->size();
 
-    sp<ABuffer> seqParamSet = FindNAL(data, size, 7, NULL);
+    sp<ABuffer> seqParamSet = FindNAL(data, size, 7);
     if (seqParamSet == NULL) {
         return NULL;
     }
@@ -303,8 +337,7 @@ sp<MetaData> MakeAVCCodecSpecificData(const sp<ABuffer> &accessUnit) {
     FindAVCDimensions(
             seqParamSet, &width, &height, &sarWidth, &sarHeight);
 
-    size_t stopOffset;
-    sp<ABuffer> picParamSet = FindNAL(data, size, 8, &stopOffset);
+    sp<ABuffer> picParamSet = FindNAL(data, size, 8);
     CHECK(picParamSet != NULL);
 
     size_t csdSize =
@@ -348,7 +381,7 @@ sp<MetaData> MakeAVCCodecSpecificData(const sp<ABuffer> &accessUnit) {
     meta->setInt32(kKeyWidth, width);
     meta->setInt32(kKeyHeight, height);
 
-    if (sarWidth > 1 || sarHeight > 1) {
+    if (sarWidth > 1 && sarHeight > 1) {
         // We treat 0:0 (unspecified) as 1:1.
 
         meta->setInt32(kKeySARWidth, sarWidth);

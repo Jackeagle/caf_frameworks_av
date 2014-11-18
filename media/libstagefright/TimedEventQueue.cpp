@@ -17,7 +17,11 @@
 #undef __STRICT_ANSI__
 #define __STDINT_LIMITS
 #define __STDC_LIMIT_MACROS
+
+#include <inttypes.h>
 #include <stdint.h>
+#include <sys/prctl.h>
+#include <sys/time.h>
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "TimedEventQueue"
@@ -25,9 +29,6 @@
 #include <utils/threads.h>
 
 #include "include/TimedEventQueue.h"
-
-#include <sys/prctl.h>
-#include <sys/time.h>
 
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooper.h>
@@ -38,11 +39,14 @@
 
 namespace android {
 
+static int64_t kWakelockMinDelay = 100000ll;  // 100ms
+
 TimedEventQueue::TimedEventQueue()
     : mNextEventID(1),
       mRunning(false),
       mStopped(false),
-      mDeathRecipient(new PMDeathRecipient(this)) {
+      mDeathRecipient(new PMDeathRecipient(this)),
+      mWakeLockCount(0) {
 }
 
 TimedEventQueue::~TimedEventQueue() {
@@ -87,9 +91,7 @@ void TimedEventQueue::stop(bool flush) {
 
     // some events may be left in the queue if we did not flush and the wake lock
     // must be released.
-    if (!mQueue.empty()) {
-        releaseWakeLock_l();
-    }
+    releaseWakeLock_l(true /*force*/);
     mQueue.clear();
 
     mRunning = false;
@@ -126,13 +128,15 @@ TimedEventQueue::event_id TimedEventQueue::postTimedEvent(
     QueueItem item;
     item.event = event;
     item.realtime_us = realtime_us;
+    item.has_wakelock = false;
 
     if (it == mQueue.begin()) {
         mQueueHeadChangedCondition.signal();
     }
 
-    if (mQueue.empty()) {
+    if (realtime_us > ALooper::GetNowUs() + kWakelockMinDelay) {
         acquireWakeLock_l();
+        item.has_wakelock = true;
     }
     mQueue.insert(it, item);
 
@@ -188,10 +192,10 @@ void TimedEventQueue::cancelEvents(
         ALOGV("cancelling event %d", (*it).event->eventID());
 
         (*it).event->setEventID(0);
-        it = mQueue.erase(it);
-        if (mQueue.empty()) {
+        if ((*it).has_wakelock) {
             releaseWakeLock_l();
         }
+        it = mQueue.erase(it);
         if (stopAfterFirstMatch) {
             return;
         }
@@ -214,6 +218,7 @@ void TimedEventQueue::threadEntry() {
     for (;;) {
         int64_t now_us = 0;
         sp<Event> event;
+        bool wakeLocked = false;
 
         {
             Mutex::Autolock autoLock(mLock);
@@ -254,7 +259,7 @@ void TimedEventQueue::threadEntry() {
                 static int64_t kMaxTimeoutUs = 10000000ll;  // 10 secs
                 bool timeoutCapped = false;
                 if (delay_us > kMaxTimeoutUs) {
-                    ALOGW("delay_us exceeds max timeout: %lld us", delay_us);
+                    ALOGW("delay_us exceeds max timeout: %" PRId64 " us", delay_us);
 
                     // We'll never block for more than 10 secs, instead
                     // we will split up the full timeout into chunks of
@@ -280,28 +285,29 @@ void TimedEventQueue::threadEntry() {
             // removeEventFromQueue_l will return NULL.
             // Otherwise, the QueueItem will be removed
             // from the queue and the referenced event returned.
-            event = removeEventFromQueue_l(eventID);
+            event = removeEventFromQueue_l(eventID, &wakeLocked);
         }
 
         if (event != NULL) {
             // Fire event with the lock NOT held.
             event->fire(this, now_us);
+            if (wakeLocked) {
+                Mutex::Autolock autoLock(mLock);
+                releaseWakeLock_l();
+            }
         }
     }
 }
 
 sp<TimedEventQueue::Event> TimedEventQueue::removeEventFromQueue_l(
-        event_id id) {
+        event_id id, bool *wakeLocked) {
     for (List<QueueItem>::iterator it = mQueue.begin();
          it != mQueue.end(); ++it) {
         if ((*it).event->eventID() == id) {
             sp<Event> event = (*it).event;
             event->setEventID(0);
-
+            *wakeLocked = (*it).has_wakelock;
             mQueue.erase(it);
-            if (mQueue.empty()) {
-                releaseWakeLock_l();
-            }
             return event;
         }
     }
@@ -313,56 +319,66 @@ sp<TimedEventQueue::Event> TimedEventQueue::removeEventFromQueue_l(
 
 void TimedEventQueue::acquireWakeLock_l()
 {
-    if (mWakeLockToken != 0) {
-        return;
-    }
-    if (mPowerManager == 0) {
-        // use checkService() to avoid blocking if power service is not up yet
-        sp<IBinder> binder =
-            defaultServiceManager()->checkService(String16("power"));
-        if (binder == 0) {
-            ALOGW("cannot connect to the power manager service");
-        } else {
-            mPowerManager = interface_cast<IPowerManager>(binder);
-            binder->linkToDeath(mDeathRecipient);
+    if (mWakeLockCount == 0) {
+        CHECK(mWakeLockToken == 0);
+        if (mPowerManager == 0) {
+            // use checkService() to avoid blocking if power service is not up yet
+            sp<IBinder> binder =
+                defaultServiceManager()->checkService(String16("power"));
+            if (binder == 0) {
+                ALOGW("cannot connect to the power manager service");
+            } else {
+                mPowerManager = interface_cast<IPowerManager>(binder);
+                binder->linkToDeath(mDeathRecipient);
+            }
         }
-    }
-    if (mPowerManager != 0) {
-        sp<IBinder> binder = new BBinder();
-        int64_t token = IPCThreadState::self()->clearCallingIdentity();
-        status_t status = mPowerManager->acquireWakeLock(POWERMANAGER_PARTIAL_WAKE_LOCK,
-                                                         binder,
-                                                         String16("TimedEventQueue"),
-                                                         String16("media"));
-        IPCThreadState::self()->restoreCallingIdentity(token);
-        if (status == NO_ERROR) {
-            mWakeLockToken = binder;
+        if (mPowerManager != 0) {
+            sp<IBinder> binder = new BBinder();
+            int64_t token = IPCThreadState::self()->clearCallingIdentity();
+            status_t status = mPowerManager->acquireWakeLock(POWERMANAGER_PARTIAL_WAKE_LOCK,
+                                                             binder,
+                                                             String16("TimedEventQueue"),
+                                                             String16("media"));    // not oneway
+            IPCThreadState::self()->restoreCallingIdentity(token);
+            if (status == NO_ERROR) {
+                mWakeLockToken = binder;
+                mWakeLockCount++;
+            }
         }
+    } else {
+        mWakeLockCount++;
     }
 }
 
-void TimedEventQueue::releaseWakeLock_l()
+void TimedEventQueue::releaseWakeLock_l(bool force)
 {
-    if (mWakeLockToken == 0) {
+    if (mWakeLockCount == 0) {
         return;
     }
-    if (mPowerManager != 0) {
-        int64_t token = IPCThreadState::self()->clearCallingIdentity();
-        mPowerManager->releaseWakeLock(mWakeLockToken, 0);
-        IPCThreadState::self()->restoreCallingIdentity(token);
+    if (force) {
+        // Force wakelock release below by setting reference count to 1.
+        mWakeLockCount = 1;
     }
-    mWakeLockToken.clear();
+    if (--mWakeLockCount == 0) {
+        CHECK(mWakeLockToken != 0);
+        if (mPowerManager != 0) {
+            int64_t token = IPCThreadState::self()->clearCallingIdentity();
+            mPowerManager->releaseWakeLock(mWakeLockToken, 0);  // not oneway
+            IPCThreadState::self()->restoreCallingIdentity(token);
+        }
+        mWakeLockToken.clear();
+    }
 }
 
 void TimedEventQueue::clearPowerManager()
 {
     Mutex::Autolock _l(mLock);
-    releaseWakeLock_l();
+    releaseWakeLock_l(true /*force*/);
     mPowerManager.clear();
 }
 
-void TimedEventQueue::PMDeathRecipient::binderDied(const wp<IBinder>& who)
-{
+void TimedEventQueue::PMDeathRecipient::binderDied(
+        const wp<IBinder>& /* who */) {
     mQueue->clearPowerManager();
 }
 

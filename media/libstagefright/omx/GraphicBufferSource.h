@@ -49,7 +49,8 @@ namespace android {
 class GraphicBufferSource : public BufferQueue::ConsumerListener {
 public:
     GraphicBufferSource(OMXNodeInstance* nodeInstance,
-            uint32_t bufferWidth, uint32_t bufferHeight, uint32_t bufferCount);
+            uint32_t bufferWidth, uint32_t bufferHeight, uint32_t bufferCount,
+            bool useGraphicBufferInMeta = false);
     virtual ~GraphicBufferSource();
 
     // We can't throw an exception if the constructor fails, so we just set
@@ -61,13 +62,18 @@ public:
     // Returns the handle to the producer side of the BufferQueue.  Buffers
     // queued on this will be received by GraphicBufferSource.
     sp<IGraphicBufferProducer> getIGraphicBufferProducer() const {
-        return mBufferQueue;
+        return mProducer;
     }
 
     // This is called when OMX transitions to OMX_StateExecuting, which means
     // we can start handing it buffers.  If we already have buffers of data
     // sitting in the BufferQueue, this will send them to the codec.
     void omxExecuting();
+
+    // This is called when OMX transitions to OMX_StateIdle, indicating that
+    // the codec is meant to return all buffers back to the client for them
+    // to be freed. Do NOT submit any more buffers to the component.
+    void omxIdle();
 
     // This is called when OMX transitions to OMX_StateLoaded, indicating that
     // we are shutting down.
@@ -81,6 +87,10 @@ public:
     // Called from OnEmptyBufferDone.  If we have a BQ buffer available,
     // fill it with a new frame of data; otherwise, just mark it as available.
     void codecBufferEmptied(OMX_BUFFERHEADERTYPE* header);
+
+    // Called when omx_message::FILL_BUFFER_DONE is received. (Currently the
+    // buffer source will fix timestamp in the header if needed.)
+    void codecBufferFilled(OMX_BUFFERHEADERTYPE* header);
 
     // This is called after the last input frame has been submitted.  We
     // need to submit an empty buffer with the EOS flag set.  If we don't
@@ -100,6 +110,26 @@ public:
     // state and once this behaviour is specified it cannot be reset.
     status_t setRepeatPreviousFrameDelayUs(int64_t repeatAfterUs);
 
+    // When set, the timestamp fed to the encoder will be modified such that
+    // the gap between two adjacent frames is capped at maxGapUs. Timestamp
+    // will be restored to the original when the encoded frame is returned to
+    // the client.
+    // This is to solve a problem in certain real-time streaming case, where
+    // encoder's rate control logic produces huge frames after a long period
+    // of suspension on input.
+    status_t setMaxTimestampGapUs(int64_t maxGapUs);
+
+    // Sets the time lapse (or slow motion) parameters.
+    // data[0] is the time (us) between two frames for playback
+    // data[1] is the time (us) between two frames for capture
+    // When set, the sample's timestamp will be modified to playback framerate,
+    // and capture timestamp will be modified to capture rate.
+    status_t setTimeLapseUs(int64_t* data);
+
+    // Sets the start time us (in system time), samples before which should
+    // be dropped and not submitted to encoder
+    void setSkipFramesBeforeUs(int64_t startTimeUs);
+
 protected:
     // BufferQueue::ConsumerListener interface, called when a new frame of
     // data is available.  If we're executing and a codec buffer is
@@ -113,6 +143,11 @@ protected:
     // released one or more GraphicBuffers.  We clear out the appropriate
     // set of mBufferSlot entries.
     virtual void onBuffersReleased();
+
+    // BufferQueue::ConsumerListener interface, called when the client has
+    // changed the sideband stream. GraphicBufferSource doesn't handle sideband
+    // streams so this is a no-op (and should never be called).
+    virtual void onSidebandStreamChanged();
 
 private:
     // Keep track of codec input buffers.  They may either be available
@@ -160,6 +195,7 @@ private:
 
     void setLatestSubmittedBuffer_l(const BufferQueue::BufferItem &item);
     bool repeatLatestSubmittedBuffer_l();
+    int64_t getTimestamp(const BufferQueue::BufferItem &item);
 
     // Lock, covers all member variables.
     mutable Mutex mMutex;
@@ -175,8 +211,11 @@ private:
 
     bool mSuspended;
 
-    // We consume graphic buffers from this.
-    sp<BufferQueue> mBufferQueue;
+    // Our BufferQueue interfaces. mProducer is passed to the producer through
+    // getIGraphicBufferProducer, and mConsumer is used internally to retrieve
+    // the buffers queued by the producer.
+    sp<IGraphicBufferProducer> mProducer;
+    sp<IGraphicBufferConsumer> mConsumer;
 
     // Number of frames pending in BufferQueue that haven't yet been
     // forwarded to the codec.
@@ -201,13 +240,23 @@ private:
     enum {
         kWhatRepeatLastFrame,
     };
+    enum {
+        kRepeatLastFrameCount = 10,
+    };
 
-    int64_t mRepeatAfterUs;
+    KeyedVector<int64_t, int64_t> mOriginalTimeUs;
+    int64_t mMaxTimestampGapUs;
+    int64_t mPrevOriginalTimeUs;
+    int64_t mPrevModifiedTimeUs;
+    int64_t mSkipFramesBeforeNs;
 
     sp<ALooper> mLooper;
     sp<AHandlerReflector<GraphicBufferSource> > mReflector;
 
+    int64_t mRepeatAfterUs;
     int32_t mRepeatLastFrameGeneration;
+    int64_t mRepeatLastFrameTimestamp;
+    int32_t mRepeatLastFrameCount;
 
     int mLatestSubmittedBufferId;
     uint64_t mLatestSubmittedBufferFrameNum;
@@ -216,6 +265,14 @@ private:
     // The previously submitted buffer should've been repeated but
     // no codec buffer was available at the time.
     bool mRepeatBufferDeferred;
+
+    // Time lapse / slow motion configuration
+    int64_t mTimePerCaptureUs;
+    int64_t mTimePerFrameUs;
+    int64_t mPrevCaptureUs;
+    int64_t mPrevFrameUs;
+
+    bool mUseGraphicBufferInMeta;
 
     void onMessageReceived(const sp<AMessage> &msg);
 

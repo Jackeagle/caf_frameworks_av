@@ -28,12 +28,12 @@ namespace android {
 #ifdef STATE_QUEUE_DUMP
 void StateQueueObserverDump::dump(int fd)
 {
-    fdprintf(fd, "State queue observer: stateChanges=%u\n", mStateChanges);
+    dprintf(fd, "State queue observer: stateChanges=%u\n", mStateChanges);
 }
 
 void StateQueueMutatorDump::dump(int fd)
 {
-    fdprintf(fd, "State queue mutator: pushDirty=%u pushAck=%u blockedSequence=%u\n",
+    dprintf(fd, "State queue mutator: pushDirty=%u pushAck=%u blockedSequence=%u\n",
             mPushDirty, mPushAck, mBlockedSequence);
 }
 #endif
@@ -41,13 +41,14 @@ void StateQueueMutatorDump::dump(int fd)
 // Constructor and destructor
 
 template<typename T> StateQueue<T>::StateQueue() :
-    mNext(NULL), mAck(NULL), mCurrent(NULL),
+    mAck(NULL), mCurrent(NULL),
     mMutating(&mStates[0]), mExpecting(NULL),
     mInMutation(false), mIsDirty(false), mIsInitialized(false)
 #ifdef STATE_QUEUE_DUMP
     , mObserverDump(&mObserverDummyDump), mMutatorDump(&mMutatorDummyDump)
 #endif
 {
+    atomic_init(&mNext, 0);
 }
 
 template<typename T> StateQueue<T>::~StateQueue()
@@ -58,7 +59,8 @@ template<typename T> StateQueue<T>::~StateQueue()
 
 template<typename T> const T* StateQueue<T>::poll()
 {
-    const T *next = (const T *) android_atomic_acquire_load((volatile int32_t *) &mNext);
+    const T *next = (const T *) atomic_load_explicit(&mNext, memory_order_acquire);
+
     if (next != mCurrent) {
         mAck = next;    // no additional barrier needed
         mCurrent = next;
@@ -140,7 +142,7 @@ template<typename T> bool StateQueue<T>::push(StateQueue<T>::block_t block)
         }
 
         // publish
-        android_atomic_release_store((int32_t) mMutating, (volatile int32_t *) &mNext);
+        atomic_store_explicit(&mNext, (uintptr_t)mMutating, memory_order_release);
         mExpecting = mMutating;
 
         // copy with circular wraparound

@@ -37,6 +37,8 @@ struct NuCachedSource2 : public DataSource {
 
     virtual ssize_t readAt(off64_t offset, void *data, size_t size);
 
+    virtual void disconnect();
+
     virtual status_t getSize(off64_t *size);
     virtual uint32_t flags();
 
@@ -63,6 +65,9 @@ struct NuCachedSource2 : public DataSource {
             KeyedVector<String8, String8> *headers,
             String8 *cacheConfig,
             bool *disconnectAtHighwatermark);
+
+    virtual status_t disconnectWhileSuspend();
+    virtual status_t connectWhileResume();
 
 protected:
     virtual ~NuCachedSource2();
@@ -103,12 +108,15 @@ private:
     off64_t mLastAccessPos;
     sp<AMessage> mAsyncResult;
     bool mFetching;
+    bool mDisconnecting;
     int64_t mLastFetchTimeUs;
 
     int32_t mNumRetriesLeft;
 
     size_t mHighwaterThresholdBytes;
     size_t mLowwaterThresholdBytes;
+
+    bool mSuspended;
 
     // If the keep-alive interval is 0, keep-alives are disabled.
     int64_t mKeepAliveIntervalUs;

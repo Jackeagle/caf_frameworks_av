@@ -14,20 +14,22 @@
  * limitations under the License.
  */
 
+#include <inttypes.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "stagefright"
 #include <media/stagefright/foundation/ADebug.h>
-
-#include <sys/time.h>
-
-#include <stdlib.h>
-#include <string.h>
 
 #include "jpeg.h"
 #include "SineSource.h"
 
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
+#include <media/IMediaHTTPService.h>
 #include <media/IMediaPlayerService.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include "include/NuCachedSource2.h"
@@ -48,8 +50,6 @@
 #include <media/stagefright/MPEG4Writer.h>
 
 #include <private/media/VideoFrame.h>
-
-#include <fcntl.h>
 
 #include <gui/GLConsumer.h>
 #include <gui/Surface.h>
@@ -89,8 +89,8 @@ static void displayDecodeHistogram(Vector<int64_t> *decodeTimesUs) {
     int64_t minUs = decodeTimesUs->itemAt(0);
     int64_t maxUs = decodeTimesUs->itemAt(n - 1);
 
-    printf("min decode time %lld us (%.2f secs)\n", minUs, minUs / 1E6);
-    printf("max decode time %lld us (%.2f secs)\n", maxUs, maxUs / 1E6);
+    printf("min decode time %" PRId64 " us (%.2f secs)\n", minUs, minUs / 1E6);
+    printf("max decode time %" PRId64 " us (%.2f secs)\n", maxUs, maxUs / 1E6);
 
     size_t counts[100];
     for (size_t i = 0; i < 100; ++i) {
@@ -110,7 +110,7 @@ static void displayDecodeHistogram(Vector<int64_t> *decodeTimesUs) {
         int64_t slotUs = minUs + (i * (maxUs - minUs) / 100);
 
         double fps = 1E6 / slotUs;
-        printf("[%.2f fps]: %d\n", fps, counts[i]);
+        printf("[%.2f fps]: %zu\n", fps, counts[i]);
     }
 }
 
@@ -262,7 +262,7 @@ static void playSource(OMXClient *client, sp<MediaSource> &source) {
                     }
                 }
 
-                printf("buffer has timestamp %lld us (%.2f secs)\n",
+                printf("buffer has timestamp %" PRId64 " us (%.2f secs)\n",
                        timestampUs, timestampUs / 1E6);
 
                 buffer->release();
@@ -285,7 +285,7 @@ static void playSource(OMXClient *client, sp<MediaSource> &source) {
                 seekTimeUs = (rand() * (float)durationUs) / RAND_MAX;
                 options.setSeekTo(seekTimeUs);
 
-                printf("seeking to %lld us (%.2f secs)\n",
+                printf("seeking to %" PRId64 " us (%.2f secs)\n",
                        seekTimeUs, seekTimeUs / 1E6);
             }
         }
@@ -388,7 +388,7 @@ static void playSource(OMXClient *client, sp<MediaSource> &source) {
         // sizes may be different across decoders.
         printf("avg. %.2f KB/sec\n", totalBytes / 1024 * 1E6 / delay);
 
-        printf("decoded a total of %lld bytes\n", totalBytes);
+        printf("decoded a total of %" PRId64 " bytes\n", totalBytes);
     }
 }
 
@@ -574,7 +574,8 @@ static void performSeekTest(const sp<MediaSource> &source) {
             int64_t timeUs;
             CHECK(buffer->meta_data()->findInt64(kKeyTime, &timeUs));
 
-            printf("%lld\t%lld\t%lld\n", seekTimeUs, timeUs, seekTimeUs - timeUs);
+            printf("%" PRId64 "\t%" PRId64 "\t%" PRId64 "\n",
+                   seekTimeUs, timeUs, seekTimeUs - timeUs);
 
             buffer->release();
             buffer = NULL;
@@ -645,7 +646,7 @@ static void dumpCodecProfiles(const sp<IOMX>& omx, bool queryDecoders) {
                 const CodecProfileLevel &profileLevel =
                      results[i].mProfileLevels[j];
 
-                printf("%s%ld/%ld", j > 0 ? ", " : "",
+                printf("%s%" PRIu32 "/%" PRIu32, j > 0 ? ", " : "",
                     profileLevel.mProfile, profileLevel.mLevel);
             }
 
@@ -938,9 +939,13 @@ int main(int argc, char **argv) {
         } else {
             CHECK(useSurfaceTexAlloc);
 
-            sp<BufferQueue> bq = new BufferQueue();
-            sp<GLConsumer> texture = new GLConsumer(bq, 0 /* tex */);
-            gSurface = new Surface(bq);
+            sp<IGraphicBufferProducer> producer;
+            sp<IGraphicBufferConsumer> consumer;
+            BufferQueue::createBufferQueue(&producer, &consumer);
+            sp<GLConsumer> texture = new GLConsumer(consumer, 0 /* tex */,
+                    GLConsumer::TEXTURE_EXTERNAL, true /* useFenceSync */,
+                    false /* isControlledByApp */);
+            gSurface = new Surface(producer);
         }
 
         CHECK_EQ((status_t)OK,
@@ -958,7 +963,8 @@ int main(int argc, char **argv) {
 
         const char *filename = argv[k];
 
-        sp<DataSource> dataSource = DataSource::CreateFromURI(filename);
+        sp<DataSource> dataSource =
+            DataSource::CreateFromURI(NULL /* httpService */, filename);
 
         if (strncasecmp(filename, "sine:", 5) && dataSource == NULL) {
             fprintf(stderr, "Unable to create data source.\n");
@@ -1071,7 +1077,7 @@ int main(int argc, char **argv) {
 
                 int64_t thumbTimeUs;
                 if (meta->findInt64(kKeyThumbnailTime, &thumbTimeUs)) {
-                    printf("thumbnailTime: %lld us (%.2f secs)\n",
+                    printf("thumbnailTime: %" PRId64 " us (%.2f secs)\n",
                            thumbTimeUs, thumbTimeUs / 1E6);
                 }
 

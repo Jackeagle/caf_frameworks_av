@@ -19,15 +19,15 @@
 
 #include <private/media/AudioTrackShared.h>
 #include <utils/Log.h>
-extern "C" {
-#include "../private/bionic_futex.h"
-}
+
+#include <linux/futex.h>
+#include <sys/syscall.h>
 
 namespace android {
 
 audio_track_cblk_t::audio_track_cblk_t()
-    : mServer(0), frameCount_(0), mFutex(0), mMinimum(0),
-    mVolumeLR(0x10001000), mSampleRate(0), mSendLevel(0), mFlags(0)
+    : mServer(0), mFutex(0), mMinimum(0),
+    mVolumeLR(GAIN_MINIFLOAT_PACKED_UNITY), mSampleRate(0), mSendLevel(0), mFlags(0)
 {
     memset(&u, 0, sizeof(u));
 }
@@ -37,7 +37,8 @@ audio_track_cblk_t::audio_track_cblk_t()
 Proxy::Proxy(audio_track_cblk_t* cblk, void *buffers, size_t frameCount, size_t frameSize,
         bool isOut, bool clientInServer)
     : mCblk(cblk), mBuffers(buffers), mFrameCount(frameCount), mFrameSize(frameSize),
-      //Do not round the frame count for tunnel formats. Needed for tunnel amr wb encode and tunnel vocoders.
+      //Do not roundup the frame count for compress offload capture formats.
+      //Needed for compress offload amr wb encode and vocoders.
       mFrameCountP2((mFrameSize == 1) ? frameCount : roundup(frameCount)),
       mIsOut(isOut), mClientInServer(clientInServer),
       mIsShutdown(false), mUnreleased(0)
@@ -136,10 +137,17 @@ status_t ClientProxy::obtainBuffer(Buffer* buffer, const struct timespec *reques
         ssize_t filled = rear - front;
         // pipe should not be overfull
         if (!(0 <= filled && (size_t) filled <= mFrameCount)) {
-            ALOGE("Shared memory control block is corrupt (filled=%d); shutting down", filled);
-            mIsShutdown = true;
-            status = NO_INIT;
-            goto end;
+            if (mIsOut) {
+                ALOGE("Shared memory control block is corrupt (filled=%zd, mFrameCount=%zu); "
+                        "shutting down", filled, mFrameCount);
+                mIsShutdown = true;
+                status = NO_INIT;
+                goto end;
+            }
+            // for input, sync up on overrun
+            filled = 0;
+            cblk->u.mStreaming.mFront = rear;
+            (void) android_atomic_or(CBLK_OVERRUN, &cblk->mFlags);
         }
         // don't allow filling pipe beyond the nominal size
         size_t avail = mIsOut ? mFrameCount - filled : filled;
@@ -149,7 +157,7 @@ status_t ClientProxy::obtainBuffer(Buffer* buffer, const struct timespec *reques
             // Use modulo operator instead of and operator.
             // x &= (y-1) returns the remainder if y is even
             // Use modulo operator to generalize it for all values.
-            // This is needed for tunnel voip and tunnel encode usecases.
+            // This is needed for compress offload voip and encode usecases.
             if (mIsOut) {
                 rear %= mFrameCountP2;
                 part1 = mFrameCountP2 - rear;
@@ -206,18 +214,18 @@ status_t ClientProxy::obtainBuffer(Buffer* buffer, const struct timespec *reques
             ts = &remaining;
             break;
         default:
-            LOG_FATAL("obtainBuffer() timeout=%d", timeout);
+            LOG_ALWAYS_FATAL("obtainBuffer() timeout=%d", timeout);
             ts = NULL;
             break;
         }
         int32_t old = android_atomic_and(~CBLK_FUTEX_WAKE, &cblk->mFutex);
         if (!(old & CBLK_FUTEX_WAKE)) {
-            int rc;
             if (measure && !beforeIsValid) {
                 clock_gettime(CLOCK_MONOTONIC, &before);
                 beforeIsValid = true;
             }
-            int ret = __futex_syscall4(&cblk->mFutex,
+            errno = 0;
+            (void) syscall(__NR_futex, &cblk->mFutex,
                     mClientInServer ? FUTEX_WAIT_PRIVATE : FUTEX_WAIT, old & ~CBLK_FUTEX_WAKE, ts);
             // update total elapsed time spent waiting
             if (measure) {
@@ -236,16 +244,16 @@ status_t ClientProxy::obtainBuffer(Buffer* buffer, const struct timespec *reques
                 before = after;
                 beforeIsValid = true;
             }
-            switch (ret) {
-            case 0:             // normal wakeup by server, or by binderDied()
-            case -EWOULDBLOCK:  // benign race condition with server
-            case -EINTR:        // wait was interrupted by signal or other spurious wakeup
-            case -ETIMEDOUT:    // time-out expired
+            switch (errno) {
+            case 0:            // normal wakeup by server, or by binderDied()
+            case EWOULDBLOCK:  // benign race condition with server
+            case EINTR:        // wait was interrupted by signal or other spurious wakeup
+            case ETIMEDOUT:    // time-out expired
                 // FIXME these error/non-0 status are being dropped
                 break;
             default:
-                ALOGE("%s unexpected error %d", __func__, ret);
-                status = -ret;
+                status = errno;
+                ALOGE("%s unexpected error %s", __func__, strerror(status));
                 goto end;
             }
         }
@@ -301,7 +309,7 @@ void ClientProxy::binderDied()
     audio_track_cblk_t* cblk = mCblk;
     if (!(android_atomic_or(CBLK_INVALID, &cblk->mFlags) & CBLK_INVALID)) {
         // it seems that a FUTEX_WAKE_PRIVATE will not wake a FUTEX_WAIT, even within same process
-        (void) __futex_syscall3(&cblk->mFutex, mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE,
+        (void) syscall(__NR_futex, &cblk->mFutex, mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE,
                 1);
     }
 }
@@ -310,7 +318,7 @@ void ClientProxy::interrupt()
 {
     audio_track_cblk_t* cblk = mCblk;
     if (!(android_atomic_or(CBLK_INTERRUPT, &cblk->mFlags) & CBLK_INTERRUPT)) {
-        (void) __futex_syscall3(&cblk->mFutex, mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE,
+        (void) syscall(__NR_futex, &cblk->mFutex, mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE,
                 1);
     }
 }
@@ -318,9 +326,8 @@ void ClientProxy::interrupt()
 size_t ClientProxy::getMisalignment()
 {
     audio_track_cblk_t* cblk = mCblk;
-        return ((mFrameCountP2 -
-               (mIsOut ? cblk->u.mStreaming.mRear : cblk->u.mStreaming.mFront))
-               % mFrameCountP2);
+    return ((mFrameCountP2 - (mIsOut ? cblk->u.mStreaming.mRear : cblk->u.mStreaming.mFront))
+           % mFrameCountP2);
 }
 
 size_t ClientProxy::getFramesFilled() {
@@ -338,7 +345,7 @@ size_t ClientProxy::getFramesFilled() {
     ssize_t filled = rear - front;
     // pipe should not be overfull
     if (!(0 <= filled && (size_t) filled <= mFrameCount)) {
-        ALOGE("Shared memory control block is corrupt (filled=%d); shutting down", filled);
+        ALOGE("Shared memory control block is corrupt (filled=%zd); shutting down", filled);
         return 0;
     }
     return (size_t)filled;
@@ -436,24 +443,24 @@ status_t AudioTrackClientProxy::waitStreamEndDone(const struct timespec *request
             ts = &remaining;
             break;
         default:
-            LOG_FATAL("waitStreamEndDone() timeout=%d", timeout);
+            LOG_ALWAYS_FATAL("waitStreamEndDone() timeout=%d", timeout);
             ts = NULL;
             break;
         }
         int32_t old = android_atomic_and(~CBLK_FUTEX_WAKE, &cblk->mFutex);
         if (!(old & CBLK_FUTEX_WAKE)) {
-            int rc;
-            int ret = __futex_syscall4(&cblk->mFutex,
+            errno = 0;
+            (void) syscall(__NR_futex, &cblk->mFutex,
                     mClientInServer ? FUTEX_WAIT_PRIVATE : FUTEX_WAIT, old & ~CBLK_FUTEX_WAKE, ts);
-            switch (ret) {
-            case 0:             // normal wakeup by server, or by binderDied()
-            case -EWOULDBLOCK:  // benign race condition with server
-            case -EINTR:        // wait was interrupted by signal or other spurious wakeup
-            case -ETIMEDOUT:    // time-out expired
+            switch (errno) {
+            case 0:            // normal wakeup by server, or by binderDied()
+            case EWOULDBLOCK:  // benign race condition with server
+            case EINTR:        // wait was interrupted by signal or other spurious wakeup
+            case ETIMEDOUT:    // time-out expired
                 break;
             default:
-                ALOGE("%s unexpected error %d", __func__, ret);
-                status = -ret;
+                status = errno;
+                ALOGE("%s unexpected error %s", __func__, strerror(status));
                 goto end;
             }
         }
@@ -477,14 +484,19 @@ StaticAudioTrackClientProxy::StaticAudioTrackClientProxy(audio_track_cblk_t* cbl
 
 void StaticAudioTrackClientProxy::flush()
 {
-    LOG_FATAL("static flush");
+    LOG_ALWAYS_FATAL("static flush");
 }
 
 void StaticAudioTrackClientProxy::setLoop(size_t loopStart, size_t loopEnd, int loopCount)
 {
+    // This can only happen on a 64-bit client
+    if (loopStart > UINT32_MAX || loopEnd > UINT32_MAX) {
+        // FIXME Should return an error status
+        return;
+    }
     StaticAudioTrackState newState;
-    newState.mLoopStart = loopStart;
-    newState.mLoopEnd = loopEnd;
+    newState.mLoopStart = (uint32_t) loopStart;
+    newState.mLoopEnd = (uint32_t) loopEnd;
     newState.mLoopCount = loopCount;
     mBufferPosition = loopStart;
     (void) mMutator.push(newState);
@@ -494,7 +506,7 @@ size_t StaticAudioTrackClientProxy::getBufferPosition()
 {
     size_t bufferPosition;
     if (mMutator.ack()) {
-        bufferPosition = mCblk->u.mStatic.mBufferPosition;
+        bufferPosition = (size_t) mCblk->u.mStatic.mBufferPosition;
         if (bufferPosition > mFrameCount) {
             bufferPosition = mFrameCount;
         }
@@ -537,7 +549,7 @@ status_t ServerProxy::obtainBuffer(Buffer* buffer, bool ackFlush)
             if (front != rear) {
                 int32_t old = android_atomic_or(CBLK_FUTEX_WAKE, &cblk->mFutex);
                 if (!(old & CBLK_FUTEX_WAKE)) {
-                    (void) __futex_syscall3(&cblk->mFutex,
+                    (void) syscall(__NR_futex, &cblk->mFutex,
                             mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE, 1);
                 }
             }
@@ -550,7 +562,7 @@ status_t ServerProxy::obtainBuffer(Buffer* buffer, bool ackFlush)
     ssize_t filled = rear - front;
     // pipe should not already be overfull
     if (!(0 <= filled && (size_t) filled <= mFrameCount)) {
-        ALOGE("Shared memory control block is corrupt (filled=%d); shutting down", filled);
+        ALOGE("Shared memory control block is corrupt (filled=%zd); shutting down", filled);
         mIsShutdown = true;
     }
     if (mIsShutdown) {
@@ -570,7 +582,7 @@ status_t ServerProxy::obtainBuffer(Buffer* buffer, bool ackFlush)
     // Use modulo operator instead of and operator.
     // x &= (y-1) returns the remainder if y is even
     // Use modulo operator to generalize it for all values.
-    // This is needed for tunnel voip and tunnel encode usecases.
+    // This is needed for compress offload voip and encode usecases.
     if (mIsOut) {
         front %= mFrameCountP2;
         part1 = mFrameCountP2 - front;
@@ -627,13 +639,13 @@ void ServerProxy::releaseBuffer(Buffer* buffer)
         android_atomic_release_store(stepCount + rear, &cblk->u.mStreaming.mRear);
     }
 
-    mCblk->mServer += stepCount;
+    cblk->mServer += stepCount;
 
     size_t half = mFrameCount / 2;
     if (half == 0) {
         half = 1;
     }
-    size_t minimum = cblk->mMinimum;
+    size_t minimum = (size_t) cblk->mMinimum;
     if (minimum == 0) {
         minimum = mIsOut ? half : 1;
     } else if (minimum > half) {
@@ -641,10 +653,10 @@ void ServerProxy::releaseBuffer(Buffer* buffer)
     }
     // FIXME AudioRecord wakeup needs to be optimized; it currently wakes up client every time
     if (!mIsOut || (mAvailToClient + stepCount >= minimum)) {
-        ALOGV("mAvailToClient=%u stepCount=%u minimum=%u", mAvailToClient, stepCount, minimum);
+        ALOGV("mAvailToClient=%zu stepCount=%zu minimum=%zu", mAvailToClient, stepCount, minimum);
         int32_t old = android_atomic_or(CBLK_FUTEX_WAKE, &cblk->mFutex);
         if (!(old & CBLK_FUTEX_WAKE)) {
-            (void) __futex_syscall3(&cblk->mFutex,
+            (void) syscall(__NR_futex, &cblk->mFutex,
                     mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE, 1);
         }
     }
@@ -674,7 +686,7 @@ size_t AudioTrackServerProxy::framesReady()
     ssize_t filled = rear - cblk->u.mStreaming.mFront;
     // pipe should not already be overfull
     if (!(0 <= filled && (size_t) filled <= mFrameCount)) {
-        ALOGE("Shared memory control block is corrupt (filled=%d); shutting down", filled);
+        ALOGE("Shared memory control block is corrupt (filled=%zd); shutting down", filled);
         mIsShutdown = true;
         return 0;
     }
@@ -685,10 +697,11 @@ size_t AudioTrackServerProxy::framesReady()
 }
 
 bool  AudioTrackServerProxy::setStreamEndDone() {
+    audio_track_cblk_t* cblk = mCblk;
     bool old =
-            (android_atomic_or(CBLK_STREAM_END_DONE, &mCblk->mFlags) & CBLK_STREAM_END_DONE) != 0;
+            (android_atomic_or(CBLK_STREAM_END_DONE, &cblk->mFlags) & CBLK_STREAM_END_DONE) != 0;
     if (!old) {
-        (void) __futex_syscall3(&mCblk->mFutex, mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE,
+        (void) syscall(__NR_futex, &cblk->mFutex, mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE,
                 1);
     }
     return old;
@@ -696,10 +709,11 @@ bool  AudioTrackServerProxy::setStreamEndDone() {
 
 void AudioTrackServerProxy::tallyUnderrunFrames(uint32_t frameCount)
 {
-    mCblk->u.mStreaming.mUnderrunFrames += frameCount;
+    audio_track_cblk_t* cblk = mCblk;
+    cblk->u.mStreaming.mUnderrunFrames += frameCount;
 
     // FIXME also wake futex so that underrun is noticed more quickly
-    (void) android_atomic_or(CBLK_UNDERRUN, &mCblk->mFlags);
+    (void) android_atomic_or(CBLK_UNDERRUN, &cblk->mFlags);
 }
 
 // ---------------------------------------------------------------------------
@@ -771,12 +785,13 @@ ssize_t StaticAudioTrackServerProxy::pollPosition()
             mIsShutdown = true;
             return (ssize_t) NO_INIT;
         }
-        mCblk->u.mStatic.mBufferPosition = position;
+        // This may overflow, but client is not supposed to rely on it
+        mCblk->u.mStatic.mBufferPosition = (uint32_t) position;
     }
     return (ssize_t) position;
 }
 
-status_t StaticAudioTrackServerProxy::obtainBuffer(Buffer* buffer, bool ackFlush)
+status_t StaticAudioTrackServerProxy::obtainBuffer(Buffer* buffer, bool ackFlush __unused)
 {
     if (mIsShutdown) {
         buffer->mFrameCount = 0;
@@ -830,7 +845,7 @@ void StaticAudioTrackServerProxy::releaseBuffer(Buffer* buffer)
     size_t newPosition = position + stepCount;
     int32_t setFlags = 0;
     if (!(position <= newPosition && newPosition <= mFrameCount)) {
-        ALOGW("%s newPosition %u outside [%u, %u]", __func__, newPosition, position, mFrameCount);
+        ALOGW("%s newPosition %zu outside [%zu, %zu]", __func__, newPosition, position, mFrameCount);
         newPosition = mFrameCount;
     } else if (mState.mLoopCount != 0 && newPosition == mState.mLoopEnd) {
         if (mState.mLoopCount == -1 || --mState.mLoopCount != 0) {
@@ -847,7 +862,8 @@ void StaticAudioTrackServerProxy::releaseBuffer(Buffer* buffer)
     mPosition = newPosition;
 
     cblk->mServer += stepCount;
-    cblk->u.mStatic.mBufferPosition = newPosition;
+    // This may overflow, but client is not supposed to rely on it
+    cblk->u.mStatic.mBufferPosition = (uint32_t) newPosition;
     if (setFlags != 0) {
         (void) android_atomic_or(setFlags, &cblk->mFlags);
         // this would be a good place to wake a futex
@@ -858,7 +874,7 @@ void StaticAudioTrackServerProxy::releaseBuffer(Buffer* buffer)
     buffer->mNonContig = 0;
 }
 
-void StaticAudioTrackServerProxy::tallyUnderrunFrames(uint32_t frameCount)
+void StaticAudioTrackServerProxy::tallyUnderrunFrames(uint32_t frameCount __unused)
 {
     // Unlike AudioTrackServerProxy::tallyUnderrunFrames() used for streaming tracks,
     // we don't have a location to count underrun frames.  The underrun frame counter

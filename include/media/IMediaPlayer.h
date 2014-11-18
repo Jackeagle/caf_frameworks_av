@@ -33,6 +33,7 @@ class Parcel;
 class Surface;
 class IStreamSource;
 class IGraphicBufferProducer;
+struct IMediaHTTPService;
 
 class IMediaPlayer: public IInterface
 {
@@ -41,8 +42,11 @@ public:
 
     virtual void            disconnect() = 0;
 
-    virtual status_t        setDataSource(const char *url,
-                                    const KeyedVector<String8, String8>* headers) = 0;
+    virtual status_t        setDataSource(
+            const sp<IMediaHTTPService> &httpService,
+            const char *url,
+            const KeyedVector<String8, String8>* headers) = 0;
+
     virtual status_t        setDataSource(int fd, int64_t offset, int64_t length) = 0;
     virtual status_t        setDataSource(const sp<IStreamSource>& source) = 0;
     virtual status_t        setVideoSurfaceTexture(
@@ -96,6 +100,16 @@ public:
     virtual status_t        getMetadata(bool update_only,
                                         bool apply_filter,
                                         Parcel *metadata) = 0;
+
+    // Suspend the video player
+    // In other words, just release the audio decoder and the video decoder
+    // @return OK if the video player was suspended successfully
+    virtual status_t        suspend() = 0;
+
+    // Resume the video player
+    // Init the audio decoder and the video decoder
+    // @return OK if the video player was resumed successfully
+    virtual status_t        resume() = 0;
 };
 
 // ----------------------------------------------------------------------------

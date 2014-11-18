@@ -31,6 +31,7 @@
 #include <binder/MemoryHeapBase.h>
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
+#include <media/IMediaHTTPService.h>
 #include <media/MediaMetadataRetrieverInterface.h>
 #include <media/MediaPlayerInterface.h>
 #include <private/media/VideoFrame.h>
@@ -56,7 +57,7 @@ MetadataRetrieverClient::~MetadataRetrieverClient()
     disconnect();
 }
 
-status_t MetadataRetrieverClient::dump(int fd, const Vector<String16>& args) const
+status_t MetadataRetrieverClient::dump(int fd, const Vector<String16>& /*args*/) const
 {
     const size_t SIZE = 256;
     char buffer[SIZE];
@@ -106,7 +107,9 @@ static sp<MediaMetadataRetrieverBase> createRetriever(player_type playerType)
 }
 
 status_t MetadataRetrieverClient::setDataSource(
-        const char *url, const KeyedVector<String8, String8> *headers)
+        const sp<IMediaHTTPService> &httpService,
+        const char *url,
+        const KeyedVector<String8, String8> *headers)
 {
     ALOGV("setDataSource(%s)", url);
     Mutex::Autolock lock(mLock);
@@ -127,7 +130,7 @@ status_t MetadataRetrieverClient::setDataSource(
     ALOGV("player type = %d", playerType);
     sp<MediaMetadataRetrieverBase> p = createRetriever(playerType);
     if (p == NULL) return NO_INIT;
-    status_t ret = p->setDataSource(url, headers);
+    status_t ret = p->setDataSource(httpService, url, headers);
     if (ret == NO_ERROR) mRetriever = p;
     return ret;
 }
@@ -144,8 +147,8 @@ status_t MetadataRetrieverClient::setDataSource(int fd, int64_t offset, int64_t 
     }
     ALOGV("st_dev  = %llu", sb.st_dev);
     ALOGV("st_mode = %u", sb.st_mode);
-    ALOGV("st_uid  = %lu", sb.st_uid);
-    ALOGV("st_gid  = %lu", sb.st_gid);
+    ALOGV("st_uid  = %lu", static_cast<unsigned long>(sb.st_uid));
+    ALOGV("st_gid  = %lu", static_cast<unsigned long>(sb.st_gid));
     ALOGV("st_size = %llu", sb.st_size);
 
     if (offset >= sb.st_size) {
@@ -230,7 +233,7 @@ sp<IMemory> MetadataRetrieverClient::extractAlbumArt()
         ALOGE("failed to extract an album art");
         return NULL;
     }
-    size_t size = sizeof(MediaAlbumArt) + albumArt->mSize;
+    size_t size = sizeof(MediaAlbumArt) + albumArt->size();
     sp<MemoryHeapBase> heap = new MemoryHeapBase(size, 0, "MetadataRetrieverClient");
     if (heap == NULL) {
         ALOGE("failed to create MemoryDealer object");
@@ -243,11 +246,9 @@ sp<IMemory> MetadataRetrieverClient::extractAlbumArt()
         delete albumArt;
         return NULL;
     }
-    MediaAlbumArt *albumArtCopy = static_cast<MediaAlbumArt *>(mAlbumArt->pointer());
-    albumArtCopy->mSize = albumArt->mSize;
-    albumArtCopy->mData = (uint8_t *)albumArtCopy + sizeof(MediaAlbumArt);
-    memcpy(albumArtCopy->mData, albumArt->mData, albumArt->mSize);
-    delete albumArt;  // Fix memory leakage
+    MediaAlbumArt::init((MediaAlbumArt *) mAlbumArt->pointer(),
+                        albumArt->size(), albumArt->data());
+    delete albumArt;  // We've taken our copy.
     return mAlbumArt;
 }
 

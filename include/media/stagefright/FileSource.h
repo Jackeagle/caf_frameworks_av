@@ -30,6 +30,7 @@ namespace android {
 class FileSource : public DataSource {
 public:
     FileSource(const char *filename);
+    // FileSource takes ownership and will close the fd
     FileSource(int fd, int64_t offset, int64_t length);
 
     virtual status_t initCheck() const;
@@ -55,7 +56,7 @@ private:
     sp<DecryptHandle> mDecryptHandle;
     DrmManagerClient *mDrmManagerClient;
     int64_t mDrmBufOffset;
-    int64_t mDrmBufSize;
+    size_t mDrmBufSize;
     unsigned char *mDrmBuf;
 
     ssize_t readAtDRM(off64_t offset, void *data, size_t size);

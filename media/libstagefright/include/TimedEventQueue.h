@@ -118,10 +118,11 @@ private:
     struct QueueItem {
         sp<Event> event;
         int64_t realtime_us;
+        bool has_wakelock;
     };
 
     struct StopEvent : public TimedEventQueue::Event {
-        virtual void fire(TimedEventQueue *queue, int64_t now_us) {
+        virtual void fire(TimedEventQueue *queue, int64_t /* now_us */) {
             queue->mStopped = true;
         }
     };
@@ -139,14 +140,15 @@ private:
     sp<IPowerManager>       mPowerManager;
     sp<IBinder>             mWakeLockToken;
     const sp<PMDeathRecipient> mDeathRecipient;
+    uint32_t                mWakeLockCount;
 
     static void *ThreadWrapper(void *me);
     void threadEntry();
 
-    sp<Event> removeEventFromQueue_l(event_id id);
+    sp<Event> removeEventFromQueue_l(event_id id, bool *wakeLocked);
 
     void acquireWakeLock_l();
-    void releaseWakeLock_l();
+    void releaseWakeLock_l(bool force = false);
 
     TimedEventQueue(const TimedEventQueue &);
     TimedEventQueue &operator=(const TimedEventQueue &);

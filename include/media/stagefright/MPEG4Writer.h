@@ -63,8 +63,8 @@ public:
     int32_t getTimeScale() const { return mTimeScale; }
 
     status_t setGeoData(int latitudex10000, int longitudex10000);
-    void setStartTimeOffsetMs(int ms) { mStartTimeOffsetMs = ms; }
-    int32_t getStartTimeOffsetMs() const { return mStartTimeOffsetMs; }
+    virtual void setStartTimeOffsetMs(int ms) { mStartTimeOffsetMs = ms; }
+    virtual int32_t getStartTimeOffsetMs() const { return mStartTimeOffsetMs; }
 
 protected:
     virtual ~MPEG4Writer();
@@ -96,6 +96,7 @@ private:
     int mLongitudex10000;
     bool mAreGeoTagsAvailable;
     int32_t mStartTimeOffsetMs;
+    int mHFRRatio;
 
     Mutex mLock;
 
@@ -204,6 +205,9 @@ private:
 
     MPEG4Writer(const MPEG4Writer &);
     MPEG4Writer &operator=(const MPEG4Writer &);
+
+    bool mIsVideoHEVC;
+    bool mIsAudioAMR;
 };
 
 }  // namespace android

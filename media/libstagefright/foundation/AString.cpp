@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <binder/Parcel.h>
+#include <utils/String8.h>
 #include "ADebug.h"
 #include "AString.h"
 
@@ -46,6 +48,13 @@ AString::AString(const char *s, size_t size)
       mSize(0),
       mAllocSize(1) {
     setTo(s, size);
+}
+
+AString::AString(const String8 &from)
+    : mData(NULL),
+      mSize(0),
+      mAllocSize(1) {
+    setTo(from.string(), from.length());
 }
 
 AString::AString(const AString &from)
@@ -189,64 +198,64 @@ void AString::append(const AString &from, size_t offset, size_t n) {
 
 void AString::append(int x) {
     char s[16];
-    sprintf(s, "%d", x);
-
+    int result = snprintf(s, sizeof(s), "%d", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(unsigned x) {
     char s[16];
-    sprintf(s, "%u", x);
-
+    int result = snprintf(s, sizeof(s), "%u", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(long x) {
-    char s[16];
-    sprintf(s, "%ld", x);
-
+    char s[32];
+    int result = snprintf(s, sizeof(s), "%ld", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(unsigned long x) {
-    char s[16];
-    sprintf(s, "%lu", x);
-
+    char s[32];
+    int result = snprintf(s, sizeof(s), "%lu", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(long long x) {
     char s[32];
-    sprintf(s, "%lld", x);
-
+    int result = snprintf(s, sizeof(s), "%lld", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(unsigned long long x) {
     char s[32];
-    sprintf(s, "%llu", x);
-
+    int result = snprintf(s, sizeof(s), "%llu", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(float x) {
     char s[16];
-    sprintf(s, "%f", x);
-
+    int result = snprintf(s, sizeof(s), "%f", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(double x) {
     char s[16];
-    sprintf(s, "%f", x);
-
+    int result = snprintf(s, sizeof(s), "%f", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
 void AString::append(void *x) {
-    char s[16];
-    sprintf(s, "%p", x);
-
+    char s[32];
+    int result = snprintf(s, sizeof(s), "%p", x);
+    CHECK((result > 0) && ((size_t) result) < sizeof(s));
     append(s);
 }
 
@@ -298,6 +307,14 @@ int AString::compare(const AString &other) const {
     return strcmp(mData, other.mData);
 }
 
+int AString::compareIgnoreCase(const AString &other) const {
+    return strcasecmp(mData, other.mData);
+}
+
+bool AString::equalsIgnoreCase(const AString &other) const {
+    return compareIgnoreCase(other) == 0;
+}
+
 void AString::tolower() {
     makeMutable();
 
@@ -318,6 +335,35 @@ bool AString::endsWith(const char *suffix) const {
     }
 
     return !strcmp(mData + mSize - suffixLen, suffix);
+}
+
+bool AString::startsWithIgnoreCase(const char *prefix) const {
+    return !strncasecmp(mData, prefix, strlen(prefix));
+}
+
+bool AString::endsWithIgnoreCase(const char *suffix) const {
+    size_t suffixLen = strlen(suffix);
+
+    if (mSize < suffixLen) {
+        return false;
+    }
+
+    return !strcasecmp(mData + mSize - suffixLen, suffix);
+}
+
+// static
+AString AString::FromParcel(const Parcel &parcel) {
+    size_t size = static_cast<size_t>(parcel.readInt32());
+    return AString(static_cast<const char *>(parcel.readInplace(size)), size);
+}
+
+status_t AString::writeToParcel(Parcel *parcel) const {
+    CHECK_LE(mSize, static_cast<size_t>(INT32_MAX));
+    status_t err = parcel->writeInt32(mSize);
+    if (err == OK) {
+        err = parcel->write(mData, mSize);
+    }
+    return err;
 }
 
 AString StringPrintf(const char *format, ...) {

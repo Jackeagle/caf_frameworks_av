@@ -27,7 +27,6 @@
 #include <media/stagefright/MetaData.h>
 
 #include <ui/GraphicBuffer.h>
-#include <sys/atomics.h>
 
 namespace android {
 
@@ -92,7 +91,7 @@ void MediaBuffer::release() {
         return;
     }
 
-    int prevCount = __atomic_dec(&mRefCount);
+    int prevCount = __sync_fetch_and_sub(&mRefCount, 1);
     if (prevCount == 1) {
         if (mObserver == NULL) {
             delete this;
@@ -112,7 +111,7 @@ void MediaBuffer::claim() {
 }
 
 void MediaBuffer::add_ref() {
-    (void) __atomic_inc(&mRefCount);
+    (void) __sync_fetch_and_add(&mRefCount, 1);
 }
 
 void *MediaBuffer::data() const {
@@ -135,7 +134,7 @@ size_t MediaBuffer::range_length() const {
 
 void MediaBuffer::set_range(size_t offset, size_t length) {
     if ((mGraphicBuffer == NULL) && (offset + length > mSize)) {
-        ALOGE("offset = %d, length = %d, mSize = %d", offset, length, mSize);
+        ALOGE("offset = %zu, length = %zu, mSize = %zu", offset, length, mSize);
     }
     CHECK((mGraphicBuffer != NULL) || (offset + length <= mSize));
 
