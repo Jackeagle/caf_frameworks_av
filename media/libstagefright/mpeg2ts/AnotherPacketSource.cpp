@@ -425,6 +425,14 @@ int64_t AnotherPacketSource::getBufferedDurationUs(status_t *finalResult) {
     return durationUs;
 }
 
+size_t AnotherPacketSource::getBufferCount(status_t *finalResult) {
+    Mutex::Autolock autoLock(mLock);
+
+    *finalResult = mEOSResult;
+
+    return mBuffers.size();
+}
+
 status_t AnotherPacketSource::nextBufferTime(int64_t *timeUs) {
     *timeUs = 0;
 
