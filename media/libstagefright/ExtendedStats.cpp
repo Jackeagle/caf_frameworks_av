@@ -36,6 +36,7 @@
 #include <unistd.h>
 #include <utils/Errors.h>
 #include <utils/Log.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -287,6 +288,7 @@ ExtendedStats::StatsFrameInfoPool::~StatsFrameInfoPool() {
 
 /* TimeBoundVector methods */
 void ExtendedStats::TimeBoundVector::add(StatsFrameInfoWrapper item) {
+    Mutex::Autolock lock(mLock);
     mList.add(item);
     mCurrBoundedSum += (item.infoPtr)->size;
     mTotalSizeSum += (item.infoPtr)->size;
@@ -316,6 +318,7 @@ void ExtendedStats::TimeBoundVector::add(StatsFrameInfoWrapper item) {
 }
 
 void ExtendedStats::TimeBoundVector::clear() {
+    Mutex::Autolock lock(mLock);
     for (uint32_t i = 0; i < mList.size(); i++) {
         delete mList.editItemAt(i).infoPtr;
         mList.editItemAt(i).infoPtr = 0;
@@ -328,24 +331,47 @@ ExtendedStats::TimeBoundVector::~TimeBoundVector() {
     clear();
 }
 
-ExtendedStats::AutoProfile::AutoProfile(const char* name, sp<ExtendedStats> stats, bool condition, bool profileOnce)
+ExtendedStats::AutoProfile::AutoProfile(
+        const char* name, sp<MediaExtendedStats> mediaExtendedStats,
+        bool condition, bool profileOnce)
     : mEventName(name),
-      mStats(stats),
+      mStats(NULL),
       mCondition(condition) {
 
-    if (condition && name && stats != NULL) {
+    if (mediaExtendedStats != NULL) {
+        mStats = mediaExtendedStats->getProfileTimes();
+    }
+
+    if (condition && name && mStats != NULL) {
         if (profileOnce)
-            stats->profileStartOnce(name);
+            mStats->profileStartOnce(name);
         else
-            stats->profileStart(name);
-   }
+            mStats->profileStart(name);
+    }
 }
 
 ExtendedStats::AutoProfile::~AutoProfile() {
-   if (mCondition && mStats != NULL) {
+    if (mCondition && mStats != NULL) {
         mStats->profileStop(mEventName.c_str());
-   }
+    }
 }
+
+MediaExtendedStats* ExtendedStats::Create(
+        enum StatsType statsType, const char* name, pid_t tid) {
+
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.debug.sf.extendedstats", value, "0");
+    if (atoi(value)) {
+        switch (statsType) {
+            case PLAYER:
+                return new PlayerExtendedStats(name, tid);
+            case RECORDER:
+                return new RecorderExtendedStats(name, tid);
+        }
+    }
+    return NULL;
+}
+
 
 /***************************** MediaExtendedStats ************************/
 

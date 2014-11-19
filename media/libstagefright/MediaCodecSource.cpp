@@ -448,9 +448,8 @@ status_t MediaCodecSource::initEncoder() {
 
     //profile allocate node
     {
-        ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_ALLOCATE_NODE(mIsVideo),
-                                               mRecorderExtendedStats == NULL ? NULL :
-                                               mRecorderExtendedStats->getProfileTimes());
+        ExtendedStats::AutoProfile autoProfile(
+                STATS_PROFILE_ALLOCATE_NODE(mIsVideo), mRecorderExtendedStats);
         mEncoder = MediaCodec::CreateByType(
                 mCodecLooper, outputMIME.c_str(), true /* encoder */);
     }
@@ -461,7 +460,9 @@ status_t MediaCodecSource::initEncoder() {
 
     ALOGV("output format is '%s'", mOutputFormat->debugString(0).c_str());
 
-    mOutputFormat->setObject(MEDIA_EXTENDED_STATS, mRecorderExtendedStats);
+    if (mRecorderExtendedStats != NULL) {
+        mOutputFormat->setObject(MEDIA_EXTENDED_STATS, mRecorderExtendedStats);
+    }
     status_t err = mEncoder->configure(
                 mOutputFormat,
                 NULL /* nativeWindow */,

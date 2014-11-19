@@ -93,7 +93,8 @@ StagefrightRecorder::StagefrightRecorder()
     ALOGV("Constructor");
     reset();
 
-    mRecorderExtendedStats = new RecorderExtendedStats("StagefrightRecorder", gettid());
+    mRecorderExtendedStats = (RecorderExtendedStats *)ExtendedStats::Create(
+            ExtendedStats::RECORDER, "StagefrightRecorder", gettid());
 }
 
 StagefrightRecorder::~StagefrightRecorder() {
@@ -866,8 +867,7 @@ status_t StagefrightRecorder::prepare() {
 
 status_t StagefrightRecorder::start() {
     ALOGV("start");
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_START_LATENCY,
-            mRecorderExtendedStats == NULL ? 0 : mRecorderExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_START_LATENCY, mRecorderExtendedStats);
 
     if (mOutputFd < 0) {
         ALOGE("Output file descriptor is invalid");
@@ -1067,7 +1067,9 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
         format->setInt32("time-scale", mAudioTimeScale);
     }
 
-    format->setObject(MEDIA_EXTENDED_STATS, mRecorderExtendedStats);
+    if (mRecorderExtendedStats != NULL) {
+        format->setObject(MEDIA_EXTENDED_STATS, mRecorderExtendedStats);
+    }
     sp<MediaSource> audioEncoder =
             MediaCodecSource::Create(mLooper, format, audioSource);
     // If encoder could not be created (as in LPCM), then
@@ -1330,8 +1332,8 @@ status_t StagefrightRecorder::checkVideoEncoderCapabilities(
     Vector<CodecCapabilities> codecs;
     OMXClient client;
     CHECK_EQ(client.connect(), (status_t)OK);
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_ALLOCATE_NODE(true) /* isVideo */,
-            mRecorderExtendedStats == NULL ? 0 : mRecorderExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(
+            STATS_PROFILE_ALLOCATE_NODE(true /* isVideo */), mRecorderExtendedStats);
     QueryCodecs(
             client.interface(),
             (mVideoEncoder == VIDEO_ENCODER_H263 ? MEDIA_MIMETYPE_VIDEO_H263 :
@@ -1551,8 +1553,8 @@ status_t StagefrightRecorder::setupMediaSource(
 
 status_t StagefrightRecorder::setupCameraSource(
         sp<CameraSource> *cameraSource) {
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_SET_CAMERA_SOURCE,
-            mRecorderExtendedStats == NULL ? 0 : mRecorderExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(
+            STATS_PROFILE_SET_CAMERA_SOURCE, mRecorderExtendedStats);
 
     status_t err = OK;
     bool encoderSupportsCameraSourceMetaDataMode;
@@ -1616,8 +1618,8 @@ status_t StagefrightRecorder::setupCameraSource(
 status_t StagefrightRecorder::setupVideoEncoder(
         sp<MediaSource> cameraSource,
         sp<MediaSource> *source) {
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_SET_ENCODER(true) /* isVideo */,
-            mRecorderExtendedStats == NULL ? 0 : mRecorderExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(
+            STATS_PROFILE_SET_ENCODER(true /* isVideo */), mRecorderExtendedStats);
 
     source->clear();
 
@@ -1719,7 +1721,9 @@ status_t StagefrightRecorder::setupVideoEncoder(
         flags |= MediaCodecSource::FLAG_USE_SURFACE_INPUT;
     }
 
-    format->setObject(MEDIA_EXTENDED_STATS, mRecorderExtendedStats);
+    if (mRecorderExtendedStats != NULL) {
+        format->setObject(MEDIA_EXTENDED_STATS, mRecorderExtendedStats);
+    }
     sp<MediaCodecSource> encoder =
             MediaCodecSource::Create(mLooper, format, cameraSource, flags);
     if (encoder == NULL) {
@@ -1745,8 +1749,8 @@ status_t StagefrightRecorder::setupVideoEncoder(
 }
 
 status_t StagefrightRecorder::setupAudioEncoder(const sp<MediaWriter>& writer) {
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_SET_ENCODER(false) /* isVideo */,
-            mRecorderExtendedStats == NULL ? 0 : mRecorderExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(
+            STATS_PROFILE_SET_ENCODER(false /* isVideo */), mRecorderExtendedStats);
     status_t status = BAD_VALUE;
     if (OK != (status = checkAudioEncoderCapabilities())) {
         return status;
@@ -1872,8 +1876,7 @@ void StagefrightRecorder::setupMPEG4orWEBMMetaData(sp<MetaData> *meta) {
 }
 
 status_t StagefrightRecorder::pause() {
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_PAUSE,
-            mRecorderExtendedStats == NULL ? 0 : mRecorderExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_PAUSE, mRecorderExtendedStats);
     ALOGV("pause");
     status_t err = OK;
     if (mWriter == NULL) {
@@ -2162,10 +2165,16 @@ status_t StagefrightRecorder::setSourcePause(bool pause) {
             }
         }
         if (mAudioEncoderOMX != NULL) {
-            err = mAudioEncoderOMX->pause();
-            if (err != OK) {
-                ALOGE("OMX AudioEncoder pause failed");
-                return err;
+            if (mAudioEncoderOMX != mAudioSourceNode) {
+                err = mAudioEncoderOMX->pause();
+                if (err != OK) {
+                    ALOGE("OMX AudioEncoder pause failed");
+                    return err;
+                }
+            } else {
+                // If AudioSource is the same as MediaSource(as in LPCM),
+                // bypass omx encoder pause() call.
+                ALOGV("OMX AudioEncoder->pause() bypassed");
             }
         }
         if (mVideoSourceNode != NULL) {
@@ -2205,10 +2214,16 @@ status_t StagefrightRecorder::setSourcePause(bool pause) {
             }
         }
         if (mAudioEncoderOMX != NULL) {
-            err = mAudioEncoderOMX->start();
-            if (err != OK) {
-                ALOGE("OMX AudioEncoder start failed");
-                return err;
+            if (mAudioEncoderOMX != mAudioSourceNode) {
+                err = mAudioEncoderOMX->start();
+                if (err != OK) {
+                    ALOGE("OMX AudioEncoder start failed");
+                    return err;
+                }
+            } else {
+                // If AudioSource is the same as MediaSource(as in LPCM),
+                // bypass omx encoder start() call.
+                ALOGV("OMX AudioEncoder->start() bypassed");
             }
         }
     }
