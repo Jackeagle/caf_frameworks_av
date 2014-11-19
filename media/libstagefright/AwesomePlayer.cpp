@@ -68,8 +68,6 @@
 #include "QCMetaData.h"
 #endif
 
-#include "include/ExtendedUtils.h"
-
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
 
@@ -253,7 +251,8 @@ AwesomePlayer::AwesomePlayer()
 
     reset();
 
-    mPlayerExtendedStats = new PlayerExtendedStats("AwesomePlayer", gettid());
+    mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
+            ExtendedStats::PLAYER, "AwesomePlayer", gettid());
 }
 
 AwesomePlayer::~AwesomePlayer() {
@@ -355,6 +354,10 @@ status_t AwesomePlayer::setDataSource_l(
         const KeyedVector<String8, String8> *headers) {
     reset_l();
 
+    ExtendedStats::AutoProfile autoProfile(
+            STATS_PROFILE_SET_DATA_SOURCE, mPlayerExtendedStats);
+    PLAYER_STATS(profileStart, STATS_PROFILE_START_LATENCY);
+
     mHTTPService = httpService;
     mUri = uri;
 
@@ -394,11 +397,13 @@ status_t AwesomePlayer::setDataSource_l(
 status_t AwesomePlayer::setDataSource(
         int fd, int64_t offset, int64_t length) {
     Mutex::Autolock autoLock(mLock);
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_SET_DATA_SOURCE,
-                                            mPlayerExtendedStats->getProfileTimes());
-    PLAYER_STATS(profileStart, STATS_PROFILE_START_LATENCY);
 
     reset_l();
+
+    ExtendedStats::AutoProfile autoProfile(
+            STATS_PROFILE_SET_DATA_SOURCE, mPlayerExtendedStats);
+    PLAYER_STATS(profileStart, STATS_PROFILE_START_LATENCY);
+
     if (fd) {
        printFileName(fd);
     }
@@ -1367,7 +1372,7 @@ void AwesomePlayer::initRenderer_l() {
 status_t AwesomePlayer::pause() {
     ATRACE_CALL();
     PLAYER_STATS(notifyPause, mVideoTimeUs/1000);
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_PAUSE, mPlayerExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_PAUSE, mPlayerExtendedStats);
 
     Mutex::Autolock autoLock(mLock);
 
@@ -1567,7 +1572,7 @@ status_t AwesomePlayer::getPosition(int64_t *positionUs) {
 status_t AwesomePlayer::seekTo(int64_t timeUs) {
     ATRACE_CALL();
 
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_SEEK, mPlayerExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_SEEK, mPlayerExtendedStats);
     PLAYER_STATS(notifySeek, timeUs);
 
     if (mExtractorFlags & MediaExtractor::CAN_SEEK) {
@@ -2015,7 +2020,6 @@ void AwesomePlayer::onVideoEvent() {
                     seekmode);
         }
         for (;;) {
-            PLAYER_STATS(profileStartOnce, STATS_PROFILE_FIRST_BUFFER(true) /* video */);
             status_t err = mVideoSource->read(&mVideoBuffer, &options);
             options.clearSeekTo();
 
@@ -2545,17 +2549,6 @@ status_t AwesomePlayer::finishSetDataSource_l() {
                 &mUriHeaders, &cacheConfig, &disconnectAtHighwatermark);
 
         mLock.unlock();
-
-        int32_t port = 0;
-        if (ExtendedUtils::ShellProp::getSTAProxyConfig(port)) {
-            String8 portString = String8("127.0.0.1");
-            portString.appendFormat(":%d", port);
-            ALOGI("getSTAProxyConfig Proxy IPportString %s", portString.string());
-            mUriHeaders.add(String8("use-proxy"), portString);
-        } else {
-            ALOGV("getSTAProxyConfig failed or disabled");
-        }
-
         status_t err = mConnectingDataSource->connect(mUri, &mUriHeaders);
         // force connection at this point, to avoid a race condition between getMIMEType and the
         // caching datasource constructed below, which could result in multiple requests to the
@@ -2751,7 +2744,7 @@ void AwesomePlayer::onPrepareAsyncEvent() {
 }
 
 void AwesomePlayer::beginPrepareAsync_l() {
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_PREPARE, mPlayerExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_PREPARE, mPlayerExtendedStats);
     if (mFlags & PREPARE_CANCELLED) {
         ALOGI("prepare was cancelled before doing anything");
         abortPrepare(UNKNOWN_ERROR);
@@ -3447,7 +3440,7 @@ status_t AwesomePlayer::suspend() {
 status_t AwesomePlayer::resume() {
     ALOGV("resume()");
     PLAYER_STATS(notifyPlaying, true);
-    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_RESUME, mPlayerExtendedStats->getProfileTimes());
+    ExtendedStats::AutoProfile autoProfile(STATS_PROFILE_RESUME, mPlayerExtendedStats);
 
     Mutex::Autolock autoLock(mLock);
 

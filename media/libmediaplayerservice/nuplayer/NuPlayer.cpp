@@ -47,7 +47,6 @@
 
 #include "ESDS.h"
 #include <media/stagefright/Utils.h>
-#include "ExtendedUtils.h"
 
 namespace android {
 
@@ -175,7 +174,8 @@ NuPlayer::NuPlayer()
       mStarted(false) {
 
     clearFlushComplete();
-    mPlayerExtendedStats = new PlayerExtendedStats("NuPlayer", gettid());
+    mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
+            ExtendedStats::PLAYER, "NuPlayer", gettid());
 }
 
 NuPlayer::~NuPlayer() {
@@ -240,21 +240,6 @@ void NuPlayer::setDataSourceAsync(
         source = new RTSPSource(
                 notify, httpService, url, headers, mUIDValid, mUID, true);
     } else {
-        // Set Proxy for progressive download usecase
-        if (headers) {
-            KeyedVector<String8, String8> mUriHeaders = *headers;
-            int32_t port;
-            if (ExtendedUtils::ShellProp::getSTAProxyConfig(port)) {
-                String8 portString = String8("127.0.0.1");
-                portString.appendFormat(":%d",port);
-                ALOGV("getSTAProxyConfig Proxy IPportString %s", portString.string());
-                mUriHeaders.add(String8("use-proxy"), portString);
-            } else {
-                ALOGE("getSTAProxyConfig failed or disabled");
-            }
-        } else {
-            ALOGE("Not try to set proxy as headers are NULL");
-        }
         sp<GenericSource> genericSource =
                 new GenericSource(notify, mUIDValid, mUID);
         // Don't set FLAG_SECURE on mSourceFlags here for widevine.
@@ -660,7 +645,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             sp<AMessage> notify = new AMessage(kWhatRendererNotify, id());
             ++mRendererGeneration;
             notify->setInt32("generation", mRendererGeneration);
-            notify->setObject(MEDIA_EXTENDED_STATS, mPlayerExtendedStats);
+            if (mPlayerExtendedStats != NULL) {
+                notify->setObject(MEDIA_EXTENDED_STATS, mPlayerExtendedStats);
+            }
             mRenderer = new Renderer(mAudioSink, notify, flags);
 
             mRendererLooper = new ALooper;
@@ -1231,7 +1218,9 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
         *decoder = new Decoder(notify, mNativeWindow);
     }
 
-    format->setObject(MEDIA_EXTENDED_STATS, mPlayerExtendedStats);
+    if (mPlayerExtendedStats != NULL) {
+        format->setObject(MEDIA_EXTENDED_STATS, mPlayerExtendedStats);
+    }
 
     (*decoder)->init();
     (*decoder)->configure(format);

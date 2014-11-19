@@ -1831,6 +1831,7 @@ status_t MPEG4Writer::Track::pause() {
 
 status_t MPEG4Writer::Track::stop() {
     ALOGD("%s track stopping", mIsAudio? "Audio": "Video");
+    status_t err;
     if (!mStarted) {
         ALOGE("Stop() called but track is not started");
         return ERROR_END_OF_STREAM;
@@ -1841,13 +1842,24 @@ status_t MPEG4Writer::Track::stop() {
     }
     mDone = true;
 
-    void *dummy;
-    pthread_join(mThread, &dummy);
-    status_t err = static_cast<status_t>(reinterpret_cast<uintptr_t>(dummy));
+    if (mIsAudio) {
+        void *dummy;
+        pthread_join(mThread, &dummy);
+        err = static_cast<status_t>(reinterpret_cast<uintptr_t>(dummy));
 
-    ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
-    err = mSource->stop();
-    ALOGD("%s track stopped status:%d", mIsAudio? "Audio": "Video", err);
+        ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
+        err = mSource->stop();
+        ALOGD("%s track stopped status:%d", mIsAudio? "Audio": "Video", err);
+    } else {
+        ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
+        err = mSource->stop();
+        ALOGD("%s track stopped status:%d", mIsAudio? "Audio": "Video", err);
+
+        void *dummy;
+        pthread_join(mThread, &dummy);
+        err = static_cast<status_t>(reinterpret_cast<uintptr_t>(dummy));
+    }
+
     if (mOwner->exceedsFileSizeLimit() && mStszTableEntries->count() == 0) {
         ALOGE(" Filesize limit exceeded and zero samples written ");
         return ERROR_END_OF_STREAM;
