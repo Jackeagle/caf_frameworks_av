@@ -165,6 +165,7 @@ bool NuPlayer::RTSPSource::haveSufficientDataOnAllTracks() {
     // starting playback (both at startup and after a seek).
 
     static const int64_t kMinDurationUs = 2000000ll;
+    static const size_t kMinAudioBufferCount = 6;
 
     int64_t mediaDurationUs = 0;
     getDuration(&mediaDurationUs);
@@ -181,6 +182,16 @@ bool NuPlayer::RTSPSource::haveSufficientDataOnAllTracks() {
             && err == OK) {
         ALOGV("audio track doesn't have enough data yet. (%.2f secs buffered)",
               durationUs / 1E6);
+        return false;
+    }
+
+    int bufferCount;
+    if (mAudioTrack != NULL
+            && (bufferCount = mAudioTrack->getBufferCount(&err))
+                    < kMinAudioBufferCount
+            && err == OK) {
+        ALOGV("audio track doesn't have enough data yet. (%d buffers buffered)",
+                bufferCount);
         return false;
     }
 
