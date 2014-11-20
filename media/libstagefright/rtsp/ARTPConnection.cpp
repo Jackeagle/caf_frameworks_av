@@ -33,6 +33,9 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include <fcntl.h>
+#include <netdb.h>
+
 namespace android {
 
 static const size_t kMaxUDPSize = 1500;
@@ -70,7 +73,8 @@ struct ARTPConnection::StreamInfo {
 ARTPConnection::ARTPConnection(uint32_t flags)
     : mFlags(flags),
       mPollEventPending(false),
-      mLastReceiverReportTimeUs(-1) {
+      mLastReceiverReportTimeUs(-1),
+      mIPVersion(IPV4) {
 }
 
 ARTPConnection::~ARTPConnection() {
@@ -82,6 +86,7 @@ void ARTPConnection::addStream(
         size_t index,
         const sp<AMessage> &notify,
         bool injected) {
+        ALOGV("addStream() rtpSocket:%d rtcpSocket:%d index:%zu injected:%d", rtpSocket, rtcpSocket, index, (int)injected);
     sp<AMessage> msg = new AMessage(kWhatAddStream, id());
     msg->setInt32("rtp-socket", rtpSocket);
     msg->setInt32("rtcp-socket", rtcpSocket);
@@ -93,6 +98,7 @@ void ARTPConnection::addStream(
 }
 
 void ARTPConnection::removeStream(int rtpSocket, int rtcpSocket) {
+    ALOGV("removeStream() rtpSocket:%d rtcpSocket:%d ", rtpSocket, rtcpSocket);
     sp<AMessage> msg = new AMessage(kWhatRemoveStream, id());
     msg->setInt32("rtp-socket", rtpSocket);
     msg->setInt32("rtcp-socket", rtcpSocket);
@@ -104,7 +110,12 @@ static void bumpSocketBufferSize(int s) {
     CHECK_EQ(setsockopt(s, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)), 0);
 }
 
-// static
+void ARTPConnection::setIPVersion(int ipVersion) {
+    mIPVersion = ipVersion;
+    ALOGI("IP Version:%d", mIPVersion);
+}
+
+//static
 void ARTPConnection::MakePortPair(
         int *rtpSocket, int *rtcpSocket, unsigned *rtpPort) {
     *rtpSocket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -340,12 +351,21 @@ void ARTPConnection::onPollStreams() {
             if (buffer->size() > 0) {
                 ALOGV("Sending RR...");
 
-                ssize_t n;
+                ssize_t n = 0;
                 do {
-                    n = sendto(
-                        s->mRTCPSocket, buffer->data(), buffer->size(), 0,
-                        (const struct sockaddr *)&s->mRemoteRTCPAddr,
-                        sizeof(s->mRemoteRTCPAddr));
+                    if(mIPVersion == IPV4) {
+                        n = sendto(
+                            s->mRTCPSocket, buffer->data(), buffer->size(), 0,
+                            (const struct sockaddr *)&s->mRemoteRTCPAddr,
+                            sizeof(s->mRemoteRTCPAddr));
+                    } else if (mIPVersion == IPV6) {
+                        n = sendto(
+                            s->mRTCPSocket, buffer->data(), buffer->size(), 0,
+                            (const struct sockaddr *)&s->mRemoteRTCPAddr,
+                            sizeof(struct sockaddr_in6));
+                    } else {
+                        TRESPASS();
+                    }
                 } while (n < 0 && errno == EINTR);
 
                 if (n <= 0) {
