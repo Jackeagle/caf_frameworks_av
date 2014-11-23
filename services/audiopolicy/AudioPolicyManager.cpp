@@ -12,6 +12,24 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by DTS, Inc. The portions of the
+ * code modified by DTS, Inc are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2014 DTS, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #define LOG_TAG "AudioPolicyManager"
@@ -50,6 +68,10 @@
 #include <soundtrigger/SoundTrigger.h>
 #include "AudioPolicyManager.h"
 #include "audio_policy_conf.h"
+
+extern "C" {
+#include "AudioUtil.h"
+}
 
 namespace android {
 
@@ -405,6 +427,12 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
         }
 
         updateDevicesAndOutputs();
+#ifdef DTS_EAGLE
+        audio_devices_t ndev = getDeviceForStrategy(STRATEGY_MEDIA, true);
+        audio_devices_t availableOutputDevices = availablePrimaryOutputDevices();
+        ALOGV("setDeviceConnectionState: device 0x%x all_devices 0x%x", ndev, availableOutputDevices);
+        notify_route_node(ndev, availableOutputDevices);
+#endif
         audio_devices_t newDevice = getNewOutputDevice(mPrimaryOutput, false /*fromCache*/);
         if (mPhoneState == AUDIO_MODE_IN_CALL) {
             updateCallRouting(newDevice);
@@ -1554,6 +1582,12 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
             usleep((waitMs - muteWaitMs) * 2 * 1000);
         }
     }
+#ifdef DTS_EAGLE
+    audio_devices_t ndev = getDeviceForStrategy(STRATEGY_MEDIA, true);
+    audio_devices_t availableOutputDevices = availablePrimaryOutputDevices();
+    ALOGV("startOutput: device 0x%x all_devices 0x%x", ndev, availableOutputDevices);
+    notify_route_node(ndev, availableOutputDevices);
+#endif
     return NO_ERROR;
 }
 
@@ -3484,6 +3518,9 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
         run(buffer, ANDROID_PRIORITY_AUDIO);
     }
 #endif //AUDIO_POLICY_TEST
+#ifdef DTS_EAGLE
+    create_route_node();
+#endif
 }
 
 AudioPolicyManager::~AudioPolicyManager()
@@ -3502,6 +3539,9 @@ AudioPolicyManager::~AudioPolicyManager()
    mOutputs.clear();
    mInputs.clear();
    mHwModules.clear();
+#ifdef DTS_EAGLE
+    remove_route_node();
+#endif
 }
 
 status_t AudioPolicyManager::initCheck()
