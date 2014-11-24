@@ -563,7 +563,15 @@ status_t PlaylistFetcher::onResumeUntil(const sp<AMessage> &msg) {
     CHECK(msg->findMessage("params", &params));
 
     bool stop = false;
-    for (size_t i = 0; i < mPacketSources.size(); i++) {
+    int32_t switchType;
+    if (params->findInt32("switchType", &switchType)) {
+        if (switchType == (int32_t)LiveSession::kSwitchDown) {
+            ALOGI("onResumeUntil: Switching down, stop now.. ");
+            stop = true;
+        }
+    }
+
+    for (size_t i = 0; (i < mPacketSources.size()) && (!stop); i++) {
         sp<AnotherPacketSource> packetSource = mPacketSources.valueAt(i);
 
         const char *stopKey;
@@ -1449,6 +1457,7 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
 
                     if (streamMask == mStreamTypeMask) {
                         mStartup = false;
+                        mStartTimeUsNotify->setInt32("switchType", mAdaptive);
                         mStartTimeUsNotify->post();
                         mStartTimeUsNotify.clear();
                     }
@@ -1728,6 +1737,7 @@ status_t PlaylistFetcher::extractAndQueueAccessUnits(
                 mStartTimeUsNotify->setInt64("timeUsAudio", timeUs);
                 mStartTimeUsNotify->setInt32("discontinuitySeq", mDiscontinuitySeq);
                 mStartTimeUsNotify->setInt32("streamMask", LiveSession::STREAMTYPE_AUDIO);
+                mStartTimeUsNotify->setInt32("switchType", mAdaptive);
                 mStartTimeUsNotify->post();
                 mStartTimeUsNotify.clear();
             }
