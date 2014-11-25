@@ -1974,7 +1974,7 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         cancelEnd = mPortBuffers[kPortIndexOutput].size();
     } else {
         // Return the last two buffers to the native window.
-        cancelStart = def.nBufferCountActual - minUndequeuedBufs;
+        cancelStart = def.nBufferCountActual;
         cancelEnd = def.nBufferCountActual;
     }
 
