@@ -43,6 +43,9 @@
 #include <media/stagefright/MediaBufferGroup.h>
 #include "include/FLACDecoder.h"
 
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include <QCMetaData.h>
+#endif
 namespace android {
 
 static const char* FLAC_DECODER_LIB = "libFlacSwDec.so";
