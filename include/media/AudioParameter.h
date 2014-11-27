@@ -59,6 +59,7 @@ public:
     static const char * const keyADSPStatus;
     static const char * const keySoundCardStatus;
     static const char * const keyCanOpenProxy;
+    static const char * const keyDevShutdown;
 
     String8 toString();
 
