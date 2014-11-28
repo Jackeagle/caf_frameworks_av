@@ -1842,23 +1842,13 @@ status_t MPEG4Writer::Track::stop() {
     }
     mDone = true;
 
-    if (mIsAudio) {
-        void *dummy;
-        pthread_join(mThread, &dummy);
-        err = static_cast<status_t>(reinterpret_cast<uintptr_t>(dummy));
+    ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
+    err = mSource->stop();
+    ALOGD("%s track stopped status:%d", mIsAudio? "Audio": "Video", err);
 
-        ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
-        err = mSource->stop();
-        ALOGD("%s track stopped status:%d", mIsAudio? "Audio": "Video", err);
-    } else {
-        ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
-        err = mSource->stop();
-        ALOGD("%s track stopped status:%d", mIsAudio? "Audio": "Video", err);
-
-        void *dummy;
-        pthread_join(mThread, &dummy);
-        err = static_cast<status_t>(reinterpret_cast<uintptr_t>(dummy));
-    }
+    void *dummy;
+    pthread_join(mThread, &dummy);
+    err = static_cast<status_t>(reinterpret_cast<uintptr_t>(dummy));
 
     if (mOwner->exceedsFileSizeLimit() && mStszTableEntries->count() == 0) {
         ALOGE(" Filesize limit exceeded and zero samples written ");
