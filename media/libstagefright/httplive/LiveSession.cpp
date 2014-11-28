@@ -71,6 +71,7 @@ LiveSession::LiveSession(
       mSubtitleGeneration(0),
       mLastDequeuedTimeUs(0ll),
       mRealTimeBaseUs(0ll),
+      mDownloadFirstTS(false),
       mReconfigurationInProgress(false),
       mSwitchInProgress(false),
       mFetchInProgress(false),
@@ -82,6 +83,12 @@ LiveSession::LiveSession(
       mLastSeekTimeUs(0),
       mBackupFile(NULL),
       mSegmentCounter(0) {
+
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.sys.media.hls-startup", value, "0");
+    if (atoi(value)) {
+        mDownloadFirstTS = true;
+    }
 
     mStreams[kAudioIndex] = StreamItem("audio");
     mStreams[kVideoIndex] = StreamItem("video");
@@ -609,6 +616,12 @@ void LiveSession::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatSwitchConfiguration:
+        {
+            onSwitchConfiguration(msg);
+            break;
+        }
+
         case kWhatChangeConfiguration:
         {
             onChangeConfiguration(msg);
@@ -823,7 +836,8 @@ sp<PlaylistFetcher> LiveSession::addFetcher(const char *uri) {
     notify->setInt32("switchGeneration", mSwitchGeneration);
 
     FetcherInfo info;
-    info.mFetcher = new PlaylistFetcher(notify, this, uri, mSubtitleGeneration);
+    info.mFetcher = new PlaylistFetcher(notify, this, uri, mSubtitleGeneration, mDownloadFirstTS);
+    mDownloadFirstTS = false;
     info.mDurationUs = -1ll;
     info.mIsPrepared = false;
     info.mToBeRemoved = false;
@@ -1200,6 +1214,19 @@ int64_t LiveSession::latestMediaSegmentStartTimeUs() {
     return minSegmentStartTimeUs;
 }
 
+bool LiveSession::switchToRealBandwidth() {
+    ssize_t bwIndex= getBandwidthIndex();
+    if (mCurBandwidthIndex != bwIndex) {
+        ALOGV("switching to RealBandwidth...");
+        mCheckBandwidthGeneration++;
+        (new AMessage(kWhatSwitchConfiguration, id()))->post();
+        ALOGV("Posting switchConfiguration to change bandwidth to index %d on the first play", bwIndex);
+        return true;
+    }
+    ALOGV("No need to switch bandwidth");
+    return false;
+}
+
 status_t LiveSession::onSeek(const sp<AMessage> &msg) {
     int64_t timeUs;
     CHECK(msg->findInt64("timeUs", &timeUs));
@@ -1388,6 +1415,14 @@ void LiveSession::onChangeConfiguration(const sp<AMessage> &msg) {
         msg->findInt32("pickTrack", &pickTrack);
         msg->findInt32("bandwidthIndex", &bandwidthIndex);
         changeConfiguration(-1ll /* timeUs */, bandwidthIndex, pickTrack);
+    } else {
+        msg->post(1000000ll); // retry in 1 sec
+    }
+}
+
+void LiveSession::onSwitchConfiguration(const sp<AMessage> &msg) {
+    if (!mReconfigurationInProgress) {
+        changeConfiguration(-1ll /* timeUs */, getBandwidthIndex());
     } else {
         msg->post(1000000ll); // retry in 1 sec
     }
