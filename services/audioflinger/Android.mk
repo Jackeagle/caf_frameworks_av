@@ -3,7 +3,7 @@
 # code that are surrounded by "DTS..." are copyrighted and
 # licensed separately, as follows:
 #
-#  (C) 2014 DTS, Inc.
+#  (C) 2013 DTS, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License
+#
+
 LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -107,7 +109,6 @@ LOCAL_SHARED_LIBRARIES += libsrsprocessing
 LOCAL_CFLAGS += -DSRS_PROCESSING
 LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-effects
 endif
-
 include $(BUILD_SHARED_LIBRARY)
 
 #
