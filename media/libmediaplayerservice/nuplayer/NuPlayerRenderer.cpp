@@ -160,6 +160,10 @@ void NuPlayer::Renderer::signalDisableOffloadAudio() {
     (new AMessage(kWhatDisableOffloadAudio, id()))->post();
 }
 
+void NuPlayer::Renderer::signalEnableOffloadAudio() {
+    (new AMessage(kWhatEnableOffloadAudio, id()))->post();
+}
+
 void NuPlayer::Renderer::pause() {
     (new AMessage(kWhatPause, id()))->post();
 }
@@ -424,6 +428,12 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatDisableOffloadAudio:
         {
             onDisableOffloadAudio();
+            break;
+        }
+
+        case kWhatEnableOffloadAudio:
+        {
+            onEnableOffloadAudio();
             break;
         }
 
@@ -1169,6 +1179,12 @@ void NuPlayer::Renderer::onDisableOffloadAudio() {
     ++mAudioQueueGeneration;
 }
 
+void NuPlayer::Renderer::onEnableOffloadAudio() {
+    Mutex::Autolock autoLock(mLock);
+    mFlags |= FLAG_OFFLOAD_AUDIO;
+    ++mAudioQueueGeneration;
+}
+
 void NuPlayer::Renderer::onPause() {
     if (mPaused) {
         ALOGW("Renderer::onPause() called while already paused!");
@@ -1492,6 +1508,9 @@ bool NuPlayer::Renderer::onOpenAudioSink(
 
 void NuPlayer::Renderer::onCloseAudioSink() {
     mAudioSink->close();
+    if (offloadingAudio() && mAudioOffloadTornDown) {
+        mAudioOffloadTornDown = false;
+    }
     mCurrentOffloadInfo = AUDIO_INFO_INITIALIZER;
 }
 

@@ -1084,6 +1084,23 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             // |mAudioDecoder| may have been released due to the pause timeout, so re-create it if
             // needed.
             if (audioDecoderStillNeeded() && mAudioDecoder == NULL) {
+                uint32_t flags = 0;
+                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                audio_stream_type_t streamType = AUDIO_STREAM_MUSIC;
+                if (mAudioSink != NULL) {
+                    streamType = mAudioSink->getAudioStreamType();
+                }
+                sp<AMessage> videoFormat = mSource->getFormat(false /* audio */);
+                sp<MetaData> vMeta = new MetaData;
+                convertMessageToMetaData(videoFormat, vMeta);
+                mOffloadAudio = canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
+                                     mIsStreaming /* is_streaming */, streamType);
+                if (mOffloadAudio) {
+                    flags |= Renderer::FLAG_OFFLOAD_AUDIO;
+                    if (mRenderer != NULL) {
+                        mRenderer->signalEnableOffloadAudio();
+                    }
+                }
                 instantiateDecoder(true /* audio */, &mAudioDecoder);
             }
             if (mRenderer != NULL) {
