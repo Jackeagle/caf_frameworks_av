@@ -104,6 +104,10 @@ void ARTSPConnection::onMessageReceived(const sp<AMessage> &msg) {
             onDisconnect(msg);
             break;
 
+        case kWhatReconnect:
+            onReconnect(msg);
+            break;
+
         case kWhatCompleteConnection:
             onCompleteConnection(msg);
             break;
@@ -231,6 +235,8 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
     sp<AMessage> reply;
     CHECK(msg->findMessage("reply", &reply));
 
+    mAddrs.clear();
+
     AString host, path;
     unsigned port;
     if (!ParseURL(url.c_str(), &host, &port, &path, &mUser, &mPass)
@@ -263,6 +269,33 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
         return;
     }
 
+    int32_t addr_num = 0;
+    while (ent->h_addr_list[addr_num]) {
+        char ipaddress[128] = {0};
+        inet_ntop(ent->h_addrtype, ent->h_addr_list[addr_num], ipaddress, sizeof(ipaddress));
+        ALOGV("found the ip address = %s", ipaddress);
+        uint32_t addr = *(in_addr_t *)ent->h_addr_list[addr_num];
+        mAddrs.push_back(addr);
+        addr_num++;
+    }
+
+    if (mAddrs.size() == 0) {
+        ALOGE("No ip addresss was found from host %s", host.c_str());
+        reply->setInt32("result", -ENOENT);
+        reply->post();
+        mState = DISCONNECTED;
+        return;
+    }
+
+    performConnect(port, mConnectionID, reply);
+}
+
+void ARTSPConnection::performConnect(const uint32_t port, const int32_t connectionID, const sp<AMessage> reply) {
+    CHECK_GT(mAddrs.size(), 0);
+    List<uint32_t>::iterator it = mAddrs.begin();
+    uint32_t addr = *it;
+    mAddrs.erase(it);
+
     mSocket = socket(AF_INET, SOCK_STREAM, 0);
 
     if (mUIDValid) {
@@ -276,7 +309,7 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
     struct sockaddr_in remote;
     memset(remote.sin_zero, 0, sizeof(remote.sin_zero));
     remote.sin_family = AF_INET;
-    remote.sin_addr.s_addr = *(in_addr_t *)ent->h_addr;
+    remote.sin_addr.s_addr = addr;
     remote.sin_port = htons(port);
 
     int err = ::connect(
@@ -288,13 +321,11 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
         if (errno == EINPROGRESS) {
             sp<AMessage> msg = new AMessage(kWhatCompleteConnection, id());
             msg->setMessage("reply", reply);
-            msg->setInt32("connection-id", mConnectionID);
+            msg->setInt32("connection-id", connectionID);
+            msg->setInt32("port", port);
             msg->post();
             return;
         }
-
-        reply->setInt32("result", -errno);
-        mState = DISCONNECTED;
 
         if (mUIDValid) {
             HTTPBase::UnRegisterSocketUserTag(mSocket);
@@ -302,6 +333,18 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
         }
         close(mSocket);
         mSocket = -1;
+
+        if (mAddrs.size() > 0) {
+            sp<AMessage> msg = new AMessage(kWhatReconnect, id());
+            msg->setMessage("reply", reply);
+            msg->setInt32("connection-id", connectionID);
+            msg->setInt32("port", port);
+            msg->post();
+            return;
+        }
+
+        reply->setInt32("result", -errno);
+        mState = DISCONNECTED;
     } else {
         reply->setInt32("result", OK);
         mState = CONNECTED;
@@ -359,6 +402,9 @@ void ARTSPConnection::onCompleteConnection(const sp<AMessage> &msg) {
         return;
     }
 
+    int32_t port;
+    CHECK(msg->findInt32("port", &port));
+
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = kSelectTimeoutUs;
@@ -385,15 +431,24 @@ void ARTSPConnection::onCompleteConnection(const sp<AMessage> &msg) {
     if (err != 0) {
         ALOGE("err = %d (%s)", err, strerror(err));
 
-        reply->setInt32("result", -err);
-
-        mState = DISCONNECTED;
         if (mUIDValid) {
             HTTPBase::UnRegisterSocketUserTag(mSocket);
             HTTPBase::UnRegisterSocketUserMark(mSocket);
         }
         close(mSocket);
         mSocket = -1;
+        if (mAddrs.size() > 0) {
+            sp<AMessage> msg = new AMessage(kWhatReconnect, id());
+            msg->setMessage("reply", reply);
+            msg->setInt32("connection-id", mConnectionID);
+            msg->setInt32("port", port);
+            msg->post();
+            return;
+        }
+
+        reply->setInt32("result", -err);
+        mState = DISCONNECTED;
+
     } else {
         reply->setInt32("result", OK);
         mState = CONNECTED;
@@ -403,6 +458,24 @@ void ARTSPConnection::onCompleteConnection(const sp<AMessage> &msg) {
     }
 
     reply->post();
+}
+
+void ARTSPConnection::onReconnect(const sp<AMessage> &msg) {
+    ALOGV("onReconnect");
+    sp<AMessage> reply;
+    CHECK(msg->findMessage("reply", &reply));
+    int32_t connectionID;
+    CHECK(msg->findInt32("connection-id", &connectionID));
+    if ((connectionID != mConnectionID) || mState != CONNECTING) {
+        // While we were attempting to connect, the attempt was
+        // cancelled.
+        reply->setInt32("result", -ECONNABORTED);
+        reply->post();
+        return;
+    }
+    int32_t port;
+    CHECK(msg->findInt32("port", &port));
+    performConnect(port, connectionID, reply);
 }
 
 void ARTSPConnection::onSendRequest(const sp<AMessage> &msg) {
