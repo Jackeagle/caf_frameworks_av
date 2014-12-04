@@ -173,6 +173,12 @@ status_t NuPlayer::HTTPLiveSource::seekTo(int64_t seekTimeUs) {
     return mLiveSession->seekTo(seekTimeUs);
 }
 
+void NuPlayer::HTTPLiveSource::disconnect() {
+    if (mLiveSession != NULL) {
+        mLiveSession->stopFetchers();
+    }
+}
+
 void NuPlayer::HTTPLiveSource::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatSessionNotify:

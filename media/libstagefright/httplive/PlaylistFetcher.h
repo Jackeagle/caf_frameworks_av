@@ -79,6 +79,8 @@ struct PlaylistFetcher : public AHandler {
         return mStreamTypeMask;
     }
 
+    void abort();
+
 protected:
     virtual ~PlaylistFetcher();
     virtual void onMessageReceived(const sp<AMessage> &msg);
@@ -162,6 +164,11 @@ private:
     // either be derived from the sequence number, read from the manifest, or copied from
     // the last block of cipher text (cipher-block chaining).
     unsigned char mAESInitVec[16];
+
+    bool mStopped;
+
+    // mStopped is enabled in different threads, add Mutex to avoid race condition.
+    mutable Mutex mLock;
 
     // Set first to true if decrypting the first segment of a playlist segment. When
     // first is true, reset the initialization vector based on the available
