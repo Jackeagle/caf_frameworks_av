@@ -67,6 +67,8 @@ struct PlaylistFetcher : public AHandler {
 
     void resumeUntilAsync(const sp<AMessage> &params);
 
+    void abort();
+
 protected:
     virtual ~PlaylistFetcher();
     virtual void onMessageReceived(const sp<AMessage> &msg);
@@ -140,6 +142,9 @@ private:
     // the last block of cipher text (cipher-block chaining).
     unsigned char mAESInitVec[16];
 
+    // Because this flag is written and read in the different threads, use volatile for
+    // this variable
+    volatile bool mStopped;
     // Set first to true if decrypting the first segment of a playlist segment. When
     // first is true, reset the initialization vector based on the available
     // information in the manifest; otherwise, use the initialization vector as

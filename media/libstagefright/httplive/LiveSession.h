@@ -251,6 +251,10 @@ private:
     void swapPacketSource(StreamType stream);
     bool canSwitchUp();
 
+    void stopFetchers();
+
+    void disconnectUrl();
+
     DISALLOW_EVIL_CONSTRUCTORS(LiveSession);
 };
 
