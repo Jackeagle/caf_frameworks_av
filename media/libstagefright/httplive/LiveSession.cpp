@@ -68,7 +68,8 @@ LiveSession::LiveSession(
       mReconfigurationInProgress(false),
       mSwitchInProgress(false),
       mDisconnectReplyID(0),
-      mSeekReplyID(0) {
+      mSeekReplyID(0),
+      mSeekPosition(-1ll){
     if (mUIDValid) {
         mHTTPDataSource->setUID(mUID);
     }
@@ -220,6 +221,7 @@ void LiveSession::connectAsync(
 }
 
 status_t LiveSession::disconnect() {
+    stopFetchers();
     sp<AMessage> msg = new AMessage(kWhatDisconnect, id());
 
     sp<AMessage> response;
@@ -229,6 +231,7 @@ status_t LiveSession::disconnect() {
 }
 
 status_t LiveSession::seekTo(int64_t timeUs) {
+    stopFetchers();
     sp<AMessage> msg = new AMessage(kWhatSeek, id());
     msg->setInt64("timeUs", timeUs);
 
@@ -968,6 +971,20 @@ bool LiveSession::canSwitchUp() {
         }
     }
     return false;
+}
+
+void LiveSession::stopFetchers() {
+    ALOGV("stop fetching files");
+    for (size_t i = 0; i < mFetcherInfos.size(); i++) {
+        mFetcherInfos.valueAt(i).mFetcher->abort();
+    }
+}
+
+void LiveSession::disconnectUrl() {
+    if (mHTTPDataSource != NULL) {
+        ALOGV("disconnectUrl");
+        mHTTPDataSource->disconnect();
+    }
 }
 
 void LiveSession::changeConfiguration(
