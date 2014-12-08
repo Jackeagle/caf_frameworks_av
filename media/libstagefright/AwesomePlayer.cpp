@@ -2327,7 +2327,10 @@ void AwesomePlayer::postBufferingEvent_l() {
         return;
     }
     mBufferingEventPending = true;
-    mQueue.postEventWithDelay(mBufferingEvent, 1000000ll);
+    int64_t delayUs =
+        (mFlags & (PREPARING | CACHE_UNDERRUN)) ? 100000ll : 1000000ll;
+
+    mQueue.postEventWithDelay(mBufferingEvent, delayUs);
 }
 
 void AwesomePlayer::postVideoLagEvent_l() {
