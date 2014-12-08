@@ -1141,13 +1141,46 @@ status_t AwesomePlayer::fallbackToSWDecoder() {
     ALOGI("play_l() cannot create offload output, fallback to sw decode");
     getPosition(&curTimeUs);
 
-    delete mAudioPlayer;
-    mAudioPlayer = NULL;
     // if the player was started it will take care of stopping the source when destroyed
     if (!(mFlags & AUDIOPLAYER_STARTED)) {
         mAudioSource->stop();
     }
-    mAudioSource.clear();
+
+    // The below chunk takes care of handling fallback to sw decoder
+    // in the special case of PCM offload. In this mode, both mAudioSource
+    // and mOmxSource are the same object and therefore both references must
+    // be cleared before deleting the audioplayer instance to prevent the
+    // infinite loop in AudioPlayer::reset(). A much more narrower special case
+    // is WAV fallback and that is handled too.
+    sp<MetaData> trackMeta = mAudioTrack->getFormat();
+    sp<MetaData> sourceMeta = mAudioSource->getFormat();
+    const char *trackMime;
+    CHECK(trackMeta->findCString(kKeyMIMEType, &trackMime));
+    const char *sourceMime;
+    CHECK(sourceMeta->findCString(kKeyMIMEType, &sourceMime));
+
+    if (!strcasecmp(trackMime, MEDIA_MIMETYPE_AUDIO_RAW)) {
+        // WAV fallback.
+        // clear audiosource and omxsource but do not recreate decoder
+        mAudioSource.clear();
+        mOmxSource.clear();
+        mOmxSource = mAudioTrack;
+    } else if (!strcasecmp(sourceMime, MEDIA_MIMETYPE_AUDIO_RAW)) {
+        // other PCM offload. clear both sources and recreate
+        // OMX component.
+        mAudioSource.clear();
+        mOmxSource.clear();
+        mOmxSource = OMXCodec::Create(
+            mClient.interface(), trackMeta,
+            false, // createEncoder
+            mAudioTrack);
+    } else {
+        mAudioSource.clear();
+    }
+
+    delete mAudioPlayer;
+    mAudioPlayer = NULL;
+
     modifyFlags((AUDIO_RUNNING | AUDIOPLAYER_STARTED), CLEAR);
     mOffloadAudio = false;
     const char * mime;
