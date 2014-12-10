@@ -198,6 +198,8 @@ private:
 
     bool mStarted;
 
+    bool mImageShowed;
+
     inline const sp<Decoder> &getDecoder(bool audio) {
         return audio ? mAudioDecoder : mVideoDecoder;
     }

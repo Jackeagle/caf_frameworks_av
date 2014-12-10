@@ -237,6 +237,9 @@ struct ExtendedUtils {
     static void updateVideoTrackInfoFromESDS_MPEG4Video(sp<MetaData> meta);
     static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
     static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
+
+    static void detectAndPostImage(const sp<ABuffer> accessunit, const sp<AMessage> &notify);
+    static void showImageInNativeWindow(const sp<AMessage> &msg, const sp<AMessage> &format);
 };
 
 }
