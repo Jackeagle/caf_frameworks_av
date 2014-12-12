@@ -6830,8 +6830,10 @@ ssize_t AudioFlinger::DirectAudioTrack::write(const void *buffer, size_t size) {
 
 void AudioFlinger::DirectAudioTrack::flush() {
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
+        mEffectLock.lock();
         mEffectsPool.clear();
         mEffectsPool = mBufPool;
+        mEffectLock.unlock();
     }
     mOutputDesc->stream->flush(mOutputDesc->stream);
 }
@@ -6912,6 +6914,7 @@ void AudioFlinger::DirectAudioTrack::deallocateBufPool() {
 
     //1. Deallocate the local memory
     //2. Remove all the buffers from bufpool
+    mEffectLock.lock();
     while (!mBufPool.empty())  {
         List<BufferInfo>::iterator it = mBufPool.begin();
         BufferInfo &memBuffer = *it;
@@ -6923,6 +6926,8 @@ void AudioFlinger::DirectAudioTrack::deallocateBufPool() {
         ALOGV("Removing from bufpool");
         mBufPool.erase(it);
     }
+    mEffectsPool.clear();
+    mEffectLock.unlock();
 
     free(mEffectsThreadScratchBuffer);
     mEffectsThreadScratchBuffer = NULL;
