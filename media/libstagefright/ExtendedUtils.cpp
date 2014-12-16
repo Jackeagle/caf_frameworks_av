@@ -47,12 +47,20 @@
 #include <camera/ICamera.h>
 #include <binder/IPCThreadState.h>
 
+//for Service startup
+#include <binder/IBinder.h>
+#include <binder/IMemory.h>
+#include <binder/Parcel.h>
+#include <binder/IServiceManager.h>
+
 //RTSPStream
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netdb.h>
 
 #include "include/ExtendedUtils.h"
+
+#define STACONTROLAPI_LIB "libstaapi.so"
 
 static const int64_t kDefaultAVSyncLateMargin =  40000;
 static const int64_t kMaxAVSyncLateMargin     = 250000;
@@ -72,6 +80,8 @@ static const int64_t kMaxAVSyncLateMargin     = 250000;
 #include <media/stagefright/foundation/ALooper.h>
 
 namespace android {
+const uint32_t START_SERVICE_TRANSACTION = IBinder::FIRST_CALL_TRANSACTION + 33;
+const uint32_t STOP_SERVICE_TRANSACTION  = IBinder::FIRST_CALL_TRANSACTION + 34;
 
 void ExtendedUtils::HFR::setHFRIfEnabled(
         const CameraParameters& params,
@@ -295,13 +305,113 @@ bool ExtendedUtils::ShellProp::isMpeg4DPSupportedByHardware() {
     return false;
 }
 
+wp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::gDProxy = NULL;
+Mutex ExtendedUtils::DiscoverProxy::gLock;
+
+sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
+   Mutex::Autolock autoLock(gLock);
+   sp<DiscoverProxy> instance = gDProxy.promote();
+   if(instance != NULL) {
+      ALOGW("DiscoverProxy reuse instance");
+      return instance;
+   }
+
+   char value[PROPERTY_VALUE_MAX];
+   property_get("persist.mm.sta.enable", value, "0");
+   if (!atoi(value)) {
+        ALOGW("Proxy is disabled using persist.mm.sta.enable ");
+        return NULL;
+   }
+
+   ALOGW("DiscoverProxy create instance");
+   bool bOk = false;
+   instance = new DiscoverProxy(bOk);
+   if((instance == NULL) || (false == bOk)) {
+      ALOGE("DiscoverProxy failed to create instance");
+      return NULL;
+   }
+
+   sendSTAProxyStartIntent();
+
+   gDProxy = instance;
+   return instance;
+}
+
+ExtendedUtils::DiscoverProxy::DiscoverProxy(bool& bOk)
+    : mStaLibHandle(NULL),
+      isProxySupported(NULL),
+      getPort(NULL) {
+
+    bOk = true;
+    mStaLibHandle = dlopen(STACONTROLAPI_LIB, RTLD_NOW);
+    if (mStaLibHandle == NULL) {
+        ALOGE("libstaapi.so open dll error :%s", dlerror());
+        bOk = false;
+    }
+
+    if (bOk) {
+        isProxySupported = (fnIsProxySupported) dlsym(mStaLibHandle, "isSTAProxySupported");
+        if (isProxySupported == NULL) {
+            ALOGE("Not able to load the symbol");
+            bOk = false;
+        }
+    }
+
+    if (bOk) {
+        getPort = (fnGetPort) dlsym(mStaLibHandle, "getSTAProxyAlwaysAccelerateServicePort");
+        if (getPort == NULL) {
+            ALOGE("Not able to load the symbol to get the STA proxy port");
+            bOk = false;
+        }
+    }
+
+    ALOGI("DiscoverProxy ExtendedUtils::DiscoverProxy::DiscoverProxy() bOk %d", bOk);
+}
+
+ExtendedUtils::DiscoverProxy::~DiscoverProxy() {
+    if (mStaLibHandle != NULL) {
+        dlclose(mStaLibHandle);
+        sendSTAProxyStopIntent();
+    }
+
+    gDProxy = NULL;
+    ALOGI("DiscoverProxy ExtendedUtils::DiscoverProxy::~DiscoverProxy()");
+}
+
+bool ExtendedUtils::DiscoverProxy::getSTAProxyConfig(int32_t &port) {
+    Mutex::Autolock autoLock(gLock);
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.mm.sta.enable", value, "0");
+    if (!atoi(value)) {
+        ALOGW("Proxy is disabled using persist.mm.sta.enable 0");
+        return false;
+    }
+    if ((isProxySupported == NULL) || (getPort == NULL)) {
+        ALOGW("Invalid symbols isProxySupported %p, getPort %p", isProxySupported, getPort);
+        return false;
+    }
+    if (isProxySupported()) {
+        port = getPort();
+        if (port > 0) {
+            ALOGI("The STA proxy is running at port:%d", port );
+        } else {
+            ALOGI("The STA proxy is running at invalid port:%d", port );
+            return false;
+        }
+    } else {
+        ALOGW("STA Proxy is not supported");
+        return false;
+    }
+
+    return true;
+}
+
 bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
     void* staLibHandle = NULL;
 
     char value[PROPERTY_VALUE_MAX];
-    property_get("persist.mm.sta.disable", value, "0");
-    // Return false if persist.disable.staproxy is set to 1
-    if (atoi(value)) {
+    property_get("persist.mm.sta.enable", value, "0");
+    if (!atoi(value)) {
         ALOGW("Proxy is disabled using persist.disable.staproxy");
         return false;
     }
@@ -337,6 +447,111 @@ bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
     return true;
 }
 
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
+    sp<IServiceManager> sm = defaultServiceManager();
+    sp<IBinder> am = sm->getService(String16("activity"));
+    if (am == NULL) {
+        ALOGE("startServiceThroughActivityManager() couldn't find activity service!\n");
+        return false;
+    }
+
+    Parcel data, reply;
+
+    data.writeInterfaceToken(String16("android.app.IActivityManager"));
+    data.writeStrongBinder(NULL); // The application thread
+    ALOGV("Sending NULL Binder ");
+
+    // Intent Start
+    data.writeString16(NULL, 0); /* action */
+    data.writeInt32(0); // mData (null)
+    //data.writeInt32(-1); // mType (null)
+    data.writeString16(NULL, 0); /* type */
+    data.writeInt32(0); // mFlags (0)
+
+    // The ComponentName
+    data.writeString16(NULL, 0);
+    data.writeString16(String16("com.qualcomm.sta")); /* ComponentName */
+    data.writeString16(String16("com.qualcomm.sta.STAProxyService")); /* package name */
+
+    data.writeInt32(0); // mSourceBounds (null)
+
+    data.writeInt32(0); /* Categories - size */
+
+    data.writeInt32(0); // mSelector (null)
+    data.writeInt32(0); // mClipData (null)
+    data.writeInt32(-1); // mExtras (null)
+    //Intent Finish
+
+    //ResolveType
+    data.writeInt32(-1); // "resolvedType" String16 (null)
+    data.writeInt32(0); /* root user */
+
+    data.writeStrongBinder(NULL); // mResultTo
+    data.writeInt32(-1); // mResultCode
+    data.writeInt32(-1); // mResultData
+    data.writeInt32(-1); // mResultExtras
+    data.writeInt32(-1); // required permission
+    data.writeInt32(0); // serialize
+    data.writeInt32(0); // sticky
+    data.writeInt32(0); // userId
+
+   status_t ret = am->transact(START_SERVICE_TRANSACTION, data, &reply, 0);
+   ALOGI("ExtendedUtils::DiscoverProxy::Sent STAProxy Service start Intent");
+   return true;
+}
+
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
+    sp<IServiceManager> sm = defaultServiceManager();
+    sp<IBinder> am = sm->getService(String16("activity"));
+    if (am == NULL) {
+        ALOGE("startServiceThroughActivityManager() couldn't find activity service!\n");
+        return false;
+    }
+
+    Parcel data, reply;
+
+    data.writeInterfaceToken(String16("android.app.IActivityManager"));
+    data.writeStrongBinder(NULL); // The application thread
+    ALOGV("Sending NULL Binder ");
+
+    // Intent Start
+    data.writeString16(NULL, 0); /* action */
+    data.writeInt32(0); // mData (null)
+    //data.writeInt32(-1); // mType (null)
+    data.writeString16(NULL, 0); /* type */
+    data.writeInt32(0); // mFlags (0)
+
+    // The ComponentName
+    data.writeString16(NULL, 0);
+    data.writeString16(String16("com.qualcomm.sta")); /* ComponentName */
+    data.writeString16(String16("com.qualcomm.sta.STAProxyService")); /* package name */
+
+    data.writeInt32(0); // mSourceBounds (null)
+
+    data.writeInt32(0); /* Categories - size */
+
+    data.writeInt32(0); // mSelector (null)
+    data.writeInt32(0); // mClipData (null)
+    data.writeInt32(-1); // mExtras (null)
+    //Intent Finish
+
+    //ResolveType
+    data.writeInt32(-1); // "resolvedType" String16 (null)
+    data.writeInt32(0); /* root user */
+
+    data.writeStrongBinder(NULL); // mResultTo
+    data.writeInt32(-1); // mResultCode
+    data.writeInt32(-1); // mResultData
+    data.writeInt32(-1); // mResultExtras
+    data.writeInt32(-1); // required permission
+    data.writeInt32(0); // serialize
+    data.writeInt32(0); // sticky
+    data.writeInt32(0); // userId
+
+   status_t ret = am->transact(STOP_SERVICE_TRANSACTION, data, &reply, 0);
+   ALOGI("ExtendedUtils::DiscoverProxy::Sent STAProxy Service stop Intent");
+   return true;
+}
 
 void ExtendedUtils::setBFrames(
         OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, int32_t &numBFrames,
@@ -1219,6 +1434,33 @@ bool ExtendedUtils::ShellProp::isMpeg4DPSupportedByHardware() {
 }
 
 bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
+    return false;
+}
+
+wp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::gDProxy = NULL;
+Mutex ExtendedUtils::DiscoverProxy::gLock;
+
+sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
+    return NULL;
+}
+
+ExtendedUtils::DiscoverProxy::DiscoverProxy(bool& bOk) {
+    bOk = false;
+}
+
+ExtendedUtils::DiscoverProxy::~DiscoverProxy() {
+}
+
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
+    return false;
+}
+
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
+    return false;
+}
+
+bool ExtendedUtils::DiscoverProxy::getSTAProxyConfig(int32_t &port) {
+    port = -1;
     return false;
 }
 

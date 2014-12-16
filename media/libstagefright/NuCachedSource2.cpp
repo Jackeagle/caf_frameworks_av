@@ -25,6 +25,7 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MediaErrors.h>
+#include "include/ExtendedUtils.h"
 
 namespace android {
 
@@ -180,7 +181,8 @@ void PageCache::copy(size_t from, void *data, size_t size) {
 NuCachedSource2::NuCachedSource2(
         const sp<DataSource> &source,
         const char *cacheConfig,
-        bool disconnectAtHighwatermark)
+        bool disconnectAtHighwatermark,
+        bool isProxyConfigured)
     : mSource(source),
       mReflector(new AHandlerReflector<NuCachedSource2>(this)),
       mLooper(new ALooper),
@@ -197,7 +199,8 @@ NuCachedSource2::NuCachedSource2(
       mDisconnectAtHighwatermark(disconnectAtHighwatermark),
       mIsNonBlockingMode(false),
       mSuspended(false),
-      mCheckGeneration(0) {
+      mCheckGeneration(0),
+      mIsProxyConfigured(isProxyConfigured) {
     // We are NOT going to support disconnect-at-highwatermark indefinitely
     // and we are not guaranteeing support for client-specified cache
     // parameters. Both of these are temporary measures to solve a specific
@@ -360,6 +363,13 @@ void NuCachedSource2::onFetch() {
     if (mFinalStatus != OK && mNumRetriesLeft == 0) {
         ALOGV("EOS reached, done prefetching for now");
         mFetching = false;
+    }
+
+    /* Proxy restart may cause into read failure   */
+    /* Try to reconfigure proxy again, if previous */
+    /* request had proxy configured                */
+    if ((mFinalStatus != OK &&  mNumRetriesLeft > 0) && mIsProxyConfigured) {
+       reconfigProxy();
     }
 
     bool keepAlive =
@@ -773,6 +783,29 @@ status_t NuCachedSource2::connectWhileResume() {
     (new AMessage(kWhatFetchMore, mReflector->id()))->post();
 
     return OK;
+}
+
+void NuCachedSource2::reconfigProxy() {
+  sp<ExtendedUtils::DiscoverProxy> proxy = ExtendedUtils::DiscoverProxy::create();
+
+  int32_t port = 0;
+  if ((proxy != NULL) && (proxy->getSTAProxyConfig(port))) {
+      ALOGV("getSTAProxyConfig Proxy IPportString %d", port);
+      if (HTTPBase::UpdateProxyConfig("127.0.0.1", port, "") != OK) {
+          ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed to configure proxy");
+          mIsProxyConfigured = false;
+      } else {
+          mIsProxyConfigured = true;
+      }
+  } else {
+      if (HTTPBase::UpdateProxyConfig(NULL, port, "") != OK) {
+          ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed for NULL proxy set");
+      } else {
+          ALOGV("getSTAProxyConfig disabled");
+      }
+
+      mIsProxyConfigured = false;
+  }
 }
 
 }  // namespace android

@@ -220,6 +220,9 @@ private:
     bool mStreamDoneEventPending;
     sp<TimedEventQueue::Event> mBufferingEvent;
     bool mBufferingEventPending;
+    sp<TimedEventQueue::Event> mCheckProxyAvailEvent;
+    bool mCheckProxyAvailEventPending;
+    int mCheckProxyCount;
     sp<TimedEventQueue::Event> mCheckAudioStatusEvent;
     bool mAudioStatusEventPending;
     sp<TimedEventQueue::Event> mVideoLagEvent;
@@ -234,6 +237,7 @@ private:
 
     void postVideoEvent_l(int64_t delayUs = -1);
     void postBufferingEvent_l();
+    void postCheckProxyAvailEvent_l();
     void postStreamDoneEvent_l(status_t status);
     void postCheckAudioStatusEvent(int64_t delayUs);
     void postVideoLagEvent_l();
@@ -288,6 +292,7 @@ private:
     void onBufferingUpdate();
     void onCheckAudioStatus();
     void onPrepareAsyncEvent();
+    void onCheckProxyAvailEvent();
     void abortPrepare(status_t err);
     void finishAsyncPrepare_l();
     void onVideoLagUpdate();
@@ -399,7 +404,8 @@ private:
     bool mCustomAVSync;
 
     sp<VSyncLocker> mVSyncLocker;
-    bool m_bProxyConfigured;
+    bool mIsProxyConfigured;
+    sp<ExtendedUtils::DiscoverProxy> mDProxy;
 };
 
 }  // namespace android
