@@ -893,6 +893,9 @@ void PlaylistFetcher::onDownloadNext() {
                             ? ATSParser::DISCONTINUITY_FORMATCHANGE
                             : ATSParser::DISCONTINUITY_SEEK,
                         NULL /* extra */);
+
+                explicitDiscontinuity = false;
+                seekDiscontinuity = false;
             }
         }
 
