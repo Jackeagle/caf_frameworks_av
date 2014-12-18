@@ -28,6 +28,7 @@
 #include <media/stagefright/OMXCodec.h>
 #include <utils/threads.h>
 
+#include <cutils/properties.h>
 #include <libexpat/expat.h>
 #include "include/ExtendedUtils.h"
 
@@ -61,6 +62,8 @@ MediaCodecList::MediaCodecList()
     parseXMLFile(file);
 
     if (mInitCheck == OK) {
+        char propValue[PROPERTY_VALUE_MAX];
+
         // These are currently still used by the video editing suite.
 
         addMediaCodec(true /* encoder */, "AACEncoder", "audio/mp4a-latm");
@@ -68,14 +71,20 @@ MediaCodecList::MediaCodecList()
         addMediaCodec(
                 false /* encoder */, "OMX.google.raw.decoder", "audio/raw");
 
-        Vector<AString> HWAACQuirks;
-        HWAACQuirks.push(AString("requires-allocate-on-input-ports"));
-        HWAACQuirks.push(AString("requires-allocate-on-output-ports"));
-        ExtendedUtils::helper_addMediaCodec(mCodecInfos, mTypes, false,
-            "OMX.qcom.audio.decoder.multiaac", "audio/mp4a-latm",
-            ExtendedUtils::helper_getCodecSpecificQuirks(mCodecQuirks, HWAACQuirks));
-    }
+        if(property_get("media.aaccodectype", propValue, NULL)) {
+            bool prop_enabled = atoi(propValue);
+            if (prop_enabled) {
+                Vector<AString> HWAACQuirks;
 
+                HWAACQuirks.push(AString("requires-allocate-on-input-ports"));
+                HWAACQuirks.push(AString("requires-allocate-on-output-ports"));
+                ALOGD("hardware AAC decoder property enabled adding multi aac to codec list");
+                ExtendedUtils::helper_addMediaCodec(mCodecInfos, mTypes, false,
+                         "OMX.qcom.audio.decoder.multiaac", "audio/mp4a-latm",
+                         ExtendedUtils::helper_getCodecSpecificQuirks(mCodecQuirks, HWAACQuirks));
+            }
+        }
+    }
 #if 0
     for (size_t i = 0; i < mCodecInfos.size(); ++i) {
         const CodecInfo &info = mCodecInfos.itemAt(i);
