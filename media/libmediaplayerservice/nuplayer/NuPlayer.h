@@ -197,6 +197,8 @@ private:
     int32_t mVideoScalingMode;
 
     bool mStarted;
+    bool mBuffering;
+    bool mPlaying;
 
     bool mImageShowed;
 
