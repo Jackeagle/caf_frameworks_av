@@ -47,6 +47,8 @@
 #include <openssl/aes.h>
 #include <openssl/md5.h>
 
+#define SAVE_BACKUPS 0
+
 namespace android {
 
 LiveSession::LiveSession(
@@ -72,7 +74,9 @@ LiveSession::LiveSession(
       mSeekReplyID(0),
       mFirstTimeUsValid(false),
       mFirstTimeUs(0),
-      mLastSeekTimeUs(0) {
+      mLastSeekTimeUs(0),
+      mBackupFile(NULL),
+      mSegmentCounter(0) {
 
     mStreams[kAudioIndex] = StreamItem("audio");
     mStreams[kVideoIndex] = StreamItem("video");
@@ -87,6 +91,12 @@ LiveSession::LiveSession(
 }
 
 LiveSession::~LiveSession() {
+#if SAVE_BACKUPS
+    if (mBackupFile != NULL) {
+        fclose(mBackupFile);
+        mBackupFile = NULL;
+    }
+#endif
 }
 
 sp<ABuffer> LiveSession::createFormatChangeBuffer(bool swap) {
@@ -851,6 +861,19 @@ ssize_t LiveSession::fetchFile(
             }
 
             *source = mHTTPDataSource;
+
+#if SAVE_BACKUPS
+            if (mBackupFile != NULL && mSegmentCounter > 0) {
+                fclose(mBackupFile);
+                mBackupFile = NULL;
+            }
+
+            char fName[128];
+            sprintf(fName, "/data/misc/media/backup%d.ts", mSegmentCounter++);
+            ALOGI("Saving %s to %s", url, fName);
+            mBackupFile = fopen(fName, "wb");
+            CHECK(mBackupFile != NULL);
+#endif
         }
     }
 
@@ -917,6 +940,13 @@ ssize_t LiveSession::fetchFile(
         if (n == 0) {
             break;
         }
+
+#if SAVE_BACKUPS
+        if (mBackupFile != NULL) {
+            CHECK_EQ(fwrite(buffer->data() + buffer->size(), 1, (size_t)n, mBackupFile), n);
+            fflush(mBackupFile);
+        }
+#endif
 
         buffer->setRange(bufferOffset, buffer->size() + (size_t)n);
         bytesRead += n;

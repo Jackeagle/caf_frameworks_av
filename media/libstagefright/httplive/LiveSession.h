@@ -210,6 +210,9 @@ private:
     KeyedVector<size_t, int64_t> mDiscontinuityAbsStartTimesUs;
     KeyedVector<size_t, int64_t> mDiscontinuityOffsetTimesUs;
 
+    FILE *mBackupFile;
+    uint32_t mSegmentCounter;
+
     sp<PlaylistFetcher> addFetcher(const char *uri);
 
     void onConnect(const sp<AMessage> &msg);
