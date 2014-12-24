@@ -217,7 +217,8 @@ AwesomePlayer::AwesomePlayer()
       mReadRetry(false),
       mIsFirstFrameAfterResume(false),
       mCustomAVSync(false),
-      mVSyncLocker(NULL) {
+      mVSyncLocker(NULL),
+      m_bProxyConfigured(false) {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -586,6 +587,15 @@ void AwesomePlayer::reset_l() {
             params |= IMediaPlayerService::kBatteryDataTrackVideo;
         }
         addBatteryData(params);
+    }
+
+    if (m_bProxyConfigured) {
+        if (HTTPBase::UpdateProxyConfig(NULL, 0, "") != OK) {
+            ALOGE("~AwesomePlayer() HTTPBase::UpdateProxyConfig failed for NULL proxy set");
+        } else {
+            ALOGV("~AwesomePlayer() Proxy reset");
+        }
+        m_bProxyConfigured = false;
     }
 
     if (mFlags & PREPARING) {
@@ -2489,6 +2499,24 @@ status_t AwesomePlayer::finishSetDataSource_l() {
 
         if (mUIDValid) {
             mConnectingDataSource->setUID(mUID);
+        }
+
+        int32_t port = 0;
+        if (ExtendedUtils::ShellProp::getSTAProxyConfig(port)) {
+            ALOGV("getSTAProxyConfig Proxy IPportString %d", port);
+            if (HTTPBase::UpdateProxyConfig("127.0.0.1", port, "") != OK) {
+                ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed to configure proxy");
+            } else {
+                m_bProxyConfigured = true;
+            }
+        } else {
+            if (HTTPBase::UpdateProxyConfig(NULL, port, "") != OK) {
+                ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed for NULL proxy set");
+            } else {
+                ALOGV("getSTAProxyConfig disabled");
+            }
+
+            m_bProxyConfigured = false;
         }
 
         String8 cacheConfig;
