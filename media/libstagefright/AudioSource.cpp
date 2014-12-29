@@ -205,6 +205,13 @@ AudioSource::~AudioSource() {
     if (mStarted) {
         reset();
     }
+
+    if (mTransferMode == AudioRecord::TRANSFER_SYNC) {
+        if(mTempBuf.i16) {
+            free(mTempBuf.i16);
+            mTempBuf.i16 = (short*)NULL;
+        }
+    }
 }
 
 status_t AudioSource::initCheck() const {
@@ -290,10 +297,8 @@ status_t AudioSource::reset() {
             AudioSystem::releaseAudioSessionId(mAudioSessionId, -1);
 
         mAudioSessionId = -1;
-        if(mTempBuf.i16) {
-            free(mTempBuf.i16);
-            mTempBuf.i16 = (short*)NULL;
-        }
+        mTempBuf.size = 0;
+        mTempBuf.frameCount = 0;
     }
     return OK;
 }
