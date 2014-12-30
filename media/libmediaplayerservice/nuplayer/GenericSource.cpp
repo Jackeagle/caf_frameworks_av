@@ -38,6 +38,11 @@
 #include "../../libstagefright/include/WVMExtractor.h"
 #include "../../libstagefright/include/HTTPBase.h"
 
+static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
+static int64_t kHighWaterMarkUs = 5000000ll;  // 5secs
+static const size_t kLowWaterMarkBytes = 40000;
+static const size_t kHighWaterMarkBytes = 200000;
+
 #include <ExtendedUtils.h>
 namespace android {
 
@@ -57,7 +62,8 @@ NuPlayer::GenericSource::GenericSource(
       mMetaDataSize(-1ll),
       mBitrate(-1ll),
       mPollBufferingGeneration(0),
-      mPendingReadBufferTypes(0) {
+      mPrepareState(STATE_UNPREPARED),
+      mPollBufferDelayUs(100000ll) {
     resetDataSource();
     DataSource::RegisterDefaultSniffers();
 }
@@ -91,6 +97,7 @@ status_t NuPlayer::GenericSource::setDataSource(
     if (headers) {
         mUriHeaders = *headers;
     }
+    setPrepareState(STATE_UNPREPARED);
 
     // delay data source creation to prepareAsync() to avoid blocking
     // the calling thread in setDataSource for any significant time.
@@ -367,7 +374,12 @@ void NuPlayer::GenericSource::onPrepareAsync() {
             | FLAG_CAN_SEEK_FORWARD
             | FLAG_CAN_SEEK);
 
-    notifyPrepared();
+    if ((mWVMExtractor == NULL && mCachedSource == NULL) ||
+        mPrepareState == STATE_UNPREPARED_EOS) {
+        setPrepareState(STATE_PREPARED);
+    } else {
+        setPrepareState(STATE_PREPARING);
+    }
 }
 
 void NuPlayer::GenericSource::notifyPreparedAndCleanup(status_t err) {
@@ -539,7 +551,7 @@ status_t NuPlayer::GenericSource::feedMoreTSData() {
 void NuPlayer::GenericSource::schedulePollBuffering() {
     sp<AMessage> msg = new AMessage(kWhatPollBuffering, id());
     msg->setInt32("generation", mPollBufferingGeneration);
-    msg->post(1000000ll);
+    msg->post(mPollBufferDelayUs);
 }
 
 void NuPlayer::GenericSource::cancelPollBuffering() {
@@ -555,12 +567,20 @@ void NuPlayer::GenericSource::notifyBufferingUpdate(int percentage,
     msg->post();
 }
 
+void NuPlayer::GenericSource::setPrepareState(PrepareState state) {
+    mPrepareState = state;
+    if (mPrepareState == STATE_PREPARED) {
+        notifyPrepared();
+    }
+}
+
 void NuPlayer::GenericSource::onPollBuffering() {
     status_t finalStatus = UNKNOWN_ERROR;
     int64_t cachedDurationUs = 0ll;
+    size_t cachedDataRemaining = 0;
 
     if (mCachedSource != NULL) {
-        size_t cachedDataRemaining =
+        cachedDataRemaining =
                 mCachedSource->approxDataRemaining(&finalStatus);
 
         if (finalStatus == OK) {
@@ -580,6 +600,14 @@ void NuPlayer::GenericSource::onPollBuffering() {
             = mWVMExtractor->getCachedDurationUs(&finalStatus);
     }
 
+    if (finalStatus != OK) {
+        if (mPrepareState == STATE_PREPARING) {
+            setPrepareState(STATE_PREPARED);
+        } else if (mPrepareState == STATE_UNPREPARED) {
+            setPrepareState(STATE_UNPREPARED_EOS);
+        }
+    }
+
     if (finalStatus == ERROR_END_OF_STREAM) {
         notifyBufferingUpdate(100, 0);
         cancelPollBuffering();
@@ -590,7 +618,30 @@ void NuPlayer::GenericSource::onPollBuffering() {
             percentage = 100;
         }
 
+        ALOGV("Cached duration = %lld(us) %.2f(s)", cachedDurationUs, (float)cachedDurationUs / 1E6);
+        if (cachedDurationUs >= kHighWaterMarkUs) {
+            mPollBufferDelayUs = 1000000ll;
+        } else if (cachedDurationUs <= kLowWaterMarkUs) {
+            mPollBufferDelayUs = 100000ll;
+        }
+
+        if (mPrepareState == STATE_PREPARING &&
+            cachedDurationUs >= kHighWaterMarkUs) {
+            setPrepareState(STATE_PREPARED);
+        }
         notifyBufferingUpdate(percentage, cachedDurationUs);
+    } else {
+        ALOGV("Cached data remaining = %dkB", cachedDataRemaining / 1E3);
+        if (cachedDataRemaining >= kHighWaterMarkBytes) {
+            mPollBufferDelayUs = 1000000ll;
+        } else if (cachedDataRemaining <= kLowWaterMarkBytes) {
+            mPollBufferDelayUs = 100000ll;
+        }
+
+        if (mPrepareState == STATE_PREPARING &&
+            cachedDataRemaining >= kHighWaterMarkBytes) {
+            setPrepareState(STATE_PREPARED);
+        }
     }
 
     schedulePollBuffering();
