@@ -115,6 +115,14 @@ struct NuPlayer::Source : public AHandler {
 
     virtual int64_t getServerTimeoutUs();
 
+    virtual status_t suspend() {
+        return INVALID_OPERATION;
+    }
+
+    virtual status_t resumeFromSuspended() {
+        return INVALID_OPERATION;
+    }
+
 protected:
     virtual ~Source() {}
 

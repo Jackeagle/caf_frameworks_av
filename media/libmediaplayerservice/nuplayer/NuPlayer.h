@@ -82,6 +82,9 @@ struct NuPlayer : public AHandler {
 
     int64_t getServerTimeoutUs();
 
+    void suspendAsync();
+    void resumeFromSuspendedAsync();
+
     static const size_t kAggregateBufferSizeBytes;
 
 protected:
@@ -130,6 +133,8 @@ private:
         kWhatGetTrackInfo               = 'gTrI',
         kWhatGetSelectedTrack           = 'gSel',
         kWhatSelectTrack                = 'selT',
+        kWhatSuspend                    = 'susp',
+        kWhatResumeFromSuspended        = 'refs',
     };
     sp<PlayerExtendedStats> mPlayerExtendedStats;
 
@@ -200,6 +205,9 @@ private:
     bool mBuffering;
     bool mPlaying;
 
+    bool mSkipAudioFlushAfterSuspend;
+    bool mSkipVideoFlushAfterSuspend;
+
     inline const sp<Decoder> &getDecoder(bool audio) {
         return audio ? mAudioDecoder : mVideoDecoder;
     }
@@ -247,6 +255,9 @@ private:
     void performReset();
     void performScanSources();
     void performSetSurface(const sp<NativeWindowWrapper> &wrapper);
+
+    void performSuspend();
+    void performResumeFromSuspended();
 
     void onSourceNotify(const sp<AMessage> &msg);
     void onClosedCaptionNotify(const sp<AMessage> &msg);
