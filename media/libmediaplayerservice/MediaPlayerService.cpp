@@ -1400,7 +1400,7 @@ status_t MediaPlayerService::decode(
     if (cache->wait() != NO_ERROR) goto Exit;
 
     ALOGV("start");
-    player->start();
+    if (player->start() != NO_ERROR) goto Exit;
 
     ALOGV("wait for playback complete");
     cache->wait();
@@ -1455,7 +1455,7 @@ status_t MediaPlayerService::decode(int fd, int64_t offset, int64_t length,
     if (cache->wait() != NO_ERROR) goto Exit;
 
     ALOGV("start");
-    player->start();
+    if (player->start() != NO_ERROR) goto Exit;
 
     ALOGV("wait for playback complete");
     cache->wait();
@@ -2162,6 +2162,7 @@ status_t MediaPlayerService::AudioCache::open(
 {
     ALOGV("open(%u, %d, 0x%x, %d, %d)", sampleRate, channelCount, channelMask, format, bufferCount);
     if (mHeap->getHeapID() < 0) {
+        ALOGE("Invalid heap Id");
         return NO_INIT;
     }
 
