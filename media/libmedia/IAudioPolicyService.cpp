@@ -723,6 +723,7 @@ status_t BnAudioPolicyService::onTransact(
                     flags,
                     hasOffloadInfo ? &offloadInfo : NULL);
             reply->writeInt32(static_cast <int>(output));
+            free(attr);
             return NO_ERROR;
         } break;
 
