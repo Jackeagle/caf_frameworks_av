@@ -241,6 +241,8 @@ struct ExtendedUtils {
     static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
 
     static int32_t getEncoderTypeFlags();
+
+    static void cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder);
 };
 
 }
