@@ -1168,7 +1168,7 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
     }
 
     mOffloadAudio = mRenderer->openAudioSink(
-            format, offloadOnly, hasVideo, flags);
+            format, offloadOnly, hasVideo, mIsStreaming, flags);
 
     if (mOffloadAudio) {
         sp<MetaData> audioMeta =
