@@ -43,7 +43,7 @@
 
 #include <gui/DisplayEventReceiver.h>
 #include <utils/Looper.h>
-
+#include <media/mediarecorder.h>
 #define MIN_BITERATE_AAC 24000
 #define MAX_BITERATE_AAC 192000
 
@@ -201,6 +201,8 @@ struct ExtendedUtils {
     static void createSecurePool();
 
     static void drainSecurePool();
+
+    static void cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder);
 };
 
 class VSyncLocker : public RefBase {
