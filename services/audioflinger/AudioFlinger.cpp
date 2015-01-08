@@ -87,7 +87,8 @@
 #include <media/AudioParameter.h>
 #include <private/android_filesystem_config.h>
 #ifdef SRS_PROCESSING
-#include "postpro_patch.h"
+#include "srs_processing.h"
+#include "postpro_patch_ics.h"
 #endif
 
 // ----------------------------------------------------------------------------
@@ -1170,15 +1171,13 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
     // AUDIO_IO_HANDLE_NONE means the parameters are global to the audio hardware interface
     if (ioHandle == AUDIO_IO_HANDLE_NONE) {
         Mutex::Autolock _l(mLock);
-        status_t final_result = NO_ERROR;
-
 #ifdef SRS_PROCESSING
-        POSTPRO_PATCH_PARAMS_SET(keyValuePairs);
-        for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
-            PlaybackThread *thread = mPlaybackThreads.valueAt(i).get();
-            thread->setPostPro();
-        }
+        POSTPRO_PATCH_ICS_PARAMS_SET(keyValuePairs);
+        if (!mDirectAudioTracks.isEmpty())
+            audioConfigChanged(AudioSystem::EFFECT_CONFIG_CHANGED, 0, NULL);
 #endif
+
+        status_t final_result = NO_ERROR;
         {
             AutoMutex lock(mHardwareLock);
             mHardwareStatus = AUDIO_HW_SET_PARAMETER;
@@ -1322,7 +1321,7 @@ String8 AudioFlinger::getParameters(audio_io_handle_t ioHandle, const String8& k
         String8 out_s8;
 
 #ifdef SRS_PROCESSING
-        POSTPRO_PATCH_PARAMS_GET(keys, out_s8);
+        POSTPRO_PATCH_ICS_PARAMS_GET(keys, out_s8);
 #endif
 
         for (size_t i = 0; i < mAudioHwDevs.size(); i++) {
@@ -1558,12 +1557,6 @@ sp<AudioFlinger::PlaybackThread> AudioFlinger::getEffectThread_l(int sessionId, 
 
 
 
-void AudioFlinger::PlaybackThread::setPostPro()
-{
-    Mutex::Autolock _l(mLock);
-    if (mType == OFFLOAD)
-        broadcast_l();
-}
 // ----------------------------------------------------------------------------
 
 AudioFlinger::Client::Client(const sp<AudioFlinger>& audioFlinger, pid_t pid)
@@ -2053,6 +2046,10 @@ status_t AudioFlinger::openOutput(audio_module_handle_t module,
         if ((mPrimaryHardwareDev == NULL) && (flags & AUDIO_OUTPUT_FLAG_PRIMARY)) {
             ALOGI("Using module %d has the primary audio interface", module);
             mPrimaryHardwareDev = thread->getOutput()->audioHwDev;
+#ifdef SRS_PROCESSING
+            SRS_Processing::RawDataSet(NULL, "qdsp hook", &mPrimaryHardwareDev,
+            sizeof(&mPrimaryHardwareDev));
+#endif
 
             AutoMutex lock(mHardwareLock);
             mHardwareStatus = AUDIO_HW_SET_MODE;

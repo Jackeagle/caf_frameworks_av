@@ -49,6 +49,11 @@
 #include "AudioFlinger.h"
 #include "ServiceUtilities.h"
 
+#ifdef SRS_PROCESSING
+#include "srs_processing.h"
+#include "postpro_patch_ics.h"
+#endif
+
 // ----------------------------------------------------------------------------
 
 // Note: the following macro is used for extremely verbose logging message.  In
@@ -2248,6 +2253,18 @@ void AudioFlinger::DirectAudioTrack::EffectsThreadEntry() {
                         break;
                     }
             }
+#ifdef SRS_PROCESSING
+            } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
+                ALOGV("applying effects for TUNNEL");
+                char buffer[2];
+                    //dummy buffer to ensure the SRS processing takes place
+                    // The API mandates Sample rate and channel mode. Hence
+                    // defaulted the sample rate channel mode to 48000 and 2 respectively
+                POSTPRO_PATCH_ICS_OUTPROC_DIRECT_SAMPLES(static_cast<void *>(this),
+                                                         AUDIO_FORMAT_PCM_16_BIT,
+                                                        (int16_t*)buffer, 2, 48000, 2);
+#endif
+
             }
         }
         mEffectLock.unlock();

@@ -94,8 +94,10 @@
 #endif
 
 #ifdef SRS_PROCESSING
-#include "postpro_patch.h"
+#include "srs_processing.h"
+#include "postpro_patch_ics.h"
 #endif
+
 
 // ----------------------------------------------------------------------------
 
@@ -2602,6 +2604,13 @@ bool AudioFlinger::PlaybackThread::threadLoop()
     Vector< sp<Track> > tracksToRemove;
 
     standbyTime = systemTime();
+#ifdef SRS_PROCESSING
+    if (mType == MIXER) {
+        POSTPRO_PATCH_ICS_OUTPROC_MIX_INIT(this, gettid());
+    } else if (mType == DUPLICATING) {
+        POSTPRO_PATCH_ICS_OUTPROC_DUPE_INIT(this, gettid());
+    }
+#endif
 
     // MIXER
     nsecs_t lastWarning = 0;
@@ -2623,20 +2632,6 @@ bool AudioFlinger::PlaybackThread::threadLoop()
     const String8 myName(String8::format("thread %p type %d TID %d", this, mType, gettid()));
 
     acquireWakeLock();
-
-#ifdef SRS_PROCESSING
-    String8 bt_param = String8("bluetooth_enabled=0");
-    POSTPRO_PATCH_PARAMS_SET(bt_param);
-    if (mType == MIXER) {
-        POSTPRO_PATCH_OUTPROC_PLAY_INIT(this, myName);
-    } else if (mType == OFFLOAD) {
-        POSTPRO_PATCH_OUTPROC_DIRECT_INIT(this, myName);
-        POSTPRO_PATCH_OUTPROC_PLAY_ROUTE_BY_VALUE(this, mOutDevice);
-    } else if (mType == DIRECT) {
-        POSTPRO_PATCH_OUTPROC_DIRECT_INIT(this, myName);
-        POSTPRO_PATCH_OUTPROC_PLAY_ROUTE_BY_VALUE(this, mOutDevice);
-    }
-#endif
 
     // mNBLogWriter->log can only be called while thread mutex mLock is held.
     // So if you need to log when mutex is unlocked, set logString to a non-NULL string,
@@ -2826,13 +2821,7 @@ bool AudioFlinger::PlaybackThread::threadLoop()
                 effectChains[i]->process_l();
             }
         }
-#ifdef SRS_PROCESSING
-            // Offload thread
-            if (mType == OFFLOAD) {
-                char buffer[2];
-                POSTPRO_PATCH_OUTPROC_DIRECT_SAMPLES(this, AUDIO_FORMAT_PCM_16_BIT, (int16_t *) buffer, 2, 48000, 2);
-            }
-#endif
+
         // Only if the Effects buffer is enabled and there is data in the
         // Effects buffer (buffer valid), we need to
         // copy into the sink buffer.
@@ -2850,8 +2839,12 @@ bool AudioFlinger::PlaybackThread::threadLoop()
             // sleepTime == 0 means we must write to audio hardware
             if (sleepTime == 0) {
 #ifdef SRS_PROCESSING
-                if (mType == MIXER && mMixerStatus == MIXER_TRACKS_READY) {
-                    POSTPRO_PATCH_OUTPROC_PLAY_SAMPLES(this, mFormat, mSinkBuffer, mSinkBufferSize, mSampleRate, mChannelCount);
+                if (mType == MIXER) {
+                    POSTPRO_PATCH_ICS_OUTPROC_MIX_SAMPLES(this, mFormat, mSinkBuffer,
+                        mSinkBufferSize, mSampleRate, mChannelCount);
+                } else if (mType == DUPLICATING) {
+                    POSTPRO_PATCH_ICS_OUTPROC_DUPE_SAMPLES(this, mFormat, mSinkBuffer,
+                        mSinkBufferSize, mSampleRate, mChannelCount);
                 }
 #endif
                 if (mBytesRemaining) {
@@ -2913,11 +2906,9 @@ bool AudioFlinger::PlaybackThread::threadLoop()
     }
 #ifdef SRS_PROCESSING
     if (mType == MIXER) {
-        POSTPRO_PATCH_OUTPROC_PLAY_EXIT(this, myName);
-    } else if (mType == OFFLOAD) {
-        POSTPRO_PATCH_OUTPROC_DIRECT_EXIT(this, myName);
-    } else if (mType == DIRECT) {
-        POSTPRO_PATCH_OUTPROC_DIRECT_EXIT(this, myName);
+        POSTPRO_PATCH_ICS_OUTPROC_MIX_EXIT(this, gettid());
+    } else if (mType == DUPLICATING) {
+            POSTPRO_PATCH_ICS_OUTPROC_DUPE_EXIT(this, gettid());
     }
 #endif
     releaseWakeLock();
@@ -4050,7 +4041,7 @@ bool AudioFlinger::MixerThread::checkForNewParameter_l(const String8& keyValuePa
     AudioParameter param = AudioParameter(keyValuePair);
     int value;
 #ifdef SRS_PROCESSING
-        POSTPRO_PATCH_OUTPROC_PLAY_ROUTE(this, param, value);
+        POSTPRO_PATCH_ICS_OUTPROC_MIX_ROUTE(this, param, value);
 #endif
     if (param.getInt(String8(AudioParameter::keySamplingRate), value) == NO_ERROR) {
         reconfig = true;
@@ -4526,9 +4517,6 @@ bool AudioFlinger::DirectOutputThread::checkForNewParameter_l(const String8& key
 
     AudioParameter param = AudioParameter(keyValuePair);
     int value;
-#ifdef SRS_PROCESSING
-        POSTPRO_PATCH_OUTPROC_PLAY_ROUTE(this, param, value);
-#endif
     if (param.getInt(String8(AudioParameter::keyRouting), value) == NO_ERROR) {
         // forward device change to effects that have requested to be
         // aware of attached audio device.
@@ -6734,13 +6722,21 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
       mClient(client), mEffectConfigChanged(false), mKillEffectsThread(false), mFlag(outflag),
       mEffectsThreadScratchBuffer(NULL)
 {
+#ifdef SRS_PROCESSING
+    ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
+    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_INIT(this, gettid());
+    SRS_Processing::ProcessOutRoute(SRS_Processing::AUTO, this, outputDesc->device);
+#endif
+
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
         ALOGV("create effects thread for LPA");
         createEffectThread();
         allocateBufPool();
+#ifdef SRS_PROCESSING
     } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
         ALOGV("create effects thread for TUNNEL");
         createEffectThread();
+#endif
     }
     outputDesc->mVolumeScale = 1.0;
     mDeathRecipient = new PMDeathRecipient(this);
@@ -6752,16 +6748,29 @@ void AudioFlinger::DirectAudioTrack::signalEffect() {
         mEffectConfigChanged = true;
         mEffectCv.signal();
     }
+#ifdef SRS_PROCESSING
+    if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL){
+        mEffectConfigChanged = true;
+        mEffectCv.signal();
+    }
+#endif
 }
 
 AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
+#ifdef SRS_PROCESSING
+    ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
+    POSTPRO_PATCH_ICS_OUTPROC_DIRECT_EXIT(this, gettid());
+#endif
+
     if (mFlag & AUDIO_OUTPUT_FLAG_LPA) {
         requestAndWaitForEffectsThreadExit();
         mAudioFlinger->deleteEffectSession();
         deallocateBufPool();
+#ifdef SRS_PROCESSING
     } else if (mFlag & AUDIO_OUTPUT_FLAG_TUNNEL) {
         requestAndWaitForEffectsThreadExit();
         mAudioFlinger->deleteEffectSession();
+#endif
     }
     AudioSystem::releaseOutput(mOutput);
     releaseWakeLock();
