@@ -125,6 +125,8 @@ private:
     };
 
     static const size_t kBandwidthHistoryBytes;
+    static const off64_t kDefaultFileSize;
+    static const double kDefaultSegmentDurationUs;
 
     struct BandwidthItem {
         size_t mPlaylistIndex;
@@ -236,6 +238,7 @@ private:
 
     uint32_t mSegmentCounter;
 
+    int64_t mPrevBufferSize;
     bool mIsFirstSwitch;
 
     sp<PlaylistFetcher> addFetcher(const char *uri);
@@ -263,7 +266,10 @@ private:
             uint32_t block_size = 0,
             /* reuse DataSource if doing partial fetch */
             sp<DataSource> *source = NULL,
-            String8 *actualUrl = NULL);
+            String8 *actualUrl = NULL,
+            bool isMedia = false);
+
+    void estimateFileSize(ssize_t bandwidthIndex, off64_t *size);
 
     sp<M3UParser> fetchPlaylist(
             const char *url, uint8_t *curPlaylistHash,
