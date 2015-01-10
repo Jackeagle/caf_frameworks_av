@@ -222,6 +222,7 @@ struct ExtendedUtils {
     static int32_t getPcmSampleBits(const sp<AMessage> &format);
     static int32_t getPCMFormat(const sp<MetaData> &meta);
     static void setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat);
+    static bool UseQCHWAACDecoder(const char *mime);
 
     static sp<MediaExtractor> MediaExtractor_CreateIfNeeded(
             sp<MediaExtractor> defaultExt, const sp<DataSource> &source,
