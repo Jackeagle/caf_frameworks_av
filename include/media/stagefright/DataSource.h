@@ -104,7 +104,7 @@ public:
         return 0;
     }
 
-    virtual status_t reconnectAtOffset(off64_t offset) {
+    virtual status_t reconnectAtOffset(off64_t offset, bool* queryAndSetProxy = NULL) {
         return ERROR_UNSUPPORTED;
     }
 
