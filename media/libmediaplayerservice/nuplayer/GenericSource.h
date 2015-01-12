@@ -146,6 +146,9 @@ private:
     mutable Mutex mReadBufferLock;
 
     sp<ALooper> mLooper;
+    bool mQueryAndSetProxy;
+    int32_t mCheckProxyCount;
+    sp<ExtendedUtils::DiscoverProxy> mDProxy;
 
     bool mStartAfterSuspended;
 
@@ -157,6 +160,7 @@ private:
     void setDrmPlaybackStatusIfNeeded(int playbackStatus, int64_t position);
 
     status_t prefillCacheIfNecessary();
+    status_t checkProxyAvail();
 
     void notifyPreparedAndCleanup(status_t err);
 

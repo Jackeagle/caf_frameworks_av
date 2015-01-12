@@ -31,7 +31,8 @@ struct NuCachedSource2 : public DataSource {
     NuCachedSource2(
             const sp<DataSource> &source,
             const char *cacheConfig = NULL,
-            bool disconnectAtHighwatermark = false);
+            bool disconnectAtHighwatermark = false,
+            bool isProxyConfigured = false);
 
     virtual status_t initCheck() const;
 
@@ -122,6 +123,8 @@ private:
     int64_t mKeepAliveIntervalUs;
 
     bool mDisconnectAtHighwatermark;
+    bool mIsProxyConfigured;
+    bool mQueryAndSetProxy;
 
     void onMessageReceived(const sp<AMessage> &msg);
     void onFetch();
