@@ -85,7 +85,17 @@ sp<IMediaCodecList> MediaCodecList::getInstance() {
 
 MediaCodecList::MediaCodecList()
     : mInitCheck(NO_INIT) {
-    parseTopLevelXMLFile("/etc/media_codecs.xml");
+    char value[PROPERTY_VALUE_MAX] = {0};
+    int ret = 0;
+    int enableForHW = 0;
+
+    ret = property_get("media.msm8939hw", value, NULL);
+    enableForHW = atoi(value);
+    if (ret && enableForHW) {
+        parseTopLevelXMLFile("/etc/media_codecs_8939.xml");
+    } else {
+        parseTopLevelXMLFile("/etc/media_codecs.xml");
+    }
 }
 
 void MediaCodecList::parseTopLevelXMLFile(const char *codecs_xml) {
@@ -480,18 +490,6 @@ status_t MediaCodecList::addMediaCodecFromAttributes(
 
     if (name == NULL) {
         return -EINVAL;
-    }
-
-    if (!encoder && !strncmp(name, "OMX.qcom.video.decoder.hevc", strlen("OMX.qcom.video.decoder.hevc"))) {
-        char value[PROPERTY_VALUE_MAX] = {0};
-        int sw_codectype = 0;
-        int enableSwHevc = 0;
-
-        sw_codectype = property_get("media.swhevccodectype", value, NULL);
-        enableSwHevc = atoi(value);
-        if (sw_codectype && enableSwHevc) {
-           name = "OMX.qcom.video.decoder.hevcswvdec";
-        }
     }
 
     mCurrentInfo = new MediaCodecInfo(name, encoder, type);
