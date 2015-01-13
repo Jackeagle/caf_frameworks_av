@@ -1807,6 +1807,11 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
     //is that decoder does not provide this info for now
     tPCMMeta->setInt32(kKeySampleBits, 16);
 
+    if (sMeta == NULL) {
+        ALOGI("No audio meta, ignoring %s", __func__);
+        return tPCMMeta;
+    }
+
     int32_t srate = -1;
     if (!sMeta->findInt32(kKeySampleRate, &srate)) {
         ALOGV("No sample rate");

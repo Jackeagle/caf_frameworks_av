@@ -654,21 +654,20 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             if (audioMeta != NULL) {
                 audioMeta->findCString(kKeyMIMEType, &mime);
             }
-            if(mime && !ExtendedUtils::pcmOffloadException(mime)) {
-                mOffloadAudio =
-                    canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
-                                     mIsStreaming /* is_streaming */, streamType);
-                if(!mOffloadAudio) {
-                    sp<MetaData> audioSourceMeta = mSource->getFormatMeta(true/* audio */);
-                    sp<MetaData> audioPCMMeta =
+            mOffloadAudio =
+                        canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
+                                mIsStreaming /* is_streaming */, streamType);
+            if (!mOffloadAudio && (audioMeta != NULL)) {
+                sp<MetaData> audioSourceMeta = mSource->getFormatMeta(true/* audio */);
+                sp<MetaData> audioPCMMeta =
                         ExtendedUtils::createPCMMetaFromSource(audioSourceMeta);
-
-                    mOffloadAudio =
+                mOffloadAudio =
+                        ((mime && !ExtendedUtils::pcmOffloadException(mime)) &&
                         canOffloadStream(audioPCMMeta, (videoFormat != NULL), vMeta,
-                                         mIsStreaming /* is_streaming */, streamType);
-                    mOffloadDecodedPCM = mOffloadAudio;
-                    ALOGI("Could not offload audio decode, pcm offload decided :%d", mOffloadDecodedPCM);
-                }
+                                mIsStreaming /* is_streaming */, streamType));
+                mOffloadDecodedPCM = mOffloadAudio;
+                ALOGI("Could not offload audio decode, pcm offload decided :%d",
+                        mOffloadDecodedPCM);
             }
 
             if (mOffloadAudio) {
@@ -1258,6 +1257,12 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
         mOffloadAudio = mRenderer->openAudioSink(
             format, offloadOnly, hasVideo, flags);
     }
+
+    //store updated value
+    if (mOffloadDecodedPCM) {
+        mOffloadDecodedPCM = mOffloadAudio;
+    }
+
     if (mOffloadAudio) {
         sendMetaDataToHal(mAudioSink, aMeta);
     }
