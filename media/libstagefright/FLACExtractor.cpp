@@ -139,7 +139,7 @@ private:
     bool mWriteRequested;
     bool mWriteCompleted;
     FLAC__FrameHeader mWriteHeader;
-    const FLAC__int32 * const *mWriteBuffer;
+    const FLAC__int32 * mWriteBuffer[FLAC__MAX_CHANNELS];
 
     // most recent error reported by libFLAC parser
     FLAC__StreamDecoderErrorStatus mErrorStatus;
@@ -323,7 +323,9 @@ FLAC__StreamDecoderWriteStatus FLACParser::writeCallback(
         mWriteRequested = false;
         // FLAC parser doesn't free or realloc buffer until next frame or finish
         mWriteHeader = frame->header;
-        mWriteBuffer = buffer;
+        for(unsigned channel = 0; channel < frame->header.channels; channel++) {
+          mWriteBuffer[channel] = buffer[channel];
+        }
         mWriteCompleted = true;
         return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
     } else {
@@ -499,7 +501,6 @@ FLACParser::FLACParser(
       mStreamInfoValid(false),
       mWriteRequested(false),
       mWriteCompleted(false),
-      mWriteBuffer(NULL),
       mErrorStatus((FLAC__StreamDecoderErrorStatus) -1)
 {
     ALOGV("FLACParser::FLACParser");
@@ -688,7 +689,7 @@ MediaBuffer *FLACParser::readBuffer(bool doSeek, FLAC__uint64 sample)
     short *data = (short *) buffer->data();
     buffer->set_range(0, bufferSize);
     // copy PCM from FLAC write buffer to our media buffer, with interleaving
-    (*mCopy)(data, mWriteBuffer, blocksize, getChannels());
+    (*mCopy)(data, (const FLAC__int32 * const *)(&mWriteBuffer), blocksize, getChannels());
     // fill in buffer metadata
     CHECK(mWriteHeader.number_type == FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER);
     FLAC__uint64 sampleNumber = mWriteHeader.number.sample_number;
