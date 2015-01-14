@@ -182,8 +182,7 @@ NuPlayer::NuPlayer()
       mStarted(false),
       mImageShowed(false),
       mBuffering(false),
-      mPlaying(false),
-      mSeeking(false) {
+      mPlaying(false) {
 
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
@@ -943,9 +942,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 finishFlushIfPossible();
             } else if (what == Renderer::kWhatVideoRenderingStart) {
                 PLAYER_STATS(profileStop, STATS_PROFILE_START_LATENCY);
+                PLAYER_STATS(profileStop, STATS_PROFILE_RESUME);
                 notifyListener(MEDIA_INFO, MEDIA_INFO_RENDERING_START, 0);
             } else if (what == Renderer::kWhatMediaRenderingStart) {
-                PLAYER_STATS(profileStop, STATS_PROFILE_RESUME);
                 ALOGV("media rendering started");
                 notifyListener(MEDIA_STARTED, 0, 0);
             } else if (what == Renderer::kWhatAudioOffloadTearDown) {
@@ -1551,11 +1550,6 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
         mCCDecoder->display(mediaTimeUs);
     }
 
-    if (!audio && mSeeking) {
-        buffer->meta()->setInt32("seeking", mSeeking);
-        mSeeking = false;
-    }
-
     mRenderer->queueBuffer(audio, buffer, reply);
 }
 
@@ -1824,7 +1818,6 @@ void NuPlayer::performSeek(int64_t seekTimeUs, bool needNotify) {
           seekTimeUs / 1E6,
           needNotify);
 
-    mSeeking = true;
     if (mSource == NULL) {
         // This happens when reset occurs right before the loop mode
         // asynchronously seeks to the start of the stream.
@@ -1846,6 +1839,7 @@ void NuPlayer::performSeek(int64_t seekTimeUs, bool needNotify) {
     }
 
     PLAYER_STATS(notifySeekDone);
+    PLAYER_STATS(profileStop, STATS_PROFILE_SEEK);
     // everything's flushed, continue playback.
 }
 
