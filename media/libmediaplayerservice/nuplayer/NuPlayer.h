@@ -199,7 +199,6 @@ private:
     bool mStarted;
     bool mBuffering;
     bool mPlaying;
-    bool mSeeking;
 
     bool mImageShowed;
 
