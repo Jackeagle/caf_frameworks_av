@@ -53,7 +53,7 @@ public:
     static const char * const keyScreenState;
     static const char * const keySSR;
     static const char * const keyADSPStatus;
-
+    static const char * const keyFluenceType;
     String8 toString();
 
     status_t add(const String8& key, const String8& value);
