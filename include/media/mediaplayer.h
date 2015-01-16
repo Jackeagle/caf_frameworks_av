@@ -206,10 +206,10 @@ public:
             void            died();
             void            disconnect();
 
-            status_t        setDataSource(
-                    const sp<IMediaHTTPService> &httpService,
-                    const char *url,
-                    const KeyedVector<String8, String8> *headers);
+    virtual status_t        setDataSource(
+                            const sp<IMediaHTTPService> &httpService,
+                            const char *url,
+                            const KeyedVector<String8, String8> *headers);
 
             status_t        setDataSource(int fd, int64_t offset, int64_t length);
             status_t        setDataSource(const sp<IStreamSource> &source);
@@ -220,11 +220,11 @@ public:
             status_t        prepareAsync();
             status_t        start();
             status_t        stop();
-            status_t        pause();
+    virtual status_t        pause();
             bool            isPlaying();
             status_t        getVideoWidth(int *w);
             status_t        getVideoHeight(int *h);
-            status_t        seekTo(int msec);
+    virtual status_t        seekTo(int msec);
             status_t        getCurrentPosition(int *msec);
             status_t        getDuration(int *msec);
             status_t        reset();
@@ -292,6 +292,7 @@ private:
     float                       mSendLevel;
     struct sockaddr_in          mRetransmitEndpoint;
     bool                        mRetransmitEndpointValid;
+    friend class QCMediaPlayer;
 };
 
 }; // namespace android
