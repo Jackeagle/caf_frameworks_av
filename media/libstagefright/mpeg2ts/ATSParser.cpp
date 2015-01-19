@@ -562,7 +562,12 @@ status_t ATSParser::Stream::parse(
             && (unsigned)mExpectedContinuityCounter != continuity_counter) {
         ALOGI("discontinuity on stream pid 0x%04x, Ignored", mElementaryPID);
 
+        mPayloadStarted = false;
+        mBuffer->setRange(0, 0);
         mExpectedContinuityCounter = -1;
+        if (!payload_unit_start_indicator) {
+            return OK;
+        }
     }
 
     mExpectedContinuityCounter = (continuity_counter + 1) & 0x0f;
