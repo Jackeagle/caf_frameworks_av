@@ -5635,40 +5635,7 @@ audio_devices_t AudioPolicyManager::getDeviceForInputSource(audio_source_t input
     break;
 
     case AUDIO_SOURCE_VOICE_COMMUNICATION:
-        // Allow only use of devices on primary input if in call and HAL does not support routing
-        // to voice call path.
-        if ((mPhoneState == AUDIO_MODE_IN_CALL) &&
-                (mAvailableOutputDevices.types() & AUDIO_DEVICE_OUT_TELEPHONY_TX) == 0) {
-            availableDeviceTypes = availablePrimaryInputDevices() & ~AUDIO_DEVICE_BIT_IN;
-        }
-
-        switch (mForceUse[AUDIO_POLICY_FORCE_FOR_COMMUNICATION]) {
-        case AUDIO_POLICY_FORCE_BT_SCO:
-            // if SCO device is requested but no SCO device is available, fall back to default case
-            if (availableDeviceTypes & AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
-                device = AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET;
-                break;
-            }
-            // FALL THROUGH
-
-        default:    // FORCE_NONE
-            if (availableDeviceTypes & AUDIO_DEVICE_IN_WIRED_HEADSET) {
-                device = AUDIO_DEVICE_IN_WIRED_HEADSET;
-            } else if (availableDeviceTypes & AUDIO_DEVICE_IN_USB_DEVICE) {
-                device = AUDIO_DEVICE_IN_USB_DEVICE;
-            } else if (availableDeviceTypes & AUDIO_DEVICE_IN_BUILTIN_MIC) {
-                device = AUDIO_DEVICE_IN_BUILTIN_MIC;
-            }
-            break;
-
-        case AUDIO_POLICY_FORCE_SPEAKER:
-            if (availableDeviceTypes & AUDIO_DEVICE_IN_BACK_MIC) {
-                device = AUDIO_DEVICE_IN_BACK_MIC;
-            } else if (availableDeviceTypes & AUDIO_DEVICE_IN_BUILTIN_MIC) {
-                device = AUDIO_DEVICE_IN_BUILTIN_MIC;
-            }
-            break;
-        }
+        device = AUDIO_DEVICE_IN_COMMUNICATION;
         break;
 
     case AUDIO_SOURCE_VOICE_RECOGNITION:
