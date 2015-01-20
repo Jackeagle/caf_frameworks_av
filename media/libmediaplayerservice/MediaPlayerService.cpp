@@ -1633,7 +1633,12 @@ status_t MediaPlayerService::AudioOutput::open(
                              CallbackWrapper,
                              newcbd,
                              0,
-                             mSessionId);
+                             mSessionId,
+                             AudioTrack::TRANSFER_DEFAULT,
+                             NULL,
+                             -1,
+                             -1,
+                             mAttributes);
             if ((audioTrack == 0) || (audioTrack->initCheck() != NO_ERROR)) {
                 ALOGE("Unable to create audio track");
                 delete audioTrack;
@@ -1646,6 +1651,7 @@ status_t MediaPlayerService::AudioOutput::open(
         }
         deleteRecycledTrack();
 
+        mStreamType = audioTrack->streamType();
         ALOGV("setVolume");
         mCallbackData = newcbd;
         audioTrack->setVolume(mLeftVolume, mRightVolume);
