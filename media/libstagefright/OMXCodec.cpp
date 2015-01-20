@@ -1096,6 +1096,8 @@ status_t OMXCodec::setVideoInputFormat(
         def.nBufferSize = ((def.nBufferSize * 3) >> 1);
     }
 
+    def.nBufferCountActual += mAdditionalBuffers;
+
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
     if(err != OK) {
@@ -1596,9 +1598,15 @@ OMXCodec::OMXCodec(
       mSignalledReadTryAgain(false),
       mReturnedRetry(false),
       mLastSeekTimeUs(-1),
-      mLastSeekMode(ReadOptions::SEEK_CLOSEST) {
+      mLastSeekMode(ReadOptions::SEEK_CLOSEST),
+      mAvoidMemCpy(false),
+      mAdditionalBuffers(0) {
     mPortStatus[kPortIndexInput] = ENABLING;
     mPortStatus[kPortIndexOutput] = ENABLING;
+
+    if (isEncoder && mIsVideo) {
+        ExtendedUtils::ShellProp::checkMemCpyOptimization(&mAvoidMemCpy, &mAdditionalBuffers);
+    }
 
     setComponentRole();
 }
@@ -4390,6 +4398,13 @@ status_t OMXCodec::read(
     if (mSkipCutBuffer != NULL) {
         mSkipCutBuffer->submit(info->mMediaBuffer);
     }
+
+    if (mIsEncoder && mIsVideo && mAvoidMemCpy) {
+        Vector<BufferInfo> *buffers = &mPortBuffers[kPortIndexOutput];
+        ExtendedUtils::checkAndSetIfBufferNeedsToBeCopied(buffers, &info,
+                                                          mAdditionalBuffers);
+    }
+
     *buffer = info->mMediaBuffer;
 
     if (info->mOutputCropChanged) {
