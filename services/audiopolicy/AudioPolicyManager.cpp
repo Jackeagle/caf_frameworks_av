@@ -659,7 +659,7 @@ void AudioPolicyManager::updateCallRouting(audio_devices_t rxDevice, int delayMs
     audio_patch_handle_t afPatchHandle;
     DeviceVector deviceList;
 
-    audio_devices_t txDevice = getDeviceForInputSource(AUDIO_SOURCE_VOICE_COMMUNICATION);
+    audio_devices_t txDevice = getDeviceForInputSource(AUDIO_SOURCE_VOICE_CALL);
     ALOGV("updateCallRouting device rxDevice %08x txDevice %08x", rxDevice, txDevice);
 
     // release existing RX patch if any
