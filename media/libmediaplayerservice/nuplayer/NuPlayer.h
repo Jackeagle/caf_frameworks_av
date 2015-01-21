@@ -22,6 +22,7 @@
 #include <media/stagefright/ExtendedStats.h>
 #include <media/stagefright/foundation/AHandler.h>
 #include <media/stagefright/NativeWindowWrapper.h>
+#include "ExtendedUtils.h"
 
 #define PLAYER_STATS(func, ...) \
     do { \
@@ -203,6 +204,7 @@ private:
     bool mStarted;
     bool mBuffering;
     bool mPlaying;
+    sp<ExtendedUtils::DiscoverProxy> mDProxy;
 
     bool mSkipAudioFlushAfterSuspend;
     bool mSkipVideoFlushAfterSuspend;

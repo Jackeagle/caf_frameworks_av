@@ -182,7 +182,8 @@ void PageCache::copy(size_t from, void *data, size_t size) {
 NuCachedSource2::NuCachedSource2(
         const sp<DataSource> &source,
         const char *cacheConfig,
-        bool disconnectAtHighwatermark)
+        bool disconnectAtHighwatermark,
+        bool isProxyConfigured)
     : mSource(source),
       mReflector(new AHandlerReflector<NuCachedSource2>(this)),
       mLooper(new ALooper),
@@ -198,6 +199,8 @@ NuCachedSource2::NuCachedSource2(
       mLowwaterThresholdBytes(kDefaultLowWaterThreshold),
       mKeepAliveIntervalUs(kDefaultKeepAliveIntervalUs),
       mDisconnectAtHighwatermark(disconnectAtHighwatermark),
+      mIsProxyConfigured(isProxyConfigured),
+      mQueryAndSetProxy(false),
       mSuspended(false) {
     // We are NOT going to support disconnect-at-highwatermark indefinitely
     // and we are not guaranteeing support for client-specified cache
@@ -326,7 +329,9 @@ void NuCachedSource2::fetchInternal() {
 
     if (reconnect && !mSuspended) {
         status_t err =
-            mSource->reconnectAtOffset(mCacheOffset + mCache->totalSize());
+            mSource->reconnectAtOffset(mCacheOffset + mCache->totalSize(), &mQueryAndSetProxy);
+
+        mIsProxyConfigured = mQueryAndSetProxy;
 
         Mutex::Autolock autoLock(mLock);
 
@@ -389,6 +394,14 @@ void NuCachedSource2::onFetch() {
     if (mFinalStatus != OK && mNumRetriesLeft == 0) {
         ALOGV("EOS reached, done prefetching for now");
         mFetching = false;
+    }
+
+
+    /* Proxy restart may cause into read failure   */
+    /* Try to reconfigure proxy again, if previous */
+    /* request had proxy configured                */
+    if ((mFinalStatus != OK && mNumRetriesLeft > 0) && mIsProxyConfigured) {
+       mQueryAndSetProxy = true;
     }
 
     bool keepAlive =

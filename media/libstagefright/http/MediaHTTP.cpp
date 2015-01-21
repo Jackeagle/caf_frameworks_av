@@ -26,6 +26,7 @@
 #include <media/stagefright/Utils.h>
 
 #include <media/IMediaHTTPConnection.h>
+#include "include/ExtendedUtils.h"
 
 namespace android {
 
@@ -136,7 +137,8 @@ uint32_t MediaHTTP::flags() {
     return kWantsPrefetching | kIsHTTPBasedSource;
 }
 
-status_t MediaHTTP::reconnectAtOffset(off64_t offset) {
+status_t MediaHTTP::reconnectAtOffset(off64_t offset, bool* queryAndSetProxy) {
+    configProxy(&mLastHeaders, queryAndSetProxy);
     return connect(mLastURI.c_str(), &mLastHeaders, offset);
 }
 
@@ -200,6 +202,32 @@ void MediaHTTP::clearDRMState_l() {
         mDrmManagerClient->closeDecryptSession(mDecryptHandle);
         mDecryptHandle = NULL;
     }
+}
+
+void MediaHTTP::configProxy(KeyedVector<String8, String8> *extHeaders, bool *queryAndSetProxy) {
+
+  if (queryAndSetProxy && *queryAndSetProxy && extHeaders) {
+      sp<ExtendedUtils::DiscoverProxy> proxy = ExtendedUtils::DiscoverProxy::create();
+
+      ssize_t index;
+      if ((index = extHeaders->indexOfKey(String8("use-proxy"))) >= 0) {
+          extHeaders->removeItemsAt(index);
+          ALOGI("removed already existed use-proxy header");
+      }
+
+      int32_t port = 0;
+      if ((proxy != NULL)  && (proxy->getSTAProxyConfig(port))) {
+          ALOGV("getSTAProxyConfig Proxy IPportString %d", port);
+          String8 portString = String8("127.0.0.1");
+          portString.appendFormat(":%d", port);
+          ALOGV("getSTAProxyConfig Proxy IPportString %s", portString.string());
+          extHeaders->add(String8("use-proxy"), portString);
+          *queryAndSetProxy = true;
+      } else {
+          ALOGV("getSTAProxyConfig failed or disabled");
+          *queryAndSetProxy = false;
+      }
+  }
 }
 
 }  // namespace android

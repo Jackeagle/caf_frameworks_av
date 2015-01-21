@@ -44,7 +44,8 @@ struct MediaHTTP : public HTTPBase {
 
     virtual uint32_t flags();
 
-    virtual status_t reconnectAtOffset(off64_t offset);
+    virtual status_t reconnectAtOffset(off64_t offset,
+                                       bool* queryAndSetProxy = NULL);
 
 protected:
     virtual ~MediaHTTP();
@@ -68,6 +69,7 @@ private:
     DrmManagerClient *mDrmManagerClient;
 
     void clearDRMState_l();
+    void configProxy(KeyedVector<String8, String8> *extHeaders, bool *queryAndSetProxy);
 
     DISALLOW_EVIL_CONSTRUCTORS(MediaHTTP);
 };

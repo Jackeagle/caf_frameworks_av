@@ -48,12 +48,20 @@
 #include <camera/ICamera.h>
 #include <binder/IPCThreadState.h>
 
+//for Service startup
+#include <binder/IBinder.h>
+#include <binder/IMemory.h>
+#include <binder/Parcel.h>
+#include <binder/IServiceManager.h>
+
 //RTSPStream
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netdb.h>
 
 #include "include/ExtendedUtils.h"
+
+#define STACONTROLAPI_LIB "libstaapi.so"
 
 static const int64_t kDefaultAVSyncLateMargin =  40000;
 static const int64_t kMaxAVSyncLateMargin     = 250000;
@@ -79,6 +87,9 @@ static const uint8_t kHEVCNalUnitTypePicParamSet = 0x22;
 #include "include/avc_utils.h"
 
 namespace android {
+
+const uint32_t START_SERVICE_TRANSACTION = IBinder::FIRST_CALL_TRANSACTION + 33;
+const uint32_t STOP_SERVICE_TRANSACTION  = IBinder::FIRST_CALL_TRANSACTION + 34;
 
 void ExtendedUtils::HFR::setHFRIfEnabled(
         const CameraParameters& params,
@@ -830,14 +841,194 @@ void ExtendedUtils::ShellProp::getRtpPortRange(unsigned *start, unsigned *end) {
     ALOGV("rtp port_start = %u, port_end = %u", *start, *end);
 }
 
+wp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::gDProxy = NULL;
+Mutex ExtendedUtils::DiscoverProxy::gLock;
+
+sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
+   Mutex::Autolock autoLock(gLock);
+   sp<DiscoverProxy> instance = gDProxy.promote();
+   if(instance != NULL) {
+      ALOGW("DiscoverProxy reuse instance");
+      return instance;
+   }
+
+   char value[PROPERTY_VALUE_MAX];
+   property_get("persist.mm.sta.enable", value, "0");
+   // Return false if persist.mm.sta.enable is set to 1
+   if (!atoi(value)) {
+        ALOGW("Proxy is disabled using persist.mm.sta.enable 0");
+        return NULL;
+   }
+
+   ALOGW("DiscoverProxy create instance");
+   bool bOk = false;
+   instance = new DiscoverProxy(bOk);
+   if((instance == NULL) || (false == bOk)) {
+      ALOGE("DiscoverProxy failed to create instance");
+      return NULL;
+   }
+
+   sendSTAProxyStartIntent();
+
+   gDProxy = instance;
+   return instance;
+}
+
+ExtendedUtils::DiscoverProxy::DiscoverProxy(bool& bOk)
+    : mStaLibHandle(NULL),
+      isProxySupported(NULL),
+      getPort(NULL) {
+
+    bOk = true;
+    mStaLibHandle = dlopen(STACONTROLAPI_LIB, RTLD_NOW);
+    if (mStaLibHandle == NULL) {
+        ALOGE("libstaapi.so open dll error :%s", dlerror());
+        bOk = false;
+    }
+
+    if (bOk) {
+        isProxySupported = (fnIsProxySupported) dlsym(mStaLibHandle, "isSTAProxySupported");
+        if (isProxySupported == NULL) {
+            ALOGE("Not able to load the symbol");
+            bOk = false;
+        }
+    }
+
+    if (bOk) {
+        getPort = (fnGetPort) dlsym(mStaLibHandle, "getSTAProxyAlwaysAccelerateServicePort");
+        if (getPort == NULL) {
+            ALOGE("Not able to load the symbol to get the STA proxy port");
+            bOk = false;
+        }
+    }
+
+    ALOGW("DiscoverProxy ExtendedUtils::DiscoverProxy::DiscoverProxy() bOk %d", bOk);
+}
+
+ExtendedUtils::DiscoverProxy::~DiscoverProxy() {
+    if (mStaLibHandle != NULL) {
+        dlclose(mStaLibHandle);
+        sendSTAProxyStopIntent();
+    }
+
+    gDProxy = NULL;
+    ALOGW("DiscoverProxy ExtendedUtils::DiscoverProxy::~DiscoverProxy()");
+}
+
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
+    sp<IServiceManager> sm = defaultServiceManager();
+    sp<IBinder> am = sm->getService(String16("activity"));
+    if (am == NULL) {
+        ALOGE("startServiceThroughActivityManager() couldn't find activity service!\n");
+        return false;
+    }
+
+    Parcel data, reply;
+
+    data.writeInterfaceToken(String16("android.app.IActivityManager"));
+    data.writeStrongBinder(NULL); /* caller */
+
+    /* intent */
+    data.writeString16(NULL, 0); /* action */
+    data.writeInt32(0); /* Uri - data */
+    data.writeString16(NULL,0); /* Uri - type */
+    data.writeInt32(0); /* flags */
+    data.writeString16(NULL,0); /* package name */
+    data.writeString16(String16("com.qualcomm.sta")); /* Component name reads the package name again */
+    data.writeString16(String16("com.qualcomm.sta.STAProxyService")); /* component name */
+    data.writeInt32(0); /* source bound - size */
+    data.writeInt32(0); /* Categories - size */
+    data.writeInt32(0); /* selector - size */
+    data.writeInt32(0); /* ClipData */
+    data.writeInt32(0); /* root user */
+    data.writeInt32(-1); /* bundle(extras) size */
+    /* end of intent */
+
+    //ResolveType
+    data.writeInt32(-1); // "resolvedType" String16 (null)
+
+    data.writeInt32(0); /* root user */
+
+    status_t ret = am->transact(START_SERVICE_TRANSACTION, data, &reply, 0);
+    ALOGI("ExtendedUtils::DiscoverProxy::Sent STAProxy Service start Intent");
+    return true;
+}
+
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
+    sp<IServiceManager> sm = defaultServiceManager();
+    sp<IBinder> am = sm->getService(String16("activity"));
+    if (am == NULL) {
+        ALOGE("startServiceThroughActivityManager() couldn't find activity service!\n");
+        return false;
+    }
+
+    Parcel data, reply;
+
+    data.writeInterfaceToken(String16("android.app.IActivityManager"));
+    data.writeStrongBinder(NULL); /* caller */
+
+    /* intent */
+    data.writeString16(NULL, 0); /* action */
+    data.writeInt32(0); /* Uri - data */
+    data.writeString16(NULL,0); /* Uri - type */
+    data.writeInt32(0); /* flags */
+    data.writeString16(NULL,0); /* package name */
+    data.writeString16(String16("com.qualcomm.sta")); /* Component name reads the package name again */
+    data.writeString16(String16("com.qualcomm.sta.STAProxyService")); /* component name */
+    data.writeInt32(0); /* source bound - size */
+    data.writeInt32(0); /* Categories - size */
+    data.writeInt32(0); /* selector - size */
+    data.writeInt32(0); /* ClipData */
+    data.writeInt32(0); /* root user */
+    data.writeInt32(-1); /* bundle(extras) size */
+    /* end of intent */
+    //ResolveType
+    data.writeInt32(-1); // "resolvedType" String16 (null)
+
+    data.writeInt32(0); /* root user */
+
+    status_t ret = am->transact(STOP_SERVICE_TRANSACTION, data, &reply, 0);
+    ALOGI("ExtendedUtils::DiscoverProxy::Sent STAProxy Service stop Intent");
+    return true;
+}
+
+bool ExtendedUtils::DiscoverProxy::getSTAProxyConfig(int32_t &port) {
+    Mutex::Autolock autoLock(gLock);
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.mm.sta.enable", value, "0");
+    // Return false if persist.mm.sta.enable is set to 0
+    if (!atoi(value)) {
+        ALOGW("Proxy is disabled using persist.mm.sta.enable 0");
+        return false;
+    }
+    if ((isProxySupported == NULL) || (getPort == NULL)) {
+        ALOGW("Invalid symbols isProxySupported %p, getPort %p", isProxySupported, getPort);
+        return false;
+    }
+    if (isProxySupported()) {
+        port = getPort();
+        if (port > 0) {
+            ALOGI("The STA proxy is running at port:%d", port );
+        } else {
+            ALOGI("The STA proxy is running at invalid port:%d", port );
+            return false;
+        }
+    } else {
+        ALOGW("STA Proxy is not supported");
+        return false;
+    }
+
+    return true;
+}
+
 bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
     void* staLibHandle = NULL;
 
     char value[PROPERTY_VALUE_MAX];
-    property_get("persist.mm.sta.disable", value, "0");
-    // Return false if persist.mm.sta.disable is set to 1
-    if (atoi(value)) {
-        ALOGW("Proxy is disabled using persist.mm.sta.disable");
+    property_get("persist.mm.sta.enable", value, "0");
+    // Return false if persist.mm.sta.ebable is set to 1
+    if (!atoi(value)) {
+        ALOGW("Proxy is disabled using persist.mm.sta.enable");
         return false;
     }
 
@@ -1777,6 +1968,33 @@ void ExtendedUtils::ShellProp::getRtpPortRange(unsigned *start, unsigned *end) {
 }
 
 bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
+    return false;
+}
+
+wp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::gDProxy = NULL;
+Mutex ExtendedUtils::DiscoverProxy::gLock;
+
+sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
+    return NULL;
+}
+
+ExtendedUtils::DiscoverProxy::DiscoverProxy(bool& bOk) {
+    bOk = false;
+}
+
+ExtendedUtils::DiscoverProxy::~DiscoverProxy() {
+}
+
+bool ExtendedUtils::DiscoverProxy::getSTAProxyConfig(int32_t &port) {
+    port = -1;
+    return false;
+}
+
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
+    return false;
+}
+
+bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
     return false;
 }
 
