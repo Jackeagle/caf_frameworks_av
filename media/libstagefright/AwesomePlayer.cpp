@@ -66,6 +66,7 @@
 
 #define USE_SURFACE_ALLOC 1
 #define FRAME_DROP_FREQ 0
+#define MAX_CHECK_PROXY_RETRY_COUNT 10
 
 namespace android {
 
@@ -218,7 +219,7 @@ AwesomePlayer::AwesomePlayer()
       mIsFirstFrameAfterResume(false),
       mCustomAVSync(false),
       mVSyncLocker(NULL),
-      m_bProxyConfigured(false) {
+      mIsProxyConfigured(false) {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -229,6 +230,8 @@ AwesomePlayer::AwesomePlayer()
     mStreamDoneEventPending = false;
     mBufferingEvent = new AwesomeEvent(this, &AwesomePlayer::onBufferingUpdate);
     mBufferingEventPending = false;
+    mCheckProxyAvailEventPending = false;
+    mCheckProxyCount = 0;
     mVideoLagEvent = new AwesomeEvent(this, &AwesomePlayer::onVideoLagUpdate);
     mVideoLagEventPending = false;
 
@@ -257,6 +260,8 @@ AwesomePlayer::~AwesomePlayer() {
     }
 
     reset();
+
+    mDProxy = NULL;
 
     mClient.disconnect();
     ExtendedUtils::drainSecurePool();
@@ -340,6 +345,15 @@ void AwesomePlayer::setUID(uid_t uid) {
 status_t AwesomePlayer::setDataSource(
         const char *uri, const KeyedVector<String8, String8> *headers) {
     Mutex::Autolock autoLock(mLock);
+
+    if ((mDProxy == NULL) && (!strncasecmp("http://", uri, 7)
+            || !strncasecmp("https://", uri, 8))) {
+        mDProxy = ExtendedUtils::DiscoverProxy::create();
+        if (mDProxy == NULL) {
+            ALOGE("AwesomePlayer Failed to create proxy client instance");
+        }
+    }
+
     return setDataSource_l(uri, headers);
 }
 
@@ -589,13 +603,13 @@ void AwesomePlayer::reset_l() {
         addBatteryData(params);
     }
 
-    if (m_bProxyConfigured) {
+    if (mIsProxyConfigured) {
         if (HTTPBase::UpdateProxyConfig(NULL, 0, "") != OK) {
             ALOGE("~AwesomePlayer() HTTPBase::UpdateProxyConfig failed for NULL proxy set");
         } else {
             ALOGV("~AwesomePlayer() Proxy reset");
         }
-        m_bProxyConfigured = false;
+        mIsProxyConfigured = false;
     }
 
     if (mFlags & PREPARING) {
@@ -2336,6 +2350,16 @@ void AwesomePlayer::postStreamDoneEvent_l(status_t status) {
     mQueue.postEvent(mStreamDoneEvent);
 }
 
+void AwesomePlayer::postCheckProxyAvailEvent_l() {
+    if (mCheckProxyAvailEventPending) {
+        return;
+    }
+    mCheckProxyAvailEventPending = true;
+    int64_t delayUs = (mCheckProxyCount > 0) ? 50000ll : 0ll;
+
+    mQueue.postEventWithDelay(mCheckProxyAvailEvent, delayUs);
+}
+
 void AwesomePlayer::postBufferingEvent_l() {
     if (mBufferingEventPending) {
         return;
@@ -2465,10 +2489,22 @@ status_t AwesomePlayer::prepareAsync_l() {
     }
 
     modifyFlags(PREPARING, SET);
-    mAsyncPrepareEvent = new AwesomeEvent(
-            this, &AwesomePlayer::onPrepareAsyncEvent);
 
-    mQueue.postEvent(mAsyncPrepareEvent);
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.mm.sta.enable", value, "0");
+    if (atoi(value) && (!strncasecmp("http://", mUri, 7)
+        || !strncasecmp("https://", mUri, 8)) && !mIsProxyConfigured) {
+       mCheckProxyAvailEventPending = true;
+       mCheckProxyAvailEvent = new AwesomeEvent(
+               this, &AwesomePlayer::onCheckProxyAvailEvent);
+
+       mQueue.postEvent(mCheckProxyAvailEvent);
+    } else {
+       mAsyncPrepareEvent = new AwesomeEvent(
+               this, &AwesomePlayer::onPrepareAsyncEvent);
+
+       mQueue.postEvent(mAsyncPrepareEvent);
+   }
 
     return OK;
 }
@@ -2501,24 +2537,6 @@ status_t AwesomePlayer::finishSetDataSource_l() {
             mConnectingDataSource->setUID(mUID);
         }
 
-        int32_t port = 0;
-        if (ExtendedUtils::ShellProp::getSTAProxyConfig(port)) {
-            ALOGV("getSTAProxyConfig Proxy IPportString %d", port);
-            if (HTTPBase::UpdateProxyConfig("127.0.0.1", port, "") != OK) {
-                ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed to configure proxy");
-            } else {
-                m_bProxyConfigured = true;
-            }
-        } else {
-            if (HTTPBase::UpdateProxyConfig(NULL, port, "") != OK) {
-                ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed for NULL proxy set");
-            } else {
-                ALOGV("getSTAProxyConfig disabled");
-            }
-
-            m_bProxyConfigured = false;
-        }
-
         String8 cacheConfig;
         bool disconnectAtHighwatermark;
         NuCachedSource2::RemoveCacheSpecificHeaders(
@@ -2546,7 +2564,7 @@ status_t AwesomePlayer::finishSetDataSource_l() {
             mCachedSource = new NuCachedSource2(
                     mConnectingDataSource,
                     cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
-                    disconnectAtHighwatermark);
+                    disconnectAtHighwatermark, mIsProxyConfigured);
 #endif
 
             dataSource = mCachedSource;
@@ -2723,6 +2741,57 @@ void AwesomePlayer::onPrepareAsyncEvent() {
     beginPrepareAsync_l();
 }
 
+void AwesomePlayer::onCheckProxyAvailEvent() {
+    Mutex::Autolock autoLock(mLock);
+
+    if (mFlags & PREPARE_CANCELLED) {
+        ALOGI("prepare was cancelled before onCheckProxyAvailEvent");
+        abortPrepare(UNKNOWN_ERROR);
+        return;
+    }
+
+    if (!mCheckProxyAvailEventPending) {
+        return;
+    }
+
+    mCheckProxyAvailEventPending = false;
+    mCheckProxyCount++;
+
+    int32_t port = 0;
+    if ((mDProxy != NULL) && (mDProxy->getSTAProxyConfig(port))) {
+        ALOGV("getSTAProxyConfig Proxy IPportString %d", port);
+        if (HTTPBase::UpdateProxyConfig("127.0.0.1", port, "") != OK) {
+            ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed to configure proxy");
+        } else {
+            mIsProxyConfigured = true;
+        }
+    } else if ((mDProxy == NULL) || mCheckProxyCount > MAX_CHECK_PROXY_RETRY_COUNT) {
+        if (HTTPBase::UpdateProxyConfig(NULL, port, "") != OK) {
+            ALOGE("getSTAProxyConfig HTTPBase::UpdateProxyConfig failed for NULL proxy set");
+        } else {
+            ALOGV("getSTAProxyConfig disabled");
+        }
+
+        mIsProxyConfigured = false;
+    } else {
+        ALOGV("Reposting CheckProxyAvailEvent_l count %d", mCheckProxyCount);
+        postCheckProxyAvailEvent_l();
+        return;
+    }
+
+    if (mIsProxyConfigured) {
+        ALOGI("Deceted proxy in %d attempts", mCheckProxyCount);
+    } else {
+        ALOGI("Not Deceted proxy in %d attempts, bypass proxy", mCheckProxyCount);
+    }
+
+    mCheckProxyCount = 0;
+    mAsyncPrepareEvent = new AwesomeEvent(
+           this, &AwesomePlayer::onPrepareAsyncEvent);
+    mQueue.postEvent(mAsyncPrepareEvent);
+    return;
+}
+
 void AwesomePlayer::beginPrepareAsync_l() {
     if (mFlags & PREPARE_CANCELLED) {
         ALOGI("prepare was cancelled before doing anything");
@@ -2781,6 +2850,7 @@ void AwesomePlayer::finishAsyncPrepare_l() {
     modifyFlags((PREPARING|PREPARE_CANCELLED|PREPARING_CONNECTED), CLEAR);
     modifyFlags(PREPARED, SET);
     mAsyncPrepareEvent = NULL;
+    mCheckProxyAvailEvent = NULL;
     mPreparedCondition.broadcast();
 
     if (mAudioTearDown) {

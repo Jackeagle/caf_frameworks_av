@@ -31,7 +31,8 @@ struct NuCachedSource2 : public DataSource {
     NuCachedSource2(
             const sp<DataSource> &source,
             const char *cacheConfig = NULL,
-            bool disconnectAtHighwatermark = false);
+            bool disconnectAtHighwatermark = false,
+            bool isProxyConfigured = false);
 
     virtual status_t initCheck() const;
 
@@ -129,7 +130,7 @@ private:
     bool mIsNonBlockingMode;
 
     int32_t mCheckGeneration;
-
+    bool mIsProxyConfigured;
     void onMessageReceived(const sp<AMessage> &msg);
     void onFetch();
     void onRead(const sp<AMessage> &msg);
@@ -145,7 +146,7 @@ private:
 
     void updateCacheParamsFromSystemProperty();
     void updateCacheParamsFromString(const char *s);
-
+    void reconfigProxy();
     DISALLOW_EVIL_CONSTRUCTORS(NuCachedSource2);
 };
 
