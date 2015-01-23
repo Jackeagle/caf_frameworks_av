@@ -243,6 +243,13 @@ sp<DataSource> DataSource::CreateFromURI(
                     &disconnectAtHighwatermark);
         }
 
+        bool isProxySet = false;
+        ssize_t index;
+        if ((index = nonCacheSpecificHeaders.indexOfKey(String8("use-proxy"))) >= 0) {
+             isProxySet = true;
+             ALOGV("use-proxy header set  '%s'", nonCacheSpecificHeaders.valueAt(index).string());
+        }
+
         if (httpSource->connect(uri, &nonCacheSpecificHeaders) != OK) {
             ALOGE("Failed to connect http source!");
             return NULL;
@@ -256,7 +263,7 @@ sp<DataSource> DataSource::CreateFromURI(
             source = new NuCachedSource2(
                     httpSource,
                     cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
-                    disconnectAtHighwatermark);
+                    disconnectAtHighwatermark, isProxySet);
         } else {
             // We do not want that prefetching, caching, datasource wrapper
             // in the widevine:// case.
