@@ -179,7 +179,8 @@ NuPlayer::NuPlayer()
       mBuffering(false),
       mPlaying(false),
       mSkipAudioFlushAfterSuspend(false),
-      mSkipVideoFlushAfterSuspend(false) {
+      mSkipVideoFlushAfterSuspend(false),
+      mDProxy(NULL) {
 
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
@@ -187,6 +188,7 @@ NuPlayer::NuPlayer()
 }
 
 NuPlayer::~NuPlayer() {
+    mDProxy = NULL;
 }
 
 void NuPlayer::setUID(uid_t uid) {
@@ -259,15 +261,12 @@ void NuPlayer::setDataSourceAsync(
            mUriHeaders = *headers;
         }
 
-        // Set Proxy for http progressive playback
-        int32_t port = 0;
-        if (ExtendedUtils::ShellProp::getSTAProxyConfig(port)) {
-            String8 portString = String8("127.0.0.1");
-            portString.appendFormat(":%d", port);
-            ALOGV("getSTAProxyConfig Proxy IPportString %s", portString.string());
-            mUriHeaders.add(String8("use-proxy"), portString);
-        } else {
-           ALOGE("getSTAProxyConfig failed or disabled");
+        if ((mDProxy == NULL) && (!strncasecmp("http://", url, 7)
+               || !strncasecmp("https://", url, 8))) {
+            mDProxy = ExtendedUtils::DiscoverProxy::create();
+            if (mDProxy == NULL) {
+                ALOGE("NuPlayer Failed to create proxy client instance");
+            }
         }
 
         status_t err = genericSource->setDataSource(httpService, url, &mUriHeaders);
