@@ -97,6 +97,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/system/netd/include \
         $(TOP)/external/icu/icu4c/source/common \
         $(TOP)/external/icu/icu4c/source/i18n \
+        $(TOP)/external/jpeg \
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -121,7 +122,8 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz \
-        libpowermanager
+        libpowermanager \
+        libjpeg \
 
 #QTI FLAC Decoder
 ifeq ($(call is-vendor-board-platform,QCOM),true)
