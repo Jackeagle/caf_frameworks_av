@@ -6017,9 +6017,6 @@ float AudioPolicyManager::computeVolume(audio_stream_type_t stream,
     if (stream == AUDIO_STREAM_MUSIC &&
         index != mStreams[stream].mIndexMin &&
         (device == AUDIO_DEVICE_OUT_AUX_DIGITAL ||
-#ifdef AUDIO_EXTN_AFE_PROXY_ENABLED
-         device == AUDIO_DEVICE_OUT_PROXY ||
-#endif
          device == AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET)) {
         return 1.0;
     }
