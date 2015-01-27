@@ -3463,6 +3463,7 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
 
         if (err == -EAGAIN) {
             mSignalledReadTryAgain = true;
+            mNoMoreOutputData = false;
             mBufferFilled.signal();
             return false;
         } else {
