@@ -1711,7 +1711,7 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
                 // In this case, the audio HAL must receive the new device selection so that it can
                 // change the device currently selected by the other active output.
                 if (outputDesc->sharesHwModuleWith(desc) &&
-                    desc->device() != newDevice && desc->isActive()) {
+                    desc->device() != newDevice) {
                     force = true;
                 }
                 // wait for audio on other active outputs to be presented when starting
