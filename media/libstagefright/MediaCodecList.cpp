@@ -93,9 +93,18 @@ MediaCodecList::MediaCodecList()
     enableForHW = atoi(value);
     if (ret && enableForHW) {
         parseTopLevelXMLFile("/etc/media_codecs_8939.xml");
-    } else {
-        parseTopLevelXMLFile("/etc/media_codecs.xml");
+        return;
     }
+
+    memset(value, 0x0, PROPERTY_VALUE_MAX);
+    ret = property_get("media.msm8929hw", value, NULL);
+    enableForHW = atoi(value);
+    if (ret && enableForHW) {
+        parseTopLevelXMLFile("/etc/media_codecs_8929.xml");
+        return;
+    }
+
+    parseTopLevelXMLFile("/etc/media_codecs.xml");
 }
 
 void MediaCodecList::parseTopLevelXMLFile(const char *codecs_xml) {
