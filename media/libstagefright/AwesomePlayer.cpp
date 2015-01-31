@@ -270,8 +270,11 @@ void AwesomePlayer::printStats() {
     char value[PROPERTY_VALUE_MAX];
     property_get("persist.debug.sf.statistics", value, "0");
     if (atoi(value) && mVideoSource != NULL) {
+        int64_t bitrate = -1;
+        getBitrate(&bitrate);
         ALOGI("===========================\n"
             "   videoDimensions(%d x %d)\n"
+            "   Bitrate(%lldkbps)\n"
             "   Total Video Frames Decoded(%lld)\n"
             "   Total Video Frames Rendered(%lld)\n"
             "   Total Playback Duration(%lld ms)\n"
@@ -289,6 +292,7 @@ void AwesomePlayer::printStats() {
             "===========================\n\n",
             mStats.mVideoWidth,
             mStats.mVideoHeight,
+            bitrate/1000,
             mStats.mNumVideoFramesDecoded,
             mStats.mTotalFrames,
             mStats.mTotalTimeUs/1000,
@@ -763,7 +767,6 @@ bool AwesomePlayer::getBitrate(int64_t *bitrate) {
         *bitrate = mBitrate;
         return true;
     }
-
     *bitrate = 0;
 
     return false;
