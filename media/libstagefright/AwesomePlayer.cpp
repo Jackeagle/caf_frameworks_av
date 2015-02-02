@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -2486,6 +2486,8 @@ status_t AwesomePlayer::prepareAsync_l() {
         return UNKNOWN_ERROR;  // async prepare already pending
     }
 
+    ALOGI("Prepare Start");
+
     if (!mQueueStarted) {
         mQueue.start();
         mQueueStarted = true;
@@ -2839,6 +2841,7 @@ void AwesomePlayer::beginPrepareAsync_l() {
 }
 
 void AwesomePlayer::finishAsyncPrepare_l() {
+    ALOGI("Prepare Finish");
     if (mIsAsyncPrepare) {
         if (mVideoSource == NULL) {
             notifyListener_l(MEDIA_SET_VIDEO_SIZE, 0, 0);
