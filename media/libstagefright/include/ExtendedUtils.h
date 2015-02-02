@@ -226,6 +226,8 @@ struct ExtendedUtils {
     static void drainSecurePool();
 
     static void cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder);
+
+    static bool uriLoggingEnabled();
 };
 
 class VSyncLocker : public RefBase {

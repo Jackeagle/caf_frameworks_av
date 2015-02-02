@@ -978,6 +978,15 @@ void ExtendedUtils::cacheCaptureBuffers(sp<ICamera> camera, video_encoder encode
     }
 }
 
+bool ExtendedUtils::uriLoggingEnabled() {
+    char prop[PROPERTY_VALUE_MAX];
+    if (property_get("media.stagefright.log-uri", prop, "false") &&
+        (!strcmp(prop, "1") || !strcmp(prop, "true"))) {
+        return true;
+    }
+    return false;
+}
+
 VSyncLocker::VSyncLocker()
     : mExitVsyncEvent(true),
       mLooper(NULL),
@@ -1529,6 +1538,10 @@ void ExtendedUtils::createSecurePool() {}
 void ExtendedUtils::drainSecurePool() {}
 
 void ExtendedUtils::cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder) {}
+
+bool ExtendedUtils::uriLoggingEnabled() {
+    return false;
+}
 
 VSyncLocker::VSyncLocker() {}
 
