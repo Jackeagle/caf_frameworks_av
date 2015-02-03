@@ -72,7 +72,8 @@ PlaylistFetcher::PlaylistFetcher(
       mMonitorQueueGeneration(0),
       mRefreshState(INITIAL_MINIMUM_RELOAD_DELAY),
       mFirstPTSValid(false),
-      mAbsoluteTimeAnchorUs(0ll) {
+      mAbsoluteTimeAnchorUs(0ll),
+      mStopped(false) {
     memset(mPlaylistHash, 0, sizeof(mPlaylistHash));
     mStartTimeUsNotify->setInt32("what", kWhatStartedAt);
     mStartTimeUsNotify->setInt32("streamMask", 0);
@@ -375,6 +376,11 @@ void PlaylistFetcher::resumeUntilAsync(const sp<AMessage> &params) {
     AMessage* msg = new AMessage(kWhatResumeUntil, id());
     msg->setMessage("params", params);
     msg->post();
+}
+
+void PlaylistFetcher::abort() {
+    ALOGV("abort");
+    mStopped = true;
 }
 
 void PlaylistFetcher::onMessageReceived(const sp<AMessage> &msg) {
@@ -847,6 +853,12 @@ void PlaylistFetcher::onDownloadNext() {
     // block-wise download
     ssize_t bytesRead;
     do {
+        if (mStopped) {
+            ALOGE("stop to fetch file");
+            mSession->disconnectUrl();
+            cancelMonitorQueue();
+            return;
+        }
         bytesRead = mSession->fetchFile(
                 uri.c_str(), &buffer, range_offset, range_length, kDownloadBlockSize, &source);
 
@@ -931,6 +943,8 @@ void PlaylistFetcher::onDownloadNext() {
 
         mStartup = false;
     } while (bytesRead != 0);
+
+    mSession->disconnectUrl();
 
     if (bufferStartsWithTsSyncByte(buffer)) {
         // If we still don't see a stream after fetching a full ts segment mark it as
