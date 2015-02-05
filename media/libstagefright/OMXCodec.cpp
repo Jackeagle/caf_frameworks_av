@@ -423,6 +423,13 @@ sp<MediaSource> OMXCodec::Create(
     bool success = meta->findCString(kKeyMIMEType, &mime);
     CHECK(success);
 
+    if ((!strcmp(mime, "audio/mpeg"))
+            && createEncoder == false
+            && flags == kHardwareCodecsOnly) {
+        flags = kSoftwareCodecsOnly;
+        ALOGE("Forcing SoftwareCodec for mime type %s\n", mime);
+    }
+
     Vector<CodecNameAndQuirks> matchingCodecs;
 
     if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10)) {
