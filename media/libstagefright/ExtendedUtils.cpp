@@ -339,7 +339,7 @@ void ExtendedUtils::ShellProp::adjustInterleaveDuration(uint32_t *interleaveDura
 }
 
 bool ExtendedUtils::checkCopyFlagInBuffer(MediaBuffer *buffer) {
-    int32_t copyIndication = 0;
+    int32_t copyIndication = 1;
 
     if (buffer != NULL) {
         buffer->meta_data()->findInt32(FLAG_COPY_ENABLE, &copyIndication);
