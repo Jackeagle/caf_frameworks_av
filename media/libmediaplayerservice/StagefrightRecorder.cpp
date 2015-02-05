@@ -2194,7 +2194,7 @@ status_t StagefrightRecorder::setSourcePause(bool pause) {
             }
         }
     } else {
-         if (mVideoSourceNode != NULL) {
+        if (mVideoSourceNode != NULL) {
             err = mVideoSourceNode->start();
             if (err != OK) {
                 ALOGE("OMX VideoSourceNode start failed");
