@@ -1821,11 +1821,9 @@ status_t MPEG4Writer::Track::stop() {
 status_t MPEG4Writer::Track::stopSource() {
     ALOGD("Stopping %s track source", mIsAudio? "Audio": "Video");
     status_t err = OK;
-    if (!mPaused) {
-        status_t status = mSource->stop();
-        if (status != OK && status != ERROR_END_OF_STREAM) {
-            err = status;
-        }
+    status_t status = mSource->stop();
+    if (status != OK && status != ERROR_END_OF_STREAM) {
+        err = status;
     }
 
     ALOGD("%s track stopped", mIsAudio? "Audio": "Video");
