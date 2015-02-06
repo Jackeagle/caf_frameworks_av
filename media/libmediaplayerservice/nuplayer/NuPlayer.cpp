@@ -158,6 +158,7 @@ NuPlayer::NuPlayer()
       mSourceFlags(0),
       mVideoIsAVC(false),
       mOffloadAudio(false),
+      mOffloadDecodedPCM(false),
       mIsStreaming(true),
       mAudioDecoderGeneration(0),
       mVideoDecoderGeneration(0),
@@ -183,7 +184,6 @@ NuPlayer::NuPlayer()
       mSkipVideoFlushAfterSuspend(false),
       mSeeking(false),
       mImageDisplayed(false) {
-
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
             ExtendedStats::PLAYER, "NuPlayer", gettid());
@@ -625,6 +625,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             mVideoIsAVC = false;
             mOffloadAudio = false;
+            mOffloadDecodedPCM = false;
             mAudioEOS = false;
             mVideoEOS = false;
             mSkipRenderingAudioUntilMediaTimeUs = -1;
@@ -644,7 +645,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 }
             }
 
-            mSource->start();
+            sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+            if (!(ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                // Call mSource->start() after openAudioSink for 24 bit pcm playback
+                mSource->start();
+            }
 
             uint32_t flags = 0;
 
@@ -652,7 +659,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 flags |= Renderer::FLAG_REAL_TIME;
             }
 
-            sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
             audio_stream_type_t streamType = AUDIO_STREAM_MUSIC;
             if (mAudioSink != NULL) {
                 streamType = mAudioSink->getAudioStreamType();
@@ -662,9 +668,27 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             sp<MetaData> vMeta = new MetaData;
             convertMessageToMetaData(videoFormat, vMeta);
 
+            const char *mime = NULL;
+            if (audioMeta != NULL) {
+                audioMeta->findCString(kKeyMIMEType, &mime);
+            }
             mOffloadAudio =
-                canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
-                                 mIsStreaming /* is_streaming */, streamType);
+                        canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
+                                mIsStreaming /* is_streaming */, streamType);
+            if (!mOffloadAudio && (audioMeta != NULL)) {
+                sp<MetaData> audioSourceMeta = mSource->getFormatMeta(true/* audio */);
+                sp<MetaData> audioPCMMeta =
+                        ExtendedUtils::createPCMMetaFromSource(audioSourceMeta);
+
+                mOffloadAudio =
+                        ((mime && !ExtendedUtils::pcmOffloadException(mime)) &&
+                        canOffloadStream(audioPCMMeta, (videoFormat != NULL), vMeta,
+                                mIsStreaming /* is_streaming */, streamType));
+                mOffloadDecodedPCM = mOffloadAudio;
+                ALOGI("Could not offload audio decode, pcm offload decided :%d",
+                        mOffloadDecodedPCM);
+            }
+
             if (mOffloadAudio) {
                 flags |= Renderer::FLAG_OFFLOAD_AUDIO;
             }
@@ -687,6 +711,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             if (meta != NULL
                     && meta->findInt32(kKeyFrameRate, &rate) && rate > 0) {
                 mRenderer->setVideoFrameRate(rate);
+                PLAYER_STATS(setFrameRate, rate);
             }
 
             postScanSources();
@@ -706,7 +731,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             mScanSourcesPending = false;
 
             ALOGV("scanning sources haveAudio=%d, haveVideo=%d",
-                 mAudioDecoder != NULL, mVideoDecoder != NULL);
+                mAudioDecoder != NULL, mVideoDecoder != NULL);
 
             bool mHadAnySourcesBefore =
                 (mAudioDecoder != NULL) || (mVideoDecoder != NULL);
@@ -972,6 +997,15 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 }
                 mRenderer->signalDisableOffloadAudio();
                 mOffloadAudio = false;
+                mOffloadDecodedPCM = false;
+                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                if ((ExtendedUtils::isRAWFormat(audioMeta) &&
+                    ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                    ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                    ALOGV("update pcmformat in WAVExtractor to 16 bit");
+                    ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT );
+                    mSource->start();
+                }
 
                 performSeek(positionUs, false /* needNotify */);
                 if (reason == Renderer::kDueToError) {
@@ -1217,13 +1251,39 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
         flags = AUDIO_OUTPUT_FLAG_NONE;
     }
 
-    mOffloadAudio = mRenderer->openAudioSink(
+    //update bit width before opening audio sink
+    sp<MetaData> aMeta =
+            mSource->getFormatMeta(true /* audio */);
+    if (ExtendedUtils::getPcmSampleBits(aMeta) == 24) {
+        ALOGV("update sample 24 bit before openAudioSink");
+        format->setInt32("sbit", 24);
+    }
+
+    if (mOffloadDecodedPCM) {
+        sp<MetaData> audioPCMMeta =
+                     ExtendedUtils::createPCMMetaFromSource(aMeta);
+        sp<AMessage> msg = new AMessage;
+        if (convertMetaDataToMessage(audioPCMMeta, &msg) == OK) {
+              //override msg with value in format if format has updated values
+              ExtendedUtils::overWriteAudioFormat(msg, format);
+              mOffloadAudio = mRenderer->openAudioSink(
+                             msg, offloadOnly, hasVideo, mIsStreaming, flags);
+        } else {
+            mOffloadAudio = mRenderer->openAudioSink(
+                format, offloadOnly, hasVideo, mIsStreaming, flags);
+        }
+    } else {
+        mOffloadAudio = mRenderer->openAudioSink(
             format, offloadOnly, hasVideo, mIsStreaming, flags);
+    }
+
+    //store updated value
+    if (mOffloadDecodedPCM) {
+        mOffloadDecodedPCM = mOffloadAudio;
+    }
 
     if (mOffloadAudio) {
-        sp<MetaData> audioMeta =
-                mSource->getFormatMeta(true /* audio */);
-        sendMetaDataToHal(mAudioSink, audioMeta);
+        sendMetaDataToHal(mAudioSink, aMeta);
     }
 }
 
@@ -1264,9 +1324,23 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
         ++mAudioDecoderGeneration;
         notify->setInt32("generation", mAudioDecoderGeneration);
 
-        if (mOffloadAudio) {
+        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+
+        if (mOffloadAudio && !mOffloadDecodedPCM) {
+            if (ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                ExtendedUtils::setKeyPCMFormat(audioMeta,AUDIO_FORMAT_PCM_8_24_BIT);
+                mSource->start();
+            }
             *decoder = new DecoderPassThrough(notify);
         } else {
+            if (ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                ExtendedUtils::setKeyPCMFormat(audioMeta,AUDIO_FORMAT_PCM_16_BIT);
+                mSource->start();
+            }
             *decoder = new Decoder(notify);
         }
     } else {
@@ -1326,7 +1400,7 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
     // Aggregate smaller buffers into a larger buffer.
     // The goal is to reduce power consumption.
     // Note this will not work if the decoder requires one frame per buffer.
-    bool doBufferAggregation = (audio && mOffloadAudio);
+    bool doBufferAggregation = ((audio && mOffloadAudio) && !mOffloadDecodedPCM);
     bool needMoreData = false;
 
     bool dropAccessUnit;

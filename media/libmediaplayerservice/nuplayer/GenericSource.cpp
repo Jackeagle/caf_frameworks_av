@@ -37,10 +37,8 @@
 #include "../../libstagefright/include/NuCachedSource2.h"
 #include "../../libstagefright/include/WVMExtractor.h"
 #include "../../libstagefright/include/HTTPBase.h"
-#ifdef QTI_FLAC_DECODER
-#include "../../libstagefright/include/FLACDecoder.h"
-#endif
 
+#include <ExtendedUtils.h>
 namespace android {
 
 NuPlayer::GenericSource::GenericSource(
@@ -189,11 +187,6 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
                 mAudioTrack.mPackets =
                     new AnotherPacketSource(mAudioTrack.mSource->getFormat());
 
-#ifdef QTI_FLAC_DECODER
-                if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10)) {
-                     mAudioTrack.mSource = new FLACDecoder(track);
-                }
-#endif
                 if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_VORBIS)) {
                     mAudioIsVorbis = true;
                 } else {
@@ -517,7 +510,22 @@ void NuPlayer::GenericSource::start() {
     }
 
     if (mAudioTrack.mSource != NULL) {
-        CHECK_EQ(mAudioTrack.mSource->start(), (status_t)OK);
+        sp<MetaData> audioMeta = mAudioTrack.mSource->getFormat();
+        if (ExtendedUtils::isRAWFormat(audioMeta) &&
+            ExtendedUtils::is24bitPCMOffloadEnabled() &&
+            (ExtendedUtils::getPCMFormat(audioMeta) == AUDIO_FORMAT_PCM_8_24_BIT)) {
+            /*call start with kKeyPCMFormat set to 24bit when:
+            * 1. is raw pcm format
+            * 2. 24bit pcm offload feature is enabled
+            * 3. kKeyPCMFormat is set to 24bit
+            * default format (16bit) will be used in WAVExtractor if:
+            * 1. kKeyPCMFormat is not set
+            * 2. kKeyPCMFormat is not set to 24bit
+            */
+            CHECK_EQ(mAudioTrack.mSource->start(audioMeta.get()), (status_t)OK);
+        } else {
+            CHECK_EQ(mAudioTrack.mSource->start(), (status_t)OK);
+        }
 
         postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
     }
