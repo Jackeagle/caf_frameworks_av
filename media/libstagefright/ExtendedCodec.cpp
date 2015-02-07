@@ -472,7 +472,7 @@ status_t ExtendedCodec::setSupportedRole(
         OMX_PARAM_COMPONENTROLETYPE roleParams;
         InitOMXParams(&roleParams);
 
-        strncpy((char *)roleParams.cRole,
+        strlcpy((char *)roleParams.cRole,
                 role, OMX_MAX_STRINGNAME_SIZE - 1);
 
         roleParams.cRole[OMX_MAX_STRINGNAME_SIZE - 1] = '\0';
