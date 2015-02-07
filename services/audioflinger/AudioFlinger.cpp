@@ -117,6 +117,9 @@ static const char kClientLockedString[] = "Client lock is taken\n";
 nsecs_t AudioFlinger::mStandbyTimeInNsecs = kDefaultStandbyTimeInNsecs;
 
 uint32_t AudioFlinger::mScreenState;
+#ifdef HW_ACC_HPX
+bool AudioFlinger::mIsHPXOn = false;
+#endif
 
 #ifdef TEE_SINK
 bool AudioFlinger::mTeeSinkInputEnabled = false;
@@ -1106,6 +1109,10 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
                 AudioFlinger::mScreenState = ((AudioFlinger::mScreenState & ~1) + 2) | isOff;
             }
         }
+#ifdef HW_ACC_HPX
+        if (param.get(String8("HPX"), value) == NO_ERROR)
+            AudioFlinger::mIsHPXOn = !(value == "OFF");
+#endif
         return final_result;
     }
 
@@ -1361,7 +1368,7 @@ AudioFlinger::Client::Client(const sp<AudioFlinger>& audioFlinger, pid_t pid)
     :   RefBase(),
         mAudioFlinger(audioFlinger),
         // FIXME should be a "k" constant not hard-coded, in .h or ro. property, see 4 lines below
-        mMemoryDealer(new MemoryDealer(1024*1024, "AudioFlinger::Client")),
+        mMemoryDealer(new MemoryDealer(1028*1024, "AudioFlinger::Client")), //1MB + 1 more 4k page
         mPid(pid),
         mTimedTrackCount(0)
 {

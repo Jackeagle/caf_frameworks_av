@@ -52,7 +52,7 @@ namespace android {
 // Can be overridden by the audio.offload.min.duration.secs property
 #define OFFLOAD_DEFAULT_MIN_DURATION_SECS 60
 
-#define MAX_MIXER_SAMPLING_RATE 48000
+#define MAX_MIXER_SAMPLING_RATE 192000
 #define MAX_MIXER_CHANNEL_COUNT 8
 
 // ----------------------------------------------------------------------------
@@ -820,6 +820,30 @@ protected:
         uint32_t        mTestChannels;
         uint32_t        mTestLatencyMs;
 #endif //AUDIO_POLICY_TEST
+
+#ifdef HDMI_PASSTHROUGH_ENABLED
+        void checkAndSuspendOutputs();
+        void checkAndRestoreOutputs();
+        audio_devices_t handleHDMIPassthrough(audio_devices_t device,
+                         audio_io_handle_t output,
+                         int stream = -1,
+                         int strategy = -1);
+        audio_io_handle_t getPassthroughOutput(
+                                    audio_stream_type_t stream,
+                                    uint32_t samplingRate,
+                                    audio_format_t format,
+                                    audio_channel_mask_t channelMask,
+                                    audio_output_flags_t flags,
+                                    const audio_offload_info_t *offloadInfo,
+                                    audio_devices_t device);
+        bool isEffectEnabled();
+        void closeOffloadOutputs();
+        void updateAndCloseOutputs();
+        bool isHDMIPassthroughEnabled();
+#endif
+        uint32_t mPrimarySuspended;
+        uint32_t mFastSuspended;
+        uint32_t mMultiChannelSuspended;
 
         // returns true if given output is direct output
         bool isDirectOutput(audio_io_handle_t output);
