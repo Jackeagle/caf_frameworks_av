@@ -934,7 +934,11 @@ ssize_t LiveSession::fetchFile(
         // Only resize when we don't know the size.
         bufferRemaining = buffer->capacity() - buffer->size() - bufferOffset;
         if (bufferRemaining == 0 && getSizeErr != OK) {
-            bufferRemaining = 32768;
+            size_t bufferIncrement = buffer->size() / 2;
+            if (bufferIncrement < 32768) {
+                bufferIncrement = 32768;
+            }
+            bufferRemaining = bufferIncrement;
 
             ALOGV("increasing download buffer to %zu bytes",
                  buffer->capacity() + bufferRemaining);
