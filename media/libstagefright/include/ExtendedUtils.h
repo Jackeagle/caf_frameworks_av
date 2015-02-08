@@ -174,11 +174,22 @@ struct ExtendedUtils {
 
     struct DiscoverProxy : public RefBase {
 
+        //500 ms timeout for deathnotifier function call
+        static const int64_t kBinderDieTimeoutNs = 500000000LL;
+
         typedef bool (*fnIsProxySupported)();
         typedef int (*fnGetPort)();
 
         static sp<DiscoverProxy> create();
         bool getSTAProxyConfig(int32_t &port);
+
+        class STAProxyServiceDeathRecepient: public IBinder::DeathRecipient {
+           public:
+           virtual ~STAProxyServiceDeathRecepient();
+           virtual void binderDied(const wp<IBinder>& who);
+        };
+
+        static sp<STAProxyServiceDeathRecepient> gDeathNotifier;
 
         protected:
         virtual ~DiscoverProxy();
@@ -188,6 +199,8 @@ struct ExtendedUtils {
         static wp<DiscoverProxy> gDProxy;
         static Mutex gLock;
         void* mStaLibHandle;
+        static Condition gCondition;
+        static bool gSetStopProxyInProgress;
         fnIsProxySupported isProxySupported;
         fnGetPort getPort;
         static bool sendSTAProxyStopIntent();
