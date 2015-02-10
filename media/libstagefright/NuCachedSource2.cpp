@@ -212,7 +212,10 @@ NuCachedSource2::NuCachedSource2(
         updateCacheParamsFromString(cacheConfig);
     }
 
-    if (mDisconnectAtHighwatermark) {
+    // Dont disconnect if proxy is configured, to avoid flush of already
+    // downloaded/cached data at proxy. Proxy already disconnects connection
+    // from server once proxy cache gets full
+    if (mDisconnectAtHighwatermark && !mIsProxyConfigured) {
         // Makes no sense to disconnect and do keep-alives...
         mKeepAliveIntervalUs = 0;
     }
@@ -370,6 +373,12 @@ void NuCachedSource2::onFetch() {
     /* request had proxy configured                */
     if ((mFinalStatus != OK &&  mNumRetriesLeft > 0) && mIsProxyConfigured) {
        reconfigProxy();
+
+       // If proxy was already configured, and proxy re-configuration failed for reconnect,
+       // fall back to normal noproxy behaviour
+       if(!mIsProxyConfigured && mDisconnectAtHighwatermark) {
+          mKeepAliveIntervalUs = 0;
+       }
     }
 
     bool keepAlive =
@@ -392,7 +401,7 @@ void NuCachedSource2::onFetch() {
             mFetching = false;
 
             if (mDisconnectAtHighwatermark
-                    && (mSource->flags() & DataSource::kIsHTTPBasedSource)) {
+                    && (mSource->flags() & DataSource::kIsHTTPBasedSource) && !mIsProxyConfigured) {
                 ALOGV("Disconnecting at high watermark");
                 static_cast<HTTPBase *>(mSource.get())->disconnect();
                 mFinalStatus = -EAGAIN;
