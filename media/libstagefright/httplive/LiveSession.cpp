@@ -36,6 +36,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include "include/ExtendedUtils.h"
 
 #include <utils/Mutex.h>
 
@@ -646,6 +647,10 @@ ssize_t LiveSession::fetchFile(
     }
 
     if (*source == NULL) {
+        if (ExtendedUtils::uriLoggingEnabled()) {
+            ALOGI("fetchFile %s", url);
+        }
+
         if (!strncasecmp(url, "file://", 7)) {
             *source = new FileSource(url + 7);
         } else if (strncasecmp(url, "http://", 7)
