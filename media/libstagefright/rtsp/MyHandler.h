@@ -1764,7 +1764,7 @@ private:
     }
 
     void handleFirstAccessUnit() {
-        if (mFirstAccessUnit) {
+        if (mFirstAccessUnit && mSetupTracksSuccessful) {
             sp<AMessage> msg = mNotify->dup();
             msg->setInt32("what", kWhatConnected);
             msg->post();
