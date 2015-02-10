@@ -794,18 +794,26 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
     if (meta == NULL) {
         return false;
     }
-    CHECK(meta->findCString(kKeyMIMEType, &mime));
 
+
+#ifdef ENABLE_AV_ENHANCEMENTS
     if (hasVideo) {
         const char *vMime;
+        char prop[PROPERTY_VALUE_MAX];
         CHECK(vMeta->findCString(kKeyMIMEType, &vMime));
-#ifdef ENABLE_AV_ENHANCEMENTS
         if (!strncmp(vMime, MEDIA_MIMETYPE_VIDEO_HEVC, strlen(MEDIA_MIMETYPE_VIDEO_HEVC))) {
-            ALOGD("Do not offload HEVC audio+video playback");
-            return false;
+//offload audio associated with h265 by default
+//set this property to false if the concurrency has to be disabled
+            property_get("audio.offload.h265.concur", prop, "true");
+            if (!strncmp(prop, "0", strlen("0")) || !strncmp(prop, "false", strlen("false"))) {
+                ALOGD("Do not offload HEVC audio+video playback");
+                return false;
+            }
         }
-#endif
     }
+#endif
+
+    CHECK(meta->findCString(kKeyMIMEType, &mime));
 
     audio_offload_info_t info = AUDIO_INFO_INITIALIZER;
 
