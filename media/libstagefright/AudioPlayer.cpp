@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +14,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2014 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 #include <inttypes.h>
@@ -37,18 +58,23 @@
 #include <media/stagefright/ExtendedCodec.h>
 
 #include "include/AwesomePlayer.h"
-
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMetaData.h"
 #include "QCMediaDefs.h"
 #endif
 
+#ifdef DOLBY_UDC
+#include <media/IAudioFlinger.h>
+#include <utils/String8.h>
+#include <hardware/audio.h>
+#include "ds_config.h"
+#endif // DOLBY_END
+
 namespace android {
 
 AudioPlayer::AudioPlayer(
         const sp<MediaPlayerBase::AudioSink> &audioSink,
-        uint32_t flags,
-        AwesomePlayer *observer)
+        uint32_t flags, AwesomePlayer *observer)
     : mInputBuffer(NULL),
       mSampleRate(0),
       mLatencyUs(0),
@@ -73,7 +99,11 @@ AudioPlayer::AudioPlayer(
       mPlaying(false),
       mStartPosUs(0),
       mCreateFlags(flags),
-      mPauseRequired(false) {
+#ifdef DOLBY_UDC
+      mDolbyProcessedAudio(false),
+#endif //DOLBY_END
+      mPauseRequired(false),
+      mUseSmallBufs(false) {
 }
 
 AudioPlayer::~AudioPlayer() {
@@ -100,7 +130,7 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             return err;
         }
     }
-    ALOGD("start of Playback, useOffload %d",useOffload());
+    ALOGI("start of Playback, useOffload %d",useOffload());
 
     // We allow an optional INFO_FORMAT_CHANGED at the very beginning
     // of playback, if there is one, getFormat below will retrieve the
@@ -216,6 +246,10 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             offloadInfo.bit_rate = avgBitRate;
             offloadInfo.has_video = ((mCreateFlags & HAS_VIDEO) != 0);
             offloadInfo.is_streaming = ((mCreateFlags & IS_STREAMING) != 0);
+            mUseSmallBufs = (audioFormat == AUDIO_FORMAT_PCM_16_BIT_OFFLOAD);
+            offloadInfo.use_small_bufs = mUseSmallBufs;
+        } else {
+            mUseSmallBufs = false;
         }
 
         status_t err = mAudioSink->open(
@@ -294,6 +328,9 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
 
     mStarted = true;
     mPlaying = true;
+#ifdef DOLBY_UDC
+    updateDolbyProcessedAudioState();
+#endif // DOLBY_END
     mPinnedTimeUs = -1ll;
     const char *componentName;
     if (!(format->findCString(kKeyDecoderComponent, &componentName))) {
@@ -302,6 +339,26 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
     mPauseRequired = ExtendedCodec::isSourcePauseRequired(componentName);
     return OK;
 }
+#ifdef DOLBY_UDC
+void AudioPlayer::updateDolbyProcessedAudioState() {
+    ALOGD("%s(processed=%d, playing=%d)", __FUNCTION__, mDolbyProcessedAudio, mPlaying);
+    int value = mDolbyProcessedAudio && mPlaying;
+    String8 params = String8::format("%s=%d", DOLBY_PARAM_PROCESSED_AUDIO, value);
+    if (mAudioSink.get() != NULL) {
+        mAudioSink->setParameters(params);
+    } else {
+        mAudioTrack->setParameters(params);
+    }
+}
+
+void AudioPlayer::setDolbyProcessedAudioState(bool processed) {
+    ALOGD("%s(processed=%d)", __FUNCTION__, processed);
+    if(processed != mDolbyProcessedAudio) {
+        mDolbyProcessedAudio = processed;
+        updateDolbyProcessedAudioState();
+    }
+}
+#endif // DOLBY_END
 
 void AudioPlayer::pause(bool playPendingSamples) {
     CHECK(mStarted);
@@ -331,13 +388,16 @@ void AudioPlayer::pause(bool playPendingSamples) {
             mSourcePaused = true;
         }
     }
-    ALOGD("Pause Playback at %lld",getMediaTimeUs());
+#ifdef DOLBY_UDC
+    updateDolbyProcessedAudioState();
+#endif // DOLBY_END
+    ALOGI("Pause Playback at %lld",getMediaTimeUs());
 }
 
 status_t AudioPlayer::resume() {
     CHECK(mStarted);
     CHECK(mSource != NULL);
-    ALOGD("Resume Playback at %lld",getMediaTimeUs());
+    ALOGI("Resume Playback at %lld",getMediaTimeUs());
     if (mSourcePaused == true) {
         mSourcePaused = false;
         mSource->start();
@@ -352,6 +412,9 @@ status_t AudioPlayer::resume() {
 
     if (err == OK) {
         mPlaying = true;
+#ifdef DOLBY_UDC
+        updateDolbyProcessedAudioState();
+#endif // DOLBY_END
     }
 
     return err;
@@ -360,8 +423,11 @@ status_t AudioPlayer::resume() {
 void AudioPlayer::reset() {
     CHECK(mStarted);
 
-    ALOGD("reset: mPlaying=%d mReachedEOS=%d useOffload=%d",
+    ALOGI("reset: mPlaying=%d mReachedEOS=%d useOffload=%d",
                                 mPlaying, mReachedEOS, useOffload() );
+#ifdef DOLBY_UDC
+    setDolbyProcessedAudioState(false);
+#endif // DOLBY_END
 
     if (mAudioSink.get() != NULL) {
         mAudioSink->stop();
@@ -487,6 +553,11 @@ size_t AudioPlayer::AudioSinkCallback(
         MediaPlayerBase::AudioSink::cb_event_t event) {
     AudioPlayer *me = (AudioPlayer *)cookie;
 
+    if (buffer == NULL) {
+        //Not applicable for AudioPlayer
+        ALOGE("This indicates the event underrun case for LPA/Tunnel");
+        return 0;
+    }
     switch(event) {
     case MediaPlayerBase::AudioSink::CB_EVENT_FILL_BUFFER:
         return me->fillBuffer(buffer, size);
@@ -606,6 +677,12 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                     return 0;
                 }
             }
+#ifdef DOLBY_UDC
+            if (err == INFO_DOLBY_PROCESSED_AUDIO_START || err == INFO_DOLBY_PROCESSED_AUDIO_STOP) {
+                setDolbyProcessedAudioState(err == INFO_DOLBY_PROCESSED_AUDIO_START);
+                err = OK;
+            }
+#endif // DOLBY_END
 
             CHECK((err == OK && mInputBuffer != NULL)
                    || (err != OK && mInputBuffer == NULL));
@@ -704,8 +781,11 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                         mObserver->postAudioSeekComplete();
                         postSeekComplete = false;
                     }
-
-                    mStartPosUs = mPositionTimeMediaUs;
+                    if(mPositionTimeMediaUs >= 0 ) {
+                        mStartPosUs = mPositionTimeMediaUs;
+                    } else {
+                        ALOGI("Ignore mStartPos update when timestamp returned is negative");
+                    }
                     ALOGV("adjust seek time to: %.2f", mStartPosUs/ 1E6);
                 }
                 // clear seek time with mLock locked and once we have valid mPositionTimeMediaUs
@@ -766,6 +846,10 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
 
         if (mReachedEOS) {
             mPinnedTimeUs = mNumFramesPlayedSysTimeUs;
+#ifdef DOLBY_UDC
+            // ReachedEOS, send processed audio == false to AF.
+            setDolbyProcessedAudioState(false);
+#endif // DOLBY_END
         } else {
             mPinnedTimeUs = -1ll;
         }
@@ -812,6 +896,7 @@ int64_t AudioPlayer::getRealTimeUsLocked() const {
 
     diffUs -= mNumFramesPlayedSysTimeUs;
 
+    ALOGV("getRealTimeUsLocked %" PRId64, result + diffUs);
     return result + diffUs;
 }
 
@@ -905,7 +990,7 @@ status_t AudioPlayer::seekTo(int64_t time_us) {
 
     ALOGV("seekTo( %" PRId64 " )", time_us);
 
-    if(useOffload())
+    if(useOffload() && !mUseSmallBufs)
     {
         int64_t playPosition = 0;
         playPosition = getOutputPlayPositionUs_l();
