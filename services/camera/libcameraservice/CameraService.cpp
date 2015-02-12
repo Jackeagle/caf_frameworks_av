@@ -866,6 +866,9 @@ void CameraService::setCameraFree(int cameraId) {
 // media players.
 
 MediaPlayer* CameraService::newMediaPlayer(const char *file) {
+    // We don't use service-layer sound effects.
+    return NULL;
+
     MediaPlayer* mp = new MediaPlayer();
     if (mp->setDataSource(file, NULL) == NO_ERROR) {
         mp->setAudioStreamType(AUDIO_STREAM_ENFORCED_AUDIBLE);
