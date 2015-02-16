@@ -883,6 +883,16 @@ bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
     return true;
 }
 
+bool ExtendedUtils::ShellProp::isCustomHLSEnabled() {
+    bool retVal = false;
+    char customHLS[PROPERTY_VALUE_MAX];
+    property_get("persist.sys.media.hls-custom", customHLS, "0");
+    if (atoi(customHLS)) {
+        retVal = true;
+    }
+    return retVal;
+}
+
 void ExtendedUtils::setBFrames(
         OMX_VIDEO_PARAM_MPEG4TYPE &mpeg4type, const char* componentName) {
     //ignore non QC components
@@ -2206,6 +2216,10 @@ void ExtendedUtils::ShellProp::getRtpPortRange(unsigned *start, unsigned *end) {
 }
 
 bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
+    return false;
+}
+
+bool ExtendedUtils::ShellProp::isCustomHLSEnabled() {
     return false;
 }
 
