@@ -80,6 +80,7 @@ NuPlayer::Renderer::Renderer(
       mSyncQueues(false),
       mPaused(false),
       mVideoSampleReceived(false),
+      mAudioRenderingStarted(false),
       mVideoRenderingStarted(false),
       mVideoRenderingStartGeneration(0),
       mAudioRenderingStartGeneration(0),
@@ -591,6 +592,7 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
             entry = NULL;
         }
         sizeCopied += copy;
+        mAudioRenderingStarted = true;
         notifyIfMediaRenderingStarted();
     }
 
@@ -682,7 +684,7 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
         numBytesAvailableToWrite -= written;
         size_t copiedFrames = written / mAudioSink->frameSize();
         mNumFramesWritten += copiedFrames;
-
+        mAudioRenderingStarted = true;
         notifyIfMediaRenderingStarted();
 
         if (written != (ssize_t)copy) {
@@ -1108,6 +1110,7 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
         prepareForMediaRenderingStart();
     }
 
+    mAudioRenderingStarted = false;
     mVideoSampleReceived = false;
     notifyFlushComplete(audio);
 }
