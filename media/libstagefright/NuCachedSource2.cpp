@@ -311,7 +311,7 @@ void NuCachedSource2::fetchInternal() {
 
         Mutex::Autolock autoLock(mLock);
 
-        if (err == ERROR_UNSUPPORTED || err == -EPIPE) {
+        if (err == ERROR_UNSUPPORTED || (err == -EPIPE && !mIsProxyConfigured)) {
             // These are errors that are not likely to go away even if we
             // retry, i.e. the server doesn't support range requests or similar.
             mNumRetriesLeft = 0;
