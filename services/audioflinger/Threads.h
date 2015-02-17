@@ -1,5 +1,6 @@
 /*
-**
+** Copyright (c) 2013, The Linux Foundation. All rights reserved.
+** Not a Contribution.
 ** Copyright 2012, The Android Open Source Project
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -249,6 +250,7 @@ public:
     virtual     status_t    setParameters(const String8& keyValuePairs);
     virtual     String8     getParameters(const String8& keys) = 0;
     virtual     void        audioConfigChanged(int event, int param = 0) = 0;
+                void        effectConfigChanged();
                 // sendConfigEvent_l() must be called with ThreadBase::mLock held
                 // Can temporarily release the lock if waiting for a reply from
                 // processConfigEvents_l().
@@ -519,7 +521,7 @@ public:
 
                 void        setMasterVolume(float value);
                 void        setMasterMute(bool muted);
-
+                void        setPostPro();
                 void        setStreamVolume(audio_stream_type_t stream, float value);
                 void        setStreamMute(audio_stream_type_t stream, bool muted);
 
@@ -861,6 +863,13 @@ protected:
     virtual     void        threadLoop_removeTracks(const Vector< sp<Track> >& tracksToRemove);
     virtual     uint32_t    correctLatency_l(uint32_t latency) const;
 
+#ifdef HW_ACC_EFFECTS
+    void checkForHwAccModeChange_l(const sp<Track>& track, int device);
+    void updateHwAccMode_l(const sp<Track>& track, bool enable);
+#ifdef HW_ACC_HPX
+    void updateHPXState_l(const sp<Track>& track, int state);
+#endif
+#endif
                 AudioMixer* mAudioMixer;    // normal mixer
 private:
                 // one-time initialization, no locks required

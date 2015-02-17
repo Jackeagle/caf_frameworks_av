@@ -47,8 +47,12 @@
 
 #include "ESDS.h"
 #include <media/stagefright/Utils.h>
+#include "ExtendedUtils.h"
 
 namespace android {
+
+static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
+static int64_t kHighWaterMarkUs = 5000000ll;  // 5secs
 
 // TODO optimize buffer size for power consumption
 // The offload read buffer size is 32 KB but 24 KB uses less power.
@@ -171,7 +175,9 @@ NuPlayer::NuPlayer()
       mNumFramesTotal(0ll),
       mNumFramesDropped(0ll),
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
-      mStarted(false) {
+      mStarted(false),
+      mBuffering(false),
+      mPlaying(false) {
 
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
@@ -617,7 +623,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 }
             }
 
-            mSource->start();
+            sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+            if (!(ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                // Call mSource->start() after openAudioSink for 24 bit pcm playback
+                mSource->start();
+            }
 
             uint32_t flags = 0;
 
@@ -625,7 +637,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 flags |= Renderer::FLAG_REAL_TIME;
             }
 
-            sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
             audio_stream_type_t streamType = AUDIO_STREAM_MUSIC;
             if (mAudioSink != NULL) {
                 streamType = mAudioSink->getAudioStreamType();
@@ -635,9 +646,16 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             sp<MetaData> vMeta = new MetaData;
             convertMessageToMetaData(videoFormat, vMeta);
 
-            mOffloadAudio =
-                canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
-                                 mIsStreaming /* is_streaming */, streamType);
+            const char *mime = NULL;
+            if (audioMeta != NULL) {
+                audioMeta->findCString(kKeyMIMEType, &mime);
+            }
+            if(mime && !ExtendedUtils::pcmOffloadException(mime)) {
+                mOffloadAudio =
+                    canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
+                                     mIsStreaming /* is_streaming */, streamType);
+            }
+
             if (mOffloadAudio) {
                 flags |= Renderer::FLAG_OFFLOAD_AUDIO;
             }
@@ -664,6 +682,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             postScanSources();
+            mPlaying = true;
             break;
         }
 
@@ -946,6 +965,15 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 mRenderer->signalDisableOffloadAudio();
                 mOffloadAudio = false;
 
+                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                if ((ExtendedUtils::isRAWFormat(audioMeta) &&
+                    ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                    ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                    ALOGV("update pcmformat in WAVExtractor to 16 bit");
+                    ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT );
+                    mSource->start();
+                }
+
                 performSeek(positionUs, false /* needNotify */);
                 if (reason == Renderer::kDueToError) {
                     instantiateDecoder(true /* audio */, &mAudioDecoder);
@@ -1007,6 +1035,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 ALOGW("pause called when renderer is gone or not set");
             }
             PLAYER_STATS(profileStop, STATS_PROFILE_PAUSE);
+            mPlaying = false;
             break;
         }
 
@@ -1027,6 +1056,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             } else {
                 ALOGW("resume called when renderer is gone or not set");
             }
+            mPlaying = true;
             break;
         }
 
@@ -1159,6 +1189,14 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
         flags = AUDIO_OUTPUT_FLAG_NONE;
     }
 
+    //update bit width before opening audio sink
+    sp<MetaData> aMeta =
+            mSource->getFormatMeta(true /* audio */);
+    if (ExtendedUtils::getPcmSampleBits(aMeta) == 24) {
+        ALOGV("update sample 24 bit before openAudioSink");
+        format->setInt32("sbit", 24);
+    }
+
     mOffloadAudio = mRenderer->openAudioSink(
             format, offloadOnly, hasVideo, flags);
 
@@ -1206,9 +1244,23 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
         ++mAudioDecoderGeneration;
         notify->setInt32("generation", mAudioDecoderGeneration);
 
+        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+
         if (mOffloadAudio) {
+            if (ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                ExtendedUtils::setKeyPCMFormat(audioMeta,AUDIO_FORMAT_PCM_8_24_BIT);
+                mSource->start();
+            }
             *decoder = new DecoderPassThrough(notify);
         } else {
+            if (ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
+                ExtendedUtils::setKeyPCMFormat(audioMeta,AUDIO_FORMAT_PCM_16_BIT);
+                mSource->start();
+            }
             *decoder = new Decoder(notify);
         }
     } else {
@@ -1888,6 +1940,8 @@ void NuPlayer::performReset() {
     }
 
     mStarted = false;
+    mBuffering = false;
+    mPlaying = false;
     PLAYER_STATS(notifyEOS);
     PLAYER_STATS(dump);
     PLAYER_STATS(reset);
@@ -1989,6 +2043,26 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
         {
             int32_t percentage;
             CHECK(msg->findInt32("percentage", &percentage));
+
+            int64_t durationUs = 0;
+            msg->findInt64("duration", &durationUs);
+
+            bool eos = mVideoEOS || mAudioEOS
+                    || percentage == 100; // sources return 100% after EOS
+            if (durationUs < kLowWaterMarkUs && mPlaying && !eos) {
+                mBuffering = true;
+                pause();
+                notifyListener(MEDIA_INFO, MEDIA_INFO_BUFFERING_START, 0);
+                ALOGI("cache running low (< %g secs)..pausing",
+                        (double)durationUs / 1000000.0);
+            } else if (eos || durationUs > kHighWaterMarkUs) {
+                if (mBuffering && !mPlaying) {
+                    resume();
+                    ALOGI("cache has filled up..resuming");
+                }
+                notifyListener(MEDIA_INFO, MEDIA_INFO_BUFFERING_END, 0);
+                mBuffering = false;
+            }
 
             notifyListener(MEDIA_BUFFERING_UPDATE, percentage, 0);
             break;

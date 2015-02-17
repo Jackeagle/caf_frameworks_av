@@ -1,5 +1,33 @@
+#
+# This file was modified by DTS, Inc. The portions of the
+# code that are surrounded by "DTS..." are copyrighted and
+# licensed separately, as follows:
+#
+#  (C) 2014 DTS, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License
+#
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
+
+ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+   ifeq ($(USE_TUNNEL_MODE),true)
+        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+   endif
+   ifeq ($(NO_TUNNEL_MODE_FOR_MULTICHANNEL),true)
+        LOCAL_CFLAGS += -DNO_TUNNEL_MODE_FOR_MULTICHANNEL
+   endif
+endif
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
@@ -24,6 +52,7 @@ LOCAL_SRC_FILES:=                         \
         FLACExtractor.cpp                 \
         HTTPBase.cpp                      \
         JPEGSource.cpp                    \
+        LPAPlayerALSA.cpp                 \
         MP3Extractor.cpp                  \
         MPEG2TSWriter.cpp                 \
         MPEG4Extractor.cpp                \
@@ -55,6 +84,7 @@ LOCAL_SRC_FILES:=                         \
         ThrottledSource.cpp               \
         TimeSource.cpp                    \
         TimedEventQueue.cpp               \
+        TunnelPlayer.cpp                  \
         Utils.cpp                         \
         VBRISeeker.cpp                    \
         WAVExtractor.cpp                  \
@@ -146,6 +176,10 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD_24)),true)
        LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED_24
        LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
 endif
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD)),true)
+       LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+endif
 endif
 
 ifeq ($(call is-vendor-board-platform,QCOM),true)
@@ -161,6 +195,11 @@ LOCAL_SHARED_LIBRARIES += \
         libdl
 
 LOCAL_CFLAGS += -Wno-multichar
+
+ifeq ($(DTS_CODEC_M_), true)
+  LOCAL_SRC_FILES+= DTSUtils.cpp
+  LOCAL_CFLAGS += -DDTS_CODEC_M_
+endif
 
 LOCAL_MODULE:= libstagefright
 

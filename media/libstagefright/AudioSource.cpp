@@ -100,27 +100,8 @@ AudioSource::AudioSource(
                         AudioRecord::TRANSFER_SYNC,
                         AUDIO_INPUT_FLAG_NONE);
 
-            int buffDuration = AUDIO_RECORD_DEFAULT_BUFFER_DURATION;
-            char propValue[PROPERTY_VALUE_MAX];
-            if (property_get("audio.record.buffer.duration", propValue, NULL)) {
-                if (atoi(propValue) < AUDIO_RECORD_DEFAULT_BUFFER_DURATION)
-                    buffDuration = AUDIO_RECORD_DEFAULT_BUFFER_DURATION;
-                else
-                    buffDuration = atoi(propValue);
-            }
-            else
-                buffDuration = AUDIO_RECORD_DEFAULT_BUFFER_DURATION;
-
-            //set to update position after frames worth of buffduration time for 16 bits
-            mAllocBytes = ((sizeof(uint8_t) * frameCount * 2 * channelCount));
-            ALOGI("AudioSource in TRANSFER_SYNC with duration %d ms", buffDuration);
-            mTempBuf.i16 = (short*) malloc(mAllocBytes);
-            if (mTempBuf.i16 == NULL) {
-                mAllocBytes = 0;
-                mInitCheck = NO_MEMORY;
-            }
             mTransferMode = AudioRecord::TRANSFER_SYNC;
-            mRecord->setPositionUpdatePeriod((sampleRate * buffDuration)/1000);
+            ALOGI("AudioSource in TRANSFER_SYNC");
         } else {
             //Sound recorder and VOIP use cases does NOT use aggregation
             mRecord = new AudioRecord(
@@ -135,6 +116,30 @@ AudioSource::AudioSource(
         }
 
         mInitCheck = mRecord->initCheck();
+
+        if (mTransferMode == AudioRecord::TRANSFER_SYNC && mInitCheck == OK) {
+            int buffDuration = AUDIO_RECORD_DEFAULT_BUFFER_DURATION;
+            char propValue[PROPERTY_VALUE_MAX];
+            if (property_get("audio.record.buffer.duration", propValue, NULL)) {
+                if (atoi(propValue) < AUDIO_RECORD_DEFAULT_BUFFER_DURATION)
+                    buffDuration = AUDIO_RECORD_DEFAULT_BUFFER_DURATION;
+                else
+                    buffDuration = atoi(propValue);
+            }
+            else
+                buffDuration = AUDIO_RECORD_DEFAULT_BUFFER_DURATION;
+
+            /* set to update position after frames worth of buffduration time
+               for 16 bits */
+            ALOGD("AudioSource buffDuration %d ms", buffDuration);
+            mAllocBytes = ((sizeof(uint8_t) * frameCount * 2 * channelCount));
+            mTempBuf.i16 = (short*) malloc(mAllocBytes);
+            if (mTempBuf.i16 == NULL) {
+                mAllocBytes = 0;
+                mInitCheck = NO_MEMORY;
+            }
+            mRecord->setPositionUpdatePeriod((sampleRate * buffDuration)/1000);
+        }
 
         mAutoRampStartUs = kAutoRampStartUs;
         uint32_t playbackLatencyMs = 0;
@@ -199,6 +204,13 @@ AudioSource::AudioSource( audio_source_t inputSource, const sp<MetaData>& meta )
 AudioSource::~AudioSource() {
     if (mStarted) {
         reset();
+    }
+
+    if (mTransferMode == AudioRecord::TRANSFER_SYNC) {
+        if(mTempBuf.i16) {
+            free(mTempBuf.i16);
+            mTempBuf.i16 = (short*)NULL;
+        }
     }
 }
 
@@ -285,10 +297,8 @@ status_t AudioSource::reset() {
             AudioSystem::releaseAudioSessionId(mAudioSessionId, -1);
 
         mAudioSessionId = -1;
-        if(mTempBuf.i16) {
-            free(mTempBuf.i16);
-            mTempBuf.i16 = (short*)NULL;
-        }
+        mTempBuf.size = 0;
+        mTempBuf.frameCount = 0;
     }
     return OK;
 }
