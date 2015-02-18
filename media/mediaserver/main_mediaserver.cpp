@@ -41,12 +41,23 @@
 
 using namespace android;
 
+void placeMarker(const char *name)
+{
+    int fd = open("/proc/bootkpi/marker_entry", O_RDWR);
+    if (fd >= 0) {
+        write(fd, name, strlen(name));
+        close(fd);
+    }
+}
+
 int main(int argc __unused, char** argv)
 {
     signal(SIGPIPE, SIG_IGN);
     char value[PROPERTY_VALUE_MAX];
     bool doLog = (property_get("ro.test_harness", value, "0") > 0) && (atoi(value) == 1);
     pid_t childPid;
+
+    placeMarker("mediaserver - Start");
     // FIXME The advantage of making the process containing media.log service the parent process of
     // the process that contains all the other real services, is that it allows us to collect more
     // detailed information such as signal numbers, stop and continue, resource usage, etc.
