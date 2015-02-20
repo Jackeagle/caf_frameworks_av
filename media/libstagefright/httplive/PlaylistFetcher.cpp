@@ -990,7 +990,7 @@ void PlaylistFetcher::onDownloadBlock() {
     // block-wise download
     ssize_t bytesRead = mSession->fetchFile(
             mSegmentURI.c_str(), &mDownloadBuffer, mRangeOffset, mRangeLength,
-            kDownloadBlockSize, &mSource);
+            kDownloadBlockSize, &mSource, NULL, true);
 
     if (bytesRead == INFO_WOULD_BLOCK) {
         sp<AMessage> msg = new AMessage(kWhatDownloadBlock, id());

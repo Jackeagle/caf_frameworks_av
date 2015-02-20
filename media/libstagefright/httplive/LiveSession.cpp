@@ -53,6 +53,8 @@ namespace android {
 
 // Number of recently-read bytes to use for bandwidth estimation
 const size_t LiveSession::kBandwidthHistoryBytes = 200 * 1024;
+const off64_t LiveSession::kDefaultFileSize = 65536;
+const double LiveSession::kDefaultSegmentDurationUs = 10000000;
 
 LiveSession::LiveSession(
         const sp<AMessage> &notify, uint32_t flags,
@@ -81,7 +83,8 @@ LiveSession::LiveSession(
       mFirstTimeUs(0),
       mLastSeekTimeUs(0),
       mBackupFile(NULL),
-      mSegmentCounter(0) {
+      mSegmentCounter(0),
+      mPrevBufferSize(-1) {
 
     mStreams[kAudioIndex] = StreamItem("audio");
     mStreams[kVideoIndex] = StreamItem("video");
@@ -855,7 +858,8 @@ ssize_t LiveSession::fetchFile(
         int64_t range_offset, int64_t range_length,
         uint32_t block_size, /* download block size */
         sp<DataSource> *source, /* to return and reuse source */
-        String8 *actualUrl) {
+        String8 *actualUrl,
+        bool isMedia) {
     if (mFetchInProgress && strcmp(mFetchUrl.c_str(), url)) {
         ALOGV("Cannot fetch %s (fetch of %s still in progress)",
                 url, mFetchUrl.c_str());
@@ -914,7 +918,11 @@ ssize_t LiveSession::fetchFile(
 
     status_t getSizeErr = (*source)->getSize(&size);
     if (getSizeErr != OK) {
-        size = 65536;
+        if (isMedia) {
+            estimateFileSize(mCurBandwidthIndex, &size);
+        } else {
+            size = kDefaultFileSize;
+        }
     }
 
     sp<ABuffer> buffer = *out != NULL ? *out : new ABuffer(size);
@@ -988,6 +996,10 @@ ssize_t LiveSession::fetchFile(
 
         buffer->setRange(bufferOffset, buffer->size() + (size_t)n);
         bytesRead += n;
+    }
+
+    if (isMedia) {
+        mPrevBufferSize = buffer->offset() + buffer->size();
     }
 
     *out = buffer;
@@ -1064,6 +1076,44 @@ sp<M3UParser> LiveSession::fetchPlaylist(
     }
 
     return playlist;
+}
+
+void LiveSession::estimateFileSize(ssize_t bandwidthIndex, off64_t *size) {
+    if (mPrevBufferSize > 0) {
+        // The stream has not changed since the last fetch, so the current
+        // a/v segment should often be comparable in size to the previous one.
+        *size = mPrevBufferSize;
+        return;
+    }
+
+    if(bandwidthIndex < 0 || mBandwidthItems.size() == 0) {
+        // We cannot estimate necessary bandwidth for simple playlists
+        *size = (off64_t)kDefaultFileSize;
+        return;
+    }
+
+    int32_t targetDurationSecs = kDefaultSegmentDurationUs / 1000000;
+    for (size_t i = 0; i < kMaxStreams; ++i) {
+        switch(i) {
+        case kAudioIndex:
+        case kVideoIndex:
+            break;
+        default:
+            continue;
+        }
+
+        // HLS requires that all variant streams provide the same value for
+        // EXT-X-TARGETDURATION, so reading this value from any a/v meta will work
+        sp<AnotherPacketSource> packetSource = mPacketSources.valueFor(indexToType(i));
+        sp<AMessage> meta = packetSource->getLatestEnqueuedMeta();
+        if (meta != NULL && meta->findInt32("targetDuration", &targetDurationSecs)) {
+            break;
+        }
+    }
+
+    off64_t bandwidthBps = (off64_t)mBandwidthItems.itemAt((size_t)bandwidthIndex).mBandwidth;
+    *size = bandwidthBps * (off64_t)targetDurationSecs / 8;
+    ALOGV("Estimated index %zd file size as %llu bytes", bandwidthIndex, *size);
 }
 
 static double uniformRand() {
@@ -1298,6 +1348,7 @@ void LiveSession::changeConfiguration(
     }
 
     mCurBandwidthIndex = bandwidthIndex;
+    mPrevBufferSize = -1;
 
     ALOGV("changeConfiguration => timeUs:%" PRId64 " us, bwIndex:%zu, pickTrack:%d",
           timeUs, bandwidthIndex, pickTrack);
