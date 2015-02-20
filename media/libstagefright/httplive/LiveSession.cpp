@@ -71,12 +71,14 @@ LiveSession::LiveSession(
       mCheckBandwidthGeneration(0),
       mSwitchGeneration(0),
       mSubtitleGeneration(0),
+      mContinuationCounter(0),
       mLastDequeuedTimeUs(0ll),
       mRealTimeBaseUs(0ll),
       mReconfigurationInProgress(false),
       mSwitchInProgress(false),
       mFetchInProgress(false),
-      mSwitchUpRequested(false),
+      mSwapInProgress(false),
+      mSwitchRequested(false),
       mDisconnectReplyID(0),
       mSeekReplyID(0),
       mFirstTimeUsValid(false),
@@ -926,6 +928,7 @@ ssize_t LiveSession::fetchFile(
     }
 
     sp<ABuffer> buffer = *out != NULL ? *out : new ABuffer(size);
+    mDownloadBuffer = buffer;
     if (*out == NULL) {
         buffer->setRange(0, 0);
     }
@@ -957,6 +960,7 @@ ssize_t LiveSession::fetchFile(
             copy->setRange(bufferOffset, buffer->capacity() - bufferOffset);
 
             buffer = copy;
+            mDownloadBuffer = buffer;
         }
 
         size_t maxBytesToRead = bufferRemaining;
@@ -1323,8 +1327,15 @@ bool LiveSession::canSwitchUp() {
     status_t err = OK;
     for (size_t i = 0; i < mPacketSources.size(); ++i) {
         sp<AnotherPacketSource> source = mPacketSources.valueAt(i);
+        sp<AMessage> meta = source->getLatestDequeuedMeta();
         int64_t dur = source->getBufferedDurationUs(&err);
-        if (err == OK && dur > 10000000) {
+        int32_t targetDurationSecs;
+        int64_t targetDurationUs = 10000000ll;
+        if (meta != NULL && meta->findInt32("targetDuration", &targetDurationSecs)) {
+            targetDurationUs = targetDurationSecs * 1000000ll;
+        }
+
+        if (err == OK && dur >= targetDurationUs) {
             return true;
         }
     }
@@ -1339,7 +1350,7 @@ void LiveSession::changeConfiguration(
 
     CHECK(!mReconfigurationInProgress);
     mReconfigurationInProgress = true;
-    mSwitchUpRequested = false;
+    mSwitchRequested = false;
 
     int32_t switchType = kNoSwitch;
     if (mCurBandwidthIndex >= 0 && (ssize_t)bandwidthIndex != mCurBandwidthIndex) {
@@ -1725,6 +1736,11 @@ void LiveSession::onChangeConfiguration3(const sp<AMessage> &msg) {
     if (mDisconnectReplyID != 0) {
         finishDisconnect();
     }
+
+    // Schedule a bandwidth check for immediately after the first segment
+    // download to ensure that we have selected the optimal stream for the
+    // current bandwidth
+    mSwitchRequested = true;
 }
 
 void LiveSession::onSwapped(const sp<AMessage> &msg) {
@@ -1747,8 +1763,11 @@ void LiveSession::onSwapped(const sp<AMessage> &msg) {
 
     mSwapMask &= ~stream;
     if (mSwapMask != 0) {
+        mSwapInProgress = true;
         return;
     }
+
+    mSwapInProgress = false;
 
     // Check if new variant contains extra streams.
     uint32_t extraStreams = mNewStreamMask & (~mStreamMask);
@@ -1771,10 +1790,11 @@ void LiveSession::onSwapped(const sp<AMessage> &msg) {
 }
 
 void LiveSession::onFetchComplete() {
+    mDownloadBuffer = NULL;
     mFetchUrl.clear();
     mFetchInProgress = false;
-    if (mSwitchUpRequested) {
-        mSwitchUpRequested = false;
+    if (mSwitchRequested) {
+        mSwitchRequested = false;
         onCheckBandwidth(NULL);
     }
 }
@@ -1784,24 +1804,51 @@ void LiveSession::onCheckSwitchDown() {
         return;
     }
 
-    if (mSwitchInProgress || mReconfigurationInProgress) {
-        ALOGV("Switch/Reconfig in progress, defer switch down");
+    if (mReconfigurationInProgress) {
+        ALOGV("Reconfig in progress, defer switch down");
         mSwitchDownMonitor->post(1000000ll);
         return;
     }
+
+    ssize_t bandwidthIndex = (ssize_t)getBandwidthIndex();
+    if (bandwidthIndex >= mCurBandwidthIndex) {
+        return;
+    }
+
+    off64_t smallerFileSize, bytesRemaining;
+    if (mDownloadBuffer != NULL) {
+        bytesRemaining = mDownloadBuffer->capacity() - mDownloadBuffer->size() - mDownloadBuffer->offset();
+    } else {
+        estimateFileSize(mCurBandwidthIndex, &bytesRemaining);
+    }
+
+    estimateFileSize(bandwidthIndex, &smallerFileSize);
 
     for (size_t i = 0; i < kMaxStreams; ++i) {
         int32_t targetDuration;
         sp<AnotherPacketSource> packetSource = mPacketSources.valueFor(indexToType(i));
         sp<AMessage> meta = packetSource->getLatestDequeuedMeta();
 
+        int64_t newSourceDurationUs = 0;
+        if (mSwitchInProgress) {
+            sp<AnotherPacketSource> packetSource2 = mPacketSources2.valueFor(indexToType(i));
+            newSourceDurationUs = packetSource2->getEstimatedDurationUs();
+        }
+
         if (meta != NULL && meta->findInt32("targetDuration", &targetDuration) ) {
-            int64_t bufferedDurationUs = packetSource->getEstimatedDurationUs();
+            int64_t bufferedDurationUs = packetSource->getEstimatedDurationUs()
+                    + newSourceDurationUs;
             int64_t targetDurationUs = targetDuration * 1000000ll;
 
             if (bufferedDurationUs < targetDurationUs / 3) {
-                (new AMessage(kWhatSwitchDown, id()))->post();
-                break;
+                if (bytesRemaining <= smallerFileSize) {
+                    // defer switch down until this segment download completes
+                    mSwitchRequested = true;
+                } else {
+                    // switch immediately to avoid stalled playback
+                    (new AMessage(kWhatSwitchDown, id()))->post();
+                    break;
+                }
             }
         }
     }
@@ -1810,12 +1857,15 @@ void LiveSession::onCheckSwitchDown() {
 }
 
 void LiveSession::onSwitchDown() {
-    if (mReconfigurationInProgress || mSwitchInProgress || mCurBandwidthIndex == 0) {
+    if (mReconfigurationInProgress || mSwapInProgress || mCurBandwidthIndex == 0) {
         return;
     }
 
     ssize_t bandwidthIndex = getBandwidthIndex();
     if (bandwidthIndex < mCurBandwidthIndex) {
+        if (mSwitchInProgress) {
+            ALOGD("Significant bandwidth drop detected during switch");
+        }
         changeConfiguration(-1, bandwidthIndex, false);
         return;
     }
@@ -1907,11 +1957,17 @@ void LiveSession::onCheckBandwidth(const sp<AMessage> &msg) {
         if (mFetchInProgress && (ssize_t)bandwidthIndex > mCurBandwidthIndex) {
             // Delay switch-up requests until the current segment completes so
             // that we do not discard downloaded data or fetch duplicate data
-            mSwitchUpRequested = true;
+            mSwitchRequested = true;
         } else {
             changeConfiguration(-1ll /* timeUs */, bandwidthIndex);
+            return; // changeConfiguration will schedule the next bandwidth check
         }
-    } else if (msg != NULL) {
+    } else {
+        // cancel the switch request as it is no longer valid
+        mSwitchRequested = false;
+    }
+
+    if (msg != NULL) {
         // Come back and check again 10 seconds later in case there is nothing to do now.
         // If we DO change configuration, once that completes it'll schedule a new
         // check bandwidth event with an incremented mCheckBandwidthGeneration.
