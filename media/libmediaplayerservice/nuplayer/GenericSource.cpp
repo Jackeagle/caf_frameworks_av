@@ -39,7 +39,7 @@
 #include "../../libstagefright/include/HTTPBase.h"
 #include <ExtendedUtils.h>
 
-#define MAX_CHECK_PROXY_RETRY_COUNT 10
+#define MAX_CHECK_PROXY_RETRY_COUNT 15
 
 namespace android {
 
