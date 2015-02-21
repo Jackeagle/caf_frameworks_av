@@ -26,6 +26,7 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
+#include <media/stagefright/foundation/AWakeLock.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
@@ -79,6 +80,7 @@ NuPlayer::Renderer::Renderer(
       mSyncQueues(false),
       mPaused(false),
       mVideoSampleReceived(false),
+      mAudioRenderingStarted(false),
       mVideoRenderingStarted(false),
       mVideoRenderingStartGeneration(0),
       mAudioRenderingStartGeneration(0),
@@ -86,7 +88,8 @@ NuPlayer::Renderer::Renderer(
       mAudioOffloadTornDown(false),
       mCurrentOffloadInfo(AUDIO_INFO_INITIALIZER),
       mTotalBuffersQueued(0),
-      mLastAudioBufferDrained(0) {
+      mLastAudioBufferDrained(0),
+      mWakeLock(new AWakeLock()) {
 
     readProperties();
     notify->findObject(MEDIA_EXTENDED_STATS, (sp<RefBase>*)&mPlayerExtendedStats);
@@ -468,6 +471,7 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
             }
             ALOGV("Audio Offload tear down due to pause timeout.");
             onAudioOffloadTearDown(kDueToTimeout);
+            mWakeLock->release();
             break;
         }
 
@@ -588,6 +592,12 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
             entry = NULL;
         }
         sizeCopied += copy;
+        mAudioRenderingStarted = true;
+        while (!mPendingInputMessages.empty()) {
+            sp<AMessage> msg = *mPendingInputMessages.begin();
+            msg->post();
+            mPendingInputMessages.erase(mPendingInputMessages.begin());
+        }
         notifyIfMediaRenderingStarted();
     }
 
@@ -679,7 +689,7 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
         numBytesAvailableToWrite -= written;
         size_t copiedFrames = written / mAudioSink->frameSize();
         mNumFramesWritten += copiedFrames;
-
+        mAudioRenderingStarted = true;
         notifyIfMediaRenderingStarted();
 
         if (written != (ssize_t)copy) {
@@ -931,6 +941,11 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
         }
     }
 
+    if (!audio && offloadingAudio() && !mAudioRenderingStarted) {
+        mPendingInputMessages.push_back(msg);
+        return;
+    }
+
     if (dropBufferWhileFlushing(audio, msg)) {
         return;
     }
@@ -1093,6 +1108,15 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
             mAudioSink->start();
         }
     } else {
+        while (!mPendingInputMessages.empty()) {
+            sp<AMessage> msg = *mPendingInputMessages.begin();
+            sp<AMessage> notifyConsumed;
+            if (msg->findMessage("notifyConsumed", &notifyConsumed)) {
+                notifyConsumed->post();
+            }
+            mPendingInputMessages.erase(mPendingInputMessages.begin());
+        }
+
         flushQueue(&mVideoQueue);
 
         mDrainVideoQueuePending = false;
@@ -1105,6 +1129,7 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
         prepareForMediaRenderingStart();
     }
 
+    mAudioRenderingStarted = false;
     mVideoSampleReceived = false;
     notifyFlushComplete(audio);
 }
@@ -1337,6 +1362,10 @@ void NuPlayer::Renderer::onAudioOffloadTearDown(AudioOffloadTearDownReason reaso
 
 void NuPlayer::Renderer::startAudioOffloadPauseTimeout() {
     if (offloadingAudio()) {
+        bool granted = mWakeLock->acquire();
+        if (!granted) {
+            ALOGW("fail to acquire wake lock");
+        }
         sp<AMessage> msg = new AMessage(kWhatAudioOffloadPauseTimeout, id());
         msg->setInt32("generation", mAudioOffloadPauseTimeoutGeneration);
         msg->post(kOffloadPauseMaxUs);
@@ -1345,6 +1374,7 @@ void NuPlayer::Renderer::startAudioOffloadPauseTimeout() {
 
 void NuPlayer::Renderer::cancelAudioOffloadPauseTimeout() {
     if (offloadingAudio()) {
+        mWakeLock->release(true);
         ++mAudioOffloadPauseTimeoutGeneration;
     }
 }
