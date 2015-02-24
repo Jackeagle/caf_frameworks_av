@@ -29,6 +29,8 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
+#include <media/stagefright/Utils.h>
+
 
 #include "ExtendedUtils.h"
 
@@ -111,6 +113,15 @@ sp<AMessage> NuPlayer::HTTPLiveSource::getFormat(bool audio) {
 
     return format;
 }
+
+sp<MetaData> NuPlayer::HTTPLiveSource::getFormatMeta(bool audio) {
+    sp<AMessage> format = getFormat(audio);
+    sp<MetaData> meta = new MetaData;
+    convertMessageToMetaData(format, meta);
+
+    return meta;
+}
+
 
 status_t NuPlayer::HTTPLiveSource::feedMoreTSData() {
     return OK;
