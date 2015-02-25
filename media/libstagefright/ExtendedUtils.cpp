@@ -1086,7 +1086,7 @@ int32_t ExtendedUtils::getPcmSampleBits(const sp<MetaData> &meta) {
 int32_t ExtendedUtils::getPcmSampleBits(const sp<AMessage> &format) {
     int32_t bitWidth = 16;
     if (format != NULL) {
-        format->findInt32("sbit", &bitWidth);
+        format->findInt32("bit-width", &bitWidth);
     }
     return bitWidth;
 }
@@ -1879,11 +1879,9 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
     sp<MetaData> tPCMMeta = new MetaData;
     //hard code as RAW
     tPCMMeta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_RAW);
-
-    //TODO: remove this hard coding and use the meta info, but the issue
-    //is that decoder does not provide this info for now
-    tPCMMeta->setInt32(kKeySampleBits, 16);
-
+    int32_t bitWidth = getPcmSampleBits(sMeta);
+    tPCMMeta->setInt32(kKeySampleBits, bitWidth);
+    setKeyPCMFormat(tPCMMeta, (bitWidth == 24) ? AUDIO_FORMAT_PCM_8_24_BIT:AUDIO_FORMAT_PCM_16_BIT);
     if (sMeta == NULL) {
         ALOGW("no meta returning dummy meta");
         return tPCMMeta;
@@ -1952,6 +1950,8 @@ void ExtendedUtils::overWriteAudioFormat(
     int32_t smask = 0;
     int32_t scmask = 0;
     int32_t dcmask = 0;
+    int32_t dbitwidth = 0;
+    int32_t sbitwidth = 0;
 
     dst->findInt32("channel-count", &dchannels);
     src->findInt32("channel-count", &schannels);
@@ -1969,6 +1969,9 @@ void ExtendedUtils::overWriteAudioFormat(
     dcmask = audio_channel_count_from_out_mask(dmask);
     ALOGI("channel mask src: %d dst:%d ", smask, dmask);
     ALOGI("channel count from mask src: %d dst:%d ", scmask, dcmask);
+    dst->findInt32("bit-width", &dbitwidth);
+    src->findInt32("bit-width", &sbitwidth);
+    ALOGI("bit width src: %d dst:%d ", sbitwidth, dbitwidth);
 
     if (schannels && dchannels != schannels) {
         dst->setInt32("channel-count", schannels);
@@ -1983,6 +1986,9 @@ void ExtendedUtils::overWriteAudioFormat(
     }
 
     setSourceMime(audioMeta, dst);
+    if (dbitwidth != sbitwidth) {
+        dst->setInt32("bit-width", sbitwidth);
+    }
     return;
 }
 

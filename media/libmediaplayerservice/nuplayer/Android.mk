@@ -24,6 +24,14 @@ LOCAL_C_INCLUDES := \
 
 LOCAL_MODULE:= libstagefright_nuplayer
 
+ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
+    LOCAL_CFLAGS += -DENABLE_AV_ENHANCEMENTS
+    LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+ifeq ($(DTS_CODEC_M_), true)
+       LOCAL_CFLAGS += -DDTS_CODEC_M_
+endif
+endif
+
 LOCAL_MODULE_TAGS := eng
 
 include $(BUILD_STATIC_LIBRARY)

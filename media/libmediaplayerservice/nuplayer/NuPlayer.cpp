@@ -49,6 +49,10 @@
 #include <media/stagefright/Utils.h>
 #include "ExtendedUtils.h"
 
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include <QCMediaDefs.h>
+#include <QCMetaData.h>
+#endif
 namespace android {
 
 static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
@@ -835,7 +839,10 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 if (audio) {
                     sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
                     ExtendedUtils::setSourceMime(audioMeta, format);
-                    openAudioSink(format, false /*offloadOnly*/);
+                    if (mOffloadAudio)
+                        openAudioSink(format, true /*offloadOnly*/);
+                    else
+                        openAudioSink(format, false /*offloadOnly*/);
                 } else {
                     // video
                     sp<AMessage> inputFormat =
@@ -1228,11 +1235,13 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
     uint32_t flags;
     int64_t durationUs;
     bool hasVideo = (mVideoDecoder != NULL);
+    ALOGV("openAudioSink(): offloadOnly %d mOffloadAudio %d mOffloadDecodedPCM %d", offloadOnly, mOffloadAudio, mOffloadDecodedPCM);
     // FIXME: we should handle the case where the video decoder
     // is created after we receive the format change indication.
     // Current code will just make that we select deep buffer
     // with video which should not be a problem as it should
     // not prevent from keeping A/V sync.
+
     if (hasVideo &&
             mSource->getDuration(&durationUs) == OK &&
             durationUs
@@ -1245,21 +1254,35 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
     //update bit width before opening audio sink
     sp<MetaData> aMeta =
             mSource->getFormatMeta(true /* audio */);
+
+    const char *mime = NULL;
+    if (aMeta != NULL)
+        aMeta->findCString(kKeyMIMEType, &mime);
+#ifdef DTS_CODEC_M_
+    if (mime && (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS, 9)) && mOffloadDecodedPCM) {
+        ExtendedUtils::setKeyPCMFormat(aMeta, AUDIO_FORMAT_PCM_8_24_BIT);
+        aMeta->setInt32(kKeySampleBits, 24);
+    } else if (mime && (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS, 9)) && !mOffloadDecodedPCM) {
+        ExtendedUtils::setKeyPCMFormat(aMeta, AUDIO_FORMAT_PCM_16_BIT);
+        aMeta->setInt32(kKeySampleBits, 16);
+    }
+#endif //DTS_CODEC_M_
+
     if (ExtendedUtils::getPcmSampleBits(aMeta) == 24) {
-        ALOGV("update sample 24 bit before openAudioSink");
-        format->setInt32("sbit", 24);
+        format->setInt32("bit-width", 24);
+    } else {
+        format->setInt32("bit-width", 16);
     }
 
     if (mOffloadDecodedPCM) {
         sp<MetaData> audioPCMMeta =
                      ExtendedUtils::createPCMMetaFromSource(aMeta);
-        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
-        ExtendedUtils::setSourceMime(audioMeta, format);
+        ExtendedUtils::setSourceMime(aMeta, format);
         sp<AMessage> msg = new AMessage;
         if (convertMetaDataToMessage(audioPCMMeta, &msg) == OK) {
             //override msg with value in format if format has updated values
             //update source format as well
-            ExtendedUtils::overWriteAudioFormat(audioMeta, msg, format);
+            ExtendedUtils::overWriteAudioFormat(aMeta, msg, format);
             mOffloadAudio = mRenderer->openAudioSink(
                         msg, offloadOnly, hasVideo, flags);
         } else {
@@ -1276,6 +1299,7 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
         mOffloadDecodedPCM = mOffloadAudio;
     }
 
+    ALOGV("openAudioSink(): after renderer open audio sink mOffloadAudio %d mOffloadDecodedPCM %d", mOffloadAudio, mOffloadDecodedPCM);
     if (mOffloadAudio) {
         sendMetaDataToHal(mAudioSink, aMeta);
     }
@@ -1331,6 +1355,9 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
             }
             *decoder = new DecoderPassThrough(notify);
         } else {
+            const char *mime = {0};
+            if(audioMeta != NULL)
+                audioMeta->findCString(kKeyMIMEType, &mime);
             if (ExtendedUtils::isRAWFormat(audioMeta) &&
                 ExtendedUtils::is24bitPCMOffloadEnabled() &&
                 (ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
@@ -1339,6 +1366,12 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
                 mSource->stop();
                 mSource->start();
             }
+#ifdef DTS_CODEC_M_
+            if (mime && (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS, 9))) {
+                // DTS HD will always be 24-bit if it can be decodedPCMOffloaded, else 16-bit
+                format->setInt32("bit-width", mOffloadDecodedPCM ? 24 : 16);
+            }
+#endif //DTS_CODEC_M_
             *decoder = new Decoder(notify);
         }
     } else {
