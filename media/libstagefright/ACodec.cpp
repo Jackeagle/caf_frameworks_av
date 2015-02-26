@@ -1596,7 +1596,7 @@ status_t ACodec::configureCodec(
             err = setupG711Codec(encoder, numChannels);
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC)) {
-        int32_t numChannels, sampleRate, compressionLevel = -1;
+        int32_t numChannels = 0, sampleRate = 0, compressionLevel = -1;
         if (encoder &&
                 (!msg->findInt32("channel-count", &numChannels)
                         || !msg->findInt32("sample-rate", &sampleRate))) {
@@ -2041,7 +2041,7 @@ status_t ACodec::setupFlacCodec(
     }
 
     return setupRawAudioFormat(
-            encoder ? kPortIndexInput : kPortIndexOutput,
+            kPortIndexInput,
             sampleRate,
             numChannels);
 }
@@ -4748,7 +4748,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     // MediaCodecSource does not pass the output format details when calling
     // kInit leading to msg passed not having enough details
     if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_AAC)
-        && ExtendedUtils::UseQCHWAACEncoder() && encoder) {
+        && ExtendedUtils::UseQCHWAACEncoder()) {
         //use hw aac encoder
         ALOGD("use QCOM HW AAC encoder");
         OMXCodec::findMatchingCodecs(
@@ -4757,7 +4757,9 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
                 "OMX.qcom.audio.encoder.aac",  // OMX.qcom.audio.encoder.aac
                 0,     // flags
                 &matchingCodecs);
-    } else if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_FLAC) && !encoder) {
+    }
+#ifdef QTI_FLAC_DECODER
+    else if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_FLAC) && !encoder) {
         //use google's raw decoder
         OMXCodec::findMatchingCodecs(
                 MEDIA_MIMETYPE_AUDIO_RAW,
@@ -4765,24 +4767,15 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
                 "OMX.google.raw.decoder",
                 0, //flags
                 &matchingCodecs);
-    } else if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_AAC)
-        && ExtendedUtils::UseQCHWAACDecoder(mime.c_str()) && !encoder) {
-        //use hw aac decoder
-        ALOGD("use QCOM HW AAC decoder");
-        OMXCodec::findMatchingCodecs(
-                mime.c_str(),
-                encoder, // createEncoder
-                "OMX.qcom.audio.decoder.multiaac",  // OMX.qcom.audio.decoder.multiaac
-                0,     // flags
-                &matchingCodecs);
-    } else {
+    }
+#endif
+     else
         OMXCodec::findMatchingCodecs(
                 mime.c_str(),
                 encoder, // createEncoder
                 NULL,  // matchComponentName
                 0,     // flags
                 &matchingCodecs);
-    }
 #else
     OMXCodec::findMatchingCodecs(
                 mime.c_str(),

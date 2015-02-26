@@ -82,7 +82,6 @@
 #include "HDCP.h"
 #include "HTTPBase.h"
 #include "RemoteDisplay.h"
-#define DEFAULT_SAMPLE_RATE 44100
 
 namespace {
 using android::media::Metadata;
@@ -457,6 +456,9 @@ status_t MediaPlayerService::dump(int fd, const Vector<String16>& args)
     const size_t SIZE = 256;
     char buffer[SIZE];
     String8 result;
+    SortedVector< sp<Client> > clients; //to serialise the mutex unlock & client destruction.
+    SortedVector< sp<MediaRecorderClient> > mediaRecorderClients;
+
     if (checkCallingPermission(String16("android.permission.DUMP")) == false) {
         snprintf(buffer, SIZE, "Permission Denial: "
                 "can't dump MediaPlayerService from pid=%d, uid=%d\n",
@@ -468,6 +470,7 @@ status_t MediaPlayerService::dump(int fd, const Vector<String16>& args)
         for (int i = 0, n = mClients.size(); i < n; ++i) {
             sp<Client> c = mClients[i].promote();
             if (c != 0) c->dump(fd, args);
+            clients.add(c);
         }
         if (mMediaRecorderClients.size() == 0) {
                 result.append(" No media recorder client\n\n");
@@ -480,6 +483,7 @@ status_t MediaPlayerService::dump(int fd, const Vector<String16>& args)
                     write(fd, result.string(), result.size());
                     result = "\n";
                     c->dump(fd, args);
+                    mediaRecorderClients.add(c);
                 }
             }
         }
@@ -1351,7 +1355,7 @@ status_t MediaPlayerService::decode(
     if (cache->wait() != NO_ERROR) goto Exit;
 
     ALOGV("start");
-    if (player->start() != NO_ERROR) goto Exit;
+    player->start();
 
     ALOGV("wait for playback complete");
     cache->wait();
@@ -1406,7 +1410,7 @@ status_t MediaPlayerService::decode(int fd, int64_t offset, int64_t length,
     if (cache->wait() != NO_ERROR) goto Exit;
 
     ALOGV("start");
-    if (player->start() != NO_ERROR) goto Exit;
+    player->start();
 
     ALOGV("wait for playback complete");
     cache->wait();
@@ -1512,11 +1516,6 @@ uint32_t MediaPlayerService::AudioOutput::latency () const
     return mTrack->latency();
 }
 
-audio_stream_type_t MediaPlayerService::AudioOutput::streamType () const
-{
-    return mStreamType;
-}
-
 float MediaPlayerService::AudioOutput::msecsPerFrame() const
 {
     return mMsecsPerFrame;
@@ -1532,24 +1531,6 @@ status_t MediaPlayerService::AudioOutput::getTimestamp(AudioTimestamp &ts) const
 {
     if (mTrack == 0) return NO_INIT;
     return mTrack->getTimestamp(ts);
-}
-ssize_t MediaPlayerService::AudioOutput::sampleRate() const
-{
-    if (mTrack == 0) return NO_INIT;
-    return DEFAULT_SAMPLE_RATE;
-}
-
-status_t MediaPlayerService::AudioOutput::getTimeStamp(uint64_t *tstamp)
-{
-    if (tstamp == 0) return BAD_VALUE;
-    if (mTrack == 0) return NO_INIT;
-    mTrack->getTimeStamp(tstamp);
-    return NO_ERROR;
-}
-
-ssize_t MediaPlayerService::AudioCache::sampleRate() const
-{
-    return mSampleRate;
 }
 
 status_t MediaPlayerService::AudioOutput::getFramesWritten(uint32_t *frameswritten) const
@@ -1612,54 +1593,6 @@ status_t MediaPlayerService::AudioOutput::open(
     mCallback = cb;
     mCallbackCookie = cookie;
 
-    if (flags & AUDIO_OUTPUT_FLAG_LPA || flags & AUDIO_OUTPUT_FLAG_TUNNEL) {
-        ALOGV("AudioOutput open: with flags %x",flags);
-        channelMask = audio_channel_out_mask_from_count(channelCount);
-        if (0 == channelMask) {
-            ALOGE("open() error, can't derive mask for %d audio channels", channelCount);
-            return NO_INIT;
-        }
-        AudioTrack *audioTrack = NULL;
-        CallbackData *newcbd = NULL;
-        if (mCallback != NULL) {
-            newcbd = new CallbackData(this);
-            audioTrack = new AudioTrack(
-                             mStreamType,
-                             sampleRate,
-                             format,
-                             channelMask,
-                             0,
-                             flags,
-                             CallbackWrapper,
-                             newcbd,
-                             0,
-                             mSessionId,
-                             AudioTrack::TRANSFER_DEFAULT,
-                             NULL,
-                             -1,
-                             -1,
-                             mAttributes);
-            if ((audioTrack == 0) || (audioTrack->initCheck() != NO_ERROR)) {
-                ALOGE("Unable to create audio track");
-                delete audioTrack;
-                delete newcbd;
-                return NO_INIT;
-            }
-        } else {
-            ALOGE("no callback supplied");
-            return NO_INIT;
-        }
-        deleteRecycledTrack();
-
-        mStreamType = audioTrack->streamType();
-        ALOGV("setVolume");
-        mCallbackData = newcbd;
-        audioTrack->setVolume(mLeftVolume, mRightVolume);
-        mSampleRateHz = sampleRate;
-        mFlags = flags;
-        mTrack = audioTrack;
-        return NO_ERROR;
-    }
     // Check argument "bufferCount" against the mininum buffer count
     if (bufferCount < mMinBufferCount) {
         ALOGD("bufferCount (%d) is too small and increased to %d", bufferCount, mMinBufferCount);
@@ -1900,6 +1833,8 @@ void MediaPlayerService::AudioOutput::switchToNextOutput() {
 
 ssize_t MediaPlayerService::AudioOutput::write(const void* buffer, size_t size)
 {
+    LOG_ALWAYS_FATAL_IF(mCallback != NULL, "Don't call write if supplying a callback.");
+
     //ALOGV("write(%p, %u)", buffer, size);
     if (mTrack != 0) {
         ssize_t ret = mTrack->write(buffer, size);
@@ -2004,6 +1939,7 @@ void MediaPlayerService::AudioOutput::CallbackWrapper(
         size_t actualSize = (*me->mCallback)(
                 me, buffer->raw, buffer->size, me->mCallbackCookie,
                 CB_EVENT_FILL_BUFFER);
+
         if ((me->mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0 &&
             actualSize == 0 && buffer->size > 0 && me->mNextOutput == NULL) {
             // We've reached EOS but the audio track is not stopped yet,
@@ -2029,46 +1965,6 @@ void MediaPlayerService::AudioOutput::CallbackWrapper(
                 me->mCallbackCookie, CB_EVENT_TEAR_DOWN);
         break;
 
-    case AudioTrack::EVENT_UNDERRUN :
-        {
-        ALOGW("Event underrun");
-      //  CallbackData *data = (CallbackData*)cookie;
-        //data->lock();
-        //AudioOutput *me = data->getOutput();
-        //if (me == NULL) {
-            // no output set, likely because the track was scheduled to be reused
-            // by another player, but the format turned out to be incompatible.
-          //  data->unlock();
-            //return;
-        //}
-        ALOGD("Callback!!!");
-        (*me->mCallback)(
-            me, NULL, (size_t)AudioTrack::EVENT_UNDERRUN, me->mCallbackCookie, CB_EVENT_UNDERRUN);
-        //data->unlock();
-        break;
-       }
-    case AudioTrack::EVENT_HW_FAIL :
-       {
-        ALOGW("Event hardware failure");
-        //CallbackData *data1 = (CallbackData*)cookie;
-       // if (data1 != NULL) {
-           // data1->lock();
-         //   AudioOutput *me1 = data1->getOutput();
-          //  if (me == NULL) {
-                // no output set, likely because the track was
-                // scheduled to be reused
-                // by another player, but the format turned out
-                // to be incompatible.
-            //    data->unlock();
-          //      return;
-            //}
-            ALOGV("Callback!!!");
-            (*me->mCallback)(me, NULL, (size_t)AudioTrack::EVENT_HW_FAIL,
-                             me->mCallbackCookie, CB_EVENT_HW_FAIL);
-            //data->unlock();
-        // }
-         break;
-       } 
     default:
         ALOGE("received unknown event type: %d inside CallbackWrapper !", event);
     }
@@ -2203,7 +2099,6 @@ status_t MediaPlayerService::AudioCache::open(
 {
     ALOGV("open(%u, %d, 0x%x, %d, %d)", sampleRate, channelCount, channelMask, format, bufferCount);
     if (mHeap->getHeapID() < 0) {
-        ALOGE("Invalid heap Id");
         return NO_INIT;
     }
 
@@ -2213,7 +2108,12 @@ status_t MediaPlayerService::AudioCache::open(
     mMsecsPerFrame = 1.e3 / (float) sampleRate;
     mFrameSize =  audio_is_linear_pcm(mFormat)
             ? mChannelCount * audio_bytes_per_sample(mFormat) : 1;
-    mFrameCount = mHeap->getSize() / mFrameSize;
+
+    if (cb == NULL) {
+        // Use buffer of size equal to that of the heap if AudioCache used by NuPlayer.
+        // Otherwise use default buffersize.
+        mFrameCount = mHeap->getSize() / mFrameSize;
+    }
 
     if (cb != NULL) {
         mCallbackThread = new CallbackThread(this, cb, cookie);

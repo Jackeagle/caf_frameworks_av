@@ -24,8 +24,7 @@
 #include <media/AudioTimestamp.h>
 #include <media/IAudioTrack.h>
 #include <utils/threads.h>
-#include <media/IDirectTrack.h>
-#include <media/IDirectTrackClient.h>
+
 namespace android {
 
 // ----------------------------------------------------------------------------
@@ -64,7 +63,6 @@ public:
         EVENT_NEW_TIMESTAMP = 8,    // Delivered periodically and when there's a significant change
                                     // in the mapping from frame position to presentation time.
                                     // See AudioTimestamp for the information included with event.
-        EVENT_HW_FAIL = 9,          // ADSP failure.
     };
 
     /* Client should declare Buffer on the stack and pass address to obtainBuffer()
@@ -225,8 +223,9 @@ public:
     /* Terminates the AudioTrack and unregisters it from AudioFlinger.
      * Also destroys all resources associated with the AudioTrack.
      */
-
+protected:
                         virtual ~AudioTrack();
+public:
 
     /* Initialize an AudioTrack that was created using the AudioTrack() constructor.
      * Don't call set() more than once, or after the AudioTrack() constructors that take parameters.
@@ -535,6 +534,12 @@ private:
      */
             status_t    obtainBuffer(Buffer* audioBuffer, const struct timespec *requested,
                                      struct timespec *elapsed = NULL, size_t *nonContig = NULL);
+    // To decide whether or not to offload the pcm track thats being created
+            bool        canOffloadTrack(audio_stream_type_t streamType, audio_format_t format,
+                                     audio_channel_mask_t channelMask, audio_output_flags_t flags,
+                                     transfer_type transferType,
+                                     audio_attributes_t *attributes,
+                                     const audio_offload_info_t *offloadInfo);
 public:
 
     /* Release a filled buffer of "audioBuffer->frameCount" frames for AudioFlinger to process. */
@@ -593,9 +598,7 @@ public:
      *
      * The timestamp parameter is undefined on return, if status is not NO_ERROR.
      */
-      virtual status_t    getTimestamp(AudioTimestamp& timestamp);
-      virtual void notify(int msg);
-      virtual status_t    getTimeStamp(uint64_t *tstamp);
+            status_t    getTimestamp(AudioTimestamp& timestamp);
 
 protected:
     /* copying audio tracks is not allowed */
@@ -676,14 +679,12 @@ protected:
             uint32_t updateAndGetPosition_l();
 
     // Next 4 fields may be changed if IAudioTrack is re-created, but always != 0
-    sp<IDirectTrack>        mDirectTrack;
     sp<IAudioTrack>         mAudioTrack;
     sp<IMemory>             mCblkMemory;
     audio_track_cblk_t*     mCblk;                  // re-load after mLock.unlock()
     audio_io_handle_t       mOutput;                // returned by AudioSystem::getOutput()
 
     sp<AudioTrackThread>    mAudioTrackThread;
-    sp<IAudioFlinger>       mAudioFlinger;
 
     float                   mVolume[2];
     float                   mSendLevel;
@@ -765,9 +766,6 @@ protected:
                                                     // only used for offloaded and direct tracks.
 
     audio_output_flags_t    mFlags;
-    audio_io_handle_t       mAudioDirectOutput;
-    void*                   mObserver;
-
         // const after set(), except for bits AUDIO_OUTPUT_FLAG_FAST and AUDIO_OUTPUT_FLAG_OFFLOAD.
         // mLock must be held to read or write those bits reliably.
 
@@ -794,6 +792,11 @@ protected:
     bool                    mInUnderrun;            // whether track is currently in underrun state
     uint32_t                mPausedPosition;
 
+    //the following structures are used for tracks with PCM data that are offloaded
+    audio_offload_info_t    mPcmTrackOffloadInfo;   //offload info structure for pcm tracks
+    bool                    mIsPcmTrackOffloaded;   //whether the track is offloaded or not
+    bool                    mCanOffloadPcmTrack;    //whether or not an offload profile exists
+
 private:
     class DeathNotifier : public IBinder::DeathRecipient {
     public:
@@ -808,15 +811,6 @@ private:
     uint32_t                mSequence;              // incremented for each new IAudioTrack attempt
     int                     mClientUid;
     pid_t                   mClientPid;
-
-    class DirectClient : public BnDirectTrackClient {
-    public:
-        DirectClient(AudioTrack * audioTrack) : mAudioTrack(audioTrack) { }
-        virtual void notify(int msg);
-    private:
-        const wp<AudioTrack> mAudioTrack;
-    };
-    sp<DirectClient>       mDirectClient;
 };
 
 class TimedAudioTrack : public AudioTrack

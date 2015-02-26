@@ -150,10 +150,7 @@ AudioTrack::AudioTrack(
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
       mUseSmallBuf(false),
-      mPausedPosition(0),
-      mAudioFlinger(NULL),
-      mObserver(NULL)
-
+      mPausedPosition(0)
 {
     mStatus = set(streamType, sampleRate, format, channelMask,
             frameCount, flags, cbf, user, notificationFrames,
@@ -182,9 +179,7 @@ AudioTrack::AudioTrack(
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
       mUseSmallBuf(false),
-      mPausedPosition(0),
-      mAudioFlinger(NULL),
-      mObserver(NULL)
+      mPausedPosition(0)
 {
     mStatus = set(streamType, sampleRate, format, channelMask,
             0 /*frameCount*/, flags, cbf, user, notificationFrames,
@@ -205,21 +200,82 @@ AudioTrack::~AudioTrack()
             mAudioTrackThread->requestExitAndWait();
             mAudioTrackThread.clear();
         }
-        if (mDirectTrack != 0) {
-            mDirectTrack.clear();
-        } else if (mAudioTrack != 0) {
-            mAudioTrack->asBinder()->unlinkToDeath(mDeathNotifier, this);
-            mAudioTrack.clear();
-            mCblkMemory.clear();
-            mSharedBuffer.clear();
-            IPCThreadState::self()->flushCommands();
-            ALOGV("~AudioTrack, releasing session id from %d on behalf of %d",
+        mAudioTrack->asBinder()->unlinkToDeath(mDeathNotifier, this);
+        mAudioTrack.clear();
+        mCblkMemory.clear();
+        mSharedBuffer.clear();
+        IPCThreadState::self()->flushCommands();
+        ALOGV("~AudioTrack, releasing session id from %d on behalf of %d",
                 IPCThreadState::self()->getCallingPid(), mClientPid);
-            AudioSystem::releaseAudioSessionId(mSessionId, mClientPid);
-        }
+        AudioSystem::releaseAudioSessionId(mSessionId, mClientPid);
     }
 }
 
+bool AudioTrack::canOffloadTrack(
+        audio_stream_type_t streamType,
+        audio_format_t format,
+        audio_channel_mask_t channelMask,
+        audio_output_flags_t flags,
+        transfer_type transferType,
+        audio_attributes_t *attributes,
+        const audio_offload_info_t *offloadInfo)
+{
+        char propValue[PROPERTY_VALUE_MAX] = {0};
+        property_get("audio.offload.track.enabled", propValue, "0");
+        bool track_offload = atoi(propValue) || !strncmp("true", propValue, sizeof("true"));
+        bool decision = false;
+
+        if (track_offload == false) {
+             ALOGD("TrackOffload: AudioTrack Offload disabled by property, returning false");
+             return false;
+        }
+
+
+       // Track offload only if the following criterion
+       // 1. Track offload info structure should NOT have been provided
+       // 2. Format is 16 bit
+       // 3. Track is NOT fast track (to prevent tones, and low latency from
+       //     being offloaded
+       // 4. Client uses write interface to provide data
+
+
+       // Track offload does not base any decision on mAttributes, or channelMask for now
+
+        if (!offloadInfo &&
+             (format == AUDIO_FORMAT_PCM_16_BIT) &&
+             (streamType == AUDIO_STREAM_MUSIC) &&
+             (!(flags & AUDIO_OUTPUT_FLAG_FAST)) &&
+             (transferType != TRANSFER_CALLBACK))
+        {
+
+            //initialize format to 16_bit_ofload if content is 16 bit
+            mPcmTrackOffloadInfo.format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+            mPcmTrackOffloadInfo.sample_rate  = mSampleRate;
+            mPcmTrackOffloadInfo.channel_mask = channelMask;
+            mPcmTrackOffloadInfo.stream_type = streamType;
+            mPcmTrackOffloadInfo.duration_us = 0xFFFFFFFF;
+            //TODO: Use mAttributes and pass the value of content in this field
+            mPcmTrackOffloadInfo.has_video = false;
+            mPcmTrackOffloadInfo.is_streaming = false;
+            mPcmTrackOffloadInfo.use_small_bufs = true;
+
+            decision = AudioSystem::isOffloadSupported(mPcmTrackOffloadInfo);
+            ALOGI("TrackOffload: Pcm Track offloaded decided %s", decision?"true":"false");
+            ALOGV("TrackOffload: offloading audio output for stream type"
+              "%d, usage %d, sample rate %u, format %#x,"
+              " channel mask %#x, flags %#x, transferType %d, offloadInfo %p",
+              streamType, attributes->usage, mSampleRate, format, channelMask, flags,
+              transferType, offloadInfo);
+            return decision;
+        }
+
+        ALOGD("TrackOffload: Not track offloading offloading audio output for stream type"
+              "%d, usage %d, sample rate %u, format %#x,"
+              " channel mask %#x, flags %#x, transferType %d, offloadInfo %p",
+              streamType, attributes->usage, mSampleRate, format, channelMask, flags,
+              transferType, offloadInfo);
+        return false;
+}
 status_t AudioTrack::set(
         audio_stream_type_t streamType,
         uint32_t sampleRate,
@@ -479,48 +535,11 @@ status_t AudioTrack::set(
     mFlags = flags;
     mCbf = cbf;
 
-    if (flags & AUDIO_OUTPUT_FLAG_LPA || flags & AUDIO_OUTPUT_FLAG_TUNNEL) {
- audio_io_handle_t output = AudioSystem::getOutputForAttr(&mAttributes, mSampleRate, mFormat,
-            mChannelMask, mFlags, mOffloadInfo);
-    if (output == AUDIO_IO_HANDLE_NONE) {
-        ALOGE("Could not get audio output for stream type %d, usage %d, sample rate %u, format %#x,"
-              " channel mask %#x, flags %#x",
-              mStreamType, mAttributes.usage, mSampleRate, mFormat, mChannelMask, mFlags);
-        return BAD_VALUE;
+    if (cbf != NULL) {
+        mAudioTrackThread = new AudioTrackThread(*this, threadCanCallJava);
+        mAudioTrackThread->run("AudioTrack", ANDROID_PRIORITY_AUDIO, 0 /*stack*/);
     }
-//    if (mFlags & AUDIO_OUTPUT_FLAG_LPA || mFlags & AUDIO_OUTPUT_FLAG_TUNNEL) {
-        mAudioDirectOutput = output;
-  //  }
 
-        ALOGV("Creating Direct Track");
-        const sp<IAudioFlinger>& audioFlinger = AudioSystem::get_audio_flinger();
-        if (audioFlinger == 0) {
-            ALOGE("Could not get audioflinger");
-            return NO_INIT;
-        }
-        mAudioFlinger = audioFlinger;
-        status_t status = NO_ERROR;
-        mDirectClient = new DirectClient(this);
-        mDirectTrack = audioFlinger->createDirectTrack( getpid(),
-                                                        sampleRate,
-                                                        channelMask,
-                                                        mAudioDirectOutput,
-                                                        &mSessionId,
-                                                        mDirectClient.get(),
-                                                        streamType,
-                                                        &status);
-        if(status != NO_ERROR) {
-            ALOGE("createDirectTrack returned with status %d", status);
-            return status;
-        }
-        mAudioTrack = NULL;
-        mSharedBuffer = NULL;
-    }
-    else {
-        if (cbf != NULL) {
-            mAudioTrackThread = new AudioTrackThread(*this, threadCanCallJava);
-            mAudioTrackThread->run("AudioTrack", ANDROID_PRIORITY_AUDIO, 0 /*stack*/);
-        }
     // create the IAudioTrack
     status = createTrack_l();
 
@@ -533,10 +552,6 @@ status_t AudioTrack::set(
         return status;
     }
 
-    AudioSystem::acquireAudioSessionId(mSessionId, mClientPid);
-    mAudioDirectOutput = -1;
-    mDirectTrack = NULL;
- }
     mStatus = NO_ERROR;
     mState = STATE_STOPPED;
     mUserData = user;
@@ -553,29 +568,27 @@ status_t AudioTrack::set(
     mSequence = 1;
     mObservedSequence = mSequence;
     mInUnderrun = false;
-    ALOGE("AudioTrack::set : Exit");
+
     return NO_ERROR;
 }
+
 // -------------------------------------------------------------------------
 
 status_t AudioTrack::start()
 {
-    status_t status = NO_ERROR;
     AutoMutex lock(mLock);
+
     if (mState == STATE_ACTIVE) {
         return INVALID_OPERATION;
     }
 
     mInUnderrun = true;
+
     State previousState = mState;
     if (previousState == STATE_PAUSED_STOPPING) {
         mState = STATE_STOPPING;
     } else {
         mState = STATE_ACTIVE;
-    }
-    if (mDirectTrack != NULL) {
-        mDirectTrack->start();
-        return status;
     }
     (void) updateAndGetPosition_l();
     if (previousState == STATE_STOPPED || previousState == STATE_FLUSHED) {
@@ -607,6 +620,7 @@ status_t AudioTrack::start()
         androidSetThreadPriority(0, ANDROID_PRIORITY_AUDIO);
     }
 
+    status_t status = NO_ERROR;
     if (!(flags & (CBLK_INVALID | CBLK_STREAM_FATAL_ERROR))) {
         status = mAudioTrack->start();
         if (status == DEAD_OBJECT) {
@@ -646,14 +660,12 @@ void AudioTrack::stop()
         mState = STATE_STOPPED;
         mReleased = 0;
     }
-    if(mDirectTrack != NULL) {
-        mDirectTrack->stop();
-    } else if (mAudioTrack != NULL) {
-        mProxy->interrupt();
-        mAudioTrack->stop();
+
+    mProxy->interrupt();
+    mAudioTrack->stop();
     // the playback head position will reset to 0, so if a marker is set, we need
     // to activate it again
-        mMarkerReached = false;
+    mMarkerReached = false;
 #if 0
     // Force flush if a shared buffer is used otherwise audioflinger
     // will not stop before end of buffer is reached.
@@ -663,15 +675,14 @@ void AudioTrack::stop()
     }
 #endif
 
-        sp<AudioTrackThread> t = mAudioTrackThread;
-        if (t != 0) {
-            if (!isOffloaded_l()) {
-                t->pause();
-            }
-        } else {
-            setpriority(PRIO_PROCESS, 0, mPreviousPriority);
-            set_sched_policy(0, mPreviousSchedulingGroup);
+    sp<AudioTrackThread> t = mAudioTrackThread;
+    if (t != 0) {
+        if (!isOffloaded_l()) {
+            t->pause();
         }
+    } else {
+        setpriority(PRIO_PROCESS, 0, mPreviousPriority);
+        set_sched_policy(0, mPreviousSchedulingGroup);
     }
 }
 
@@ -683,11 +694,10 @@ bool AudioTrack::stopped() const
 
 void AudioTrack::flush()
 {
-    if(mDirectTrack != NULL) {
-        ALOGE("mdirect track flush");
-        mDirectTrack->flush();
-        return ;
+    if (mSharedBuffer != 0) {
+        return;
     }
+    AutoMutex lock(mLock);
     if (mState == STATE_ACTIVE || mState == STATE_FLUSHED) {
         return;
     }
@@ -723,13 +733,9 @@ void AudioTrack::pause()
     } else {
         return;
     }
-    if(mDirectTrack != NULL) {
-       ALOGV("mDirectTrack pause");
-       mDirectTrack->pause();
-    } else {
-       mProxy->interrupt();
-       mAudioTrack->pause();
-    }
+    mProxy->interrupt();
+    mAudioTrack->pause();
+
     if (isOffloaded_l()) {
         if (mOutput != AUDIO_IO_HANDLE_NONE) {
             // An offload output can be re-used between two audio tracks having
@@ -761,12 +767,9 @@ status_t AudioTrack::setVolume(float left, float right)
     AutoMutex lock(mLock);
     mVolume[AUDIO_INTERLEAVE_LEFT] = left;
     mVolume[AUDIO_INTERLEAVE_RIGHT] = right;
-    if(mDirectTrack != NULL) {
-        ALOGV("mDirectTrack->setVolume(left = %f , right = %f)", left,right);
-        mDirectTrack->setVolume(left, right);
-    } else {
-        mProxy->setVolumeLR(gain_minifloat_pack(gain_from_float(left), gain_from_float(right)));
-    }
+
+    mProxy->setVolumeLR(gain_minifloat_pack(gain_from_float(left), gain_from_float(right)));
+
     if (isOffloaded_l()) {
         mAudioTrack->signal();
     }
@@ -786,9 +789,6 @@ status_t AudioTrack::setAuxEffectSendLevel(float level)
     }
 
     AutoMutex lock(mLock);
-    if (mDirectTrack != NULL) {
-        return NO_ERROR;
-    }
     mSendLevel = level;
     mProxy->setSendLevel(level);
 
@@ -830,9 +830,7 @@ uint32_t AudioTrack::getSampleRate() const
     }
 
     AutoMutex lock(mLock);
-    if(mAudioDirectOutput != -1) {
-        return mAudioFlinger->sampleRate(mAudioDirectOutput);
-    }
+
     // sample rate can be updated during playback by the offloaded decoder so we need to
     // query the HAL and update if needed.
 // FIXME use Proxy return channel to update the rate from server and avoid polling here
@@ -1071,8 +1069,37 @@ status_t AudioTrack::createTrack_l()
         return NO_INIT;
     }
 
-    audio_io_handle_t output = AudioSystem::getOutputForAttr(&mAttributes, mSampleRate, mFormat,
+    mCanOffloadPcmTrack = false;
+    mIsPcmTrackOffloaded = false;
+    mPcmTrackOffloadInfo = AUDIO_INFO_INITIALIZER;
+
+    // Check if the track can be offloaded. Store the decision in mCanOffloadPcmTrack
+    mCanOffloadPcmTrack = canOffloadTrack(mStreamType, mFormat, mChannelMask, mFlags,
+                              mTransfer, &mAttributes, mOffloadInfo);
+
+    audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
+
+    if(mCanOffloadPcmTrack) {
+        ALOGV("TrackOffload: Tying to create PCM Offload track");
+        output = AudioSystem::getOutputForAttr(&mAttributes, mSampleRate, mPcmTrackOffloadInfo.format,
+            mChannelMask, (audio_output_flags_t) (mFlags | AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD),
+            &mPcmTrackOffloadInfo);
+        if (output != AUDIO_IO_HANDLE_NONE) {
+            //got output
+            ALOGV("TrackOffload: Going through PCM Offload Track");
+            mIsPcmTrackOffloaded = true;
+            mFrameSize = sizeof(uint8_t);
+            mFrameSizeAF = sizeof(uint8_t);
+            mUseSmallBuf = true;
+        }
+    }
+
+    if (output == AUDIO_IO_HANDLE_NONE) {
+        //retry retrieving output
+        output = AudioSystem::getOutputForAttr(&mAttributes, mSampleRate, mFormat,
             mChannelMask, mFlags, mOffloadInfo);
+    }
+
     if (output == AUDIO_IO_HANDLE_NONE) {
         ALOGE("Could not get audio output for stream type %d, usage %d, sample rate %u, format %#x,"
               " channel mask %#x, flags %#x",
@@ -1134,6 +1161,9 @@ status_t AudioTrack::createTrack_l()
     mNotificationFramesAct = mNotificationFramesReq;
 
     size_t frameCount = mReqFrameCount;
+    if(mIsPcmTrackOffloaded)
+        frameCount = 0;
+
     if (!audio_is_linear_pcm(mFormat)) {
 
         if (mSharedBuffer != 0) {
@@ -1172,7 +1202,7 @@ status_t AudioTrack::createTrack_l()
         // there _is_ a frameCount parameter.  We silently ignore it.
         frameCount = mSharedBuffer->size() / mFrameSizeAF;
 
-    } else if (!(mFlags & AUDIO_OUTPUT_FLAG_FAST)) {
+    } else if (!(mFlags & AUDIO_OUTPUT_FLAG_FAST) || mIsPcmTrackOffloaded) {
 
         // FIXME move these calculations and associated checks to server
 
@@ -1220,21 +1250,32 @@ status_t AudioTrack::createTrack_l()
     }
 
     if (mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
+        ALOGV("TrackOffload: mFlags has offload");
         trackFlags |= IAudioFlinger::TRACK_OFFLOAD;
     }
 
     if (mFlags & AUDIO_OUTPUT_FLAG_DIRECT) {
+        ALOGV("TrackOffload: mFlags has direct");
         trackFlags |= IAudioFlinger::TRACK_DIRECT;
     }
 
     size_t temp = frameCount;   // temp may be replaced by a revised value of frameCount,
                                 // but we will still need the original value also
+    audio_format_t format = AUDIO_FORMAT_PCM_16_BIT;
+    if (mIsPcmTrackOffloaded) {
+        format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+        ALOGV("Create offloaded PCM 0x%x Track", format);
+        trackFlags |= IAudioFlinger::TRACK_OFFLOAD;
+    } else {
+        // AudioFlinger only sees 16-bit PCM
+        format = (mFormat == AUDIO_FORMAT_PCM_8_BIT &&
+                   !(mFlags & AUDIO_OUTPUT_FLAG_DIRECT)) ?
+                    AUDIO_FORMAT_PCM_16_BIT : mFormat;
+        ALOGV("Create normal PCM 0x%x Track", format);
+    }
     sp<IAudioTrack> track = audioFlinger->createTrack(mStreamType,
                                                       mSampleRate,
-                                                      // AudioFlinger only sees 16-bit PCM
-                                                      mFormat == AUDIO_FORMAT_PCM_8_BIT &&
-                                                          !(mFlags & AUDIO_OUTPUT_FLAG_DIRECT) ?
-                                                              AUDIO_FORMAT_PCM_16_BIT : mFormat,
+                                                      format,
                                                       mChannelMask,
                                                       &temp,
                                                       &trackFlags,
@@ -1285,6 +1326,7 @@ status_t AudioTrack::createTrack_l()
     frameCount = temp;
 
     mAwaitBoost = false;
+    ALOGV("Flags here  0x%x ", mFlags);
     if (mFlags & AUDIO_OUTPUT_FLAG_FAST) {
         if (trackFlags & IAudioFlinger::TRACK_FAST) {
             ALOGV("AUDIO_OUTPUT_FLAG_FAST successful; frameCount %zu", frameCount);
@@ -1308,9 +1350,9 @@ status_t AudioTrack::createTrack_l()
             }
         }
     }
-    if (mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
+    if (mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD || mIsPcmTrackOffloaded) {
         if (trackFlags & IAudioFlinger::TRACK_OFFLOAD) {
-            ALOGV("AUDIO_OUTPUT_FLAG_OFFLOAD successful");
+            ALOGV("TrackOffload: AUDIO_OUTPUT_FLAG_OFFLOAD successful");
         } else {
             ALOGW("AUDIO_OUTPUT_FLAG_OFFLOAD denied by server");
             mFlags = (audio_output_flags_t) (mFlags & ~AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD);
@@ -1500,6 +1542,11 @@ void AudioTrack::releaseBuffer(Buffer* audioBuffer)
         return;
     }
 
+    if (stepCount > audioBuffer->frameCount) {
+        ALOGI("TrackOffload: stepCount:framecount %d:%d", stepCount, audioBuffer->frameCount);
+        stepCount = audioBuffer->frameCount;
+    }
+
     Proxy::Buffer buffer;
     buffer.mFrameCount = stepCount;
     buffer.mRaw = audioBuffer->raw;
@@ -1524,12 +1571,6 @@ void AudioTrack::releaseBuffer(Buffer* audioBuffer)
 
 ssize_t AudioTrack::write(const void* buffer, size_t userSize, bool blocking)
 {
-    if (mDirectTrack != NULL) {
-        ssize_t written = 0;
-        written = mDirectTrack->write(buffer,userSize);
-        return written;
-    }
-
     if (mTransfer != TRANSFER_SYNC || mIsTimed) {
         return INVALID_OPERATION;
     }
@@ -1573,6 +1614,10 @@ ssize_t AudioTrack::write(const void* buffer, size_t userSize, bool blocking)
             memcpy_to_i16_from_u8(audioBuffer.i16, (const uint8_t *) buffer, toWrite);
         } else {
             toWrite = audioBuffer.size;
+            if(toWrite > userSize) {
+                ALOGI("TrackOffload: temp toWrite>userSize %d:%d", toWrite, userSize);
+                toWrite = userSize;
+            }
             memcpy(audioBuffer.i8, buffer, toWrite);
         }
         buffer = ((const char *) buffer) + toWrite;
@@ -1928,6 +1973,7 @@ nsecs_t AudioTrack::processAudioBuffer()
         if (mFormat == AUDIO_FORMAT_PCM_8_BIT && !(mFlags & AUDIO_OUTPUT_FLAG_DIRECT)) {
             audioBuffer.size >>= 1;
         }
+
         size_t reqSize = audioBuffer.size;
         mCbf(EVENT_MORE_DATA, mUserData, &audioBuffer);
         size_t writtenSize = audioBuffer.size;
@@ -1961,6 +2007,7 @@ nsecs_t AudioTrack::processAudioBuffer()
         } else {
             misalignment = 0;
         }
+
         releaseBuffer(&audioBuffer);
 
         // FIXME here is where we would repeat EVENT_MORE_DATA again on same advanced buffer
@@ -2110,12 +2157,16 @@ status_t AudioTrack::getTimestamp(AudioTimestamp& timestamp)
 
     // The presented frame count must always lag behind the consumed frame count.
     // To avoid a race, read the presented frames first.  This ensures that presented <= consumed.
-    status_t status = mAudioTrack->getTimestamp(timestamp);
-    if (status != NO_ERROR) {
-        ALOGV_IF(status != WOULD_BLOCK, "getTimestamp error:%#x", status);
-        return status;
+    status_t status = NO_ERROR;
+    if (!mUseSmallBuf) {
+        status = mAudioTrack->getTimestamp(timestamp);
+        if (status != NO_ERROR) {
+            ALOGV_IF(status != WOULD_BLOCK, "getTimestamp error:%#x", status);
+            return status;
+        }
     }
-    if (isOffloadedOrDirect_l()) {
+
+    if (isOffloadedOrDirect_l() && !mUseSmallBuf) {
         if (isOffloaded_l() && (mState == STATE_PAUSED || mState == STATE_PAUSED_STOPPING)) {
             // use cached paused position in case another offloaded track is running.
             timestamp.mPosition = mPausedPosition;
@@ -2154,29 +2205,38 @@ status_t AudioTrack::getTimestamp(AudioTimestamp& timestamp)
         }
     } else {
         // Update the mapping between local consumed (mPosition) and server consumed (mServer)
-        (void) updateAndGetPosition_l();
-        // Server consumed (mServer) and presented both use the same server time base,
-        // and server consumed is always >= presented.
-        // The delta between these represents the number of frames in the buffer pipeline.
-        // If this delta between these is greater than the client position, it means that
-        // actually presented is still stuck at the starting line (figuratively speaking),
-        // waiting for the first frame to go by.  So we can't report a valid timestamp yet.
-        if ((uint32_t) (mServer - timestamp.mPosition) > mPosition) {
-            return INVALID_OPERATION;
+        if (mUseSmallBuf) {
+            uint32_t tempPos = 0;
+            tempPos = (mState == STATE_STOPPED || mState == STATE_FLUSHED) ?
+                0 : updateAndGetPosition_l();
+            timestamp.mPosition = (tempPos / (mChannelCount * audio_bytes_per_sample(mFormat)));
+            clock_gettime(CLOCK_MONOTONIC, &timestamp.mTime);
+            return NO_ERROR;
+        } else {
+            (void) updateAndGetPosition_l();
+            // Server consumed (mServer) and presented both use the same server time base,
+            // and server consumed is always >= presented.
+            // The delta between these represents the number of frames in the buffer pipeline.
+            // If this delta between these is greater than the client position, it means that
+            // actually presented is still stuck at the starting line (figuratively speaking),
+            // waiting for the first frame to go by.  So we can't report a valid timestamp yet.
+            if ((uint32_t) (mServer - timestamp.mPosition) > mPosition) {
+                return INVALID_OPERATION;
+            }
+            // Convert timestamp position from server time base to client time base.
+            // TODO The following code should work OK now because timestamp.mPosition is 32-bit.
+            // But if we change it to 64-bit then this could fail.
+            // If (mPosition - mServer) can be negative then should use:
+            //   (int32_t)(mPosition - mServer)
+            timestamp.mPosition += mPosition - mServer;
+           // Immediately after a call to getPosition_l(), mPosition and
+           // mServer both represent the same frame position.  mPosition is
+           // in client's point of view, and mServer is in server's point of
+           // view.  So the difference between them is the "fudge factor"
+           // between client and server views due to stop() and/or new
+           // IAudioTrack.  And timestamp.mPosition is initially in server's
+           // point of view, so we need to apply the same fudge factor to it.
         }
-        // Convert timestamp position from server time base to client time base.
-        // TODO The following code should work OK now because timestamp.mPosition is 32-bit.
-        // But if we change it to 64-bit then this could fail.
-        // If (mPosition - mServer) can be negative then should use:
-        //   (int32_t)(mPosition - mServer)
-        timestamp.mPosition += mPosition - mServer;
-        // Immediately after a call to getPosition_l(), mPosition and
-        // mServer both represent the same frame position.  mPosition is
-        // in client's point of view, and mServer is in server's point of
-        // view.  So the difference between them is the "fudge factor"
-        // between client and server views due to stop() and/or new
-        // IAudioTrack.  And timestamp.mPosition is initially in server's
-        // point of view, so we need to apply the same fudge factor to it.
     }
     return status;
 }
@@ -2385,35 +2445,6 @@ void AudioTrack::DeathNotifier::binderDied(const wp<IBinder>& who __unused)
         AutoMutex lock(audioTrack->mLock);
         audioTrack->mProxy->binderDied();
     }
-}
-
-void AudioTrack::notify(int msg) {
-    if (msg == EVENT_UNDERRUN) {
-        ALOGV("Posting event underrun to Audio Sink.");
-        mCbf(EVENT_UNDERRUN, mUserData, 0);
-    }
-    if (msg == EVENT_HW_FAIL) {
-        ALOGV("Posting event HW fail to Audio Sink.");
-        mCbf(EVENT_HW_FAIL, mUserData, 0);
-    }
-}
-
-status_t AudioTrack::getTimeStamp(uint64_t *tstamp) {
-    if (mDirectTrack != NULL) {
-        *tstamp = mDirectTrack->getTimeStamp();
-        ALOGE("Timestamp %lld ", *tstamp);
-    }
-    return NO_ERROR;
-}
-
-void AudioTrack::DirectClient::notify(int msg) {
-    sp<AudioTrack> track = mAudioTrack.promote();
-    if (track == 0) {
-        ALOGE("AudioTrack dead?");
-        return;
-    }
-
-    return track->notify(msg);
 }
 
 // =========================================================================
