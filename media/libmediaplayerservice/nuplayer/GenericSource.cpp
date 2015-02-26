@@ -41,7 +41,7 @@
 #include "../../libstagefright/include/FLACDecoder.h"
 #endif
 
-#define MAX_CHECK_PROXY_RETRY_COUNT 10
+#define MAX_CHECK_PROXY_RETRY_COUNT 15
 static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
 static int64_t kHighWaterMarkUs = 5000000ll;  // 5secs
 static const size_t kLowWaterMarkBytes = 40000;
