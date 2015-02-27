@@ -11,6 +11,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2011-2014 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  **
  ** This file was modified by DTS, Inc. The portions of the
  ** code that are surrounded by "DTS..." are copyrighted and
@@ -74,6 +93,9 @@
 #include <media/stagefright/ExtendedCodec.h>
 #include "include/ExtendedUtils.h"
 #include "include/avc_utils.h"
+#ifdef DOLBY_UDC
+#include "ds_config.h"
+#endif // DOLBY_END
 
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
@@ -210,6 +232,11 @@ static void InitOMXParams(T *params) {
 }
 
 static bool IsSoftwareCodec(const char *componentName) {
+#ifdef DOLBY_UDC
+    if (!strncmp("OMX.dolby.", componentName, 10)) {
+        return true;
+    }
+#endif // DOLBY_END
     if (!strncmp("OMX.google.", componentName, 11)) {
         return true;
     }
@@ -271,7 +298,7 @@ void OMXCodec::findMatchingCodecs(
     size_t index = 0;
 
 #ifdef ENABLE_AV_ENHANCEMENTS
-    //Check if application specially reuqested for aac hardware encoder/decoder
+    //Check if application specially reuqested for  aac hardware encoder
     //This is not a part of  mediacodec list
     if (matchComponentName &&
             !strncmp("OMX.qcom.audio.encoder.aac", matchComponentName, 26)) {
@@ -283,16 +310,16 @@ void OMXCodec::findMatchingCodecs(
         return;
     }
 
-    if (matchComponentName &&
-            !strncmp("OMX.qcom.audio.decoder.multiaac", matchComponentName, 31)) {
-        matchingCodecs->add();
+#ifdef QTI_FLAC_DECODER
+    if (matchComponentName && !strncmp("FLACDecoder", matchComponentName, strlen("FLACDecoder"))) {
+            matchingCodecs->add();
 
-        CodecNameAndQuirks *entry = &matchingCodecs->editItemAt(index);
-        entry->mName = String8("OMX.qcom.audio.decoder.multiaac");
-        entry->mQuirks |= kRequiresAllocateBufferOnInputPorts;
-        entry->mQuirks |= kRequiresAllocateBufferOnOutputPorts;
-        return;
+            CodecNameAndQuirks *entry = &matchingCodecs->editItemAt(index);
+            entry->mName = String8("FLACDecoder");
+            entry->mQuirks = 0;
+            return;
     }
+#endif
 #endif
 
     for (;;) {
@@ -356,11 +383,16 @@ uint32_t OMXCodec::getComponentQuirks(
     if (info->hasQuirk("requires-global-flush")) {
         quirks |= kRequiresGlobalFlush;
     }
-    if (info->hasQuirk("defers-output-buffer-allocation")) {
-        quirks |= kDefersOutputBufferAllocation;
-    }
 
     quirks |= ExtendedCodec::getComponentQuirks(info);
+#ifdef DOLBY_UDC
+    if (info->hasQuirk("needs-flush-before-disable")) {
+        quirks |= kNeedsFlushBeforeDisable;
+    }
+    if (info->hasQuirk("requires-flush-complete-emulation")) {
+        quirks |= kRequiresFlushCompleteEmulation;
+    }
+#endif // DOLBY_END
 
     return quirks;
 }
@@ -386,17 +418,6 @@ bool OMXCodec::findCodecQuirks(const char *componentName, uint32_t *quirks) {
     if (index < 0) {
         return false;
     }
-
-#ifdef ENABLE_AV_ENHANCEMENTS
-    //Check for aac hardware decoder
-    //This is not a part of  mediacodec list
-    if (componentName &&
-            !strncmp("OMX.qcom.audio.decoder.multiaac", componentName, 31)) {
-        *quirks |= kRequiresAllocateBufferOnInputPorts;
-        *quirks |= kRequiresAllocateBufferOnOutputPorts;
-        return true;
-    }
-#endif
 
     const sp<MediaCodecInfo> info = list->getCodecInfo(index);
     CHECK(info != NULL);
@@ -428,14 +449,14 @@ sp<MediaSource> OMXCodec::Create(
 
     Vector<CodecNameAndQuirks> matchingCodecs;
 
-    if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_AAC, 15) &&
-            ExtendedUtils::UseQCHWAACDecoder(mime)) {
+#ifdef QTI_FLAC_DECODER
+    if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, strlen(MEDIA_MIMETYPE_AUDIO_FLAC))) {
         findMatchingCodecs(mime, createEncoder,
-            "OMX.qcom.audio.decoder.multiaac", flags, &matchingCodecs);
-    } else {
+            "FLACDecoder", flags, &matchingCodecs);
+    } else
+#endif
         findMatchingCodecs(
             mime, createEncoder, matchComponentName, flags, &matchingCodecs);
-    }
 
     if (matchingCodecs.isEmpty()) {
         ALOGV("No matching codecs! (mime: %s, createEncoder: %s, "
@@ -498,7 +519,21 @@ sp<MediaSource> OMXCodec::Create(
             }
         }
 
+        //STATS profiling
+        PlayerExtendedStats* tempPtr = NULL;
+        meta->findPointer(ExtendedStats::MEDIA_STATS_FLAG, (void**)&tempPtr);
+
+        bool isVideo = !strncasecmp("video/", mime, 6);
+        if (tempPtr) {
+            tempPtr->profileStart(STATS_PROFILE_ALLOCATE_NODE(isVideo));
+        }
+
         status_t err = omx->allocateNode(componentName, observer, &node);
+
+        if (tempPtr) {
+            tempPtr->profileStop(STATS_PROFILE_ALLOCATE_NODE(isVideo));
+        }
+
         if (err == OK) {
             ALOGD("Successfully allocated OMX node '%s'", componentName);
 
@@ -509,7 +544,16 @@ sp<MediaSource> OMXCodec::Create(
 
             observer->setCodec(codec);
 
-            err = codec->configureCodec(meta);
+            { //profile configure codec
+                ExtendedStats::AutoProfile autoProfile(
+                        STATS_PROFILE_CONFIGURE_CODEC(isVideo), tempPtr);
+                err = codec->configureCodec(meta);
+            }
+
+            /* set the stats pointer if we haven't yet and it exists */
+            if(codec->mPlayerExtendedStats == NULL && tempPtr)
+                codec->mPlayerExtendedStats = tempPtr;
+
             if (err == OK) {
                 return codec;
             }
@@ -1595,6 +1639,11 @@ status_t OMXCodec::setVideoOutputFormat(
     }
 
     ////////////////////////////////////////////////////////////////////////////
+    int32_t frameRate;
+    if (meta->findInt32(kKeyFrameRate, &frameRate)) {
+            PLAYER_STATS(setFrameRate, frameRate);
+    }
+    ////////////////////////////////////////////////////////////////////////////
 
     InitOMXParams(&def);
     def.nPortIndex = kPortIndexOutput;
@@ -1649,6 +1698,10 @@ OMXCodec::OMXCodec(
       mSkipCutBuffer(NULL),
       mLeftOverBuffer(NULL),
       mPaused(false),
+#ifdef DOLBY_UDC
+      mDolbyProcessedAudio(false),
+      mDolbyProcessedAudioStateChanged(false),
+#endif // DOLBY_END
       mNativeWindow(
               (!strncmp(componentName, "OMX.google.", 11))
                         ? NULL : nativeWindow),
@@ -1732,6 +1785,12 @@ void OMXCodec::setComponentRole(
             "video_decoder.mpeg2", "video_encoder.mpeg2" },
         { MEDIA_MIMETYPE_AUDIO_AC3,
             "audio_decoder.ac3", "audio_encoder.ac3" },
+#ifdef DOLBY_UDC
+        { MEDIA_MIMETYPE_AUDIO_EAC3,
+            "audio_decoder.ec3", NULL },
+        { MEDIA_MIMETYPE_AUDIO_EAC3_JOC,
+            "audio_decoder.ec3_joc", NULL },
+#endif // DOLBY_END
 #ifdef DTS_CODEC_M_
         { MEDIA_MIMETYPE_AUDIO_DTS,
             "audio_decoder.dts", "audio_encoder.dts" },
@@ -1853,6 +1912,11 @@ status_t OMXCodec::allocateBuffers() {
 }
 
 status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
+    const char* type = portIndex == kPortIndexInput ?
+                                    STATS_PROFILE_ALLOCATE_INPUT(mIsVideo) :
+                                    STATS_PROFILE_ALLOCATE_OUTPUT(mIsVideo);
+    ExtendedStats::AutoProfile autoProfile(type, mPlayerExtendedStats);
+
     if (mNativeWindow != NULL && portIndex == kPortIndexOutput) {
         return allocateOutputBuffersFromNativeWindow();
     }
@@ -2816,6 +2880,14 @@ void OMXCodec::onEvent(OMX_EVENTTYPE event, OMX_U32 data1, OMX_U32 data2) {
             break;
         }
 #endif
+#ifdef DOLBY_UDC
+        case OMX_EventDolbyProcessedAudio:
+        {
+            mDolbyProcessedAudio = data1;
+            mDolbyProcessedAudioStateChanged = true;
+            break;
+        }
+#endif // DOLBY_END
 
         default:
         {
@@ -3496,6 +3568,9 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
         int64_t lastBufferTimeUs;
         CHECK(srcBuffer->meta_data()->findInt64(kKeyTime, &lastBufferTimeUs));
         CHECK(lastBufferTimeUs >= 0);
+
+        PLAYER_STATS(logBitRate, srcBuffer->range_length(), lastBufferTimeUs);
+
         if (mIsEncoder && mIsVideo) {
             mDecodingTimeList.push_back(lastBufferTimeUs);
         }
@@ -3564,6 +3639,7 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
         info = findEmptyInputBuffer();
     }
 
+    PLAYER_STATS(profileStartOnce, STATS_PROFILE_FIRST_BUFFER(mIsVideo));
     CODEC_LOGV("Calling emptyBuffer on buffer %p (length %d), "
                "timestamp %lld us (%.2f secs)",
                info->mBuffer, offset,
@@ -4388,6 +4464,14 @@ status_t OMXCodec::read(
         initNativeWindowCrop();
         info->mOutputCropChanged = false;
     }
+#ifdef DOLBY_UDC
+    if (mDolbyProcessedAudioStateChanged) {
+        mDolbyProcessedAudioStateChanged = false;
+        return mDolbyProcessedAudio
+            ? INFO_DOLBY_PROCESSED_AUDIO_START
+            : INFO_DOLBY_PROCESSED_AUDIO_STOP;
+    }
+#endif  // DOLBY_END
     return OK;
 }
 
@@ -5072,9 +5156,13 @@ status_t OMXCodec::pause() {
 status_t OMXCodec::resumeLocked(bool drainInputBuf) {
    CODEC_LOGV("resume mState=%d", mState);
 
-   if (!strncmp(mComponentName, "OMX.qcom.", 9)) {
+   if (!strncmp(mComponentName, "OMX.qcom.", 9) && mPaused) {
         while (isIntermediateState(mState)) {
             mAsyncCompletion.wait(mLock);
+        }
+        if (mState == (status_t)EXECUTING) {
+            CODEC_LOGI("in EXECUTING state, return OK");
+            return OK;
         }
         CHECK_EQ(mState, (status_t)PAUSED);
         status_t err = mOMX->sendCommand(mNode,

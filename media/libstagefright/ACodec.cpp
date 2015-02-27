@@ -12,6 +12,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2011-2014 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  **
  ** This file was modified by DTS, Inc. The portions of the
  ** code that are surrounded by "DTS..." are copyrighted and
@@ -451,7 +470,8 @@ ACodec::ACodec()
       mTimePerFrameUs(-1ll),
       mTimePerCaptureUs(-1ll),
       mCreateInputBuffersSuspended(false),
-      mTunneled(false) {
+      mTunneled(false),
+      mIsVideoRenderingDisabled(false) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -497,6 +517,9 @@ void ACodec::initiateAllocateComponent(const sp<AMessage> &msg) {
 }
 
 void ACodec::initiateConfigureComponent(const sp<AMessage> &msg) {
+    if (mMediaExtendedStats == NULL)
+        msg->findObject(MEDIA_EXTENDED_STATS, (sp<RefBase>*)&mMediaExtendedStats);
+
     msg->setWhat(kWhatConfigureComponent);
     msg->setTarget(id());
     msg->post();
@@ -550,6 +573,14 @@ void ACodec::signalSubmitOutputMetaDataBufferIfEOS_workaround() {
 }
 
 status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
+    ATRACE_NAME(mComponentName.c_str());
+
+    bool isVideo = mComponentName.find("video") != -1;
+    const char* portType = portIndex == kPortIndexInput ?
+                                        STATS_PROFILE_ALLOCATE_INPUT(isVideo) :
+                                        STATS_PROFILE_ALLOCATE_OUTPUT(isVideo);
+    ExtendedStats::AutoProfile autoProfile(portType, mMediaExtendedStats);
+
     CHECK(portIndex == kPortIndexInput || portIndex == kPortIndexOutput);
 
     CHECK(mDealer[portIndex] == NULL);
@@ -1127,6 +1158,12 @@ status_t ACodec::setComponentRole(
             "audio_decoder.g711mlaw", "audio_encoder.g711mlaw" },
         { MEDIA_MIMETYPE_AUDIO_G711_ALAW,
             "audio_decoder.g711alaw", "audio_encoder.g711alaw" },
+#ifdef DOLBY_UDC
+        { MEDIA_MIMETYPE_AUDIO_EAC3,
+            "audio_decoder.ec3", NULL },
+        { MEDIA_MIMETYPE_AUDIO_EAC3_JOC,
+            "audio_decoder.ec3_joc", NULL },
+#endif // DOLBY_END
         { MEDIA_MIMETYPE_VIDEO_AVC,
             "video_decoder.avc", "video_encoder.avc" },
         { MEDIA_MIMETYPE_VIDEO_HEVC,
@@ -1206,10 +1243,15 @@ status_t ACodec::setComponentRole(
 
 status_t ACodec::configureCodec(
         const char *mime, const sp<AMessage> &msg) {
+    ATRACE_NAME("configureCodec");
     int32_t encoder;
     if (!msg->findInt32("encoder", &encoder)) {
         encoder = false;
     }
+
+    bool isVideo = mComponentName.find("video") != -1;
+    ExtendedStats::AutoProfile autoProfile(
+            STATS_PROFILE_CONFIGURE_CODEC(isVideo), mMediaExtendedStats);
 
     sp<AMessage> inputFormat = new AMessage();
     sp<AMessage> outputFormat = new AMessage();
@@ -1555,7 +1597,7 @@ status_t ACodec::configureCodec(
             err = setupG711Codec(encoder, numChannels);
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC)) {
-        int32_t numChannels, sampleRate, compressionLevel = -1;
+        int32_t numChannels = 0, sampleRate = 0, compressionLevel = -1;
         if (encoder &&
                 (!msg->findInt32("channel-count", &numChannels)
                         || !msg->findInt32("sample-rate", &sampleRate))) {
@@ -2000,7 +2042,7 @@ status_t ACodec::setupFlacCodec(
     }
 
     return setupRawAudioFormat(
-            encoder ? kPortIndexInput : kPortIndexOutput,
+            kPortIndexInput,
             sampleRate,
             numChannels);
 }
@@ -3627,7 +3669,23 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
                     notify->setInt32("sample-rate", params.nSamplingRate);
                     break;
                 }
+#ifdef DTS_CODEC_M_
+                case OMX_AUDIO_CodingDTSHD:
+                {
+                    OMX_AUDIO_PARAM_DTSDECTYPE params;
+                    InitOMXParams(&params);
+                    params.nPortIndex = portIndex;
 
+                    CHECK_EQ((status_t)OK, mOMX->getParameter(
+                            mNode,
+                            (OMX_INDEXTYPE)OMX_IndexParamAudioDTSDec,
+                            &params,
+                            sizeof(params)));
+
+                    notify->setString("mime", MEDIA_MIMETYPE_AUDIO_DTS);
+                    break;
+                }
+#endif
                 default:
                 {
                     AString mimeType;
@@ -4242,6 +4300,12 @@ void ACodec::BaseState::onInputBufferFilled(const sp<AMessage> &msg) {
                     }
                 }
 
+                if (mCodec->mMediaExtendedStats != NULL) {
+                    bool isVideo = mCodec->mComponentName.find("video") != -1;
+                    mCodec->mMediaExtendedStats->profileStartOnce(
+                            STATS_PROFILE_FIRST_BUFFER(isVideo));
+                }
+
                 CHECK_EQ(mCodec->mOMX->emptyBuffer(
                             mCodec->mNode,
                             bufferID,
@@ -4468,9 +4532,16 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
     int32_t render;
     if (mCodec->mNativeWindow != NULL
             && msg->findInt32("render", &render) && render != 0
-            && info->mData != NULL && info->mData->size() != 0) {
+            && info->mData != NULL && info->mData->size() != 0
+            && !mCodec->mIsVideoRenderingDisabled) {
         ATRACE_NAME("render");
         // The client wants this buffer to be rendered.
+
+        if (mCodec->mMediaExtendedStats != NULL) {
+            bool isVideo = mCodec->mComponentName.find("video") != -1;
+            mCodec->mMediaExtendedStats->profileStop(
+                STATS_PROFILE_FIRST_BUFFER(isVideo));
+        }
 
         int64_t timestampNs = 0;
         if (!msg->findInt64("timestampNs", &timestampNs)) {
@@ -4501,8 +4572,9 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
             info->mStatus = BufferInfo::OWNED_BY_US;
         }
     } else {
-        if (mCodec->mNativeWindow != NULL &&
-            (info->mData == NULL || info->mData->size() != 0)) {
+        if (mCodec->mNativeWindow != NULL
+            && msg->findInt32("render", &render) && render == 0
+            && (info->mData == NULL || info->mData->size() != 0)) {
             ATRACE_NAME("frame-drop");
         }
         info->mStatus = BufferInfo::OWNED_BY_US;
@@ -4650,7 +4722,7 @@ void ACodec::UninitializedState::onSetup(
 
 bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     ALOGV("onAllocateComponent");
-
+    ATRACE_NAME("onAllocatecomponent");
     CHECK(mCodec->mNode == NULL);
 
     OMXClient client;
@@ -4695,7 +4767,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     // MediaCodecSource does not pass the output format details when calling
     // kInit leading to msg passed not having enough details
     if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_AAC)
-        && ExtendedUtils::UseQCHWAACEncoder() && encoder) {
+        && ExtendedUtils::UseQCHWAACEncoder()) {
         //use hw aac encoder
         ALOGD("use QCOM HW AAC encoder");
         OMXCodec::findMatchingCodecs(
@@ -4704,24 +4776,25 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
                 "OMX.qcom.audio.encoder.aac",  // OMX.qcom.audio.encoder.aac
                 0,     // flags
                 &matchingCodecs);
-    } else if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_AAC)
-        && ExtendedUtils::UseQCHWAACDecoder(mime.c_str()) && !encoder) {
-        //use hw aac decoder
-        ALOGD("use QCOM HW AAC decoder");
+    }
+#ifdef QTI_FLAC_DECODER
+    else if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_FLAC) && !encoder) {
+        //use google's raw decoder
         OMXCodec::findMatchingCodecs(
-                mime.c_str(),
-                encoder, // createEncoder
-                "OMX.qcom.audio.decoder.multiaac",  // OMX.qcom.audio.decoder.multiaac
-                0,     // flags
+                MEDIA_MIMETYPE_AUDIO_RAW,
+                encoder, //createEncoder
+                "OMX.google.raw.decoder",
+                0, //flags
                 &matchingCodecs);
-    } else {
+    }
+#endif
+     else
         OMXCodec::findMatchingCodecs(
                 mime.c_str(),
                 encoder, // createEncoder
                 NULL,  // matchComponentName
                 0,     // flags
                 &matchingCodecs);
-    }
 #else
     OMXCodec::findMatchingCodecs(
                 mime.c_str(),
@@ -4928,6 +5001,7 @@ bool ACodec::LoadedState::onConfigureComponent(
         native_window_set_scaling_mode(
                 mCodec->mNativeWindow.get(),
                 NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW);
+        mCodec->mIsVideoRenderingDisabled = ExtendedUtils::ShellProp::isVideoRenderingDisabled();
     }
     CHECK_EQ((status_t)OK, mCodec->initNativeWindow());
 
@@ -5494,6 +5568,11 @@ bool ACodec::ExecutingState::onOMXEvent(
                 mCodec->freeOutputBuffersNotOwnedByComponent();
 
                 mCodec->changeState(mCodec->mOutputPortSettingsChangedState);
+
+                bool isVideo = mCodec->mComponentName.find("video") != -1;
+                if (isVideo) {
+                    CODEC_PLAYER_STATS(profileStart, STATS_PROFILE_RECONFIGURE);
+                }
             } else if (data2 == OMX_IndexConfigCommonOutputCrop) {
                 mCodec->mSentFormat = false;
             } else {
@@ -5614,6 +5693,11 @@ bool ACodec::OutputPortSettingsChangedState::onOMXEvent(
                 }
 
                 mCodec->changeState(mCodec->mExecutingState);
+
+                bool isVideo = mCodec->mComponentName.find("video") != -1;
+                if (isVideo) {
+                    CODEC_PLAYER_STATS(profileStop, STATS_PROFILE_RECONFIGURE);
+                }
 
                 return true;
             }

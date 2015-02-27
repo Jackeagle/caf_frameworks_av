@@ -23,6 +23,7 @@
 namespace android {
 
 struct ABuffer;
+class  AWakeLock;
 struct VideoFrameScheduler;
 
 struct NuPlayer::Renderer : public AHandler {
@@ -76,6 +77,7 @@ struct NuPlayer::Renderer : public AHandler {
             const sp<AMessage> &format,
             bool offloadOnly,
             bool hasVideo,
+            bool isStreaming,
             uint32_t flags);
     void closeAudioSink();
 
@@ -127,6 +129,7 @@ private:
 
     static const int64_t kMinPositionUpdateDelayUs;
 
+    sp<PlayerExtendedStats> mPlayerExtendedStats;
     sp<MediaPlayerBase::AudioSink> mAudioSink;
     sp<AMessage> mNotify;
     Mutex mLock;
@@ -177,7 +180,7 @@ private:
 
     int32_t mTotalBuffersQueued;
     int32_t mLastAudioBufferDrained;
-
+    sp<AWakeLock> mWakeLock;
 
     size_t fillAudioBuffer(void *buffer, size_t size);
 
@@ -208,6 +211,7 @@ private:
             const sp<AMessage> &format,
             bool offloadOnly,
             bool hasVideo,
+            bool isStreaming,
             uint32_t flags);
     void onCloseAudioSink();
 

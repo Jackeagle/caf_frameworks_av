@@ -83,6 +83,7 @@ LOCAL_SRC_FILES:=                         \
         avc_utils.cpp                     \
         ExtendedExtractor.cpp             \
         ExtendedUtils.cpp                 \
+        ExtendedStats.cpp                 \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/ \
@@ -162,6 +163,10 @@ endif #TARGET_ENABLE_AV_ENHANCEMENTS
 ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD_24)),true)
        LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED_24
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+endif
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD)),true)
+       LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED
        LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
 endif
 endif

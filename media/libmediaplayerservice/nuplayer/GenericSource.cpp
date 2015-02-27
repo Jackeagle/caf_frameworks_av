@@ -37,10 +37,8 @@
 #include "../../libstagefright/include/NuCachedSource2.h"
 #include "../../libstagefright/include/WVMExtractor.h"
 #include "../../libstagefright/include/HTTPBase.h"
-#ifdef QTI_FLAC_DECODER
-#include "../../libstagefright/include/FLACDecoder.h"
-#endif
 
+#include <ExtendedUtils.h>
 namespace android {
 
 NuPlayer::GenericSource::GenericSource(
@@ -188,11 +186,6 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
                 mAudioTrack.mPackets =
                     new AnotherPacketSource(mAudioTrack.mSource->getFormat());
 
-#ifdef QTI_FLAC_DECODER
-                if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10)) {
-                     mAudioTrack.mSource = new FLACDecoder(track);
-                }
-#endif
                 if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_VORBIS)) {
                     mAudioIsVorbis = true;
                 } else {
@@ -466,7 +459,22 @@ void NuPlayer::GenericSource::start() {
 
     mStopRead = false;
     if (mAudioTrack.mSource != NULL) {
-        CHECK_EQ(mAudioTrack.mSource->start(), (status_t)OK);
+        sp<MetaData> audioMeta = mAudioTrack.mSource->getFormat();
+        if (ExtendedUtils::isRAWFormat(audioMeta) &&
+            ExtendedUtils::is24bitPCMOffloadEnabled() &&
+            (ExtendedUtils::getPCMFormat(audioMeta) == AUDIO_FORMAT_PCM_8_24_BIT)) {
+            /*call start with kKeyPCMFormat set to 24bit when:
+            * 1. is raw pcm format
+            * 2. 24bit pcm offload feature is enabled
+            * 3. kKeyPCMFormat is set to 24bit
+            * default format (16bit) will be used in WAVExtractor if:
+            * 1. kKeyPCMFormat is not set
+            * 2. kKeyPCMFormat is not set to 24bit
+            */
+            CHECK_EQ(mAudioTrack.mSource->start(audioMeta.get()), (status_t)OK);
+        } else {
+            CHECK_EQ(mAudioTrack.mSource->start(), (status_t)OK);
+        }
 
         postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
     }
@@ -538,10 +546,12 @@ void NuPlayer::GenericSource::cancelPollBuffering() {
     ++mPollBufferingGeneration;
 }
 
-void NuPlayer::GenericSource::notifyBufferingUpdate(int percentage) {
+void NuPlayer::GenericSource::notifyBufferingUpdate(int percentage,
+        int64_t durationUs) {
     sp<AMessage> msg = dupNotify();
     msg->setInt32("what", kWhatBufferingUpdate);
     msg->setInt32("percentage", percentage);
+    msg->setInt64("duration", durationUs);
     msg->post();
 }
 
@@ -571,7 +581,7 @@ void NuPlayer::GenericSource::onPollBuffering() {
     }
 
     if (finalStatus == ERROR_END_OF_STREAM) {
-        notifyBufferingUpdate(100);
+        notifyBufferingUpdate(100, 0);
         cancelPollBuffering();
         return;
     } else if (cachedDurationUs > 0ll && mDurationUs > 0ll) {
@@ -580,7 +590,7 @@ void NuPlayer::GenericSource::onPollBuffering() {
             percentage = 100;
         }
 
-        notifyBufferingUpdate(percentage);
+        notifyBufferingUpdate(percentage, cachedDurationUs);
     }
 
     schedulePollBuffering();
@@ -1255,13 +1265,13 @@ void NuPlayer::GenericSource::readBuffer(
     switch (trackType) {
         case MEDIA_TRACK_TYPE_VIDEO:
             track = &mVideoTrack;
-            if (mIsWidevine) {
+            if (mIsWidevine || (mHttpSource != NULL)) {
                 maxBuffers = 2;
             }
             break;
         case MEDIA_TRACK_TYPE_AUDIO:
             track = &mAudioTrack;
-            if (mIsWidevine) {
+            if (mIsWidevine || (mHttpSource != NULL)) {
                 maxBuffers = 8;
             } else {
                 maxBuffers = 64;
@@ -1327,7 +1337,8 @@ void NuPlayer::GenericSource::readBuffer(
                 track->mPackets->queueDiscontinuity( type, NULL, true /* discard */);
             }
 
-            sp<ABuffer> buffer = mediaBufferToABuffer(mbuf, trackType, actualTimeUs);
+            sp<ABuffer> buffer = mediaBufferToABuffer(mbuf, trackType,
+                numBuffers == 0 ? actualTimeUs : NULL);
             track->mPackets->queueAccessUnit(buffer);
             formatChange = false;
             seeking = false;

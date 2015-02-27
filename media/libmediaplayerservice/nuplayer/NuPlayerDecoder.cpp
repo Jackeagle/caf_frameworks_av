@@ -108,7 +108,19 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
     ALOGV("[%s] onConfigure (surface=%p)", mComponentName.c_str(), surface.get());
 
     ExtendedCodec::overrideMimeType(format, &mime);
-    mCodec = MediaCodec::CreateByType(mCodecLooper, mime.c_str(), false /* encoder */);
+
+    /* time allocateNode here */
+    {
+        if (mPlayerExtendedStats == NULL) {
+            format->findObject(MEDIA_EXTENDED_STATS, (sp<RefBase>*)&mPlayerExtendedStats);
+        }
+        int32_t isVideo = !strncasecmp(mime.c_str(), "video/", 6);
+        ExtendedStats::AutoProfile autoProfile(
+                STATS_PROFILE_ALLOCATE_NODE(isVideo), mPlayerExtendedStats);
+
+        mCodec = MediaCodec::CreateByType(mCodecLooper, mime.c_str(), false /* encoder */);
+    }
+
     int32_t secure = 0;
     if (format->findInt32("secure", &secure) && secure != 0) {
         if (mCodec != NULL) {
@@ -139,6 +151,9 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
         // any error signaling will occur.
         ALOGW_IF(err != OK, "failed to disconnect from surface: %d", err);
     }
+    if (mPlayerExtendedStats != NULL) {
+        format->setObject(MEDIA_EXTENDED_STATS, mPlayerExtendedStats);
+    }
     err = mCodec->configure(
             format, surface, NULL /* crypto */, 0 /* flags */);
     if (err != OK) {
@@ -151,7 +166,6 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
     rememberCodecSpecificData(format);
 
     // the following should work in configured state
-    CHECK_EQ((status_t)OK, mCodec->getOutputFormat(&mOutputFormat));
     CHECK_EQ((status_t)OK, mCodec->getInputFormat(&mInputFormat));
 
     err = mCodec->start();
@@ -417,6 +431,8 @@ bool android::NuPlayer::Decoder::onInputBufferFilled(const sp<AMessage> &msg) {
                 mMediaBuffers.editItemAt(bufferIx) = mediaBuffer;
             }
         }
+
+        PLAYER_STATS(logBitRate, buffer->size(), timeUs);
     }
     return true;
 }
@@ -725,7 +741,7 @@ bool NuPlayer::Decoder::supportsSeamlessAudioFormatChange(const sp<AMessage> &ta
         const char * keys[] = { "channel-count", "sample-rate", "is-adts" };
         for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
             int32_t oldVal, newVal;
-            if (!mOutputFormat->findInt32(keys[i], &oldVal) ||
+            if (!mInputFormat->findInt32(keys[i], &oldVal) ||
                     !targetFormat->findInt32(keys[i], &newVal) ||
                     oldVal != newVal) {
                 return false;
@@ -733,7 +749,7 @@ bool NuPlayer::Decoder::supportsSeamlessAudioFormatChange(const sp<AMessage> &ta
         }
 
         sp<ABuffer> oldBuf, newBuf;
-        if (mOutputFormat->findBuffer("csd-0", &oldBuf) &&
+        if (mInputFormat->findBuffer("csd-0", &oldBuf) &&
                 targetFormat->findBuffer("csd-0", &newBuf)) {
             if (oldBuf->size() != newBuf->size()) {
                 return false;
@@ -745,7 +761,7 @@ bool NuPlayer::Decoder::supportsSeamlessAudioFormatChange(const sp<AMessage> &ta
 }
 
 bool NuPlayer::Decoder::supportsSeamlessFormatChange(const sp<AMessage> &targetFormat) const {
-    if (mOutputFormat == NULL) {
+    if (mInputFormat == NULL) {
         return false;
     }
 
@@ -754,7 +770,7 @@ bool NuPlayer::Decoder::supportsSeamlessFormatChange(const sp<AMessage> &targetF
     }
 
     AString oldMime, newMime;
-    if (!mOutputFormat->findString("mime", &oldMime)
+    if (!mInputFormat->findString("mime", &oldMime)
             || !targetFormat->findString("mime", &newMime)
             || !(oldMime == newMime)) {
         return false;

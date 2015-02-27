@@ -1399,8 +1399,6 @@ MPEG4Writer::Track::Track(
       mReachedEOS(false),
       mRotation(0),
       mHFRRatio(1) {
-    getCodecSpecificDataFromInputFormatIfPossible();
-
     const char *mime;
     mMeta->findCString(kKeyMIMEType, &mime);
 
@@ -1792,6 +1790,12 @@ status_t MPEG4Writer::Track::start(MetaData *params) {
 
     meta->setInt64(kKeyTime, startTimeUs);
 
+    if (params) {
+        RecorderExtendedStats* rStats = NULL;
+        params->findPointer(ExtendedStats::MEDIA_STATS_FLAG, (void**)&rStats);
+        meta->setPointer(ExtendedStats::MEDIA_STATS_FLAG, rStats);
+    }
+
     status_t err = mSource->start(meta.get());
     if (err != OK) {
         mDone = mReachedEOS = true;
@@ -1835,13 +1839,14 @@ status_t MPEG4Writer::Track::stop() {
     }
     mDone = true;
 
+    ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
+    mSource->stop();
+    ALOGD("%s track source stopped", mIsAudio? "Audio": "Video");
+
     void *dummy;
     pthread_join(mThread, &dummy);
     status_t err = static_cast<status_t>(reinterpret_cast<uintptr_t>(dummy));
 
-    ALOGD("%s track source stopping", mIsAudio? "Audio": "Video");
-    err = mSource->stop();
-    ALOGD("%s track stopped status:%d", mIsAudio? "Audio": "Video", err);
     if (mOwner->exceedsFileSizeLimit() && mStszTableEntries->count() == 0) {
         ALOGE(" Filesize limit exceeded and zero samples written ");
         return ERROR_END_OF_STREAM;
@@ -2699,6 +2704,11 @@ void MPEG4Writer::Track::writeTrackHeader(bool use32BitOffset) {
     ALOGV("%s track time scale: %d",
         mIsAudio? "Audio": "Video", mTimeScale);
 
+    if (mMdatSizeBytes == 0) {
+      ALOGV("Track data is not available.");
+      return;
+    }
+
     uint32_t now = getMpeg4Time();
     mOwner->beginBox("trak");
         writeTkhdBox(now);
@@ -2781,8 +2791,6 @@ void MPEG4Writer::Track::writeVideoFourCCBox() {
     mOwner->write("                               ", 31);
     mOwner->writeInt16(0x18);        // depth
     mOwner->writeInt16(-1);          // predefined
-
-    CHECK_LT(23 + mCodecSpecificDataSize, 128);
 
     if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_MPEG4, mime)) {
         writeMp4vEsdsBox();
@@ -2887,6 +2895,9 @@ void MPEG4Writer::Track::writeMp4vEsdsBox() {
     CHECK(mCodecSpecificData);
     CHECK_GT(mCodecSpecificDataSize, 0);
     mOwner->beginBox("esds");
+
+    // Make sure all sizes encode to a single byte.
+    CHECK_LT(mCodecSpecificDataSize + 23, 128);
 
     mOwner->writeInt32(0);    // version=0, flags=0
 
