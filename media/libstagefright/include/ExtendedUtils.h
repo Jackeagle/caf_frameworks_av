@@ -169,6 +169,8 @@ struct ExtendedUtils {
         static void getRtpPortRange(unsigned *start, unsigned *end);
 
         static bool getSTAProxyConfig(int32_t &port);
+
+        static bool isCustomHLSEnabled();
     };
 
     struct DiscoverProxy : public RefBase {
