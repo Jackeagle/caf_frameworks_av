@@ -186,6 +186,7 @@ const StringToEnum sOutputFlagNameToEnumTable[] = {
 #ifdef HDMI_PASSTHROUGH_ENABLED
     STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_COMPRESS_PASSTHROUGH),
 #endif
+    STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_DRIVER_SIDE),
 };
 
 const StringToEnum sInputFlagNameToEnumTable[] = {
