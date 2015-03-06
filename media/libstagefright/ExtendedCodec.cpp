@@ -382,6 +382,8 @@ status_t ExtendedCodec::setVideoOutputFormat(
         *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingDivx;
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV, mime)){
         *compressionFormat = OMX_VIDEO_CodingWMV;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV_VC1, mime)) {
+        *compressionFormat = OMX_VIDEO_CodingWMV;
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime)){
         *compressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingHevc;
     } else {
@@ -412,6 +414,8 @@ status_t ExtendedCodec::setSupportedRole(
         { MEDIA_MIMETYPE_VIDEO_DIVX311,
           "video_decoder.divx", NULL },
         { MEDIA_MIMETYPE_VIDEO_WMV,
+          "video_decoder.vc1",  NULL },
+        { MEDIA_MIMETYPE_VIDEO_WMV_VC1,
           "video_decoder.vc1",  NULL },
         { MEDIA_MIMETYPE_AUDIO_AC3,
           "audio_decoder.ac3", NULL },
