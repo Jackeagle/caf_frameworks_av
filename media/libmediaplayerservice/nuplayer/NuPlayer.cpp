@@ -2096,14 +2096,16 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
 
             bool eos = mVideoEOS || mAudioEOS
                     || percentage == 100; // sources return 100% after EOS
-            if (durationUs < kLowWaterMarkUs && mPlaying && !eos) {
+            if (!mBuffering && durationUs < kLowWaterMarkUs && !eos) {
                 mBuffering = true;
-                pause();
+                if (mPlaying) {
+                    pause();
+                }
                 notifyListener(MEDIA_INFO, MEDIA_INFO_BUFFERING_START, 0);
                 ALOGI("cache running low (< %g secs)..pausing",
                         (double)durationUs / 1000000.0);
-            } else if (eos || durationUs > kHighWaterMarkUs) {
-                if (mBuffering && !mPlaying) {
+            } else if (mBuffering && (eos || durationUs > kHighWaterMarkUs)) {
+                if (!mPlaying) {
                     resume();
                     ALOGI("cache has filled up..resuming");
                 }
