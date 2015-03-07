@@ -231,9 +231,7 @@ void NuPlayer::Decoder::init() {
 void NuPlayer::Decoder::configure(const sp<AMessage> &format) {
     sp<AMessage> msg = new AMessage(kWhatConfigure, id());
     msg->setMessage("format", format);
-
-    sp<AMessage> response;
-    PostAndAwaitResponse(msg, &response);
+    msg->post();
 }
 
 void NuPlayer::Decoder::signalUpdateFormat(const sp<AMessage> &format) {
@@ -609,14 +607,10 @@ void NuPlayer::Decoder::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatConfigure:
         {
-            uint32_t replyID;
-            CHECK(msg->senderAwaitsResponse(&replyID));
-
             sp<AMessage> format;
             CHECK(msg->findMessage("format", &format));
             onConfigure(format);
 
-            (new AMessage)->postReply(replyID);
             break;
         }
 
