@@ -222,7 +222,6 @@ struct ExtendedUtils {
     static int32_t getPcmSampleBits(const sp<AMessage> &format);
     static int32_t getPCMFormat(const sp<MetaData> &meta);
     static void setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat);
-    static bool UseQCHWAACDecoder(const char *mime);
 
     static sp<MediaExtractor> MediaExtractor_CreateIfNeeded(
             sp<MediaExtractor> defaultExt, const sp<DataSource> &source,
@@ -255,6 +254,12 @@ struct ExtendedUtils {
     static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
 
     static bool pcmOffloadException(const char* const mime);
+
+    static sp<MetaData> createPCMMetaFromSource(
+            const sp<MetaData> &sMeta);
+
+    static void overWriteAudioFormat(
+                sp<AMessage> &dst, const sp<AMessage> &src);
 };
 
 }

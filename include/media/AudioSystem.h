@@ -26,7 +26,6 @@
 #include <system/audio_policy.h>
 #include <utils/Errors.h>
 #include <utils/Mutex.h>
-#include <media/AudioParameter.h>
 
 namespace android {
 
@@ -166,7 +165,6 @@ public:
         INPUT_CLOSED,
         INPUT_CONFIG_CHANGED,
         STREAM_CONFIG_CHANGED,
-        EFFECT_CONFIG_CHANGED,
         NUM_CONFIG_EVENTS
     };
 

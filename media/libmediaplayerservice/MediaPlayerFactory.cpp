@@ -183,6 +183,7 @@ class StagefrightPlayerFactory :
                                int64_t /*length*/,
                                float /*curScore*/) {
 
+#ifdef QTI_FLAC_DECODER
         // Flac playback forced to Awesomeplayer
         if (fd) {
             char symName[40] = {0};
@@ -201,6 +202,7 @@ class StagefrightPlayerFactory :
                 }
             }
         }
+#endif
         if (getDefaultPlayerType()
                 == STAGEFRIGHT_PLAYER) {
             char buf[20];
@@ -257,8 +259,7 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
 
         if (!strncasecmp("http://", url, 7)
                 || !strncasecmp("https://", url, 8)) {
-            ALOGI("Using NuPlayer for http://");
-            return 1.0;
+            return kOurScore;
         }
 
         return 0.0;

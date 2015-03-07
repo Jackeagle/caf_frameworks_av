@@ -113,8 +113,6 @@ struct AwesomePlayer {
     void postAudioEOS(int64_t delayUs = 0ll);
     void postAudioSeekComplete();
     void postAudioTearDown();
-    void printFileName(int fd);
-
     status_t dump(int fd, const Vector<String16> &args) const;
 
     status_t suspend();
@@ -225,7 +223,6 @@ private:
 
     bool mWatchForAudioSeekComplete;
     bool mWatchForAudioEOS;
-    static int mTunnelAliveAP;
 
     bool mIsFirstFrameAfterResume;
 
@@ -340,7 +337,6 @@ private:
         ASSIGN
     };
     void modifyFlags(unsigned value, FlagMode mode);
-    void checkTunnelExceptions();
     void logFirstFrame();
     void logCatchUp(int64_t ts, int64_t clock, int64_t delta);
     void logLate(int64_t ts, int64_t clock, int64_t delta);
@@ -408,10 +404,6 @@ private:
     status_t selectTrack(size_t trackIndex, bool select);
 
     size_t countTracks() const;
-    bool inSupportedTunnelFormats(const char * mime);
-    //Flag to check if tunnel mode audio is enabled
-    bool mIsTunnelAudio;
-
     bool isWidevineContent() const;
 
     AwesomePlayer(const AwesomePlayer &);

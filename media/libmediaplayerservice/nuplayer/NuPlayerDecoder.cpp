@@ -166,7 +166,6 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
     rememberCodecSpecificData(format);
 
     // the following should work in configured state
-    CHECK_EQ((status_t)OK, mCodec->getOutputFormat(&mOutputFormat));
     CHECK_EQ((status_t)OK, mCodec->getInputFormat(&mInputFormat));
 
     err = mCodec->start();
@@ -232,9 +231,7 @@ void NuPlayer::Decoder::init() {
 void NuPlayer::Decoder::configure(const sp<AMessage> &format) {
     sp<AMessage> msg = new AMessage(kWhatConfigure, id());
     msg->setMessage("format", format);
-
-    sp<AMessage> response;
-    PostAndAwaitResponse(msg, &response);
+    msg->post();
 }
 
 void NuPlayer::Decoder::signalUpdateFormat(const sp<AMessage> &format) {
@@ -610,14 +607,9 @@ void NuPlayer::Decoder::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatConfigure:
         {
-            uint32_t replyID;
-            CHECK(msg->senderAwaitsResponse(&replyID));
-
             sp<AMessage> format;
             CHECK(msg->findMessage("format", &format));
             onConfigure(format);
-
-            (new AMessage)->postReply(replyID);
             break;
         }
 
@@ -749,7 +741,7 @@ bool NuPlayer::Decoder::supportsSeamlessAudioFormatChange(const sp<AMessage> &ta
         const char * keys[] = { "channel-count", "sample-rate", "is-adts" };
         for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
             int32_t oldVal, newVal;
-            if (!mOutputFormat->findInt32(keys[i], &oldVal) ||
+            if (!mInputFormat->findInt32(keys[i], &oldVal) ||
                     !targetFormat->findInt32(keys[i], &newVal) ||
                     oldVal != newVal) {
                 return false;
@@ -757,7 +749,7 @@ bool NuPlayer::Decoder::supportsSeamlessAudioFormatChange(const sp<AMessage> &ta
         }
 
         sp<ABuffer> oldBuf, newBuf;
-        if (mOutputFormat->findBuffer("csd-0", &oldBuf) &&
+        if (mInputFormat->findBuffer("csd-0", &oldBuf) &&
                 targetFormat->findBuffer("csd-0", &newBuf)) {
             if (oldBuf->size() != newBuf->size()) {
                 return false;
@@ -769,7 +761,7 @@ bool NuPlayer::Decoder::supportsSeamlessAudioFormatChange(const sp<AMessage> &ta
 }
 
 bool NuPlayer::Decoder::supportsSeamlessFormatChange(const sp<AMessage> &targetFormat) const {
-    if (mOutputFormat == NULL) {
+    if (mInputFormat == NULL) {
         return false;
     }
 
@@ -778,7 +770,7 @@ bool NuPlayer::Decoder::supportsSeamlessFormatChange(const sp<AMessage> &targetF
     }
 
     AString oldMime, newMime;
-    if (!mOutputFormat->findString("mime", &oldMime)
+    if (!mInputFormat->findString("mime", &oldMime)
             || !targetFormat->findString("mime", &newMime)
             || !(oldMime == newMime)) {
         return false;

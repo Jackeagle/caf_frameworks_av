@@ -20,15 +20,6 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-ifeq ($(BOARD_USES_ALSA_AUDIO),true)
-   ifeq ($(USE_TUNNEL_MODE),true)
-        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
-   endif
-   ifeq ($(NO_TUNNEL_MODE_FOR_MULTICHANNEL),true)
-        LOCAL_CFLAGS += -DNO_TUNNEL_MODE_FOR_MULTICHANNEL
-   endif
-endif
-
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 LOCAL_SRC_FILES:=                         \
@@ -52,7 +43,6 @@ LOCAL_SRC_FILES:=                         \
         FLACExtractor.cpp                 \
         HTTPBase.cpp                      \
         JPEGSource.cpp                    \
-        LPAPlayerALSA.cpp                 \
         MP3Extractor.cpp                  \
         MPEG2TSWriter.cpp                 \
         MPEG4Extractor.cpp                \
@@ -84,7 +74,6 @@ LOCAL_SRC_FILES:=                         \
         ThrottledSource.cpp               \
         TimeSource.cpp                    \
         TimedEventQueue.cpp               \
-        TunnelPlayer.cpp                  \
         Utils.cpp                         \
         VBRISeeker.cpp                    \
         WAVExtractor.cpp                  \
@@ -174,7 +163,9 @@ endif #TARGET_ENABLE_AV_ENHANCEMENTS
 ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD_24)),true)
        LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED_24
-       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc \
+			$(TOP)/hardware/qcom/audio/hal/audio_extn \
+			$(TOP)/hardware/qcom/audio/hal
 endif
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD)),true)
        LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED
@@ -185,6 +176,9 @@ endif
 ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_FLAC_OFFLOAD)),true)
        LOCAL_CFLAGS     += -DFLAC_OFFLOAD_ENABLED
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc \
+			$(TOP)/hardware/qcom/audio/hal/audio_extn \
+			$(TOP)/hardware/qcom/audio/hal
 endif
 endif
 
