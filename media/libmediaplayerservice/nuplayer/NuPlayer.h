@@ -198,7 +198,6 @@ private:
     bool mStarted;
     bool mBuffering;
     bool mPlaying;
-    bool mSeeking;
     sp<ExtendedUtils::DiscoverProxy> mDProxy;
 
     bool mSkipAudioFlushAfterSuspend;

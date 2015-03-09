@@ -197,7 +197,6 @@ NuPlayer::NuPlayer()
       mSkipAudioFlushAfterSuspend(false),
       mSkipVideoFlushAfterSuspend(false),
       mDProxy(NULL),
-      mSeeking(false),
       mImageDisplayed(false), 
       mPaused(false),
       mPausedByClient(false) {
@@ -353,6 +352,9 @@ void NuPlayer::setAudioSink(const sp<MediaPlayerBase::AudioSink> &sink) {
 
 void NuPlayer::start() {
     PLAYER_STATS(notifyPlaying, true);
+    if (mStarted) {
+        PLAYER_STATS(profileStart, STATS_PROFILE_RESUME);
+    }
     (new AMessage(kWhatStart, id()))->post();
 }
 
@@ -1137,6 +1139,9 @@ void NuPlayer::onStart() {
     sp<AMessage> notify = new AMessage(kWhatRendererNotify, id());
     ++mRendererGeneration;
     notify->setInt32("generation", mRendererGeneration);
+    if (mPlayerExtendedStats != NULL) {
+        notify->setObject(MEDIA_EXTENDED_STATS, mPlayerExtendedStats);
+    }
     mRenderer = new Renderer(mAudioSink, notify, flags);
 
     mRendererLooper = new ALooper;
@@ -1149,6 +1154,7 @@ void NuPlayer::onStart() {
     if (meta != NULL
             && meta->findInt32(kKeyFrameRate, &rate) && rate > 0) {
         mRenderer->setVideoFrameRate(rate);
+        PLAYER_STATS(setFrameRate, rate);
     }
 
     if (mVideoDecoder != NULL) {
@@ -1623,7 +1629,6 @@ void NuPlayer::performSeek(int64_t seekTimeUs, bool needNotify) {
           seekTimeUs / 1E6,
           needNotify);
 
-    mSeeking = true;
     if (mSource == NULL) {
         // This happens when reset occurs right before the loop mode
         // asynchronously seeks to the start of the stream.
@@ -1635,6 +1640,7 @@ void NuPlayer::performSeek(int64_t seekTimeUs, bool needNotify) {
     mSource->seekTo(seekTimeUs);
     ++mTimedTextGeneration;
 
+    PLAYER_STATS(notifySeekDone);
     // everything's flushed, continue playback.
 }
 
