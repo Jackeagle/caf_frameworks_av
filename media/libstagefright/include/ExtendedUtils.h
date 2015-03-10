@@ -172,6 +172,30 @@ struct ExtendedUtils {
         static bool isCustomHLSEnabled();
     };
 
+    struct DiscoverProxy : public RefBase {
+
+        typedef bool (*fnIsProxySupported)();
+        typedef int (*fnGetPort)();
+
+        static sp<DiscoverProxy> create();
+        bool getSTAProxyConfig(int32_t &port);
+
+        protected:
+        virtual ~DiscoverProxy();
+
+        private:
+        DiscoverProxy(bool& bOk);
+        static wp<DiscoverProxy> gDProxy;
+        static Mutex gLock;
+        void* mStaLibHandle;
+        fnIsProxySupported isProxySupported;
+        fnGetPort getPort;
+        static bool sendSTAProxyStopIntent();
+        static bool sendSTAProxyStartIntent();
+        DiscoverProxy(const DiscoverProxy &);
+        DiscoverProxy &operator=(const DiscoverProxy &);
+    };
+
     struct RTSPStream {
 
         static bool ParseURL_V6(

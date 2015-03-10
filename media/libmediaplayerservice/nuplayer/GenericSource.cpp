@@ -37,8 +37,10 @@
 #include "../../libstagefright/include/NuCachedSource2.h"
 #include "../../libstagefright/include/WVMExtractor.h"
 #include "../../libstagefright/include/HTTPBase.h"
-
 #include <ExtendedUtils.h>
+
+#define MAX_CHECK_PROXY_RETRY_COUNT 10
+
 namespace android {
 
 NuPlayer::GenericSource::GenericSource(
@@ -58,7 +60,9 @@ NuPlayer::GenericSource::GenericSource(
       mBitrate(-1ll),
       mPollBufferingGeneration(0),
       mPendingReadBufferTypes(0),
-      mStartAfterSuspended(false) {
+      mStartAfterSuspended(false),
+      mQueryAndSetProxy(false),
+      mCheckProxyCount(0) {
     resetDataSource();
     DataSource::RegisterDefaultSniffers();
 }
@@ -91,6 +95,17 @@ status_t NuPlayer::GenericSource::setDataSource(
 
     if (headers) {
         mUriHeaders = *headers;
+    }
+
+    if ((!mUri.empty()) && (!strncasecmp("http://", mUri.c_str(), 7)
+                          || !strncasecmp("https://", mUri.c_str(), 8))) {
+
+        mDProxy = ExtendedUtils::DiscoverProxy::create();
+        if (mDProxy == NULL) {
+           ALOGI("NuPlayer::GenericSource bypass proxy");
+        } else {
+            mQueryAndSetProxy = true;
+        }
     }
 
     // delay data source creation to prepareAsync() to avoid blocking
@@ -331,6 +346,20 @@ void NuPlayer::GenericSource::prepareAsync() {
 void NuPlayer::GenericSource::onPrepareAsync() {
     // delayed data source creation
     if (mDataSource == NULL) {
+
+        if (mQueryAndSetProxy) {
+            status_t err = checkProxyAvail();
+            if (err != OK) {
+                if (err == -EAGAIN) {
+                    (new AMessage(kWhatPrepareAsync, id()))->post(50000);
+                } else {
+                    ALOGE("Failed checkProxyAvail");
+                    notifyPreparedAndCleanup(UNKNOWN_ERROR);
+                }
+                return;
+            }
+        }
+
         if (!mUri.empty()) {
             const char* uri = mUri.c_str();
             mIsWidevine = !strncasecmp(uri, "widevine://", 11);
@@ -426,6 +455,30 @@ void NuPlayer::GenericSource::notifyPreparedAndCleanup(status_t err) {
         cancelPollBuffering();
     }
     notifyPrepared(err);
+}
+
+status_t NuPlayer::GenericSource::checkProxyAvail() {
+    mCheckProxyCount++;
+
+    int32_t port = 0;
+    if ((mDProxy != NULL) && (mDProxy->getSTAProxyConfig(port))) {
+        ALOGI("Detected Proxy at port %d in %d attempts", port, mCheckProxyCount);
+
+        String8 portString = String8("127.0.0.1");
+        portString.appendFormat(":%d", port);
+        ALOGV("getSTAProxyConfig Proxy IPportString %s", portString.string());
+        mUriHeaders.add(String8("use-proxy"), portString);
+        mQueryAndSetProxy = true;
+        mCheckProxyCount = 0;
+        return OK;
+    } else if ((mDProxy == NULL) || (mCheckProxyCount > MAX_CHECK_PROXY_RETRY_COUNT)) {
+        ALOGI("Not Deteceted proxy in %d attempts, bypass proxy", mCheckProxyCount);
+        mQueryAndSetProxy = false;
+        return OK;
+    } else {
+        ALOGV("Repost to query proxy count %d", mCheckProxyCount);
+        return -EAGAIN;
+    }
 }
 
 status_t NuPlayer::GenericSource::prefillCacheIfNecessary() {
