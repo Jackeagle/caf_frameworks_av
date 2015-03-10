@@ -79,7 +79,7 @@ struct ACodec : public AHierarchicalStateMachine, public CodecBase {
 
     static bool isFlexibleColorFormat(
             const sp<IOMX> &omx, IOMX::node_id node,
-            uint32_t colorFormat, OMX_U32 *flexibleEquivalent);
+            uint32_t colorFormat, bool usingNativeBuffers, OMX_U32 *flexibleEquivalent);
 
     // Returns 0 if configuration is not supported.  NOTE: this is treated by
     // some OMX components as auto level, and by others as invalid level.
@@ -132,8 +132,7 @@ private:
     enum {
         kFlagIsSecure                                 = 1,
         kFlagPushBlankBuffersToNativeWindowOnShutdown = 2,
-        // protection against screen capture of non-secure drm content
-        kFlagIsContentDrmProtected                    = 3,
+        kFlagIsGrallocUsageProtected                  = 4,
     };
 
     struct BufferInfo {
@@ -186,6 +185,7 @@ private:
     sp<ANativeWindow> mNativeWindow;
     sp<AMessage> mInputFormat;
     sp<AMessage> mOutputFormat;
+    sp<AMessage> mBaseOutputFormat;
 
     Vector<BufferInfo> mBuffers[2];
     bool mPortEOS[2];
@@ -253,12 +253,13 @@ private:
     status_t setVideoPortFormatType(
             OMX_U32 portIndex,
             OMX_VIDEO_CODINGTYPE compressionFormat,
-            OMX_COLOR_FORMATTYPE colorFormat);
+            OMX_COLOR_FORMATTYPE colorFormat,
+            bool usingNativeBuffers = false);
 
-    status_t setSupportedOutputFormat();
+    status_t setSupportedOutputFormat(bool getLegacyFlexibleFormat);
 
     status_t setupVideoDecoder(
-            const char *mime, const sp<AMessage> &msg);
+            const char *mime, const sp<AMessage> &msg, bool usingNativeBuffers);
 
     status_t setupVideoEncoder(
             const char *mime, const sp<AMessage> &msg);
@@ -266,7 +267,7 @@ private:
     status_t setVideoFormatOnPort(
             OMX_U32 portIndex,
             int32_t width, int32_t height,
-            OMX_VIDEO_CODINGTYPE compressionFormat);
+            OMX_VIDEO_CODINGTYPE compressionFormat, float frameRate = -1.0);
 
     typedef struct drcParams {
         int32_t drcCut;
@@ -284,6 +285,8 @@ private:
             int32_t pcmLimiterEnable);
 
     status_t setupAC3Codec(bool encoder, int32_t numChannels, int32_t sampleRate);
+
+    status_t setupEAC3Codec(bool encoder, int32_t numChannels, int32_t sampleRate);
 
     status_t selectAudioPortFormat(
             OMX_U32 portIndex, OMX_AUDIO_CODINGTYPE desiredFormat);

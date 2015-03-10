@@ -927,7 +927,7 @@ void PlaylistFetcher::onDownloadNext() {
                 queueDiscontinuity(
                         explicitDiscontinuity
                             ? ATSParser::DISCONTINUITY_FORMATCHANGE
-                            : ATSParser::DISCONTINUITY_SEEK,
+                            : ATSParser::DISCONTINUITY_TIME,
                         NULL /* extra */);
             }
         }
@@ -1087,7 +1087,7 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
         extra->setInt64(IStreamListener::kKeyMediaTimeUs, 0);
 
         mTSParser->signalDiscontinuity(
-                ATSParser::DISCONTINUITY_SEEK, extra);
+                ATSParser::DISCONTINUITY_TIME, extra);
 
         mNextPTSTimeUs = -1ll;
     }

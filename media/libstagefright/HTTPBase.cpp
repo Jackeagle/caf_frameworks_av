@@ -37,7 +37,8 @@ HTTPBase::HTTPBase()
       mPrevBandwidthMeasureTimeUs(0),
       mPrevEstimatedBandWidthKbps(0),
       mBandWidthCollectFreqMs(5000),
-      mCustomBwEstimate(0) {
+      mCustomBwEstimate(0),
+      mMaxBandwidthHistoryItems(100) {
 }
 
 void HTTPBase::addBandwidthMeasurement(
@@ -147,6 +148,10 @@ status_t HTTPBase::setBandwidthStatCollectFreq(int32_t freqMs) {
 
 void HTTPBase::setCustomBwEstimate(bool flag) {
    mCustomBwEstimate = flag;
+}
+
+void HTTPBase::setBandwidthHistorySize(size_t numHistoryItems) {
+    mMaxBandwidthHistoryItems = numHistoryItems;
 }
 
 // static
