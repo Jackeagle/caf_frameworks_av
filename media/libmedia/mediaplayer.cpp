@@ -487,6 +487,7 @@ status_t MediaPlayer::reset_l()
         } else {
             mCurrentState = MEDIA_PLAYER_IDLE;
         }
+        mPlayer->disconnect();
         // setDataSource has to be called again to create a
         // new mediaplayer.
         mPlayer = 0;
