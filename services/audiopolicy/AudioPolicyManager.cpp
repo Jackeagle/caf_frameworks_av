@@ -2608,6 +2608,17 @@ bool AudioPolicyManager::isOffloadSupported(const audio_offload_info_t& offloadI
         return false;
     }
 
+    for (size_t i = 0; i < mOutputs.size(); i++) {
+        sp<AudioOutputDescriptor> outputDesc = mOutputs.valueAt(i);
+        if ( (outputDesc == NULL) || (outputDesc->mProfile == NULL))
+           continue;
+        else if ((outputDesc->mProfile->mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD)
+                                    &&  outputDesc->mRefCount[AUDIO_STREAM_MUSIC]) {
+            ALOGD("Found active compress session,rejecting new compress start request");
+            return false;
+        }
+    }
+
     char propValue[PROPERTY_VALUE_MAX];
     bool pcmOffload = false;
 #ifdef PCM_OFFLOAD_ENABLED
