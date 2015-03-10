@@ -67,7 +67,7 @@ struct NuPlayer::GenericSource : public NuPlayer::Source {
     virtual size_t getTrackCount() const;
     virtual sp<AMessage> getTrackInfo(size_t trackIndex) const;
     virtual ssize_t getSelectedTrack(media_track_type type) const;
-    virtual status_t selectTrack(size_t trackIndex, bool select);
+    virtual status_t selectTrack(size_t trackIndex, bool select, int64_t timeUs);
     virtual status_t seekTo(int64_t seekTimeUs);
 
     virtual status_t setBuffers(bool audio, Vector<MediaBuffer *> &buffers);
@@ -97,9 +97,9 @@ private:
         kWhatSeek,
         kWhatReadBuffer,
         kWhatStopWidevine,
+        kWhatStart,
+        kWhatResume,
     };
-
-    Vector<sp<MediaSource> > mSources;
 
     struct Track {
         size_t mIndex;
@@ -107,10 +107,13 @@ private:
         sp<AnotherPacketSource> mPackets;
     };
 
+    Vector<sp<MediaSource> > mSources;
     Track mAudioTrack;
     int64_t mAudioTimeUs;
+    int64_t mAudioLastDequeueTimeUs;
     Track mVideoTrack;
     int64_t mVideoTimeUs;
+    int64_t mVideoLastDequeueTimeUs;
     Track mSubtitleTrack;
     Track mTimedTextTrack;
 
@@ -119,6 +122,8 @@ private:
     int64_t mDurationUs;
     bool mAudioIsVorbis;
     bool mIsWidevine;
+    bool mIsSecure;
+    bool mIsStreaming;
     bool mUIDValid;
     uid_t mUID;
     sp<IMediaHTTPService> mHTTPService;
@@ -143,6 +148,8 @@ private:
     int64_t mBitrate;
     int32_t mPollBufferingGeneration;
     uint32_t mPendingReadBufferTypes;
+    bool mBuffering;
+    bool mPrepareBuffering;
     mutable Mutex mReadBufferLock;
 
     sp<ALooper> mLooper;
@@ -180,7 +187,7 @@ private:
     ssize_t doGetSelectedTrack(media_track_type type) const;
 
     void onSelectTrack(sp<AMessage> msg);
-    status_t doSelectTrack(size_t trackIndex, bool select);
+    status_t doSelectTrack(size_t trackIndex, bool select, int64_t timeUs);
 
     void onSeek(sp<AMessage> msg);
     status_t doSeek(int64_t seekTimeUs);
@@ -198,6 +205,7 @@ private:
     sp<ABuffer> mediaBufferToABuffer(
             MediaBuffer *mbuf,
             media_track_type trackType,
+            int64_t seekTimeUs,
             int64_t *actualTimeUs = NULL);
 
     void postReadBuffer(media_track_type trackType);
@@ -208,9 +216,14 @@ private:
 
     void schedulePollBuffering();
     void cancelPollBuffering();
+    void restartPollBuffering();
     void onPollBuffering();
-    void notifyBufferingUpdate(int percentage, int64_t durationUs);
     void setPrepareState(PrepareState state);
+    void notifyBufferingUpdate(int percentage, int64_t durationUs);
+    void startBufferingIfNecessary();
+    void stopBufferingIfNecessary();
+    void sendCacheStats();
+    void ensureCacheIsFetching();
 
     DISALLOW_EVIL_CONSTRUCTORS(GenericSource);
 };
