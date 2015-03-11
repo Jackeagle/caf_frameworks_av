@@ -142,6 +142,10 @@ sp<MetaData> NuPlayer::StreamingSource::getFormatMeta(bool audio) {
     ATSParser::SourceType type =
         audio ? ATSParser::AUDIO : ATSParser::VIDEO;
 
+    if (mTSParser == NULL) {
+        return NULL;
+    }
+
     sp<AnotherPacketSource> source =
         static_cast<AnotherPacketSource *>(mTSParser->getSource(type).get());
 
