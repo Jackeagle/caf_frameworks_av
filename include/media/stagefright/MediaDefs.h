@@ -85,8 +85,8 @@ extern const char *MEDIA_MIMETYPE_TEXT_CEA_608;
 
 #ifdef DOLBY_UDC
 extern const char *MEDIA_MIMETYPE_AUDIO_EAC3_JOC;
-extern const char *MEDIA_MIMETYPE_AUDIO_EAC3;
 #endif // DOLBY_END
+extern const char *MEDIA_MIMETYPE_AUDIO_EAC3;
 }  // namespace android
 
 #endif  // MEDIA_DEFS_H_
