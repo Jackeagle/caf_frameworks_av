@@ -69,10 +69,10 @@ extern const char *MEDIA_MIMETYPE_AUDIO_MSGSM;
 extern const char *MEDIA_MIMETYPE_AUDIO_AC3;
 
 #ifdef DOLBY_UDC
-extern const char *MEDIA_MIMETYPE_AUDIO_EAC3;
 extern const char *MEDIA_MIMETYPE_AUDIO_EAC3_JOC;
 #endif // DOLBY_END
 
+extern const char *MEDIA_MIMETYPE_AUDIO_EAC3;
 extern const char *MEDIA_MIMETYPE_CONTAINER_MPEG4;
 extern const char *MEDIA_MIMETYPE_CONTAINER_WAV;
 extern const char *MEDIA_MIMETYPE_CONTAINER_OGG;
