@@ -200,7 +200,8 @@ NuPlayer::NuPlayer()
       mSeeking(false),
       mImageDisplayed(false), 
       mPaused(false),
-      mPausedByClient(false) {
+      mPausedByClient(false),
+      mOffloadAudioTornDown(false) {
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
             ExtendedStats::PLAYER, "NuPlayer", gettid());
@@ -960,6 +961,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     mRenderer->signalDisableOffloadAudio();
                     mOffloadAudio = false;
                     instantiateDecoder(true /* audio */, &mAudioDecoder);
+                } else {
+                    mOffloadAudioTornDown = true;
                 }
             }
             break;
@@ -1079,6 +1082,13 @@ void NuPlayer::onResume() {
         mSource->resume();
     } else {
         ALOGW("resume called when source is gone or not set");
+    }
+    if (mOffloadAudioTornDown && mOffloadAudio) {
+          // Resuming after a pause timed out event, check if can continue with offload
+          sp<AMessage> videoFormat = mSource->getFormat(false /* audio */);
+          sp<AMessage> format = mSource->getFormat(true /*audio*/);
+          const bool hasVideo = (videoFormat != NULL);
+          tryOpenAudioSinkForOffload(format, hasVideo);
     }
     // |mAudioDecoder| may have been released due to the pause timeout, so re-create it if
     // needed.
@@ -1260,10 +1270,11 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
     // is possible; otherwise the decoders call the renderer openAudioSink directly.
 
     status_t err = mRenderer->openAudioSink(
-            format, true /* offloadOnly */, hasVideo,mIsStreaming,AUDIO_OUTPUT_FLAG_NONE, &mOffloadAudio);
+            format, true /* offloadOnly */, hasVideo, mIsStreaming, AUDIO_OUTPUT_FLAG_NONE, &mOffloadAudio);
     if (err != OK) {
         // Any failure we turn off mOffloadAudio.
         mOffloadAudio = false;
+        mOffloadAudioTornDown = false;
     } else if (mOffloadAudio) {
         sp<MetaData> audioMeta =
                 mSource->getFormatMeta(true /* audio */);
