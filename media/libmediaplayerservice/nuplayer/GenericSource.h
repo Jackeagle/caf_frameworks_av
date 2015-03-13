@@ -159,15 +159,6 @@ private:
 
     bool mStartAfterSuspended;
 
-    enum PrepareState {
-        STATE_UNPREPARED = 0,
-        STATE_UNPREPARED_EOS,
-        STATE_PREPARING,
-        STATE_PREPARED
-    };
-    PrepareState mPrepareState;
-    int64_t mPollBufferDelayUs;
-
     void resetDataSource();
 
     status_t initFromDataSource();
@@ -218,8 +209,7 @@ private:
     void cancelPollBuffering();
     void restartPollBuffering();
     void onPollBuffering();
-    void setPrepareState(PrepareState state);
-    void notifyBufferingUpdate(int percentage, int64_t durationUs);
+    void notifyBufferingUpdate(int percentage);
     void startBufferingIfNecessary();
     void stopBufferingIfNecessary();
     void sendCacheStats();

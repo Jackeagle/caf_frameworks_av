@@ -128,7 +128,6 @@ status_t NuPlayer::GenericSource::setDataSource(
             mQueryAndSetProxy = true;
         }
     }
-    setPrepareState(STATE_UNPREPARED);
 
     // delay data source creation to prepareAsync() to avoid blocking
     // the calling thread in setDataSource for any significant time.
@@ -508,12 +507,15 @@ void NuPlayer::GenericSource::onPrepareAsync() {
             | FLAG_CAN_SEEK_FORWARD
             | FLAG_CAN_SEEK);
 
-    if ((mWVMExtractor == NULL && mCachedSource == NULL) ||
-        mPrepareState == STATE_UNPREPARED_EOS) {
-        setPrepareState(STATE_PREPARED);
+    if (mIsStreaming) {
+        mPrepareBuffering = true;
+
+        ensureCacheIsFetching();
+        restartPollBuffering();
     } else {
-        setPrepareState(STATE_PREPARING);
+        notifyPrepared();
     }
+
 }
 
 void NuPlayer::GenericSource::notifyPreparedAndCleanup(status_t err) {
@@ -701,7 +703,7 @@ status_t NuPlayer::GenericSource::feedMoreTSData() {
 void NuPlayer::GenericSource::schedulePollBuffering() {
     sp<AMessage> msg = new AMessage(kWhatPollBuffering, id());
     msg->setInt32("generation", mPollBufferingGeneration);
-    msg->post(mPollBufferDelayUs);
+    msg->post(1000000ll);
 }
 
 void NuPlayer::GenericSource::cancelPollBuffering() {
@@ -716,23 +718,15 @@ void NuPlayer::GenericSource::restartPollBuffering() {
     }
 }
 
-void NuPlayer::GenericSource::notifyBufferingUpdate(int percentage,
-        int64_t durationUs) {
+void NuPlayer::GenericSource::notifyBufferingUpdate(int percentage) {
     ALOGV("notifyBufferingUpdate: buffering %d%%", percentage);
 
     sp<AMessage> msg = dupNotify();
     msg->setInt32("what", kWhatBufferingUpdate);
     msg->setInt32("percentage", percentage);
-    msg->setInt64("duration", durationUs);
     msg->post();
 }
 
-void NuPlayer::GenericSource::setPrepareState(PrepareState state) {
-    mPrepareState = state;
-    if (mPrepareState == STATE_PREPARED) {
-        notifyPrepared();
-    }
-}
 void NuPlayer::GenericSource::startBufferingIfNecessary() {
     ALOGV("startBufferingIfNecessary: mPrepareBuffering=%d, mBuffering=%d",
             mPrepareBuffering, mBuffering);
@@ -828,7 +822,7 @@ void NuPlayer::GenericSource::onPollBuffering() {
         ALOGV("onPollBuffering: EOS (finalStatus = %d)", finalStatus);
 
         if (finalStatus == ERROR_END_OF_STREAM) {
-            notifyBufferingUpdate(100, 0);
+            notifyBufferingUpdate(100);
         }
 
         stopBufferingIfNecessary();
@@ -841,7 +835,7 @@ void NuPlayer::GenericSource::onPollBuffering() {
                 percentage = 100;
             }
 
-            notifyBufferingUpdate(percentage, cachedDurationUs);
+            notifyBufferingUpdate(percentage);
         }
 
         ALOGV("onPollBuffering: cachedDurationUs %.1f sec",
