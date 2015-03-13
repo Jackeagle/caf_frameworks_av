@@ -186,7 +186,8 @@ NuPlayer::NuPlayer()
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
       mStarted(false),
       mPaused(false),
-      mPausedByClient(false) {
+      mPausedByClient(false),
+      mOffloadAudioTornDown(false) {
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
             ExtendedStats::PLAYER, "NuPlayer", gettid());
@@ -947,6 +948,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     mOffloadAudio = false;
                     mOffloadDecodedPCM = false;
                     instantiateDecoder(true /* audio */, &mAudioDecoder);
+                } else {
+                    mOffloadAudioTornDown = true;
                 }
             }
             break;
@@ -1036,6 +1039,13 @@ void NuPlayer::onResume() {
         mSource->resume();
     } else {
         ALOGW("resume called when source is gone or not set");
+    }
+    if (mOffloadAudioTornDown && mOffloadAudio) {
+          // Resuming after a pause timed out event, check if can continue with offload
+          sp<AMessage> videoFormat = mSource->getFormat(false /* audio */);
+          sp<AMessage> format = mSource->getFormat(true /*audio*/);
+          const bool hasVideo = (videoFormat != NULL);
+          tryOpenAudioSinkForOffload(format, hasVideo);
     }
     // |mAudioDecoder| may have been released due to the pause timeout, so re-create it if
     // needed.
@@ -1269,6 +1279,7 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
         // Any failure we turn off mOffloadAudio.
         mOffloadAudio = false;
         mOffloadDecodedPCM = false;
+        mOffloadAudioTornDown = false;
     } else if (mOffloadAudio) {
         sp<MetaData> audioMeta =
                 mSource->getFormatMeta(true /* audio */);
