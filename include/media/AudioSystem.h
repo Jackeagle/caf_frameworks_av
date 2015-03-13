@@ -291,6 +291,7 @@ private:
     friend class AudioPolicyServiceClient;
 
     static Mutex gLock;
+    static Mutex gLock_policy;
     static sp<IAudioFlinger> gAudioFlinger;
     static audio_error_callback gAudioErrorCallback;
 

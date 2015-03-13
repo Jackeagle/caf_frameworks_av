@@ -32,6 +32,7 @@ namespace android {
 
 // client singleton for AudioFlinger binder interface
 Mutex AudioSystem::gLock;
+Mutex AudioSystem::gLock_policy;
 sp<IAudioFlinger> AudioSystem::gAudioFlinger;
 sp<AudioSystem::AudioFlingerClient> AudioSystem::gAudioFlingerClient;
 audio_error_callback AudioSystem::gAudioErrorCallback = NULL;
@@ -522,7 +523,7 @@ sp<AudioSystem::AudioPolicyServiceClient> AudioSystem::gAudioPolicyServiceClient
 // establish binder interface to AudioPolicy service
 const sp<IAudioPolicyService>& AudioSystem::get_audio_policy_service()
 {
-    gLock.lock();
+    gLock_policy.lock();
     if (gAudioPolicyService == 0) {
         sp<IServiceManager> sm = defaultServiceManager();
         sp<IBinder> binder;
@@ -538,9 +539,9 @@ const sp<IAudioPolicyService>& AudioSystem::get_audio_policy_service()
         }
         binder->linkToDeath(gAudioPolicyServiceClient);
         gAudioPolicyService = interface_cast<IAudioPolicyService>(binder);
-        gLock.unlock();
+        gLock_policy.unlock();
     } else {
-        gLock.unlock();
+        gLock_policy.unlock();
     }
     return gAudioPolicyService;
 }
@@ -805,7 +806,7 @@ bool AudioSystem::isOffloadSupported(const audio_offload_info_t& info)
 // ---------------------------------------------------------------------------
 
 void AudioSystem::AudioPolicyServiceClient::binderDied(const wp<IBinder>& who) {
-    Mutex::Autolock _l(AudioSystem::gLock);
+    Mutex::Autolock _l(AudioSystem::gLock_policy);
     AudioSystem::gAudioPolicyService.clear();
 
     ALOGW("AudioPolicyService server died!");
