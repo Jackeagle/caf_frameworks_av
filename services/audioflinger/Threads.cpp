@@ -743,7 +743,7 @@ void AudioFlinger::ThreadBase::getPowerManager_l() {
         sp<IBinder> binder =
             defaultServiceManager()->checkService(String16("power"));
         if (binder == 0) {
-            ALOGW("Thread %s cannot connect to the power manager service", mName);
+            ALOGV("Thread %s cannot connect to the power manager service", mName);
         } else {
             mPowerManager = interface_cast<IPowerManager>(binder);
             binder->linkToDeath(mDeathRecipient);
@@ -754,7 +754,7 @@ void AudioFlinger::ThreadBase::getPowerManager_l() {
 void AudioFlinger::ThreadBase::updateWakeLockUids_l(const SortedVector<int> &uids) {
 
     getPowerManager_l();
-    if (mWakeLockToken == NULL) {
+    if (mPowerManager != 0 && mWakeLockToken == NULL) {
         ALOGE("no wake lock to update!");
         return;
     }
