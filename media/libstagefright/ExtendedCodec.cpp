@@ -415,7 +415,7 @@ status_t ExtendedCodec::setSupportedRole(
         { MEDIA_MIMETYPE_AUDIO_EVRC,
           "audio_decoder.evrchw", "audio_encoder.evrc" },
         { MEDIA_MIMETYPE_AUDIO_QCELP,
-          "audio_decoder,qcelp13Hw", "audio_encoder.qcelp13" },
+          "audio_decoder.qcelp13Hw", "audio_encoder.qcelp13" },
         { MEDIA_MIMETYPE_VIDEO_DIVX,
           "video_decoder.divx", NULL },
         { MEDIA_MIMETYPE_VIDEO_DIVX4,
