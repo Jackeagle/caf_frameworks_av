@@ -204,6 +204,19 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
                     audioFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
             }
 
+#ifdef ENABLE_AV_ENHANCEMENTS
+#ifdef WMA_OFFLOAD_ENABLED
+            if (audioFormat == AUDIO_FORMAT_WMA) {
+                int32_t wmaVersion = kTypeWMA;
+                success = format->findInt32(kKeyWMAVersion, &wmaVersion);
+                CHECK(success);
+
+                if ((wmaVersion == kTypeWMAPro) || (wmaVersion == kTypeWMALossLess)) {
+                    audioFormat = AUDIO_FORMAT_WMA_PRO;
+                }
+            }
+#endif
+#endif
             ALOGV("%s Mime type \"%s\" mapped to audio_format 0x%x",
                   __func__, mime, audioFormat);
         }
