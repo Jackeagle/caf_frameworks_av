@@ -15,6 +15,15 @@ LOCAL_C_INCLUDES:= \
 
 LOCAL_CFLAGS += -Werror
 
+ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
+       LOCAL_CFLAGS     += -DENABLE_AV_ENHANCEMENTS
+       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
+endif
+
+ifeq ($(DTS_CODEC_M_), true)
+  LOCAL_CFLAGS += -DDTS_CODEC_M_
+endif
+
 LOCAL_MODULE:= libstagefright_mpeg2ts
 
 ifeq ($(TARGET_ARCH),arm)
