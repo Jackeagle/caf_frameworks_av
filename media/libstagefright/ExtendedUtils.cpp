@@ -2359,9 +2359,47 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
     return decision;
 }
 
+bool ExtendedUtils::isWMAFormat(const sp<MetaData> &meta) {
+    const char *mime;
+
+    if ((meta == NULL) || !(meta->findCString(kKeyMIMEType, &mime))) {
+        return false;
+    }
+
+    return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)) ? true : false;
+
 }
 
+bool ExtendedUtils::isAudioWMAPro(const sp<AMessage> &format) {
+    AString mime;
+    int32_t wmaVersion = kTypeWMA;
 
+    if (format == NULL) {
+        return false;
+    }
+    CHECK(format->findString("mime", &mime));
+    if (!strncasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_WMA, 14)) {
+        format->findInt32("wmav", &wmaVersion);
+    }
+
+    return ((wmaVersion == kTypeWMAPro) || (wmaVersion == kTypeWMALossLess));
+}
+
+status_t ExtendedUtils::getWMAVersion(const sp<MetaData> &meta, int32_t *version) {
+    const char *mime = NULL;
+    int32_t wmaVersion = kTypeWMA;
+
+    if(isWMAFormat(meta)) {
+        if (meta->findInt32(kKeyWMAVersion, &wmaVersion)) {
+            *version = wmaVersion;
+            return OK;
+        }
+    }
+
+    return BAD_VALUE;
+}
+
+} // namespace android
 #else //ENABLE_AV_ENHANCEMENTS
 
 namespace android {
@@ -2686,6 +2724,23 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
     ARG_TOUCH(sMeta);
 
     return false;
+}
+
+bool ExtendedUtils::isWMAFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
+
+}
+
+bool ExtendedUtils::isAudioWMAPro(const sp<AMessage> &format) {
+    ARG_TOUCH(format);
+    return false;
+}
+
+status_t ExtendedUtils::getWMAVersion(const sp<MetaData> &meta, int32_t *version) {
+    ARG_TOUCH(meta);
+    ARG_TOUCH(version);
+    return BAD_VALUE;
 }
 
 } // namespace android
