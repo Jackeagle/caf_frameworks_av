@@ -1240,12 +1240,22 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
     // Note: This is called early in NuPlayer to determine whether offloading
     // is possible; otherwise the decoders call the renderer openAudioSink directly.
 
+    sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+
     //update bit width before opening audio sink
     if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
-        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
         if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
             ALOGV("overriding format with 24 bits");
             format->setInt32("sbit", 24);
+        }
+    }
+
+    //update wma version before opening audio sink
+    if(ExtendedUtils::isWMAFormat(audioMeta)) {
+        int32_t wmaVersion;
+        if (ExtendedUtils::getWMAVersion(audioMeta, &wmaVersion) == OK) {
+            ALOGV("update wma version(%d) before openAudioSink", wmaVersion);
+            format->setInt32("wmav", wmaVersion);
         }
     }
 
@@ -1256,8 +1266,6 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
         mOffloadAudio = false;
         mOffloadDecodedPCM = false;
     } else if (mOffloadAudio) {
-        sp<MetaData> audioMeta =
-                mSource->getFormatMeta(true /* audio */);
         sendMetaDataToHal(mAudioSink, audioMeta);
     }
 }
