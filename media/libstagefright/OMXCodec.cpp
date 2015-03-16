@@ -1753,7 +1753,7 @@ void OMXCodec::setComponentRole(
         { MEDIA_MIMETYPE_AUDIO_EVRC,
             "audio_decoder.evrchw", "audio_encoder.evrc" },
         { MEDIA_MIMETYPE_AUDIO_QCELP,
-            "audio_decoder,qcelp13Hw", "audio_encoder.qcelp13" },
+            "audio_decoder.qcelp13Hw", "audio_encoder.qcelp13" },
 #endif
         { MEDIA_MIMETYPE_VIDEO_AVC,
             "video_decoder.avc", "video_encoder.avc" },
