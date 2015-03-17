@@ -890,6 +890,7 @@ ssize_t LiveSession::fetchFile(
                 && strncasecmp(url, "https://", 8)) {
             return ERROR_UNSUPPORTED;
         } else {
+            ALOGI("fetchFile %s", uriDebugString(url).c_str());
             KeyedVector<String8, String8> headers = mExtraHeaders;
             if (range_offset > 0 || range_length >= 0) {
                 headers.add(
