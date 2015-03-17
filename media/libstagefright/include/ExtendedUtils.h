@@ -167,6 +167,8 @@ struct ExtendedUtils {
 
         //helper function to parse rtp port range form system property
         static void getRtpPortRange(unsigned *start, unsigned *end);
+
+        static bool isVideoRenderingDisabled();
     };
 
     struct RTSPStream {
@@ -255,6 +257,18 @@ struct ExtendedUtils {
     static bool checkDPFromCodecSpecificData(const uint8_t *ptr, size_t size);
 
     static bool pcmOffloadException(const char* const mime);
+
+    static sp<MetaData> createPCMMetaFromSource(
+            const sp<MetaData> &sMeta);
+
+    static void overWriteAudioFormat(
+                sp<AMessage> &dst, const sp<AMessage> &src);
+
+    static sp<MetaData> MakeHEVCCodecSpecificData(const sp<ABuffer> &accessUnit);
+    static bool IsHevcIDR(const sp<ABuffer> &accessUnit);
+	
+    static bool is24bitPCMOffloaded(
+                const sp<MetaData> &sMeta);
 };
 
 }

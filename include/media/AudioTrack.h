@@ -242,6 +242,9 @@ public:
      * Parameters not listed in the AudioTrack constructors above:
      *
      * threadCanCallJava:  Whether callbacks are made from an attached thread and thus can call JNI.
+     *
+     * Internal state post condition:
+     *      (mStreamType == AUDIO_STREAM_DEFAULT) implies this AudioTrack has valid attributes
      */
             status_t    set(audio_stream_type_t streamType,
                             uint32_t sampleRate,
@@ -276,7 +279,7 @@ public:
 
     /* getters, see constructors and set() */
 
-            audio_stream_type_t streamType() const { return mStreamType; }
+            audio_stream_type_t streamType() const;
             audio_format_t format() const   { return mFormat; }
 
     /* Return frame size in bytes, which for linear PCM is
@@ -535,6 +538,12 @@ private:
      */
             status_t    obtainBuffer(Buffer* audioBuffer, const struct timespec *requested,
                                      struct timespec *elapsed = NULL, size_t *nonContig = NULL);
+    // To decide whether or not to offload the pcm track thats being created
+            bool        canOffloadTrack(audio_stream_type_t streamType, audio_format_t format,
+                                     audio_channel_mask_t channelMask, audio_output_flags_t flags,
+                                     transfer_type transferType,
+                                     audio_attributes_t *attributes,
+                                     const audio_offload_info_t *offloadInfo);
 public:
 
     /* Release a filled buffer of "audioBuffer->frameCount" frames for AudioFlinger to process. */
@@ -603,9 +612,6 @@ protected:
             AudioTrack& operator = (const AudioTrack& other);
 
             void        setAttributesFromStreamType(audio_stream_type_t streamType);
-            void        setStreamTypeFromAttributes(audio_attributes_t& aa);
-    /* paa is guaranteed non-NULL */
-            bool        isValidAttributes(const audio_attributes_t *paa);
 
     /* a small internal class to handle the callback */
     class AudioTrackThread : public Thread
@@ -695,7 +701,8 @@ protected:
 
     // constant after constructor or set()
     audio_format_t          mFormat;                // as requested by client, not forced to 16-bit
-    audio_stream_type_t     mStreamType;
+    audio_stream_type_t     mStreamType;            // mStreamType == AUDIO_STREAM_DEFAULT implies
+                                                    // this AudioTrack has valid attributes
     uint32_t                mChannelCount;
     audio_channel_mask_t    mChannelMask;
     sp<IMemory>             mSharedBuffer;
@@ -793,6 +800,11 @@ protected:
 
     bool                    mInUnderrun;            // whether track is currently in underrun state
     uint32_t                mPausedPosition;
+
+    //the following structures are used for tracks with PCM data that are offloaded
+    audio_offload_info_t    mPcmTrackOffloadInfo;   //offload info structure for pcm tracks
+    bool                    mIsPcmTrackOffloaded;   //whether the track is offloaded or not
+    bool                    mCanOffloadPcmTrack;    //whether or not an offload profile exists
 
 private:
     class DeathNotifier : public IBinder::DeathRecipient {
