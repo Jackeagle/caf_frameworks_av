@@ -144,6 +144,15 @@ private:
 
     sp<ALooper> mLooper;
 
+    enum PrepareState {
+        STATE_UNPREPARED = 0,
+        STATE_UNPREPARED_EOS,
+        STATE_PREPARING,
+        STATE_PREPARED
+    };
+    PrepareState mPrepareState;
+    int64_t mPollBufferDelayUs;
+
     void resetDataSource();
 
     status_t initFromDataSource();
@@ -192,6 +201,7 @@ private:
     void cancelPollBuffering();
     void onPollBuffering();
     void notifyBufferingUpdate(int percentage, int64_t durationUs);
+    void setPrepareState(PrepareState state);
 
     DISALLOW_EVIL_CONSTRUCTORS(GenericSource);
 };
