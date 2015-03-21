@@ -1092,22 +1092,23 @@ void PlaylistFetcher::onDownloadBlock() {
             mDiscontinuity = false;
         }
 
-        if (err == -EAGAIN) {
-            // starting sequence number too low/high
-            mTSParser.clear();
-            for (size_t i = 0; i < mPacketSources.size(); i++) {
-                sp<AnotherPacketSource> packetSource = mPacketSources.valueAt(i);
-                packetSource->clear();
-            }
-            postMonitorQueue();
-            return;
-        } else if (err == ERROR_OUT_OF_RANGE) {
-            // reached stopping point
-            stopAsync(/* clear = */ false);
-            return;
-        } else if (err != OK) {
-            notifyError(err);
-            return;
+        mBlockStartup = false;
+    }
+
+    err = OK;
+    if (bufferStartsWithTsSyncByte(mTsBuffer) ||
+            bufferStartsWithTsSyncByte(mDownloadBuffer)) {
+        // Incremental extraction is only supported for MPEG2 transport streams.
+        if (mTsBuffer == NULL) {
+            mTsBuffer = new ABuffer(
+                    mDownloadBuffer->data(), mDownloadBuffer->capacity());
+            mTsBuffer->setRange(0, 0);
+        } else if (mTsBuffer->capacity() != mDownloadBuffer->capacity()) {
+            size_t tsOff = mTsBuffer->offset(), tsSize = mTsBuffer->size();
+            mTsBuffer = new ABuffer(
+                    (uint8_t*)mDownloadBuffer->data() - mDownloadOffset,
+                    mDownloadBuffer->capacity());
+            mTsBuffer->setRange(tsOff, tsSize);
         }
         mTsBuffer->setRange(mTsBuffer->offset(), mTsBuffer->size() + bytesRead);
 
