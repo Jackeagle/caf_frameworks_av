@@ -85,7 +85,8 @@ LiveSession::LiveSession(
       mLastSeekTimeUs(0),
       mBackupFile(NULL),
       mEraseFirstTs(0),
-      mSegmentCounter(0) {
+      mSegmentCounter(0),
+      mIsFirstSwitch(true) {
 
     if (ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
         mDownloadFirstTS = true;
@@ -1134,6 +1135,32 @@ size_t LiveSession::getBandwidthIndex() {
         // Pick the highest bandwidth stream below or equal to estimated bandwidth.
 
         index = mBandwidthItems.size() - 1;
+        if (ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+            ALOGV("use the customizing method to get the bandwidth");
+            size_t customizedBandwidthBps = bandwidthBps * (mIsFirstSwitch ? 8 : 9) / 10;
+
+            while (index > 0 && mBandwidthItems.itemAt(index).mBandwidth
+                                    > customizedBandwidthBps) {
+                --index;
+            }
+
+            if (mIsFirstSwitch) {
+                ALOGV("choose the index directly in the first time");
+                mIsFirstSwitch = false;
+            } else {
+                // in up switch case, if the real estimated bandwidth is NOT 30%
+                // above the target bandwidth, index should move to a lower level.
+                if (index > mCurBandwidthIndex && (size_t)bandwidthBps
+                        <= mBandwidthItems.itemAt(index).mBandwidth * 13 / 10) {
+                    // eg: case A: index:4, mCurBandwidthIndex:2, we should choose 3
+                    // case B: index:3, mCurBandwidthIndex:2, we should choose 2
+                    --index;
+                }
+            }
+            CHECK_GE(index, 0);
+            return index;
+        }
+
         while (index > 0) {
             // consider only 80% of the available bandwidth, but if we are switching up,
             // be even more conservative (70%) to avoid overestimating and immediately
