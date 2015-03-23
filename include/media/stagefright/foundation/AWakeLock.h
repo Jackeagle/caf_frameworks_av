@@ -1,7 +1,11 @@
 /*
  * Copyright (C) 2015, The Linux Foundation. All rights reserved.
  * Not a Contribution.
+<<<<<<< HEAD
  * Copyright (C) 2010 The Android Open Source Project
+=======
+ * Copyright (C) 2015 The Android Open Source Project
+>>>>>>> 4d5df5e7c08c32c1e22b53c817dc650e229cf02f
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +34,9 @@ class AWakeLock : public RefBase {
 public:
     AWakeLock();
 
+    // NOTE: acquire and release are not thread safe
+
+    // returns true if wakelock was acquired
     bool acquire();
     void release(bool force = false);
 
@@ -50,7 +57,7 @@ private:
 
     private:
         PMDeathRecipient(const PMDeathRecipient&);
-        PMDeathRecipient& operator=(const PMDeathRecipient&);
+        PMDeathRecipient& operator= (const PMDeathRecipient&);
 
         AWakeLock *mWakeLock;
     };
@@ -61,7 +68,6 @@ private:
 
     DISALLOW_EVIL_CONSTRUCTORS(AWakeLock);
 };
-
 
 }  // namespace android
 

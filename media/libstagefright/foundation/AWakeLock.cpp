@@ -56,7 +56,7 @@ bool AWakeLock::acquire() {
             sp<IBinder> binder =
                 defaultServiceManager()->checkService(String16("power"));
             if (binder == NULL) {
-                ALOGW("cannot connect to the power manager service");
+                ALOGW("could not get the power manager service");
             } else {
                 mPowerManager = interface_cast<IPowerManager>(binder);
                 binder->linkToDeath(mDeathRecipient);
@@ -110,7 +110,7 @@ void AWakeLock::clearPowerManager() {
 }
 
 void AWakeLock::PMDeathRecipient::binderDied(const wp<IBinder>& who __unused) {
-    if(mWakeLock != NULL) {
+    if (mWakeLock != NULL) {
         mWakeLock->clearPowerManager();
     }
 }

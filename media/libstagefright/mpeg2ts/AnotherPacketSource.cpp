@@ -272,8 +272,12 @@ void AnotherPacketSource::queueDiscontinuity(
     mEOSResult = OK;
     mLastQueuedTimeUs = 0;
     mLatestEnqueuedMeta = NULL;
-    ++mQueuedDiscontinuityCount;
 
+    if (type == ATSParser::DISCONTINUITY_NONE) {
+        return;
+    }
+
+    ++mQueuedDiscontinuityCount;
     sp<ABuffer> buffer = new ABuffer(0);
     buffer->meta()->setInt32("discontinuity", static_cast<int32_t>(type));
     buffer->meta()->setMessage("extra", extra);

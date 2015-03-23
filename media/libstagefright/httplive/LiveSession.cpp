@@ -85,8 +85,7 @@ LiveSession::LiveSession(
       mLastSeekTimeUs(0),
       mBackupFile(NULL),
       mEraseFirstTs(0),
-      mSegmentCounter(0),
-      mIsFirstSwitch(true) {
+      mSegmentCounter(0) {
 
     if (ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
         mDownloadFirstTS = true;
@@ -1135,31 +1134,6 @@ size_t LiveSession::getBandwidthIndex() {
         // Pick the highest bandwidth stream below or equal to estimated bandwidth.
 
         index = mBandwidthItems.size() - 1;
-        if (ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
-            ALOGV("use the customizing method to get the bandwidth");
-            size_t customizedBandwidthBps = bandwidthBps * (mIsFirstSwitch ? 8 : 9) / 10;
-
-            while (index > 0 && mBandwidthItems.itemAt(index).mBandwidth
-                                    > customizedBandwidthBps) {
-                --index;
-            }
-
-            if (mIsFirstSwitch) {
-                ALOGV("choose the index directly in the first time");
-                mIsFirstSwitch = false;
-            } else {
-                // in up switch case, if the real estimated bandwidth is NOT 30%
-                // above the target bandwidth, index should move to a lower level.
-                if (index > mCurBandwidthIndex && (size_t)bandwidthBps
-                        <= mBandwidthItems.itemAt(index).mBandwidth * 13 / 10) {
-                    // eg: case A: index:4, mCurBandwidthIndex:2, we should choose 3
-                    // case B: index:3, mCurBandwidthIndex:2, we should choose 2
-                    --index;
-                }
-            }
-            CHECK_GE(index, 0);
-            return index;
-        }
 
         while (index > 0) {
             // consider only 80% of the available bandwidth, but if we are switching up,
@@ -1275,11 +1249,11 @@ status_t LiveSession::onSeek(const sp<AMessage> &msg) {
 }
 
 status_t LiveSession::getDuration(int64_t *durationUs) const {
-    int64_t maxDurationUs = 0ll;
+    int64_t maxDurationUs = -1ll;
     for (size_t i = 0; i < mFetcherInfos.size(); ++i) {
         int64_t fetcherDurationUs = mFetcherInfos.valueAt(i).mDurationUs;
 
-        if (fetcherDurationUs >= 0ll && fetcherDurationUs > maxDurationUs) {
+        if (fetcherDurationUs > maxDurationUs) {
             maxDurationUs = fetcherDurationUs;
         }
     }
@@ -1328,6 +1302,14 @@ status_t LiveSession::selectTrack(size_t index, bool select) {
         msg->post();
     }
     return err;
+}
+
+ssize_t LiveSession::getSelectedTrack(media_track_type type) const {
+    if (mPlaylist == NULL) {
+        return -1;
+    } else {
+        return mPlaylist->getSelectedTrack(type);
+    }
 }
 
 bool LiveSession::canSwitchUp() {
@@ -1644,7 +1626,7 @@ void LiveSession::onChangeConfiguration3(const sp<AMessage> &msg) {
                     extra->setInt64("timeUs", timeUs);
                     discontinuityQueue = mDiscontinuities.valueFor(indexToType(j));
                     discontinuityQueue->queueDiscontinuity(
-                            ATSParser::DISCONTINUITY_SEEK, extra, true);
+                            ATSParser::DISCONTINUITY_TIME, extra, true);
                 } else {
                     int32_t type;
                     int64_t srcSegmentStartTimeUs;
@@ -1659,14 +1641,21 @@ void LiveSession::onChangeConfiguration3(const sp<AMessage> &msg) {
 
                     if (meta != NULL && !meta->findInt32("discontinuity", &type)) {
                         int64_t tmpUs;
+                        int64_t tmpSegmentUs;
+
                         CHECK(meta->findInt64("timeUs", &tmpUs));
-                        if (startTimeUs < 0 || tmpUs < startTimeUs) {
+                        CHECK(meta->findInt64("segmentStartTimeUs", &tmpSegmentUs));
+                        if (startTimeUs < 0 || tmpSegmentUs < segmentStartTimeUs) {
+                            startTimeUs = tmpUs;
+                            segmentStartTimeUs = tmpSegmentUs;
+                        } else if (tmpSegmentUs == segmentStartTimeUs && tmpUs < startTimeUs) {
                             startTimeUs = tmpUs;
                         }
 
-                        CHECK(meta->findInt64("segmentStartTimeUs", &tmpUs));
-                        if (segmentStartTimeUs < 0 || tmpUs < segmentStartTimeUs) {
-                            segmentStartTimeUs = tmpUs;
+                        if (meta->findInt64("frameDeltaUs", &tmpUs) && tmpUs > 0) {
+                            if (frameDeltaUs < 0 || tmpUs < frameDeltaUs) {
+                                frameDeltaUs = tmpUs;
+                            }
                         }
 
                         if (meta->findInt64("frameDeltaUs", &tmpUs) && tmpUs > 0) {
