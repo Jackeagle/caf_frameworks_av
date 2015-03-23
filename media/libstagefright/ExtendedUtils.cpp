@@ -35,6 +35,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <dlfcn.h>
+
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/foundation/ABitReader.h>
 #include <media/stagefright/foundation/ADebug.h>
@@ -851,21 +852,6 @@ void ExtendedUtils::ShellProp::getRtpPortRange(unsigned *start, unsigned *end) {
 
 wp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::gDProxy = NULL;
 Mutex ExtendedUtils::DiscoverProxy::gLock;
-bool ExtendedUtils::DiscoverProxy::gSetStopProxyInProgress = false;
-Condition ExtendedUtils::DiscoverProxy::gCondition;
-sp<ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient> ExtendedUtils::DiscoverProxy::gDeathNotifier = NULL;
-
-ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::~STAProxyServiceDeathRecepient() {
-    ALOGV("~STAProxyServiceDeathRecepient()");
-}
-
-void
-ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::binderDied(const wp<IBinder>& who) {
-    ALOGI("STAPrxoyService sDeathNotifierService %p died!", who.unsafe_get());
-    gSetStopProxyInProgress = false;
-    gCondition.signal();
-}
-
 
 sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
    Mutex::Autolock autoLock(gLock);
@@ -979,18 +965,6 @@ bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
 }
 
 bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
-    sp<IServiceManager> sm1 = defaultServiceManager();
-    sp<IBinder> am1 = sm1->getService(String16("STAProxyService"));
-    if (am1 == NULL) {
-        ALOGE("sendSTAProxyStopIntent couldn't find STAProxyService service!\n");
-    } else {
-        gDeathNotifier = new STAProxyServiceDeathRecepient();
-        am1->linkToDeath(gDeathNotifier);
-
-        gSetStopProxyInProgress = true;
-        ALOGV("STAProxyService found and linked to deathnotifier!\n");
-    }
-
     sp<IServiceManager> sm = defaultServiceManager();
     sp<IBinder> am = sm->getService(String16("activity"));
     if (am == NULL) {
@@ -1025,21 +999,6 @@ bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
 
     status_t ret = am->transact(STOP_SERVICE_TRANSACTION, data, &reply, 0);
     ALOGI("ExtendedUtils::DiscoverProxy::Sent STAProxy Service stop Intent");
-
-    if (gSetStopProxyInProgress) {
-        while (gSetStopProxyInProgress) {
-           status_t err = gCondition.waitRelative(gLock, kBinderDieTimeoutNs);
-            if (err == -ETIMEDOUT){
-                ALOGE(" STAProxy service stop timed out for %lld nanoseconds", kBinderDieTimeoutNs);
-                if (am1->isBinderAlive() && (gDeathNotifier != NULL)) {
-                    am1->unlinkToDeath(gDeathNotifier);
-                }
-                gSetStopProxyInProgress = false;
-                break;
-            }
-        }
-        ALOGI("STAProxyService completely stopped!\n");
-    }
 
     return true;
 }
@@ -2460,16 +2419,6 @@ bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
 
 wp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::gDProxy = NULL;
 Mutex ExtendedUtils::DiscoverProxy::gLock;
-bool ExtendedUtils::DiscoverProxy::gSetStopProxyInProgress = false;
-Condition ExtendedUtils::DiscoverProxy::gCondition;
-sp<ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient> ExtendedUtils::DiscoverProxy::gDeathNotifier = NULL;
-
-ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::~STAProxyServiceDeathRecepient() {
-}
-
-void
-ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::binderDied(const wp<IBinder>& who) {
-}
 
 sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
     return NULL;
@@ -2494,7 +2443,6 @@ bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
 bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
     return false;
 }
-
 
 bool ExtendedUtils::ShellProp::isCustomHLSEnabled() {
     return false;

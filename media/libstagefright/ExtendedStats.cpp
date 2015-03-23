@@ -45,6 +45,7 @@ ExtendedStats::ExtendedStats(const char *id, pid_t tid) {
     clear();
     mName.setTo(id);
     mTid = tid;
+    mWindowSize = kMaxWindowSize;
 }
 
 ExtendedStats::~ExtendedStats() {

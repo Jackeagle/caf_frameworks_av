@@ -109,7 +109,6 @@ public:
     };
 
     static const size_t kMaxStringLength = 1024;
-    
     static const int32_t kMaxWindowSize = 120;
 
     struct AutoProfile {
