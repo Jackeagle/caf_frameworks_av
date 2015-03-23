@@ -150,6 +150,7 @@ private:
     bool mVideoIsAVC;
     bool mOffloadAudio;
     bool mOffloadDecodedPCM;
+    bool mSwitchingFromPcmOffload;
     bool mIsStreaming;
     sp<Decoder> mAudioDecoder;
     sp<CCDecoder> mCCDecoder;
