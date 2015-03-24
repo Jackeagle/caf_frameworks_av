@@ -653,13 +653,13 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         return false;
     }
 
-    // check whether it is ELD/LD content -> no offloading
+    // check whether it is ELD/LD/LTP content -> no offloading
     // FIXME: this should depend on audio DSP capabilities. mapMimeToAudioFormat() should use the
     // metadata to refine the AAC format and the audio HAL should only list supported profiles.
     int32_t aacaot = -1;
     if (meta->findInt32(kKeyAACAOT, &aacaot)) {
-        if (aacaot == 23 || aacaot == 39 || aacaot == 1) {
-            ALOGV("track of type '%s' is ELD/LD content", mime);
+        if (aacaot == 23 || aacaot == 39 || aacaot == 1 || aacaot == 4) {
+            ALOGV("track of type '%s' is ELD/LD/LTP content", mime);
             return false;
         }
     }
