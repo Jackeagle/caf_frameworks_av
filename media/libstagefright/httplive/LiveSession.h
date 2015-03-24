@@ -229,6 +229,8 @@ private:
     bool mEraseFirstTs;
     uint32_t mSegmentCounter;
 
+    bool mIsFirstSwitch;
+
     sp<PlaylistFetcher> addFetcher(const char *uri);
 
     void onConnect(const sp<AMessage> &msg);
