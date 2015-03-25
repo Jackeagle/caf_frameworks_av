@@ -60,8 +60,6 @@ struct ATSParser : public RefBase {
         DISCONTINUITY_ABSOLUTE_TIME     = 8,
         DISCONTINUITY_TIME_OFFSET       = 16,
 
-        DISCONTINUITY_SEEK              = DISCONTINUITY_TIME,
-
         // For legacy reasons this also implies a time discontinuity.
         DISCONTINUITY_FORMATCHANGE      =
             DISCONTINUITY_AUDIO_FORMAT
@@ -95,6 +93,7 @@ struct ATSParser : public RefBase {
         NUM_SOURCE_TYPES = 2
     };
     sp<MediaSource> getSource(SourceType type);
+    bool hasSource(SourceType type) const;
 
     bool PTSTimeDeltaEstablished();
 
@@ -109,6 +108,7 @@ struct ATSParser : public RefBase {
         STREAMTYPE_MPEG4_VIDEO          = 0x10,
         STREAMTYPE_METADATA_PES         = 0x15,// Metadata carried in PES packets
         STREAMTYPE_H264                 = 0x1b,
+        STREAMTYPE_H265                 = 0x24,
 
         // From ATSC A/53 Part 3:2009, 6.7.1
         STREAMTYPE_AC3                  = 0x81,

@@ -51,6 +51,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
+#include "include/avc_utils.h"
 #include "include/ExtendedUtils.h"
 
 #include <system/window.h>
@@ -72,6 +73,10 @@ static const unsigned kMinRtpPort = 1024;
 static const unsigned kMaxRtpPort = 65535;
 
 #define ARG_TOUCH(x) (void)x
+
+static const uint8_t kHEVCNalUnitTypeIDR         = 0x13;
+static const uint8_t kHEVCNalUnitTypeIDRNoLP     = 0x14;
+static const uint8_t kHEVCNalUnitTypeCRA         = 0x15;
 static const uint8_t kHEVCNalUnitTypeVidParamSet = 0x20;
 static const uint8_t kHEVCNalUnitTypeSeqParamSet = 0x21;
 static const uint8_t kHEVCNalUnitTypePicParamSet = 0x22;
@@ -722,16 +727,71 @@ status_t ExtendedUtils::HEVCMuxer::makeHEVCCodecSpecificData(
     return OK;
 }
 
+sp<MetaData> ExtendedUtils::MakeHEVCCodecSpecificData(const sp<ABuffer> &accessUnit) {
+    const uint8_t *data = accessUnit->data();
+    size_t size = accessUnit->size();
+
+    if (data == NULL || size == 0) {
+        ALOGE("Invalid HEVC CSD");
+        return NULL;
+    }
+
+    sp<MetaData> meta = new MetaData;
+    meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_HEVC);
+    meta->setData(kKeyHVCC, kTypeHVCC, data, size);
+
+    // Set width & height to minimum (QCIF). This will trigger a port reconfig &
+    // the decoder will find the correct dimensions.
+    meta->setInt32(kKeyWidth, (int32_t)177);
+    meta->setInt32(kKeyHeight, (int32_t)144);
+
+    return meta;
+}
+
+bool ExtendedUtils::IsHevcIDR(const sp<ABuffer> &buffer) {
+    const uint8_t *data = buffer->data();
+    size_t size = buffer->size();
+
+    bool foundRef = false;
+    const uint8_t *nalStart;
+    size_t nalSize;
+    while (!foundRef && getNextNALUnit(&data, &size, &nalStart, &nalSize, true) == OK) {
+        if (nalSize == 0) {
+            ALOGW("Encountered zero-length HEVC NAL", nalSize);
+            return false;
+        }
+
+        uint8_t nalType;
+        getHEVCNalUnitType(nalStart[0], &nalType);
+
+        switch(nalType) {
+        case kHEVCNalUnitTypeIDR:
+        case kHEVCNalUnitTypeIDRNoLP:
+        case kHEVCNalUnitTypeCRA:
+            foundRef = true;
+            break;
+        }
+    }
+
+    return foundRef;
+}
+
 bool ExtendedUtils::ShellProp::isAudioDisabled(bool isEncoder) {
     bool retVal = false;
     char disableAudio[PROPERTY_VALUE_MAX];
     property_get("persist.debug.sf.noaudio", disableAudio, "0");
     if (isEncoder && (atoi(disableAudio) & 0x02)) {
         retVal = true;
-    } else if (atoi(disableAudio) & 0x01) {
+    } else if (!isEncoder && atoi(disableAudio) & 0x01) {
         retVal = true;
     }
     return retVal;
+}
+
+bool ExtendedUtils::ShellProp::isVideoRenderingDisabled() {
+    char disableVideoRendering[PROPERTY_VALUE_MAX];
+    property_get("persist.debug.sf.nodisplay", disableVideoRendering, "0");
+    return atoi(disableVideoRendering) > 0 ? true : false;
 }
 
 void ExtendedUtils::ShellProp::setEncoderProfile(
@@ -1779,7 +1839,7 @@ bool ExtendedUtils::pcmOffloadException(const char* const mime) {
     bool decision = false;
 
     if (!mime) {
-        ALOGI("%s: no audio mime present, ignoring pcm offload", __func__);
+        ALOGV("%s: no audio mime present, ignoring pcm offload", __func__);
         return true;
     }
 #if defined (PCM_OFFLOAD_ENABLED) || defined (PCM_OFFLOAD_ENABLED_24)
@@ -1823,7 +1883,7 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
     tPCMMeta->setInt32(kKeySampleBits, 16);
 
     if (sMeta == NULL) {
-        ALOGI("No audio meta, ignoring %s", __func__);
+        ALOGW("no meta returning dummy meta");
         return tPCMMeta;
     }
 
@@ -1894,162 +1954,26 @@ void ExtendedUtils::overWriteAudioFormat(
     return;
 }
 
-void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
-        const sp<AMessage> &notify) {
-    if (accessUnit == NULL || notify == NULL)
-        return;
-    sp<RefBase> obj;
-    if (accessUnit->meta()->findObject("format", &obj) && obj != NULL) {
-        sp<MetaData> format = static_cast<MetaData*>(obj.get());
-        const void* data;
-        uint32_t type;
-        size_t size;
-        if (format->findData(kKeyAlbumArt, &type, &data, &size)) {
-            ALOGV("found album image");
-            sp<ABuffer> imagebuffer = ABuffer::CreateAsCopy(data, size);
-            notify->setBuffer("image-buffer", imagebuffer);
-            notify->post();
-            format->remove(kKeyAlbumArt);
-        }
-    }
-}
 
-void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
-        const sp<AMessage> &format) {
-    if (msg == NULL || format == NULL)
-        return;
+bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
+    bool decision = false;
 
-    sp<ABuffer> buffer;
-    if (!msg->findBuffer("image-buffer", &buffer) || buffer == NULL)
-        return;
-
-    sp<RefBase> obj;
-    if (!msg->findObject("native-window", &obj) || obj == NULL)
-        return;
-
-    sp<ANativeWindow> nativeWindow = (static_cast<NativeWindowWrapper *>(obj.get()))->getNativeWindow();
-
-    ALOGV("decode jpeg to rgb565");
-    jpeg_decompress_struct cinfo;
-    jpeg_error_mgr jerr;
-    cinfo.err = jpeg_std_error(&jerr);
-    jpeg_create_decompress(&cinfo);
-    jpeg_mem_src(&cinfo, buffer->data(), buffer->size());
-
-    if (JPEG_HEADER_OK != jpeg_read_header(&cinfo, true)) {
-        ALOGE("failed to decode jpeg header");
-        jpeg_destroy_decompress(&cinfo);
-        return;
+    if (sMeta == NULL) {
+        return decision;
     }
 
-    cinfo.out_color_space = JCS_RGB_565;
-    if (!jpeg_start_decompress(&cinfo)) {
-        ALOGE("failed to decompress jpeg picture");
-        jpeg_destroy_decompress(&cinfo);
-        return;
+   /* Return true, if
+      1. 24 bit offload flag is enabled
+      2. the bit stream is raw 
+      3. this is 24 bit PCM */
+
+    if (is24bitPCMOffloadEnabled() && isRAWFormat(sMeta) &&
+        getPcmSampleBits(sMeta) == 24) {
+        ALOGV("%s: decided its true for 24 bit PCM offloading", __func__);
+        decision = true;
     }
 
-    ALOGV("Picture width = %d, height = %d", cinfo.output_width, cinfo.output_height);
-    size_t stride = cinfo.output_width * 2;
-    size_t dataSize = stride * cinfo.output_height;
-    sp<ABuffer> outBuffer = new ABuffer(dataSize);
-    for (size_t i = 0; i < cinfo.output_height; i++) {
-        JSAMPLE* rowptr = (JSAMPLE*)(outBuffer->data() + stride * i);
-        int32_t row_count = jpeg_read_scanlines(&cinfo, &rowptr, 1);
-        if (row_count == 0) {
-           ALOGV("row_count = 0");
-           cinfo.output_scanline = cinfo.output_height;
-           break;
-        }
-    }
-    size_t bufwidth = cinfo.output_width;
-    size_t bufheight = cinfo.output_height;
-    jpeg_finish_decompress(&cinfo);
-    jpeg_destroy_decompress(&cinfo);
-    ALOGV("finish decoding jpeg");
-
-    int32_t err = 0;
-
-    err = native_window_set_usage(nativeWindow.get(),
-            GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN
-            | GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_EXTERNAL_DISP);
-    if (err != 0) {
-        ALOGE("native_window_set_usage failed: %d", err);
-        return;
-    }
-    err = native_window_set_scaling_mode(nativeWindow.get(),
-            NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW);
-    if (err != 0) {
-        ALOGE("native_window_set_scaling_mode failed: %d", err);
-        return;
-    }
-    err = native_window_set_buffers_dimensions(nativeWindow.get(), bufwidth,
-            bufheight);
-    if (err != 0) {
-        ALOGE("native_window_set_buffers_dimensions failed: %d", err);
-        return;
-    }
-    err = native_window_set_buffers_format(nativeWindow.get(),
-            HAL_PIXEL_FORMAT_RGB_565);
-    if (err != 0) {
-        ALOGE("native_window_set_buffers_format failed: %d", err);
-        return;
-    }
-
-    android_native_rect_t crop;
-    crop.left = 0;
-    crop.top = 0;
-    crop.right = bufwidth - 1;
-    crop.bottom = bufheight - 1;
-
-    err = native_window_set_crop(nativeWindow.get(), &crop);
-    if (err != 0) {
-        ALOGE("native_window_set_crop failed: %ld", err);
-        return;
-    }
-
-    err = native_window_set_buffers_transform(
-            nativeWindow.get(), 0);
-    if (err != 0) {
-        ALOGE("native_window_set_buffers_transform failed: %ld", err);
-        return;
-    }
-
-    ANativeWindowBuffer *buf;
-    if ((err = native_window_dequeue_buffer_and_wait(nativeWindow.get(),
-            &buf)) != 0) {
-        ALOGE("native_window_dequeue_buffer_and_wait returned error %d", err);
-        buf = NULL;
-        return;
-    }
-    GraphicBufferMapper &mapper = GraphicBufferMapper::get();
-    Rect bounds(bufwidth, bufheight);
-
-    void *dst;
-    if ((err = mapper.lock(buf->handle, GRALLOC_USAGE_SW_WRITE_OFTEN,
-            bounds, &dst)) != 0) {
-        ALOGE("mapper.lock failed %d", err);
-        buf = NULL;
-        return;
-    }
-
-    memcpy((uint8_t*)dst, outBuffer->data(), dataSize);
-
-    if ((err = mapper.unlock(buf->handle)) != 0) {
-        ALOGE("mapper.unlock failed %d", err);
-        buf = NULL;
-        return;
-    }
-    if ((err = nativeWindow->queueBuffer(nativeWindow.get(), buf,
-            -1)) != 0) {
-        ALOGE("native window queueBuffer returned error %d", err);
-        buf = NULL;
-        return;
-    }
-    buf = NULL;
-    ALOGV("show the image in native window");
-    format->setInt32("width", (int32_t)bufwidth);
-    format->setInt32("height", (int32_t)bufheight);
+    return decision;
 }
 
 }
@@ -2103,7 +2027,22 @@ int32_t ExtendedUtils::HFR::getHFRCapabilities(
     return -1;
 }
 
+sp<MetaData> ExtendedUtils::MakeHEVCCodecSpecificData(const sp<ABuffer> &accessUnit) {
+    ARG_TOUCH(accessUnit);
+    return NULL;
+}
+
+bool ExtendedUtils::IsHevcIDR(const sp<ABuffer> &buffer) {
+    ARG_TOUCH(buffer);
+    return false;
+}
+
 bool ExtendedUtils::ShellProp::isAudioDisabled(bool isEncoder) {
+    ARG_TOUCH(isEncoder);
+    return false;
+}
+
+bool ExtendedUtils::ShellProp::isVideoRenderingDisabled() {
     return false;
 }
 
@@ -2331,6 +2270,12 @@ void ExtendedUtils::overWriteAudioFormat(
     ARG_TOUCH(dst);
     ARG_TOUCH(src);
     return;
+}
+
+bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
+    ARG_TOUCH(sMeta);
+
+    return false;
 }
 
 } // namespace android
