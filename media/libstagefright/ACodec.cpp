@@ -1531,6 +1531,10 @@ status_t ACodec::configureCodec(
             err = setupVideoEncoder(mime, msg);
         } else {
             err = setupVideoDecoder(mime, msg, haveNativeWindow);
+            if (err == OK) {
+                const char* componentName = mComponentName.c_str();
+                ExtendedCodec::configureVideoDecoder(msg, mime, mOMX, 0, mNode, componentName);
+            }
         }
 
         if (err != OK) {
