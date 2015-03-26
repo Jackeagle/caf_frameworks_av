@@ -944,7 +944,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 ALOGV("media rendering started");
                 notifyListener(MEDIA_STARTED, 0, 0);
             } else if (what == Renderer::kWhatAudioOffloadTearDown) {
-                ALOGV("Tear down audio offload, fall back to s/w path if due to error.");
+                ALOGI("Tear down audio offload, fall back to s/w path if due to error.");
                 int64_t positionUs;
                 CHECK(msg->findInt64("positionUs", &positionUs));
                 int32_t reason;
@@ -973,8 +973,18 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 performSeek(positionUs, false /* needNotify */);
                 if (reason == Renderer::kDueToError) {
+                    if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
+                        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                        if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
+                              ALOGV("Override pcm format to 16 bits");
+                              ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT);
+                              mSource->stop();
+                              mSource->start();
+                        }
+                    }
                     mRenderer->signalDisableOffloadAudio();
                     mOffloadAudio = false;
+                    mOffloadDecodedPCM = false;
                     instantiateDecoder(true /* audio */, &mAudioDecoder);
                 } else {
                     mOffloadAudioTornDown = true;
@@ -1119,6 +1129,7 @@ void NuPlayer::onResume() {
 
 void NuPlayer::onStart() {
     mOffloadAudio = false;
+    mOffloadDecodedPCM = false;
     mAudioEOS = false;
     mVideoEOS = false;
     mStarted = true;
@@ -1135,7 +1146,6 @@ void NuPlayer::onStart() {
     }
 
     mSource->start();
-
     uint32_t flags = 0;
 
     if (mSource->isRealTime()) {
@@ -1151,10 +1161,25 @@ void NuPlayer::onStart() {
     sp<AMessage> videoFormat = mSource->getFormat(false /* audio */);
     sp<MetaData> vMeta = new MetaData;
     convertMessageToMetaData(videoFormat, vMeta);
+    mOffloadAudio = canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
+                         mIsStreaming /* is_streaming */, streamType);
+     //For offloading decoded content
+    if (!mOffloadAudio && (audioMeta != NULL)) {
+        sp<MetaData> audioPCMMeta =
+                ExtendedUtils::createPCMMetaFromSource(audioMeta);
 
+        const char *mime = NULL;
+        if (audioMeta != NULL) {
+            audioMeta->findCString(kKeyMIMEType, &mime);
+        }
     mOffloadAudio =
-        canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
-                         true /* is_streaming */, streamType);
+                ((mime && !ExtendedUtils::pcmOffloadException(mime)) &&
+                canOffloadStream(audioPCMMeta, (videoFormat != NULL), vMeta,
+                        mIsStreaming /* is_streaming */, streamType));
+        mOffloadDecodedPCM = mOffloadAudio;
+        ALOGI("Could not offload audio decode, pcm offload decided :%d",
+                mOffloadDecodedPCM);
+    }
     if (mOffloadAudio) {
         flags |= Renderer::FLAG_OFFLOAD_AUDIO;
     }
@@ -1288,6 +1313,15 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
     // Note: This is called early in NuPlayer to determine whether offloading
     // is possible; otherwise the decoders call the renderer openAudioSink directly.
 
+    //update bit width before opening audio sink
+    if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
+        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+        if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
+            ALOGV("overriding format with 24 bits");
+            format->setInt32("sbit", 24);
+        }
+    }
+
     status_t err = mRenderer->openAudioSink(
             format, true /* offloadOnly */, hasVideo, mIsStreaming, AUDIO_OUTPUT_FLAG_NONE, &mOffloadAudio);
     if (err != OK) {
@@ -1346,25 +1380,25 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<DecoderBase> *decoder) {
         sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
 
         if (mOffloadAudio && !mOffloadDecodedPCM) {
-            if (ExtendedUtils::isRAWFormat(audioMeta) &&
-                ExtendedUtils::is24bitPCMOffloadEnabled() &&
-                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
-                ExtendedUtils::setKeyPCMFormat(audioMeta,AUDIO_FORMAT_PCM_8_24_BIT);
-                ALOGI("update pcmformat in WAVExtractor to 24 bit");
-                mSource->stop();
-                mSource->start();
+            if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
+                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
+                    ALOGV("Overriding PCM format with 24 bit and calling start");
+                    ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_8_24_BIT);
+                    mSource->start();
+                }
             }
             *decoder = new DecoderPassThrough(notify, mSource, mRenderer);
         } else {
-            if (ExtendedUtils::isRAWFormat(audioMeta) &&
-                ExtendedUtils::is24bitPCMOffloadEnabled() &&
-                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
-                ExtendedUtils::setKeyPCMFormat(audioMeta,AUDIO_FORMAT_PCM_16_BIT);
-                ALOGI("update pcmformat in WAVExtractor to 16 bit");
-                mSource->stop();
-                mSource->start();
+            if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
+                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
+                    ALOGV("Setting 16 bit in case session is not offloaded");
+                    ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT);
+                    mSource->start();
+                }
             }
-            *decoder = new DecoderPassThrough(notify, mSource, mRenderer);
+            *decoder = new Decoder(notify, mSource, mRenderer);
         }
     } else {
         sp<AMessage> notify = new AMessage(kWhatVideoNotify, id());

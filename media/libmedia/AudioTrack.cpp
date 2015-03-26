@@ -1081,19 +1081,53 @@ status_t AudioTrack::createTrack_l()
         return NO_INIT;
     }
 
-    audio_io_handle_t output;
+    status_t status;
+    audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
     audio_stream_type_t streamType = mStreamType;
     audio_attributes_t *attr = (mStreamType == AUDIO_STREAM_DEFAULT) ? &mAttributes : NULL;
-    status_t status = AudioSystem::getOutputForAttr(attr, &output,
-                                                    (audio_session_t)mSessionId, &streamType,
-                                                    mSampleRate, mFormat, mChannelMask,
-                                                    mFlags, mOffloadInfo);
+    mCanOffloadPcmTrack = false;
+    mIsPcmTrackOffloaded = false;
+    mPcmTrackOffloadInfo = AUDIO_INFO_INITIALIZER;
 
-    if (output == AUDIO_IO_HANDLE_NONE) {
-        ALOGE("Could not get audio output for stream type %d, usage %d, sample rate %u, format %#x,"
-              " channel mask %#x, flags %#x",
-              streamType, mAttributes.usage, mSampleRate, mFormat, mChannelMask, mFlags);
-        return BAD_VALUE;
+    // Check if the track can be offloaded. Store the decision in mCanOffloadPcmTrack
+    mCanOffloadPcmTrack = canOffloadTrack(mStreamType, mFormat, mChannelMask, mFlags,
+                              mTransfer, &mAttributes, mOffloadInfo);
+
+
+    if(mCanOffloadPcmTrack) {
+        ALOGV("TrackOffload: Tying to create PCM Offload track");
+        audio_output_flags_t flags = (audio_output_flags_t) (mFlags & ~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
+        flags = (audio_output_flags_t) (flags | AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD);
+        status = AudioSystem::getOutputForAttr(attr, &output,
+                                                (audio_session_t) mSessionId, &streamType,
+                                                mSampleRate, mPcmTrackOffloadInfo.format,
+                                                mChannelMask, (audio_output_flags_t) (flags),
+                                                &mPcmTrackOffloadInfo);
+        if (status == NO_ERROR && output != AUDIO_IO_HANDLE_NONE) {
+            //got output
+            ALOGV("TrackOffload: Going through PCM Offload Track");
+            mIsPcmTrackOffloaded = true;
+            mFlags = flags;
+            mFrameSize = sizeof(uint8_t);
+            mFrameSizeAF = sizeof(uint8_t);
+            mUseSmallBuf = true;
+        }
+    }
+
+    //retry retrieving output
+    if (status != NO_ERROR || output == AUDIO_IO_HANDLE_NONE) {
+        status = AudioSystem::getOutputForAttr(attr, &output,
+                                                        (audio_session_t)mSessionId, &streamType,
+                                                        mSampleRate, mFormat, mChannelMask,
+                                                        mFlags, mOffloadInfo);
+
+    }
+
+    if (status != NO_ERROR || output == AUDIO_IO_HANDLE_NONE) {
+            ALOGE("Could not get audio output for stream type %d, usage %d, sample rate %u, format %#x,"
+                  " channel mask %#x, flags %#x",
+                  streamType, mAttributes.usage, mSampleRate, mFormat, mChannelMask, mFlags);
+            return BAD_VALUE;
     }
     {
     // Now that we have a reference to an I/O handle and have not yet handed it off to AudioFlinger,

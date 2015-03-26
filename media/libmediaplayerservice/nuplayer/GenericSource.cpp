@@ -291,9 +291,30 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
     // Widevine sources might re-initialize crypto when starting, if we delay
     // this to start(), all data buffered during prepare would be wasted.
     // (We don't actually start reading until start().)
-    if (mAudioTrack.mSource != NULL && mAudioTrack.mSource->start() != OK) {
-        ALOGE("failed to start audio track!");
-        return UNKNOWN_ERROR;
+    if (mAudioTrack.mSource != NULL) {
+        bool overrideSourceStart = false;
+        status_t status = false;
+        sp<MetaData> audioMeta = NULL;
+        audioMeta = mAudioTrack.mSource->getFormat();
+
+        if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
+            if(ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
+                overrideSourceStart = true;
+            }
+        }
+
+        if (overrideSourceStart && audioMeta.get()) {
+            ALOGV("Override AudioTrack source with Meta");
+            status = mAudioTrack.mSource->start(audioMeta.get());
+        } else {
+            ALOGV("Do not override AudioTrack source with Meta");
+            status = mAudioTrack.mSource->start();
+        }
+
+        if (status != OK ) {
+            ALOGE("failed to start audio track!");
+            return UNKNOWN_ERROR;
+        }
     }
 
     if (mVideoTrack.mSource != NULL && mVideoTrack.mSource->start() != OK) {
@@ -400,6 +421,7 @@ void NuPlayer::GenericSource::prepareAsync() {
 
 void NuPlayer::GenericSource::onPrepareAsync() {
     // delayed data source creation
+    ALOGV("%s", __func__);
     if (mDataSource == NULL) {
 
         if (mQueryAndSetProxy) {
@@ -633,24 +655,6 @@ void NuPlayer::GenericSource::start() {
     }
 
     if (mAudioTrack.mSource != NULL) {
-        sp<MetaData> audioMeta = mAudioTrack.mSource->getFormat();
-        if (ExtendedUtils::isRAWFormat(audioMeta) &&
-            ExtendedUtils::is24bitPCMOffloadEnabled() &&
-            (ExtendedUtils::getPCMFormat(audioMeta) == AUDIO_FORMAT_PCM_8_24_BIT)) {
-            /*call start with kKeyPCMFormat set to 24bit when:
-            * 1. is raw pcm format
-            * 2. 24bit pcm offload feature is enabled
-            * 3. kKeyPCMFormat is set to 24bit
-            * default format (16bit) will be used in WAVExtractor if:
-            * 1. kKeyPCMFormat is not set
-            * 2. kKeyPCMFormat is not set to 24bit
-            */
-            ALOGI("Retrieving 24 bit data from source");
-            CHECK_EQ(mAudioTrack.mSource->start(audioMeta.get()), (status_t)OK);
-        } else {
-            CHECK_EQ(mAudioTrack.mSource->start(), (status_t)OK);
-        }
-
         postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
     }
 
