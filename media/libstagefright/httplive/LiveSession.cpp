@@ -68,7 +68,8 @@ LiveSession::LiveSession(
       mReconfigurationInProgress(false),
       mSwitchInProgress(false),
       mDisconnectReplyID(0),
-      mSeekReplyID(0) {
+      mSeekReplyID(0),
+      mSeekPosition(-1ll) {
     if (mUIDValid) {
         mHTTPDataSource->setUID(mUID);
     }
