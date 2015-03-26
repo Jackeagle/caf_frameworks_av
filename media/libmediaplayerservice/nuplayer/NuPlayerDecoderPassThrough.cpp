@@ -65,7 +65,7 @@ void NuPlayer::DecoderPassThrough::getStats(
     *numFramesDropped = 0;
 }
 
-void NuPlayer::DecoderPassThrough::onConfigure(const sp<AMessage> &format) {
+void NuPlayer::DecoderPassThrough::onConfigure(const sp<AMessage> &format, bool isStreaming) {
     ALOGV("[%s] onConfigure", mComponentName.c_str());
     sp<AMessage> videoFormat = mSource->getFormat(false /* video */);
     bool hasVideo = (videoFormat != NULL);
@@ -80,7 +80,7 @@ void NuPlayer::DecoderPassThrough::onConfigure(const sp<AMessage> &format) {
     // Opening again might be relevant if decoder is instantiated after shutdown and
     // format is different.
     status_t err = mRenderer->openAudioSink(
-            format, true /* offloadOnly */, hasVideo /* hasVideo */, false,
+            format, true /* offloadOnly */, hasVideo /* hasVideo */, isStreaming,
             AUDIO_OUTPUT_FLAG_NONE /* flags */, NULL /* isOffloaded */);
     if (err != OK) {
         handleError(err);
