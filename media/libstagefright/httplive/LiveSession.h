@@ -122,6 +122,8 @@ private:
     };
 
     static const size_t kBandwidthHistoryBytes;
+    static const off64_t kDefaultFileSize;
+    static const double kDefaultSegmentDurationUs;
 
     struct BandwidthItem {
         size_t mPlaylistIndex;

@@ -594,6 +594,17 @@ status_t NuPlayer::Decoder::fetchInputData(sp<AMessage> &reply) {
                 ALOGI("%s discontinuity (format=%d, time=%d)",
                         mIsAudio ? "audio" : "video", formatChange, timeChange);
 
+                if (!formatChange && timeChange) {
+                    if (mSkipFlush) {
+                        ALOGV("Skip %s flush for seek after suspend",
+                            mIsAudio ? "audio" : "video");
+                        mSkipFlush = false;
+                        reply->setInt32("err", OK);
+                        reply->post();
+                        return OK;
+                    }
+                }
+
                 bool seamlessFormatChange = false;
                 sp<AMessage> newFormat = mSource->getFormat(mIsAudio);
                 if (formatChange) {
