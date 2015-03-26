@@ -39,7 +39,6 @@
 #include <media/stagefright/foundation/ABitReader.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/MediaDefs.h>
-#include <media/stagefright/NativeWindowWrapper.h>
 #include <media/stagefright/OMXCodec.h>
 #include <cutils/properties.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -53,14 +52,6 @@
 
 #include "include/avc_utils.h"
 #include "include/ExtendedUtils.h"
-
-#include <system/window.h>
-#include <ui/GraphicBufferMapper.h>
-
-extern "C" {
-    #include "jpeglib.h"
-    #include "jerror.h"
-}
 
 static const int64_t kDefaultAVSyncLateMargin =  40000;
 static const int64_t kMaxAVSyncLateMargin     = 250000;
@@ -1954,7 +1945,6 @@ void ExtendedUtils::overWriteAudioFormat(
     return;
 }
 
-
 bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
     bool decision = false;
 
@@ -1976,7 +1966,7 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
     return decision;
 }
 
-}
+} // namespace android
 #else //ENABLE_AV_ENHANCEMENTS
 
 namespace android {
@@ -2214,18 +2204,6 @@ bool ExtendedUtils::checkDPFromVOLHeader(const uint8_t *data, size_t size) {
     ARG_TOUCH(data);
     ARG_TOUCH(size);
     return false;
-}
-
-void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
-        const sp<AMessage> &notify) {
-    ARG_TOUCH(accessUnit);
-    ARG_TOUCH(notify);
-}
-
-void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
-        const sp<AMessage> &format) {
-    ARG_TOUCH(msg);
-    ARG_TOUCH(format);
 }
 
 bool ExtendedUtils::RTSPStream::ParseURL_V6(
