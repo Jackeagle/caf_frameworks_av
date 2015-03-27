@@ -2380,6 +2380,14 @@ void AudioFlinger::PlaybackThread::threadLoop_exit()
     // When a thread is closed set associated volume to 0
     EffectDapController::instance()->updatePregain(mType, mOutput->flags, 0);
 #endif // DOLBY_END
+
+    {
+        Mutex::Autolock _l(mLock);
+        for (size_t i = 0; i < mTracks.size(); i++) {
+            sp<Track> track = mTracks[i];
+            track->invalidate();
+        }
+    }
 }
 
 /*
