@@ -141,6 +141,8 @@ AudioSource::AudioSource(
             mTransferMode = AudioRecord::TRANSFER_CALLBACK;
         }
 
+        mInitCheck = mRecord->initCheck();
+
         mAutoRampStartUs = kAutoRampStartUs;
         uint32_t playbackLatencyMs = 0;
         if (AudioSystem::getOutputLatency(&playbackLatencyMs,
