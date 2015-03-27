@@ -260,12 +260,13 @@ void NuPlayer::Renderer::setPauseStartedTimeRealUs(int64_t realUs) {
     mPauseStartedTimeRealUs = realUs;
 }
 
-bool NuPlayer::Renderer::openAudioSink(
+status_t NuPlayer::Renderer::openAudioSink(
         const sp<AMessage> &format,
         bool offloadOnly,
         bool hasVideo,
         bool isStreaming,
-        uint32_t flags) {
+        uint32_t flags,
+        bool *isOffloaded) {
     sp<AMessage> msg = new AMessage(kWhatOpenAudioSink, id());
     msg->setMessage("format", format);
     msg->setInt32("offload-only", offloadOnly);
@@ -276,9 +277,15 @@ bool NuPlayer::Renderer::openAudioSink(
     sp<AMessage> response;
     msg->postAndAwaitResponse(&response);
 
-    int32_t offload;
-    CHECK(response->findInt32("offload", &offload));
-    return (offload != 0);
+    int32_t err;
+    if (!response->findInt32("err", &err)) {
+        err = INVALID_OPERATION;
+    } else if (err == OK && isOffloaded != NULL) {
+        int32_t offload;
+        CHECK(response->findInt32("offload", &offload));
+        *isOffloaded = (offload != 0);
+    }
+    return err;
 }
 
 void NuPlayer::Renderer::closeAudioSink() {
@@ -307,10 +314,11 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
             uint32_t isStreaming;
             CHECK(msg->findInt32("isStreaming", (int32_t *)&isStreaming));
 
-            bool offload = onOpenAudioSink(format, offloadOnly, hasVideo, isStreaming, flags);
+            status_t err = onOpenAudioSink(format, offloadOnly, hasVideo, isStreaming, flags);
 
             sp<AMessage> response = new AMessage;
-            response->setInt32("offload", offload);
+            response->setInt32("err", err);
+            response->setInt32("offload", offloadingAudio());
 
             uint32_t replyID;
             CHECK(msg->senderAwaitsResponse(&replyID));
@@ -1379,7 +1387,7 @@ void NuPlayer::Renderer::cancelAudioOffloadPauseTimeout() {
     }
 }
 
-bool NuPlayer::Renderer::onOpenAudioSink(
+status_t NuPlayer::Renderer::onOpenAudioSink(
         const sp<AMessage> &format,
         bool offloadOnly,
         bool hasVideo,
@@ -1442,11 +1450,13 @@ bool NuPlayer::Renderer::onOpenAudioSink(
             if (memcmp(&mCurrentOffloadInfo, &offloadInfo, sizeof(offloadInfo)) == 0) {
                 ALOGV("openAudioSink: no change in offload mode");
                 // no change from previous configuration, everything ok.
-                return offloadingAudio();
+                return OK;
             }
+
             ALOGV("openAudioSink: try to open AudioSink in offload mode");
-            flags |= AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD;
-            flags &= ~AUDIO_OUTPUT_FLAG_DEEP_BUFFER;
+            uint32_t offloadFlags = flags;
+            offloadFlags |= AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD;
+            offloadFlags &= ~AUDIO_OUTPUT_FLAG_DEEP_BUFFER;
             audioSinkChanged = true;
             mAudioSink->close();
             err = mAudioSink->open(
@@ -1457,7 +1467,7 @@ bool NuPlayer::Renderer::onOpenAudioSink(
                     8 /* bufferCount */,
                     &NuPlayer::Renderer::AudioSinkCallback,
                     this,
-                    (audio_output_flags_t)flags,
+                    (audio_output_flags_t)offloadFlags,
                     &offloadInfo);
 
             if (err == OK) {
@@ -1481,13 +1491,14 @@ bool NuPlayer::Renderer::onOpenAudioSink(
         }
     }
     if (!offloadOnly && !offloadingAudio()) {
-        flags &= ~AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD;
         ALOGV("openAudioSink: open AudioSink in NON-offload mode");
+        uint32_t pcmFlags = flags;
+        pcmFlags &= ~AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD;
 
         audioSinkChanged = true;
         mAudioSink->close();
         mCurrentOffloadInfo = AUDIO_INFO_INITIALIZER;
-        CHECK_EQ(mAudioSink->open(
+        status_t err = mAudioSink->open(
                     sampleRate,
                     numChannels,
                     (audio_channel_mask_t)channelMask,
@@ -1495,15 +1506,20 @@ bool NuPlayer::Renderer::onOpenAudioSink(
                     8 /* bufferCount */,
                     NULL,
                     NULL,
-                    (audio_output_flags_t)flags),
-                 (status_t)OK);
+                    (audio_output_flags_t)pcmFlags);
+        if (err != OK) {
+            ALOGW("openAudioSink: non offloaded open failed status: %d", err);
+            return err;
+        }
         mAudioSink->start();
     }
     if (audioSinkChanged) {
         onAudioSinkChanged();
     }
-
-    return offloadingAudio();
+    if (offloadingAudio()) {
+        mAudioOffloadTornDown = false;
+    }
+    return OK;
 }
 
 void NuPlayer::Renderer::onCloseAudioSink() {

@@ -721,7 +721,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 if (mOffloadAudio) {
                     // open audio sink early under offload mode.
                     sp<AMessage> format = mSource->getFormat(true /*audio*/);
-                    openAudioSink(format, true /*offloadOnly*/);
+                    tryOpenAudioSinkForOffload(format, true /*offloadOnly*/);
                 }
                 instantiateDecoder(true, &mAudioDecoder);
             }
@@ -817,7 +817,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 CHECK(msg->findMessage("format", &format));
 
                 if (audio) {
-                    openAudioSink(format, false /*offloadOnly*/);
+                    tryOpenAudioSinkForOffload(format, false /*offloadOnly*/);
                 } else {
                     // video
                     sp<AMessage> inputFormat =
@@ -1199,7 +1199,7 @@ void NuPlayer::postScanSources() {
     mScanSourcesPending = true;
 }
 
-void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
+void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool offloadOnly) {
     uint32_t flags;
     int64_t durationUs;
     bool hasVideo = (mVideoDecoder != NULL);
@@ -1217,10 +1217,12 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
         flags = AUDIO_OUTPUT_FLAG_NONE;
     }
 
-    mOffloadAudio = mRenderer->openAudioSink(
-            format, offloadOnly, hasVideo, mIsStreaming, flags);
-
-    if (mOffloadAudio) {
+    status_t err = mRenderer->openAudioSink(
+            format, offloadOnly, hasVideo, mIsStreaming, flags, &mOffloadAudio);
+    if (err != OK) {
+        // Any failure we turn off mOffloadAudio.
+        mOffloadAudio = false;
+    } else if (mOffloadAudio) {
         sp<MetaData> audioMeta =
                 mSource->getFormatMeta(true /* audio */);
         sendMetaDataToHal(mAudioSink, audioMeta);

@@ -73,12 +73,13 @@ struct NuPlayer::Renderer : public AHandler {
     int64_t getVideoLateByUs();
     void setPauseStartedTimeRealUs(int64_t realUs);
 
-    bool openAudioSink(
+    status_t openAudioSink(
             const sp<AMessage> &format,
             bool offloadOnly,
             bool hasVideo,
             bool isStreaming,
-            uint32_t flags);
+            uint32_t flags,
+            bool *isOffloaded);
     void closeAudioSink();
 
     enum {
@@ -210,7 +211,7 @@ private:
     void onResume();
     void onSetVideoFrameRate(float fps);
     void onAudioOffloadTearDown(AudioOffloadTearDownReason reason);
-    bool onOpenAudioSink(
+    status_t onOpenAudioSink(
             const sp<AMessage> &format,
             bool offloadOnly,
             bool hasVideo,
