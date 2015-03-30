@@ -16,7 +16,7 @@
  * code that are surrounded by "DOLBY..." are copyrighted and
  * licensed separately, as follows:
  *
- *  (C) 2011-2014 Dolby Laboratories, Inc.
+ *  (C) 2011-2015 Dolby Laboratories, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1744,9 +1744,9 @@ void OMXCodec::setComponentRole(
             "audio_decoder.ac3", "audio_encoder.ac3" },
 #ifdef DOLBY_UDC
         { MEDIA_MIMETYPE_AUDIO_EAC3,
-            "audio_decoder.ec3", NULL },
+            "audio_decoder.eac3", NULL },
         { MEDIA_MIMETYPE_AUDIO_EAC3_JOC,
-            "audio_decoder.ec3_joc", NULL },
+            "audio_decoder.eac3_joc", NULL },
 #endif // DOLBY_END
     };
 
