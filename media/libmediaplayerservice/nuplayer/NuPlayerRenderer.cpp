@@ -20,6 +20,8 @@
 
 #include "NuPlayerRenderer.h"
 
+#include <cutils/properties.h>
+
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -53,6 +55,16 @@ const NuPlayer::Renderer::PcmInfo NuPlayer::Renderer::AUDIO_PCMINFO_INITIALIZER 
 
 // static
 const int64_t NuPlayer::Renderer::kMinPositionUpdateDelayUs = 100000ll;
+
+static bool sFrameAccurateAVsync = false;
+
+static void readProperties() {
+    char value[PROPERTY_VALUE_MAX];
+    if (property_get("persist.sys.media.avsync", value, NULL)) {
+        sFrameAccurateAVsync =
+            !strcmp("1", value) || !strcasecmp("true", value);
+    }
+}
 
 NuPlayer::Renderer::Renderer(
         const sp<MediaPlayerBase::AudioSink> &sink,
@@ -96,6 +108,7 @@ NuPlayer::Renderer::Renderer(
       mWakeLock(new AWakeLock()) {
 
     notify->findObject(MEDIA_EXTENDED_STATS, (sp<RefBase>*)&mPlayerExtendedStats);
+    readProperties();
 }
 
 NuPlayer::Renderer::~Renderer() {
@@ -912,6 +925,11 @@ void NuPlayer::Renderer::postDrainVideoQueue_l() {
 
     ALOGW_IF(delayUs > 500000, "unusually high delayUs: %" PRId64, delayUs);
     // post 2 display refreshes before rendering is due
+    // FIXME currently this increases power consumption, so unless frame-accurate
+    // AV sync is requested, post closer to required render time (at 0.63 vsyncs)
+    if (!sFrameAccurateAVsync) {
+        twoVsyncsUs >>= 4;
+    }
     msg->post(delayUs > twoVsyncsUs ? delayUs - twoVsyncsUs : 0);
 
     mDrainVideoQueuePending = true;
@@ -1344,6 +1362,8 @@ void NuPlayer::Renderer::onPause() {
 }
 
 void NuPlayer::Renderer::onResume() {
+    readProperties();
+
     if (!mPaused) {
         return;
     }
