@@ -37,6 +37,7 @@
 
 #define WAIT_PERIOD_MS                  10
 #define WAIT_STREAM_END_TIMEOUT_SEC     120
+#define DEFAULT_OFFLOAD_SIZE   (32 * 1024)
 
 
 namespace android {
@@ -1070,7 +1071,13 @@ status_t AudioTrack::createTrack_l()
             // Same comment as below about ignoring frameCount parameter for set()
             frameCount = mSharedBuffer->size();
         } else if (frameCount == 0) {
-            frameCount = afFrameCount * 2;
+            //If offload buffer size is multiple of
+            // DEFAULT_OFFLOAD_SIZE 32K, 1 buffer is sufficient
+            // to start playback for avoiding start-up latency.
+            if((afFrameCount / DEFAULT_OFFLOAD_SIZE) > 1)
+                frameCount = afFrameCount;
+            else
+                frameCount = afFrameCount * 2;
             ALOGV("Offload: new frameCount = %d", frameCount);
         }
         if (mNotificationFramesAct != frameCount) {
