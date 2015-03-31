@@ -85,6 +85,8 @@ LiveSession::LiveSession(
       mLastSeekTimeUs(0),
       mBackupFile(NULL),
       mEraseFirstTs(0),
+      mCheckProxyCount(0),
+      mDProxy(NULL),
       mSegmentCounter(0) {
 
     if (ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
@@ -108,6 +110,17 @@ LiveSession::LiveSession(
         numHistoryItems = 5;
     }
     mHTTPDataSource->setBandwidthHistorySize(numHistoryItems);
+
+
+    // Disable STAProxy usage for custome hls specific usecases,
+    // check for STAProxy usage only if HLS specific custom
+    // property is disabled
+    if (false == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+        mDProxy = ExtendedUtils::DiscoverProxy::create();
+        if (mDProxy == NULL) {
+            ALOGI("LiveSession bypass proxy");
+        }
+    }
 }
 
 LiveSession::~LiveSession() {
@@ -713,8 +726,17 @@ void LiveSession::onConnect(const sp<AMessage> &msg) {
     } else {
         mExtraHeaders = *headers;
 
-        delete headers;
-        headers = NULL;
+        if ((mDProxy == NULL) || (mCheckProxyCount == 0)) {
+            delete headers;
+            headers = NULL;
+        }
+
+        if (ExtendedUtils::DiscoverProxy::checkForProxyAvail(
+                mDProxy, &mExtraHeaders,
+                &mCheckProxyCount, kWhatConnect, url, id()) == -EAGAIN) {
+            ALOGV("Failed to Detect proxy, Retrycount %d", mCheckProxyCount);
+            return;
+        }
     }
 
     // TODO currently we don't know if we are coming here from incognito mode
