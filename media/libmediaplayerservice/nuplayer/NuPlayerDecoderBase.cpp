@@ -66,7 +66,6 @@ void NuPlayer::DecoderBase::configure(const sp<AMessage> &format, bool isStreami
     msg->setInt32("isStreaming", isStreaming);
     sp<AMessage> response;
     PostAndAwaitResponse(msg, &response);
-    msg->post();
 }
 
 void NuPlayer::DecoderBase::init() {
