@@ -1976,7 +1976,7 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         cancelEnd = mPortBuffers[kPortIndexOutput].size();
     } else {
         // Return the last two buffers to the native window.
-        cancelStart = def.nBufferCountActual - minUndequeuedBufs;
+        cancelStart = def.nBufferCountActual;
         cancelEnd = def.nBufferCountActual;
     }
 
@@ -4442,11 +4442,8 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
 }
 
 status_t OMXCodec::pause() {
-    Mutex::Autolock autoLock(mLock);
-
-    mPaused = true;
-
-    return OK;
+    // b2g does not support aosp OMXCodec::pause(). See Bug 919590.
+    return ERROR_UNSUPPORTED;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
