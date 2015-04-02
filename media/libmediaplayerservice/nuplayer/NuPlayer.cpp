@@ -1060,6 +1060,8 @@ void NuPlayer::onResume() {
         return;
     }
     mPaused = false;
+    PLAYER_STATS(profileStart, STATS_PROFILE_RESUME);
+
     if (mSource != NULL) {
         mSource->resume();
     } else {
@@ -1076,7 +1078,6 @@ void NuPlayer::onResume() {
         ALOGW("resume called when renderer is gone or not set");
     }
     PLAYER_STATS(notifyPlaying, true);
-    PLAYER_STATS(profileStart, STATS_PROFILE_RESUME);
 }
 
 void NuPlayer::onStart() {
