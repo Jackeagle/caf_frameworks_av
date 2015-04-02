@@ -20,6 +20,7 @@
 
 #include <media/MediaPlayerInterface.h>
 #include <libsonivox/eas.h>
+#include <drm/DrmManagerClient.h>
 
 namespace android {
 
@@ -85,6 +86,9 @@ private:
     bool                mPaused;
     volatile bool       mRender;
     pid_t               mTid;
+
+    DrmManagerClient*   mDrmManagerClient;
+    sp<DecryptHandle>   mDecryptHandle;
 
     class MidiFileThread : public Thread {
     public:
