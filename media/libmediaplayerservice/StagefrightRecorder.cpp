@@ -70,6 +70,8 @@
 
 namespace android {
 
+static const int64_t kMax32BitFileSize = 0x00ffffffffLL; // 4GB
+
 // To collect the encoder usage for the battery app
 static void addBatteryData(uint32_t params) {
     sp<IBinder> binder =
@@ -127,7 +129,7 @@ sp<IGraphicBufferProducer> StagefrightRecorder::querySurfaceMediaSource() const 
 status_t StagefrightRecorder::setAudioSource(audio_source_t as) {
     ALOGV("setAudioSource: %d", as);
     if (as < AUDIO_SOURCE_DEFAULT ||
-        as >= AUDIO_SOURCE_CNT) {
+        (as >= AUDIO_SOURCE_CNT && as != AUDIO_SOURCE_FM_TUNER)) {
         ALOGE("Invalid audio source: %d", as);
         return BAD_VALUE;
     }
@@ -475,6 +477,10 @@ status_t StagefrightRecorder::setParamMaxFileSizeBytes(int64_t bytes) {
     }
 
     mMaxFileSizeBytes = bytes;
+
+    // If requested size is >4GB, force 64-bit offsets
+    mUse64BitFileOffset |= (bytes >= kMax32BitFileSize);
+
     return OK;
 }
 
@@ -1147,7 +1153,7 @@ status_t StagefrightRecorder::setupAMRRecording() {
 }
 
 status_t StagefrightRecorder::setupRawAudioRecording() {
-    if (mAudioSource >= AUDIO_SOURCE_CNT) {
+    if (mAudioSource >= AUDIO_SOURCE_CNT && mAudioSource != AUDIO_SOURCE_FM_TUNER) {
         ALOGE("Invalid audio source: %d", mAudioSource);
         return BAD_VALUE;
     }

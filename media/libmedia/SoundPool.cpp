@@ -649,7 +649,6 @@ void SoundChannel::play(const sp<Sample>& sample, int nextChannelID, float leftV
             ALOGV("using new track %p for sample %d", newTrack.get(), sample->sampleID());
         } else {
             newTrack = mAudioTrack;
-            newTrack->setSampleRate(sampleRate);
             ALOGV("reusing track %p for sample %d", mAudioTrack.get(), sample->sampleID());
         }
         newTrack->setVolume(leftVolume, rightVolume);

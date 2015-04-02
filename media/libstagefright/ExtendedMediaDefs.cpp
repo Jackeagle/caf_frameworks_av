@@ -66,10 +66,6 @@ const char *MEDIA_MIMETYPE_CONTAINER_3G2 = "video/3g2";
 const char *MEDIA_MIMETYPE_AUDIO_DTS = "audio/dts";
 
 const char *MEDIA_MIMETYPE_AUDIO_DTS_LBR = "audio/dts-lbr";
-const char *MEDIA_MIMETYPE_AUDIO_EAC3 = "audio/eac3";
-#ifdef DOLBY_UDC
-const char *MEDIA_MIMETYPE_AUDIO_EAC3_JOC = "audio/eac3-joc";
-#endif // DOLBY_END
 const char *MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS = "audio/amr-wb-plus";
 const char *MEDIA_MIMETYPE_AUDIO_AIFF = "audio/x-aiff";
 const char *MEDIA_MIMETYPE_CONTAINER_QCAMR_NB = "audio/qc-amr";

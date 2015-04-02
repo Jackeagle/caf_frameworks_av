@@ -53,8 +53,6 @@ namespace android {
 
 // Number of recently-read bytes to use for bandwidth estimation
 const size_t LiveSession::kBandwidthHistoryBytes = 200 * 1024;
-const off64_t LiveSession::kDefaultFileSize = 65536;
-const double LiveSession::kDefaultSegmentDurationUs = 10000000;
 
 LiveSession::LiveSession(
         const sp<AMessage> &notify, uint32_t flags,
@@ -1267,11 +1265,11 @@ status_t LiveSession::onSeek(const sp<AMessage> &msg) {
 }
 
 status_t LiveSession::getDuration(int64_t *durationUs) const {
-    int64_t maxDurationUs = 0ll;
+    int64_t maxDurationUs = -1ll;
     for (size_t i = 0; i < mFetcherInfos.size(); ++i) {
         int64_t fetcherDurationUs = mFetcherInfos.valueAt(i).mDurationUs;
 
-        if (fetcherDurationUs >= 0ll && fetcherDurationUs > maxDurationUs) {
+        if (fetcherDurationUs > maxDurationUs) {
             maxDurationUs = fetcherDurationUs;
         }
     }
@@ -1320,6 +1318,14 @@ status_t LiveSession::selectTrack(size_t index, bool select) {
         msg->post();
     }
     return err;
+}
+
+ssize_t LiveSession::getSelectedTrack(media_track_type type) const {
+    if (mPlaylist == NULL) {
+        return -1;
+    } else {
+        return mPlaylist->getSelectedTrack(type);
+    }
 }
 
 bool LiveSession::canSwitchUp() {
@@ -1636,7 +1642,7 @@ void LiveSession::onChangeConfiguration3(const sp<AMessage> &msg) {
                     extra->setInt64("timeUs", timeUs);
                     discontinuityQueue = mDiscontinuities.valueFor(indexToType(j));
                     discontinuityQueue->queueDiscontinuity(
-                            ATSParser::DISCONTINUITY_SEEK, extra, true);
+                            ATSParser::DISCONTINUITY_TIME, extra, true);
                 } else {
                     int32_t type;
                     int64_t srcSegmentStartTimeUs;
@@ -1651,14 +1657,15 @@ void LiveSession::onChangeConfiguration3(const sp<AMessage> &msg) {
 
                     if (meta != NULL && !meta->findInt32("discontinuity", &type)) {
                         int64_t tmpUs;
-                        CHECK(meta->findInt64("timeUs", &tmpUs));
-                        if (startTimeUs < 0 || tmpUs < startTimeUs) {
-                            startTimeUs = tmpUs;
-                        }
+                        int64_t tmpSegmentUs;
 
-                        CHECK(meta->findInt64("segmentStartTimeUs", &tmpUs));
-                        if (segmentStartTimeUs < 0 || tmpUs < segmentStartTimeUs) {
-                            segmentStartTimeUs = tmpUs;
+                        CHECK(meta->findInt64("timeUs", &tmpUs));
+                        CHECK(meta->findInt64("segmentStartTimeUs", &tmpSegmentUs));
+                        if (startTimeUs < 0 || tmpSegmentUs < segmentStartTimeUs) {
+                            startTimeUs = tmpUs;
+                            segmentStartTimeUs = tmpSegmentUs;
+                        } else if (tmpSegmentUs == segmentStartTimeUs && tmpUs < startTimeUs) {
+                            startTimeUs = tmpUs;
                         }
 
                         if (meta->findInt64("frameDeltaUs", &tmpUs) && tmpUs > 0) {
@@ -1806,25 +1813,11 @@ void LiveSession::onCheckSwitchDown() {
         return;
     }
 
-    if (mReconfigurationInProgress) {
-        ALOGV("Reconfig in progress, defer switch down");
+    if (mSwitchInProgress || mReconfigurationInProgress) {
+        ALOGV("Switch/Reconfig in progress, defer switch down");
         mSwitchDownMonitor->post(1000000ll);
         return;
     }
-
-    ssize_t bandwidthIndex = (ssize_t)getBandwidthIndex();
-    if (bandwidthIndex >= mCurBandwidthIndex) {
-        return;
-    }
-
-    off64_t smallerFileSize, bytesRemaining;
-    if (mDownloadBuffer != NULL) {
-        bytesRemaining = mDownloadBuffer->capacity() - mDownloadBuffer->size() - mDownloadBuffer->offset();
-    } else {
-        estimateFileSize(mCurBandwidthIndex, &bytesRemaining);
-    }
-
-    estimateFileSize(bandwidthIndex, &smallerFileSize);
 
     for (size_t i = 0; i < kMaxStreams; ++i) {
         int32_t targetDuration;
