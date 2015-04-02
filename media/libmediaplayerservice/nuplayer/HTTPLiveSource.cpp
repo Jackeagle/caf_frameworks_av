@@ -31,7 +31,6 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 
-
 namespace android {
 
 NuPlayer::HTTPLiveSource::HTTPLiveSource(
@@ -135,20 +134,10 @@ status_t NuPlayer::HTTPLiveSource::feedMoreTSData() {
 
 status_t NuPlayer::HTTPLiveSource::dequeueAccessUnit(
         bool audio, sp<ABuffer> *accessUnit) {
-    status_t err = mLiveSession->dequeueAccessUnit(
+    return mLiveSession->dequeueAccessUnit(
             audio ? LiveSession::STREAMTYPE_AUDIO
                   : LiveSession::STREAMTYPE_VIDEO,
             accessUnit);
-    if (err == OK && audio) {
-        sp<AMessage> format;
-        if (mLiveSession->getStreamFormat(LiveSession::STREAMTYPE_VIDEO, &format) != OK) {
-            // Detect the image in audio only clip
-            sp<AMessage> notify = dupNotify();
-            notify->setInt32("what", kWhatShowImage);
-            ExtendedUtils::detectAndPostImage(*accessUnit, notify);
-        }
-    }
-    return err;
 }
 
 status_t NuPlayer::HTTPLiveSource::getDuration(int64_t *durationUs) {

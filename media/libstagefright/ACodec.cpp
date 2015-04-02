@@ -4021,16 +4021,6 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
                     break;
                 }
 
-                    CHECK_EQ((status_t)OK, mOMX->getParameter(
-                            mNode,
-                            (OMX_INDEXTYPE)OMX_IndexParamAudioDTSDec,
-                            &params,
-                            sizeof(params)));
-
-                    notify->setString("mime", MEDIA_MIMETYPE_AUDIO_DTS);
-                    break;
-                }
-#endif
                 default:
                 {
                     AString mimeType;
