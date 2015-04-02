@@ -53,6 +53,8 @@ namespace android {
 
 // Number of recently-read bytes to use for bandwidth estimation
 const size_t LiveSession::kBandwidthHistoryBytes = 200 * 1024;
+const off64_t LiveSession::kDefaultFileSize = 65536;
+const double LiveSession::kDefaultSegmentDurationUs = 10000000;
 
 LiveSession::LiveSession(
         const sp<AMessage> &notify, uint32_t flags,
@@ -1813,11 +1815,25 @@ void LiveSession::onCheckSwitchDown() {
         return;
     }
 
-    if (mSwitchInProgress || mReconfigurationInProgress) {
-        ALOGV("Switch/Reconfig in progress, defer switch down");
+    if (mReconfigurationInProgress) {
+        ALOGV("Reconfig in progress, defer switch down");
         mSwitchDownMonitor->post(1000000ll);
         return;
     }
+
+    ssize_t bandwidthIndex = (ssize_t)getBandwidthIndex();
+    if (bandwidthIndex >= mCurBandwidthIndex) {
+        return;
+    }
+
+    off64_t smallerFileSize, bytesRemaining;
+    if (mDownloadBuffer != NULL) {
+        bytesRemaining = mDownloadBuffer->capacity() - mDownloadBuffer->size() - mDownloadBuffer->offset();
+    } else {
+        estimateFileSize(mCurBandwidthIndex, &bytesRemaining);
+    }
+
+    estimateFileSize(bandwidthIndex, &smallerFileSize);
 
     for (size_t i = 0; i < kMaxStreams; ++i) {
         int32_t targetDuration;

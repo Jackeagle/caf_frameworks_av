@@ -71,7 +71,8 @@ NuPlayer::GenericSource::GenericSource(
       mPollBufferingGeneration(0),
       mPendingReadBufferTypes(0),
       mBuffering(false),
-      mPrepareBuffering(false) {
+      mPrepareBuffering(false),
+      mStartAfterSuspended(false) {
     resetDataSource();
     DataSource::RegisterDefaultSniffers();
 }
@@ -1421,6 +1422,7 @@ status_t NuPlayer::GenericSource::doSeek(int64_t seekTimeUs) {
     stopBufferingIfNecessary();
     restartPollBuffering();
 
+    mStartAfterSuspended = false;
     return OK;
 }
 

@@ -40,6 +40,7 @@ struct NuPlayer::DecoderBase : public AHandler {
     void signalFlush();
     void signalResume(bool notifyComplete);
     void initiateShutdown();
+    void skipFlush();
 
     virtual void getStats(
             int64_t *mNumFramesTotal,
@@ -75,6 +76,8 @@ protected:
 
     sp<AMessage> mNotify;
     int32_t mBufferGeneration;
+    bool mSkipFlush;
+
 
 private:
     enum {

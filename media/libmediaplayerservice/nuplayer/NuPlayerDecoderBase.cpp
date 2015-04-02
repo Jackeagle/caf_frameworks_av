@@ -31,7 +31,8 @@ namespace android {
 NuPlayer::DecoderBase::DecoderBase(const sp<AMessage> &notify)
     :  mNotify(notify),
        mBufferGeneration(0),
-       mRequestInputBuffersPending(false) {
+       mRequestInputBuffersPending(false),
+       mSkipFlush(false) {
     // Every decoder has its own looper because MediaCodec operations
     // are blocking, but NuPlayer needs asynchronous operations.
     mDecoderLooper = new ALooper;
@@ -96,6 +97,10 @@ void NuPlayer::DecoderBase::signalResume(bool notifyComplete) {
 
 void NuPlayer::DecoderBase::initiateShutdown() {
     (new AMessage(kWhatShutdown, id()))->post();
+}
+
+void NuPlayer::DecoderBase::skipFlush() {
+    mSkipFlush = true;
 }
 
 void NuPlayer::DecoderBase::onRequestInputBuffers() {

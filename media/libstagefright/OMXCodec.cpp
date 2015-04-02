@@ -30,24 +30,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2014 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  */
 
 #include <inttypes.h>
@@ -1787,10 +1769,6 @@ void OMXCodec::setComponentRole(
         { MEDIA_MIMETYPE_AUDIO_EAC3_JOC,
             "audio_decoder.ec3_joc", NULL },
 #endif // DOLBY_END
-#ifdef DTS_CODEC_M_
-        { MEDIA_MIMETYPE_AUDIO_DTS,
-            "audio_decoder.dts", "audio_encoder.dts" },
-#endif
     };
 
     static const size_t kNumMimeToRole =
@@ -4515,6 +4493,223 @@ void OMXCodec::signalBufferReturned(MediaBuffer *buffer) {
     }
 
     CHECK(!"should not be here.");
+}
+
+static const char *imageCompressionFormatString(OMX_IMAGE_CODINGTYPE type) {
+    static const char *kNames[] = {
+        "OMX_IMAGE_CodingUnused",
+        "OMX_IMAGE_CodingAutoDetect",
+        "OMX_IMAGE_CodingJPEG",
+        "OMX_IMAGE_CodingJPEG2K",
+        "OMX_IMAGE_CodingEXIF",
+        "OMX_IMAGE_CodingTIFF",
+        "OMX_IMAGE_CodingGIF",
+        "OMX_IMAGE_CodingPNG",
+        "OMX_IMAGE_CodingLZW",
+        "OMX_IMAGE_CodingBMP",
+    };
+
+    size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
+
+    if (type < 0 || (size_t)type >= numNames) {
+        return "UNKNOWN";
+    } else {
+        return kNames[type];
+    }
+}
+
+static const char *colorFormatString(OMX_COLOR_FORMATTYPE type) {
+    static const char *kNames[] = {
+        "OMX_COLOR_FormatUnused",
+        "OMX_COLOR_FormatMonochrome",
+        "OMX_COLOR_Format8bitRGB332",
+        "OMX_COLOR_Format12bitRGB444",
+        "OMX_COLOR_Format16bitARGB4444",
+        "OMX_COLOR_Format16bitARGB1555",
+        "OMX_COLOR_Format16bitRGB565",
+        "OMX_COLOR_Format16bitBGR565",
+        "OMX_COLOR_Format18bitRGB666",
+        "OMX_COLOR_Format18bitARGB1665",
+        "OMX_COLOR_Format19bitARGB1666",
+        "OMX_COLOR_Format24bitRGB888",
+        "OMX_COLOR_Format24bitBGR888",
+        "OMX_COLOR_Format24bitARGB1887",
+        "OMX_COLOR_Format25bitARGB1888",
+        "OMX_COLOR_Format32bitBGRA8888",
+        "OMX_COLOR_Format32bitARGB8888",
+        "OMX_COLOR_FormatYUV411Planar",
+        "OMX_COLOR_FormatYUV411PackedPlanar",
+        "OMX_COLOR_FormatYUV420Planar",
+        "OMX_COLOR_FormatYUV420PackedPlanar",
+        "OMX_COLOR_FormatYUV420SemiPlanar",
+        "OMX_COLOR_FormatYUV422Planar",
+        "OMX_COLOR_FormatYUV422PackedPlanar",
+        "OMX_COLOR_FormatYUV422SemiPlanar",
+        "OMX_COLOR_FormatYCbYCr",
+        "OMX_COLOR_FormatYCrYCb",
+        "OMX_COLOR_FormatCbYCrY",
+        "OMX_COLOR_FormatCrYCbY",
+        "OMX_COLOR_FormatYUV444Interleaved",
+        "OMX_COLOR_FormatRawBayer8bit",
+        "OMX_COLOR_FormatRawBayer10bit",
+        "OMX_COLOR_FormatRawBayer8bitcompressed",
+        "OMX_COLOR_FormatL2",
+        "OMX_COLOR_FormatL4",
+        "OMX_COLOR_FormatL8",
+        "OMX_COLOR_FormatL16",
+        "OMX_COLOR_FormatL24",
+        "OMX_COLOR_FormatL32",
+        "OMX_COLOR_FormatYUV420PackedSemiPlanar",
+        "OMX_COLOR_FormatYUV422PackedSemiPlanar",
+        "OMX_COLOR_Format18BitBGR666",
+        "OMX_COLOR_Format24BitARGB6666",
+        "OMX_COLOR_Format24BitABGR6666",
+    };
+
+    size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
+
+    if (type == OMX_TI_COLOR_FormatYUV420PackedSemiPlanar) {
+        return "OMX_TI_COLOR_FormatYUV420PackedSemiPlanar";
+    } else if (type == OMX_QCOM_COLOR_FormatYVU420SemiPlanar) {
+        return "OMX_QCOM_COLOR_FormatYVU420SemiPlanar";
+    } else if (type < 0 || (size_t)type >= numNames) {
+        return "UNKNOWN";
+    } else {
+        return kNames[type];
+    }
+}
+
+static const char *videoCompressionFormatString(OMX_VIDEO_CODINGTYPE type) {
+    static const char *kNames[] = {
+        "OMX_VIDEO_CodingUnused",
+        "OMX_VIDEO_CodingAutoDetect",
+        "OMX_VIDEO_CodingMPEG2",
+        "OMX_VIDEO_CodingH263",
+        "OMX_VIDEO_CodingMPEG4",
+        "OMX_VIDEO_CodingWMV",
+        "OMX_VIDEO_CodingRV",
+        "OMX_VIDEO_CodingAVC",
+        "OMX_VIDEO_CodingMJPEG",
+    };
+
+    size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
+
+    if (type < 0 || (size_t)type >= numNames) {
+        return "UNKNOWN";
+    } else {
+        return kNames[type];
+    }
+}
+
+static const char *audioCodingTypeString(OMX_AUDIO_CODINGTYPE type) {
+    static const char *kNames[] = {
+        "OMX_AUDIO_CodingUnused",
+        "OMX_AUDIO_CodingAutoDetect",
+        "OMX_AUDIO_CodingPCM",
+        "OMX_AUDIO_CodingADPCM",
+        "OMX_AUDIO_CodingAMR",
+        "OMX_AUDIO_CodingGSMFR",
+        "OMX_AUDIO_CodingGSMEFR",
+        "OMX_AUDIO_CodingGSMHR",
+        "OMX_AUDIO_CodingPDCFR",
+        "OMX_AUDIO_CodingPDCEFR",
+        "OMX_AUDIO_CodingPDCHR",
+        "OMX_AUDIO_CodingTDMAFR",
+        "OMX_AUDIO_CodingTDMAEFR",
+        "OMX_AUDIO_CodingQCELP8",
+        "OMX_AUDIO_CodingQCELP13",
+        "OMX_AUDIO_CodingEVRC",
+        "OMX_AUDIO_CodingSMV",
+        "OMX_AUDIO_CodingG711",
+        "OMX_AUDIO_CodingG723",
+        "OMX_AUDIO_CodingG726",
+        "OMX_AUDIO_CodingG729",
+        "OMX_AUDIO_CodingAAC",
+        "OMX_AUDIO_CodingMP3",
+        "OMX_AUDIO_CodingSBC",
+        "OMX_AUDIO_CodingVORBIS",
+        "OMX_AUDIO_CodingOPUS",
+        "OMX_AUDIO_CodingWMA",
+        "OMX_AUDIO_CodingRA",
+        "OMX_AUDIO_CodingMIDI",
+#ifdef DOLBY_UDC
+        "OMX_AUDIO_CodingDDP",
+#endif // DOLBY_END
+    };
+
+    size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
+
+    if (type < 0 || (size_t)type >= numNames) {
+        return "UNKNOWN";
+    } else {
+        return kNames[type];
+    }
+}
+
+static const char *audioPCMModeString(OMX_AUDIO_PCMMODETYPE type) {
+    static const char *kNames[] = {
+        "OMX_AUDIO_PCMModeLinear",
+        "OMX_AUDIO_PCMModeALaw",
+        "OMX_AUDIO_PCMModeMULaw",
+    };
+
+    size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
+
+    if (type < 0 || (size_t)type >= numNames) {
+        return "UNKNOWN";
+    } else {
+        return kNames[type];
+    }
+}
+
+static const char *amrBandModeString(OMX_AUDIO_AMRBANDMODETYPE type) {
+    static const char *kNames[] = {
+        "OMX_AUDIO_AMRBandModeUnused",
+        "OMX_AUDIO_AMRBandModeNB0",
+        "OMX_AUDIO_AMRBandModeNB1",
+        "OMX_AUDIO_AMRBandModeNB2",
+        "OMX_AUDIO_AMRBandModeNB3",
+        "OMX_AUDIO_AMRBandModeNB4",
+        "OMX_AUDIO_AMRBandModeNB5",
+        "OMX_AUDIO_AMRBandModeNB6",
+        "OMX_AUDIO_AMRBandModeNB7",
+        "OMX_AUDIO_AMRBandModeWB0",
+        "OMX_AUDIO_AMRBandModeWB1",
+        "OMX_AUDIO_AMRBandModeWB2",
+        "OMX_AUDIO_AMRBandModeWB3",
+        "OMX_AUDIO_AMRBandModeWB4",
+        "OMX_AUDIO_AMRBandModeWB5",
+        "OMX_AUDIO_AMRBandModeWB6",
+        "OMX_AUDIO_AMRBandModeWB7",
+        "OMX_AUDIO_AMRBandModeWB8",
+    };
+
+    size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
+
+    if (type < 0 || (size_t)type >= numNames) {
+        return "UNKNOWN";
+    } else {
+        return kNames[type];
+    }
+}
+
+static const char *amrFrameFormatString(OMX_AUDIO_AMRFRAMEFORMATTYPE type) {
+    static const char *kNames[] = {
+        "OMX_AUDIO_AMRFrameFormatConformance",
+        "OMX_AUDIO_AMRFrameFormatIF1",
+        "OMX_AUDIO_AMRFrameFormatIF2",
+        "OMX_AUDIO_AMRFrameFormatFSF",
+        "OMX_AUDIO_AMRFrameFormatRTPPayload",
+        "OMX_AUDIO_AMRFrameFormatITU",
+    };
+
+    size_t numNames = sizeof(kNames) / sizeof(kNames[0]);
+
+    if (type < 0 || (size_t)type >= numNames) {
+        return "UNKNOWN";
+    } else {
+        return kNames[type];
+    }
 }
 
 void OMXCodec::dumpPortStatus(OMX_U32 portIndex) {

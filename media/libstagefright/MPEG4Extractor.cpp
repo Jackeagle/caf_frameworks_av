@@ -31,24 +31,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2014 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  */
 
 //#define LOG_NDEBUG 0
@@ -1416,7 +1398,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
 
             if (chunk_type != FOURCC('e', 'n', 'c', 'a')) {
                 // if the chunk type is enca, we'll get the type from the sinf/frma box later
-#ifdef DOLBY_UDC_VIRTUALIZE_AUDIO
+#ifdef DOLBY_UDC
                 const char *mime;
                 CHECK(mLastTrack->meta->findCString(kKeyMIMEType, &mime));
                 //Track mime-type should have been set at 'trak'
@@ -1427,13 +1409,13 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
 #endif // DOLBY_END
                 mLastTrack->meta->setCString(kKeyMIMEType, FourCC2MIME(chunk_type));
 #ifdef DOLBY_UDC
-                DLOGD("@DDP FourCC:'%s'", FourCC2MIME(chunk_type));
-#endif // DOLBY_END
-#ifdef DOLBY_UDC_VIRTUALIZE_AUDIO
                 }
 #endif // DOLBY_END
                 AdjustChannelsAndRate(chunk_type, &num_channels, &sample_rate);
             }
+#ifdef DOLBY_UDC
+            DLOGD("@DDP FourCC:'%s'", FourCC2MIME(chunk_type));
+#endif // DOLBY_END
             ALOGV("*** coding='%s' %d channels, size %d, rate %d\n",
                    chunk, num_channels, sample_size, sample_rate);
             mLastTrack->meta->setInt32(kKeyChannelCount, num_channels);
@@ -1461,7 +1443,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             break;
         }
 
-#ifdef DOLBY_UDC_VIRTUALIZE_AUDIO
+#ifdef DOLBY_UDC
         case FOURCC('d', 'e', 'c', '3'):
         {
             //Only allowed on E-AC3 tracks

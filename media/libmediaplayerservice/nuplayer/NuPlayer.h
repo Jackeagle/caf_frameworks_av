@@ -80,6 +80,9 @@ struct NuPlayer : public AHandler {
     sp<MetaData> getFileMeta();
     int64_t getServerTimeoutUs();
 
+    void suspendAsync();
+    void resumeFromSuspendedAsync();
+
 protected:
     virtual ~NuPlayer();
 
