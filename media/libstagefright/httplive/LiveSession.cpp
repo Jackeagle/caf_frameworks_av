@@ -1565,8 +1565,10 @@ void LiveSession::onChangeConfiguration3(const sp<AMessage> &msg) {
     // All fetchers have now been started, the configuration change
     // has completed.
 
-    cancelCheckBandwidthEvent();
-    scheduleCheckBandwidthEvent();
+    if (mPlaylist->isVariantPlaylist()) {
+        cancelCheckBandwidthEvent();
+        scheduleCheckBandwidthEvent();
+    }
 
     ALOGV("XXX configuration change completed.");
     mReconfigurationInProgress = false;
@@ -1773,8 +1775,11 @@ void LiveSession::postPrepared(status_t err) {
 
     mInPreparationPhase = false;
 
-    mSwitchDownMonitor = new AMessage(kWhatCheckSwitchDown, id());
-    mSwitchDownMonitor->post();
+    //start switchdown monitor only for variant playlists
+    if (mPlaylist->isVariantPlaylist()) {
+        mSwitchDownMonitor = new AMessage(kWhatCheckSwitchDown, id());
+        mSwitchDownMonitor->post();
+    }
 }
 
 }  // namespace android
