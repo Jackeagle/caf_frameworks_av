@@ -80,7 +80,6 @@ NuPlayer::Renderer::Renderer(
       mPaused(false),
       mPausePositionMediaTimeUs(-1),
       mVideoSampleReceived(false),
-      mAudioRenderingStarted(false),
       mVideoRenderingStarted(false),
       mVideoRenderingStartGeneration(0),
       mAudioRenderingStartGeneration(0),
@@ -651,12 +650,6 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
             entry = NULL;
         }
         sizeCopied += copy;
-        mAudioRenderingStarted = true;
-        while (!mPendingInputMessages.empty()) {
-            sp<AMessage> msg = *mPendingInputMessages.begin();
-            msg->post();
-            mPendingInputMessages.erase(mPendingInputMessages.begin());
-        }
         notifyIfMediaRenderingStarted();
     }
 
@@ -756,7 +749,6 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
         numBytesAvailableToWrite -= written;
         size_t copiedFrames = written / mAudioSink->frameSize();
         mNumFramesWritten += copiedFrames;
-        mAudioRenderingStarted = true;
         notifyIfMediaRenderingStarted();
 
         if (written != (ssize_t)copy) {
@@ -1006,11 +998,6 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
         }
     }
 
-    if (!audio && offloadingAudio() && !mAudioRenderingStarted) {
-        mPendingInputMessages.push_back(msg);
-        return;
-    }
-
     if (dropBufferWhileFlushing(audio, msg)) {
         return;
     }
@@ -1174,15 +1161,6 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
             mAudioSink->start();
         }
     } else {
-        while (!mPendingInputMessages.empty()) {
-            sp<AMessage> msg = *mPendingInputMessages.begin();
-            sp<AMessage> notifyConsumed;
-            if (msg->findMessage("notifyConsumed", &notifyConsumed)) {
-                notifyConsumed->post();
-            }
-            mPendingInputMessages.erase(mPendingInputMessages.begin());
-        }
-
         flushQueue(&mVideoQueue);
 
         mDrainVideoQueuePending = false;
@@ -1195,7 +1173,6 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
         prepareForMediaRenderingStart();
     }
 
-    mAudioRenderingStarted = false;
     mVideoSampleReceived = false;
 
     if (notifyComplete) {
