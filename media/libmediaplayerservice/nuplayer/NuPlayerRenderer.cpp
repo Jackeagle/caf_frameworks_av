@@ -20,6 +20,8 @@
 
 #include "NuPlayerRenderer.h"
 
+#include <cutils/properties.h>
+
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -51,6 +53,16 @@ const NuPlayer::Renderer::PcmInfo NuPlayer::Renderer::AUDIO_PCMINFO_INITIALIZER 
 // static
 const int64_t NuPlayer::Renderer::kMinPositionUpdateDelayUs = 100000ll;
 
+static bool sFrameAccurateAVsync = false;
+
+static void readProperties() {
+    char value[PROPERTY_VALUE_MAX];
+    if (property_get("persist.sys.media.avsync", value, NULL)) {
+        sFrameAccurateAVsync =
+            !strcmp("1", value) || !strcasecmp("true", value);
+    }
+}
+
 NuPlayer::Renderer::Renderer(
         const sp<MediaPlayerBase::AudioSink> &sink,
         const sp<AMessage> &notify,
@@ -80,7 +92,6 @@ NuPlayer::Renderer::Renderer(
       mPaused(false),
       mPausePositionMediaTimeUs(-1),
       mVideoSampleReceived(false),
-      mAudioRenderingStarted(false),
       mVideoRenderingStarted(false),
       mVideoRenderingStartGeneration(0),
       mAudioRenderingStartGeneration(0),
@@ -93,6 +104,7 @@ NuPlayer::Renderer::Renderer(
       mWakeLock(new AWakeLock()) {
 
     notify->findObject(MEDIA_EXTENDED_STATS, (sp<RefBase>*)&mPlayerExtendedStats);
+    readProperties();
 }
 
 NuPlayer::Renderer::~Renderer() {
@@ -651,12 +663,6 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
             entry = NULL;
         }
         sizeCopied += copy;
-        mAudioRenderingStarted = true;
-        while (!mPendingInputMessages.empty()) {
-            sp<AMessage> msg = *mPendingInputMessages.begin();
-            msg->post();
-            mPendingInputMessages.erase(mPendingInputMessages.begin());
-        }
         notifyIfMediaRenderingStarted();
     }
 
@@ -756,7 +762,6 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
         numBytesAvailableToWrite -= written;
         size_t copiedFrames = written / mAudioSink->frameSize();
         mNumFramesWritten += copiedFrames;
-        mAudioRenderingStarted = true;
         notifyIfMediaRenderingStarted();
 
         if (written != (ssize_t)copy) {
@@ -890,6 +895,11 @@ void NuPlayer::Renderer::postDrainVideoQueue_l() {
 
     ALOGW_IF(delayUs > 500000, "unusually high delayUs: %" PRId64, delayUs);
     // post 2 display refreshes before rendering is due
+    // FIXME currently this increases power consumption, so unless frame-accurate
+    // AV sync is requested, post closer to required render time (at 0.63 vsyncs)
+    if (!sFrameAccurateAVsync) {
+        twoVsyncsUs >>= 4;
+    }
     msg->post(delayUs > twoVsyncsUs ? delayUs - twoVsyncsUs : 0);
 
     mDrainVideoQueuePending = true;
@@ -1004,11 +1014,6 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
             mVideoScheduler = new VideoFrameScheduler();
             mVideoScheduler->init();
         }
-    }
-
-    if (!audio && offloadingAudio() && !mAudioRenderingStarted) {
-        mPendingInputMessages.push_back(msg);
-        return;
     }
 
     if (dropBufferWhileFlushing(audio, msg)) {
@@ -1174,15 +1179,6 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
             mAudioSink->start();
         }
     } else {
-        while (!mPendingInputMessages.empty()) {
-            sp<AMessage> msg = *mPendingInputMessages.begin();
-            sp<AMessage> notifyConsumed;
-            if (msg->findMessage("notifyConsumed", &notifyConsumed)) {
-                notifyConsumed->post();
-            }
-            mPendingInputMessages.erase(mPendingInputMessages.begin());
-        }
-
         flushQueue(&mVideoQueue);
 
         mDrainVideoQueuePending = false;
@@ -1195,7 +1191,6 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
         prepareForMediaRenderingStart();
     }
 
-    mAudioRenderingStarted = false;
     mVideoSampleReceived = false;
 
     if (notifyComplete) {
@@ -1315,6 +1310,8 @@ void NuPlayer::Renderer::onPause() {
 }
 
 void NuPlayer::Renderer::onResume() {
+    readProperties();
+
     if (!mPaused) {
         return;
     }
