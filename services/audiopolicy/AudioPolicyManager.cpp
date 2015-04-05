@@ -1950,8 +1950,8 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
           attr->source, samplingRate, format, channelMask, session, flags);
 
     *input = AUDIO_IO_HANDLE_NONE;
-    *inputType = API_INPUT_LEGACY;
-    audio_devices_t device = getDeviceForInputSource(attr->source);
+    *inputType = API_INPUT_INVALID;
+    audio_devices_t device;
     // handle legacy remote submix case where the address was not always specified
     String8 address = String8("");
     bool isSoundTrigger = false;
@@ -1959,27 +1959,10 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
     audio_source_t halInputSource;
     AudioMix *policyMix = NULL;
 
-    /*The below code is intentionally not ported.
-    It's not needed to update the channel mask based on source because
-    the source is sent to audio HAL through set_parameters().
-    For example, if source = VOICE_CALL, does not mean we need to capture two channels.
-    If the sound recorder app selects AMR as encoding format but source as RX+TX,
-    we need both in ONE channel. So we use the channels set by the app and use source
-    to tell the driver what needs to captured (RX only, TX only, or RX+TX ).*/
-    // adapt channel selection to input source
-    /*switch (inputSource) {
-    case AUDIO_SOURCE_VOICE_UPLINK:
-        channelMask = AUDIO_CHANNEL_IN_VOICE_UPLINK;
-        break;
-    case AUDIO_SOURCE_VOICE_DOWNLINK:
-        channelMask = AUDIO_CHANNEL_IN_VOICE_DNLINK;
-        break;
-    case AUDIO_SOURCE_VOICE_CALL:
-        channelMask = AUDIO_CHANNEL_IN_VOICE_UPLINK | AUDIO_CHANNEL_IN_VOICE_DNLINK;
-        break;
-    default:
-        break;
-    }*/
+    if (inputSource == AUDIO_SOURCE_DEFAULT) {
+        inputSource = AUDIO_SOURCE_MIC;
+    }
+    halInputSource = inputSource;
 
 #ifdef VOICE_CONCURRENCY
 
@@ -1993,11 +1976,6 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
     if(property_get("voice.voip.conc.disabled", propValue, NULL)) {
         prop_voip_enabled = atoi(propValue) || !strncmp("true", propValue, 4);
      }
-
-    if (inputSource == AUDIO_SOURCE_DEFAULT) {
-        inputSource = AUDIO_SOURCE_MIC;
-    }
-    halInputSource = inputSource;
 
     if (prop_rec_enabled && mvoice_call_state) {
          //check if voice call is active  / running in background
@@ -2042,19 +2020,56 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
     }
 
 #endif
+    if (inputSource == AUDIO_SOURCE_REMOTE_SUBMIX &&
+        strncmp(attr->tags, "addr=", strlen("addr=")) == 0) {
+        device = AUDIO_DEVICE_IN_REMOTE_SUBMIX;
+        address = String8(attr->tags + strlen("addr="));
+        ssize_t index = mPolicyMixes.indexOfKey(address);
+        if (index < 0) {
+            ALOGW("getInputForAttr() no policy for address %s", address.string());
+            return BAD_VALUE;
+        }
+        if (mPolicyMixes[index]->mMix.mMixType != MIX_TYPE_PLAYERS) {
+            ALOGW("getInputForAttr() bad policy mix type for address %s", address.string());
+            return BAD_VALUE;
+        }
+        policyMix = &mPolicyMixes[index]->mMix;
+        *inputType = API_INPUT_MIX_EXT_POLICY_REROUTE;
+    } else {
+        device = getDeviceAndMixForInputSource(inputSource, &policyMix);
+        if (device == AUDIO_DEVICE_NONE) {
+            ALOGW("getInputForAttr() could not find device for source %d", inputSource);
+            return BAD_VALUE;
+        }
+        if (policyMix != NULL) {
+            address = policyMix->mRegistrationId;
+            if (policyMix->mMixType == MIX_TYPE_RECORDERS) {
+                // there is an external policy, but this input is attached to a mix of recorders,
+                // meaning it receives audio injected into the framework, so the recorder doesn't
+                // know about it and is therefore considered "legacy"
+                *inputType = API_INPUT_LEGACY;
+            } else {
+                // recording a mix of players defined by an external policy, we're rerouting for
+                // an external policy
+                *inputType = API_INPUT_MIX_EXT_POLICY_REROUTE;
+            }
+        } else if (audio_is_remote_submix_device(device)) {
+            address = String8("0");
+            *inputType = API_INPUT_MIX_CAPTURE;
 
-    if (inputSource == AUDIO_SOURCE_HOTWORD) {
-        ssize_t index = mSoundTriggerSessions.indexOfKey(session);
-        if (index >= 0) {
-            *input = mSoundTriggerSessions.valueFor(session);
-            isSoundTrigger = true;
-            flags = (audio_input_flags_t)(flags | AUDIO_INPUT_FLAG_HW_HOTWORD);
-            ALOGV("SoundTrigger capture on session %d input %d", session, input);
         } else {
             *inputType = API_INPUT_LEGACY;
         }
+
+        /*The below code is intentionally not ported.
+        It's not needed to update the channel mask based on source because
+        the source is sent to audio HAL through set_parameters().
+        For example, if source = VOICE_CALL, does not mean we need to capture two channels.
+        If the sound recorder app selects AMR as encoding format but source as RX+TX,
+        we need both in ONE channel. So we use the channels set by the app and use source
+        to tell the driver what needs to captured (RX only, TX only, or RX+TX ).*/
         // adapt channel selection to input source
-        switch (inputSource) {
+        /*switch (inputSource) {
         case AUDIO_SOURCE_VOICE_UPLINK:
             channelMask = AUDIO_CHANNEL_IN_VOICE_UPLINK;
             break;
@@ -2066,7 +2081,8 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
             break;
         default:
             break;
-        }
+        }*/
+
         if (inputSource == AUDIO_SOURCE_HOTWORD) {
             ssize_t index = mSoundTriggerSessions.indexOfKey(session);
             if (index >= 0) {
@@ -2140,7 +2156,7 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
     inputDesc->mIsSoundTrigger = isSoundTrigger;
     inputDesc->mPolicyMix = policyMix;
 
-    ALOGV("getInputForAttr() returns input type = %d", inputType);
+    ALOGV("getInputForAttr() returns input type = %d", *inputType);
 
     addInput(*input, inputDesc);
     mpClientInterface->onAudioPortListUpdate();
@@ -2461,9 +2477,9 @@ status_t AudioPolicyManager::setStreamVolumeIndex(audio_stream_type_t stream,
         audio_devices_t availableOutputDeviceTypes = mAvailableOutputDevices.types();
         if (((device == AUDIO_DEVICE_OUT_DEFAULT) &&
               ((availableOutputDeviceTypes & AUDIO_DEVICE_OUT_FM) != AUDIO_DEVICE_OUT_FM)) ||
-              (device == curDevice)) {
+              ((curDevice & strategyDevice) != 0)) {
 #else
-        if ((device == AUDIO_DEVICE_OUT_DEFAULT) || (device == curDevice)) {
+        if ((device == AUDIO_DEVICE_OUT_DEFAULT) || ((curDevice & strategyDevice) != 0)) {
 #endif
             status_t volStatus = checkAndSetVolume(stream, index, mOutputs.keyAt(i), curDevice);
             if (volStatus != NO_ERROR) {
