@@ -58,12 +58,6 @@ namespace android {
 
 static int64_t kLowWaterMarkUs = 2000000ll;  // 2secs
 static int64_t kHighWaterMarkUs = 5000000ll;  // 5secs
-
-// Reduced the aggregate buffer size to 66K to make it
-// equivalent to compress offload buffer size for resolving
-// Gapless and AV sync issues.
-const size_t NuPlayer::kAggregateBufferSizeBytes = 66 * 1024;
-
 struct NuPlayer::Action : public RefBase {
     Action() {}
 
@@ -950,25 +944,20 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 int32_t reason;
                 CHECK(msg->findInt32("reason", &reason));
                 closeAudioSink();
-                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
-                mAudioDecoder.clear();
-                ++mAudioDecoderGeneration;
+                if (!mOffloadDecodedPCM) {
+                    mAudioDecoder.clear();
+                    ++mAudioDecoderGeneration;
+                } else {
+                    ALOGV("Decoded PCM offload flushing mFLushingAudio %d", mFlushingAudio);
+                    if (mAudioDecoder != NULL && mFlushingAudio == NONE) {
+                        flushDecoder(true /* audio */, true/* needShutdown */);
+                    }
+                }
                 mRenderer->flush(
                         true /* audio */, false /* notifyComplete */);
                 if (mVideoDecoder != NULL) {
                     mRenderer->flush(
                             false /* audio */, false /* notifyComplete */);
-                }
-                mRenderer->signalDisableOffloadAudio();
-                mOffloadAudio = false;
-                mOffloadDecodedPCM = false;
-                if ((ExtendedUtils::isRAWFormat(audioMeta) &&
-                    ExtendedUtils::is24bitPCMOffloadEnabled() &&
-                    ExtendedUtils::getPcmSampleBits(audioMeta) == 24)) {
-                    ALOGI("update pcm format in WAVExtractor to 16 bit");
-                    ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT );
-                    mSource->stop();
-                    mSource->start();
                 }
 
                 performSeek(positionUs, false /* needNotify */);
@@ -1329,6 +1318,7 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
         // Any failure we turn off mOffloadAudio.
         mOffloadAudio = false;
         mOffloadAudioTornDown = false;
+        mOffloadDecodedPCM = false;
     } else if (mOffloadAudio) {
         sp<MetaData> audioMeta =
                 mSource->getFormatMeta(true /* audio */);
@@ -1386,6 +1376,7 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<DecoderBase> *decoder) {
                 if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
                     ALOGV("Overriding PCM format with 24 bit and calling start");
                     ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_8_24_BIT);
+                    mSource->stop();
                     mSource->start();
                 }
             }
@@ -1396,6 +1387,7 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<DecoderBase> *decoder) {
                 if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
                     ALOGV("Setting 16 bit in case session is not offloaded");
                     ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT);
+                    mSource->stop();
                     mSource->start();
                 }
             }
