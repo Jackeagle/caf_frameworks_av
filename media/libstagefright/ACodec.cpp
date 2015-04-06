@@ -1203,6 +1203,9 @@ status_t ACodec::setComponentRole(
         { MEDIA_MIMETYPE_AUDIO_DTS,
             "audio_decoder.dts", "audio_encoder.dts" },
 #endif
+        { MEDIA_MIMETYPE_AUDIO_EAC3,
+            "audio_decoder.eac3", "audio_encoder.eac3" },
+
     };
 
     static const size_t kNumMimeToRole =
