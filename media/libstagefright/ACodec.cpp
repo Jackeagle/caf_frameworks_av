@@ -1247,8 +1247,13 @@ status_t ACodec::configureCodec(
     }
 
     bool isVideo = mComponentName.find("video") != -1;
+
+    if (mMediaExtendedStats != NULL) {
+        mMediaExtendedStats->setCodecName(isVideo, mComponentName);
+    }
+
     ExtendedStats::AutoProfile autoProfile(
-            STATS_PROFILE_CONFIGURE_CODEC(isVideo), mMediaExtendedStats);
+            STATS_PROFILE_CONFIGURE_CODEC(mComponentName), mMediaExtendedStats);
 
     sp<AMessage> inputFormat = new AMessage();
     sp<AMessage> outputFormat = mNotify->dup(); // will use this for kWhatOutputFormatChanged

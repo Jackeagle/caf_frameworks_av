@@ -528,8 +528,11 @@ sp<MediaSource> OMXCodec::Create(
             observer->setCodec(codec);
 
             { //profile configure codec
+                if (tempPtr) {
+                    tempPtr->setCodecName(isVideo, AString(componentName));
+                }
                 ExtendedStats::AutoProfile autoProfile(
-                        STATS_PROFILE_CONFIGURE_CODEC(isVideo), tempPtr);
+                        STATS_PROFILE_CONFIGURE_CODEC(AString(componentName)), tempPtr);
                 err = codec->configureCodec(meta);
             }
 
