@@ -1457,6 +1457,7 @@ MediaPlayerService::AudioOutput::AudioOutput(int sessionId, int uid, int pid,
     mSendLevel = 0.0;
     setMinBufferCount();
     mAttributes = attr;
+    mBitWidth = 16;
 }
 
 MediaPlayerService::AudioOutput::~AudioOutput()
@@ -1665,6 +1666,15 @@ status_t MediaPlayerService::AudioOutput::open(
         } else if (mRecycledTrack->format() != format) {
             reuse = false;
         }
+
+        if (bothOffloaded) {
+            if (mBitWidth != offloadInfo->bit_width) {
+                ALOGV("output bit width differs %d v/s %d",
+                      mBitWidth, offloadInfo->bit_width);
+                reuse = false;
+            }
+        }
+
     } else {
         ALOGV("no track available to recycle");
     }
@@ -1776,6 +1786,13 @@ status_t MediaPlayerService::AudioOutput::open(
     mSampleRateHz = sampleRate;
     mFlags = flags;
     mMsecsPerFrame = mPlaybackRatePermille / (float) sampleRate;
+
+    if (offloadInfo) {
+        mBitWidth = offloadInfo->bit_width;
+    } else {
+        mBitWidth = 16;
+    }
+
     uint32_t pos;
     if (t->getPosition(&pos) == OK) {
         mBytesWritten = uint64_t(pos) * t->frameSize();
@@ -1828,6 +1845,7 @@ void MediaPlayerService::AudioOutput::switchToNextOutput() {
         mNextOutput->mMsecsPerFrame = mMsecsPerFrame;
         mNextOutput->mBytesWritten = mBytesWritten;
         mNextOutput->mFlags = mFlags;
+        mNextOutput->mBitWidth = mBitWidth;
     }
 }
 
@@ -2160,6 +2178,7 @@ ssize_t MediaPlayerService::AudioCache::write(const void* buffer, size_t size)
         // immutable with respect to future writes.
         //
         // It is thus safe for another thread to read the AudioCache.
+        Mutex::Autolock lock(mLock);
         mCommandComplete = true;
         mSignal.signal();
     }
@@ -2194,7 +2213,6 @@ void MediaPlayerService::AudioCache::notify(
     {
     case MEDIA_ERROR:
         ALOGE("Error %d, %d occurred", ext1, ext2);
-        p->mError = ext1;
         break;
     case MEDIA_PREPARED:
         ALOGV("prepared");
@@ -2209,6 +2227,9 @@ void MediaPlayerService::AudioCache::notify(
 
     // wake up thread
     Mutex::Autolock lock(p->mLock);
+    if (msg == MEDIA_ERROR) {
+        p->mError = ext1;
+    }
     p->mCommandComplete = true;
     p->mSignal.signal();
 }
