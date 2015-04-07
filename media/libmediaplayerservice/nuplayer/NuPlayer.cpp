@@ -1933,7 +1933,9 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
             if (mStarted && !mPausedByClient) {
                 ALOGI("buffer low, pausing...");
 
+                PLAYER_STATS(profileStart, STATS_PROFILE_PAUSE);
                 onPause();
+                PLAYER_STATS(profileStop, STATS_PROFILE_PAUSE);
             }
             // fall-thru
         }
@@ -1949,7 +1951,8 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
             // ignore if not playing
             if (mStarted && !mPausedByClient) {
                 ALOGI("buffer ready, resuming...");
-
+                PLAYER_STATS(notifyPlaying, true);
+                PLAYER_STATS(profileStart, STATS_PROFILE_RESUME);
                 onResume();
             }
             // fall-thru
