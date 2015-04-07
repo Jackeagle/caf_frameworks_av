@@ -174,7 +174,6 @@ private:
     int64_t mPausePositionMediaTimeUs;
 
     bool mVideoSampleReceived;
-    bool mAudioRenderingStarted;
     bool mVideoRenderingStarted;
     int32_t mVideoRenderingStartGeneration;
     int32_t mAudioRenderingStartGeneration;
