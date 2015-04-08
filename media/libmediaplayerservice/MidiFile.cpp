@@ -56,7 +56,8 @@ MidiFile::MidiFile() :
     mEasData(NULL), mEasHandle(NULL), mAudioBuffer(NULL),
     mPlayTime(-1), mDuration(-1), mState(EAS_STATE_ERROR),
     mStreamType(AUDIO_STREAM_MUSIC), mLoop(false), mExit(false),
-    mPaused(false), mRender(false), mTid(-1)
+    mPaused(false), mRender(false), mTid(-1),
+    mDrmManagerClient(NULL), mDecryptHandle(NULL)
 {
     ALOGV("constructor");
 
@@ -130,6 +131,17 @@ status_t MidiFile::setDataSource(
     mFileLocator.fd = -1;
     mFileLocator.offset = 0;
     mFileLocator.length = 0;
+
+    if (mDrmManagerClient == NULL) {
+        mDrmManagerClient = new DrmManagerClient();
+    }
+    if (mDrmManagerClient != NULL && mDecryptHandle == NULL) {
+        int fd = open(path, O_RDONLY);
+        if (fd >= 0) {
+            mDecryptHandle = mDrmManagerClient->openDecryptSession(fd, 0, 1, NULL);
+        }
+    }
+
     EAS_RESULT result = EAS_OpenFile(mEasData, &mFileLocator, &mEasHandle);
     if (result == EAS_SUCCESS) {
         updateState();
@@ -160,6 +172,15 @@ status_t MidiFile::setDataSource(int fd, int64_t offset, int64_t length)
     mFileLocator.fd = dup(fd);
     mFileLocator.offset = offset;
     mFileLocator.length = length;
+
+    if (mDrmManagerClient == NULL) {
+        mDrmManagerClient = new DrmManagerClient();
+    }
+    if (mDrmManagerClient != NULL && mDecryptHandle == NULL) {
+        if (fd >= 0) {
+            mDecryptHandle = mDrmManagerClient->openDecryptSession(fd, 0, 1, NULL);
+        }
+    }
     EAS_RESULT result = EAS_OpenFile(mEasData, &mFileLocator, &mEasHandle);
     updateState();
 
@@ -390,6 +411,19 @@ status_t MidiFile::release()
         EAS_Shutdown(mEasData);
         mEasData = NULL;
     }
+
+    if (mDecryptHandle != NULL && mDrmManagerClient != NULL) {
+        if(mState > EAS_STATE_READY && mState < EAS_STATE_OPEN) {
+            mDrmManagerClient->consumeRights(mDecryptHandle, Action::PLAY, true);
+        }
+        mDrmManagerClient->closeDecryptSession(mDecryptHandle);
+        mDecryptHandle = NULL;
+    }
+    if (mDrmManagerClient != NULL) {
+        delete mDrmManagerClient;
+        mDrmManagerClient = NULL;
+    }
+
     return NO_ERROR;
 }
 
