@@ -288,5 +288,59 @@ private:
     int64_t mTotalRecordingTime;
 };
 
+class ExtendedHLSStats : public RefBase {
+    ExtendedHLSStats() {
+        mIsBufferingStart = false;
+        mBufferingStarttime = 0.0f;
+        mCumlativeRebuffTime = 0.0f;
+    };
+    virtual ~ExtendedHLSStats() {};
+
+private:
+    struct BWStats {
+         BWStats() {
+             mTimeUs = -1;
+             mSwtch = -1;
+             mBwkbps = -1;
+             mListBW = 0;
+             mActualSwitch = -1;
+             mActualSwitchTimeUs = -1;
+             mSwtchSeg = -1;
+             mSwtchPb = -1;
+             mSegStartTimeUs = -1;
+         }
+
+         int64_t mTimeUs;
+         int32_t mSwtch;
+         int32_t mBwkbps;
+         unsigned long mListBW;
+         int32_t mActualSwitch;
+         int64_t mActualSwitchTimeUs;
+         int32_t mSwtchSeg;
+         int64_t mSwtchPb;
+         int64_t mSegStartTimeUs;
+    };
+
+    Vector<BWStats> mBWStatsInfo;
+    unsigned long mInitBW;
+    int64_t mBaseTimeUs;
+    int64_t mStartTime;
+    int64_t mLastTimeUs;
+    bool mIsBufferingStart;
+    float mBufferingStarttime;
+    float mCumlativeRebuffTime;
+public:
+    void updateStatsTime(int64_t timeus);
+    void initilizeStats(unsigned long initBW, int64_t basetimeus);
+    void addNewStatItem(int64_t nowus);
+    void updateBWStatItem(int32_t bw);
+    void updateBufferingStats(bool val, int64_t timeUs);
+    void updateBWStatItem(unsigned long list_bw, int32_t swtch_type);
+    void updateBWStatItem(int32_t seq, int64_t swtch_pb, int32_t swtch_type, int64_t segStartUs, int64_t nowus);
+    void printBWStatItem();
+    void printBWStatItem2();
+    static sp<ExtendedHLSStats> create();
+};
+
 }
 #endif  //EXTENDED_STATS_H_

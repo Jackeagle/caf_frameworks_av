@@ -232,6 +232,7 @@ private:
     bool mEraseFirstTs;
     int32_t mCheckProxyCount;
     sp<ExtendedUtils::DiscoverProxy> mDProxy;
+    sp<ExtendedHLSStats> mHLSExtStats;
 
     uint32_t mSegmentCounter;
 
