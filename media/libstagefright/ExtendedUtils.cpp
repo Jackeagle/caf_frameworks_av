@@ -994,7 +994,11 @@ sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
       return NULL;
    }
 
-   sendSTAProxyStartIntent();
+   char val[PROPERTY_VALUE_MAX];
+   property_get("persist.mm.sta.start.bootup", val, "0");
+   if (!atoi(val)) {
+       sendSTAProxyStartIntent();
+   }
 
    gDProxy = instance;
    return instance;
@@ -1035,7 +1039,12 @@ ExtendedUtils::DiscoverProxy::~DiscoverProxy() {
     Mutex::Autolock autoLock(gLock);
     if (mStaLibHandle != NULL) {
         dlclose(mStaLibHandle);
-        sendSTAProxyStopIntent();
+
+        char val[PROPERTY_VALUE_MAX];
+        property_get("persist.mm.sta.start.bootup", val, "0");
+        if (!atoi(val)) {
+            sendSTAProxyStopIntent();
+        }
     }
 
     gDProxy = NULL;
