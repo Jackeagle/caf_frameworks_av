@@ -189,6 +189,10 @@ private:
             int32_t numChannels, int32_t sampleRate,
             sp<IOMX> OMXhandle, IOMX::node_id nodeID);
 
+    static status_t setALACFormat(
+            int32_t numChannels, int32_t sampleRate,
+            sp<IOMX> OMXhandle, IOMX::node_id nodeID);
+
 };
 
 }
