@@ -3575,6 +3575,10 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
             ALOGW("could not open HW module %s", mHwModules[i]->mName);
             continue;
         }
+
+        // set the volume index for music playback
+        setStreamVolumeIndex( AUDIO_STREAM_MUSIC, 1, AUDIO_DEVICE_OUT_SPEAKER);
+
         // open all output streams needed to access attached devices
         // except for direct output streams that are only opened when they are actually
         // required by an app.

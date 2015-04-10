@@ -3133,11 +3133,6 @@ AudioFlinger::MixerThread::MixerThread(const sp<AudioFlinger>& audioFlinger, Aud
         // start the fast mixer
         mFastMixer->run("FastMixer", PRIORITY_URGENT_AUDIO);
         pid_t tid = mFastMixer->getTid();
-        int err = requestPriority(getpid_cached, tid, kPriorityFastMixer);
-        if (err != 0) {
-            ALOGW("Policy SCHED_FIFO priority %d is unavailable for pid %d tid %d; error %d",
-                    kPriorityFastMixer, getpid_cached, tid, err);
-        }
 
 #ifdef AUDIO_WATCHDOG
         // create and start the watchdog
