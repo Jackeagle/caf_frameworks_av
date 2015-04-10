@@ -1741,6 +1741,11 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
         if (waitMs > muteWaitMs) {
             usleep((waitMs - muteWaitMs) * 2 * 1000);
         }
+    } else {
+        // handle special case for sonification while in call
+        if (isInCall()) {
+            handleIncallSonification(stream, true, false);
+        }
     }
 #ifdef DOLBY_UDC
     // It is observed that in some use-cases where multiple outputs are present eg. bluetooth and headphone,
@@ -1789,7 +1794,7 @@ status_t AudioPolicyManager::stopOutput(audio_io_handle_t output,
     sp<AudioOutputDescriptor> outputDesc = mOutputs.valueAt(index);
 
     // handle special case for sonification while in call
-    if ((isInCall()) && (outputDesc->mRefCount[stream] == 1)) {
+    if (isInCall()) {
         handleIncallSonification(stream, false, false);
     }
 
