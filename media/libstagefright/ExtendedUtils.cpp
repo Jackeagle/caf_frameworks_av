@@ -1225,6 +1225,7 @@ sp<MediaExtractor> ExtendedUtils::MediaExtractor_CreateIfNeeded(sp<MediaExtracto
         MEDIA_MIMETYPE_AUDIO_EAC3_JOC,
 #endif
         MEDIA_MIMETYPE_AUDIO_AAC,
+        MEDIA_MIMETYPE_AUDIO_ALAC,
     };
 
     for (size_t trackItt = 0; (trackItt < retExtExtractor->countTracks()); ++trackItt) {
