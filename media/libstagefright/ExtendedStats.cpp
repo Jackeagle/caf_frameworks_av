@@ -1,4 +1,4 @@
-/*Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -353,6 +353,8 @@ void MediaExtendedStats::reset() {
 
     mFrameRate = 30;
     mProfileTimes->clear();
+    mVideoCodecName = "";
+    mAudioCodecName = "";
 }
 
 
@@ -524,10 +526,10 @@ void PlayerExtendedStats::dump() {
         mProfileTimes->dump(STATS_PROFILE_PREPARE);
         mProfileTimes->dump(STATS_PROFILE_ALLOCATE_NODE(video));
         mProfileTimes->dump(STATS_PROFILE_ALLOCATE_NODE(audio));
-        mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(video));
+        mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(mVideoCodecName));
         mProfileTimes->dump(STATS_PROFILE_ALLOCATE_INPUT(video));
         mProfileTimes->dump(STATS_PROFILE_ALLOCATE_OUTPUT(video));
-        mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(audio));
+        mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(mAudioCodecName));
         mProfileTimes->dump(STATS_PROFILE_ALLOCATE_INPUT(audio));
         mProfileTimes->dump(STATS_PROFILE_ALLOCATE_OUTPUT(audio));
         mProfileTimes->dump(STATS_PROFILE_FIRST_BUFFER(video));
@@ -609,11 +611,11 @@ void RecorderExtendedStats::dump() {
     mProfileTimes->dump(STATS_PROFILE_ALLOCATE_NODE(video));
     mProfileTimes->dump(STATS_PROFILE_ALLOCATE_NODE(audio));
     mProfileTimes->dump(STATS_PROFILE_SET_ENCODER(video));
-    mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(video));
+    mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(mVideoCodecName));
     mProfileTimes->dump(STATS_PROFILE_ALLOCATE_INPUT(video));
     mProfileTimes->dump(STATS_PROFILE_ALLOCATE_OUTPUT(video));
     mProfileTimes->dump(STATS_PROFILE_SET_ENCODER(audio));
-    mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(audio));
+    mProfileTimes->dump(STATS_PROFILE_CONFIGURE_CODEC(mAudioCodecName));
     mProfileTimes->dump(STATS_PROFILE_ALLOCATE_INPUT(audio));
     mProfileTimes->dump(STATS_PROFILE_ALLOCATE_OUTPUT(audio));
     mProfileTimes->dump(STATS_PROFILE_FIRST_BUFFER(video));

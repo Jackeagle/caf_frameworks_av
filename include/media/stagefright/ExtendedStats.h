@@ -1,4 +1,4 @@
-/* Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -41,7 +41,7 @@
 #define STATS_PROFILE_ALLOCATE_NODE(isVideo) (isVideo != 0 ? "\tAllocate node (video)" : "\tAllocate node (audio)")
 #define STATS_PROFILE_ALLOCATE_INPUT(isVideo) (isVideo != 0 ? "\tAllocate input buffer (video)" : "\tAllocate input buffer (audio)")
 #define STATS_PROFILE_ALLOCATE_OUTPUT(isVideo) (isVideo != 0 ? "\tAllocate output buffer (video)" : "\tAllocate output buffer (audio)")
-#define STATS_PROFILE_CONFIGURE_CODEC(isVideo) (isVideo != 0 ? "\tConfigure codec (video)" : "\tConfigure codec (audio)")
+#define STATS_PROFILE_CONFIGURE_CODEC(name) ((StringPrintf("\tConfigure codec : %s", name.c_str())).c_str())
 #define STATS_PROFILE_FIRST_BUFFER(isVideo) (isVideo != 0 ? "Time to process first buffer (video)" : "Time to process first buffer (audio)")
 #define STATS_PROFILE_PREPARE "Prepare"
 #define STATS_PROFILE_SET_DATA_SOURCE "Set data source"
@@ -215,6 +215,15 @@ public:
         mProfileTimes->setWindowSize(mFrameRate);
     }
 
+    //wrapper function to set codec name.
+    inline void setCodecName(bool isVideo, AString name) {
+        if (isVideo) {
+            mVideoCodecName = name;
+        } else {
+            mAudioCodecName = name;
+        }
+    }
+
 protected:
     AString mName;
     pid_t mTid;
@@ -232,6 +241,9 @@ protected:
     sp<ExtendedStats> mProfileTimes;
     int32_t mFrameRate;
     Mutex mLock;
+
+    AString mVideoCodecName;
+    AString mAudioCodecName;
 
     /* helper functions */
     void resetConsecutiveFramesDropped();
