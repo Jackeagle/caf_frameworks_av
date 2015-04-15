@@ -31,6 +31,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
+ * This file was modified by DTS, Inc. The portions of the
+ * code that are surrounded by "DTS..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2015 DTS, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 //#define LOG_NDEBUG 0
@@ -47,6 +64,8 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include <QCMediaDefs.h>
+#include <QCMetaData.h>
 
 #include "include/avc_utils.h"
 
@@ -427,6 +446,34 @@ status_t ElementaryStreamQueue::appendData(
                 break;
             }
 
+#ifdef DTS_CODEC_M_
+            case DTSHD:
+            {
+                uint8_t *ptr = (uint8_t *)data;
+
+                ssize_t startOffset = -1;
+                for (size_t i = 0; i < size; ++i) {
+                    if (ExtendedUtils::DTS::IsSeeminglyValidDTSHeader(&ptr[i], size - i)) {
+                        startOffset = i;
+                        break;
+                    }
+                }
+
+                if (startOffset < 0) {
+                    return ERROR_MALFORMED;
+                }
+
+                if (startOffset > 0) {
+                    ALOGI("found something resembling a DTS Sync word at "
+                          "syncword at offset %zd",
+                          startOffset);
+                }
+
+                data = &ptr[startOffset];
+                size -= startOffset;
+                break;
+            }
+#endif
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
             case DDP_EC3_AUDIO:
             {
@@ -540,6 +587,10 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnit() {
         case DDP_EC3_AUDIO:
             return dequeueAccessUnitDDP();
 #endif // DOLBY_END
+#ifdef DTS_CODEC_M_
+        case DTSHD:
+            return dequeueAccessUnitDTS();
+#endif
         default:
             CHECK_EQ((unsigned)mMode, (unsigned)MPEG_AUDIO);
             return dequeueAccessUnitMPEGAudio();
@@ -590,6 +641,53 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitAC3() {
 
     return accessUnit;
 }
+
+#ifdef DTS_CODEC_M_
+sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitDTS() {
+    unsigned syncStartPos = 0;  // in bytes
+    unsigned payloadSize = 0;
+    sp<MetaData> format = new MetaData;
+    while (true) {
+        if (syncStartPos + 2 >= mBuffer->size()) {
+            return NULL;
+        }
+
+        payloadSize = ExtendedUtils::DTS::parseDTSSyncFrame(
+                mBuffer->data() + syncStartPos,
+                mBuffer->size() - syncStartPos,
+                &format);
+        if (payloadSize > 0) {
+            break;
+        }
+        ++syncStartPos;
+    }
+
+    if (mBuffer->size() < syncStartPos + payloadSize) {
+        ALOGV("Not enough buffer size for DTSHD");
+        return NULL;
+    }
+
+    if (mFormat == NULL) {
+        mFormat = format;
+    }
+
+    sp<ABuffer> accessUnit = new ABuffer(syncStartPos + payloadSize);
+    memcpy(accessUnit->data(), mBuffer->data(), syncStartPos + payloadSize);
+
+    int64_t timeUs = fetchTimestamp(syncStartPos + payloadSize);
+    CHECK_GE(timeUs, 0ll);
+    accessUnit->meta()->setInt64("timeUs", timeUs);
+
+    memmove(
+            mBuffer->data(),
+            mBuffer->data() + syncStartPos + payloadSize,
+            mBuffer->size() - syncStartPos - payloadSize);
+
+    mBuffer->setRange(0, mBuffer->size() - syncStartPos - payloadSize);
+
+    return accessUnit;
+}
+#endif
 
 sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitPCMAudio() {
     if (mBuffer->size() < 4) {

@@ -200,6 +200,17 @@ struct ExtendedUtils {
 
     };
 
+#ifdef DTS_CODEC_M_
+    /*
+     * This class is a placeholder for set of methods used
+     * to support DTS contents in HLS streaming
+     */
+    struct DTS {
+        static size_t parseDTSSyncFrame(const uint8_t *ptr, size_t size,
+                                      sp<MetaData> *metaData);
+        static bool IsSeeminglyValidDTSHeader(const uint8_t *ptr, size_t size);
+    };
+#endif //DTS_CODEC_M_
 
     static const int32_t kNumBFramesPerPFrame = 1;
     static bool mIsQCHWAACEncoder;
