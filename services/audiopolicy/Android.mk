@@ -55,6 +55,10 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= \
     AudioPolicyManager.cpp
 
+
+LOCAL_C_INCLUDES := \
+    $(call include-path-for, audio-effects)
+
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DTS_EAGLE)),true)
   LOCAL_CFLAGS += -DDTS_EAGLE
   LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
