@@ -25,6 +25,9 @@
 #include <utils/Log.h>
 #include <utils/Trace.h>
 #include "FastThread.h"
+#include "SchedulingPolicyService.h"
+
+static const int kPriorityFast = 3;
 
 #define FAST_DEFAULT_NS    999999999L   // ~1 sec: default time to sleep
 #define FAST_HOT_IDLE_NS     1000000L   // 1 ms: time to sleep while hot idling
@@ -161,6 +164,13 @@ bool FastThread::threadLoop()
                 int policy = sched_getscheduler(0);
                 if (!(policy == SCHED_FIFO || policy == SCHED_RR)) {
                     ALOGE("did not receive expected priority boost");
+                    //Request for updated priority
+                    int err = requestPriority(getpid(), gettid(), kPriorityFast);
+                    if (err != 0)
+                    {
+                        ALOGE("Policy SCHED_FIFO priority %d is unavailable for pid %d tid %d; error %d",
+                              kPriorityFast, getpid(), gettid(), err);
+                    }
                 }
                 // This may be overly conservative; there could be times that the normal mixer
                 // requests such a brief cold idle that it doesn't require resetting this flag.
