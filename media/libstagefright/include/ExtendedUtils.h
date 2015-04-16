@@ -246,6 +246,9 @@ struct ExtendedUtils {
             const CameraParameters& params, sp<MetaData> &meta);
 
     static bool isAudioAMR(const char* mime);
+    static bool isWMAFormat(const sp<MetaData> &meta);
+    static bool isAudioWMAPro(const sp<AMessage> &format);
+    static status_t getWMAVersion(const sp<MetaData> &meta, int32_t *version);
 
     static void updateVideoTrackInfoFromESDS_MPEG4Video(sp<MetaData> meta);
     static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
