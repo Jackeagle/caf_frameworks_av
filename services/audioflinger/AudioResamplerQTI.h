@@ -36,6 +36,7 @@ public:
 
     int16_t *mState;
     int16_t *mTmpBuf;
+    int32_t *mResamplerOutBuf;
     size_t mFrameIndex;
     size_t stateSize;
     size_t mOutFrameCount;
