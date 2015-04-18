@@ -39,6 +39,7 @@
 #include <media/stagefright/foundation/ABitReader.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/MediaDefs.h>
+#include <media/stagefright/MetaData.h>
 #include <media/stagefright/OMXCodec.h>
 #include <cutils/properties.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -938,6 +939,15 @@ void ExtendedUtils::setBFrames(
         h264type.nCabacInitIdc = 0;
     }
     return;
+}
+
+void ExtendedUtils::setSourceMime(const sp<MetaData> &audioMeta,
+                                        const sp<AMessage> &format) {
+    const char *mime = NULL;
+    if (audioMeta != NULL) {
+        CHECK(audioMeta->findCString(kKeyMIMEType, &mime));
+        format->setString("source-mime", mime);
+    }
 }
 
 sp<MetaData> ExtendedUtils::updatePCMFormatAndBitwidth(
@@ -1919,8 +1929,8 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
 }
 
 void ExtendedUtils::overWriteAudioFormat(
-                sp<AMessage> &dst, const sp<AMessage> &src)
-{
+                const sp<MetaData> &audioMeta,
+                sp<AMessage> &dst, const sp<AMessage> &src) {
     int32_t dchannels = 0;
     int32_t schannels = 0;
     int32_t drate = 0;
@@ -1959,6 +1969,7 @@ void ExtendedUtils::overWriteAudioFormat(
         dst->setInt32("channel-mask", smask);
     }
 
+    setSourceMime(audioMeta, dst);
     return;
 }
 
@@ -1967,9 +1978,15 @@ void ExtendedUtils::overWriteAudioFormat(
 
 namespace android {
 
+void ExtendedUtils::setSourceMime(const sp<MetaData> &audioMeta,
+                                        const sp<AMessage> &format) {
+    ARG_TOUCH(audioMeta);
+    ARG_TOUCH(format);
+    return;
+}
+
 sp<MetaData> ExtendedUtils::updatePCMFormatAndBitwidth(
-                sp<MediaSource> &audioSource, bool offloadAudio)
-{
+                sp<MediaSource> &audioSource, bool offloadAudio) {
     ARG_TOUCH(audioSource);
     ARG_TOUCH(offloadAudio);
     sp<MetaData> tempMetadata = new MetaData;
@@ -2234,8 +2251,10 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
 }
 
 void ExtendedUtils::overWriteAudioFormat(
+                const sp<MetaData> &audioMeta,
                 sp<AMessage> &dst, const sp<AMessage> &src)
 {
+    ARG_TOUCH(audioMeta);
     ARG_TOUCH(dst);
     ARG_TOUCH(src);
     return;
