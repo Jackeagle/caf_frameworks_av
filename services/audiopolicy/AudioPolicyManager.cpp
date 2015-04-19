@@ -834,7 +834,10 @@ void AudioPolicyManager::setPhoneState(audio_mode_t state)
             // Move tracks associated to this strategy from previous output to new output
             for (int i = AUDIO_STREAM_SYSTEM; i < (int)AUDIO_STREAM_CNT; i++) {
                 ALOGV(" Invalidate on call mode for stream :: %d ", i);
-                //FIXME see fixme on name change
+                if (i == AUDIO_STREAM_PATCH) {
+                    ALOGV("not calling invalidate for AUDIO_STREAM_PATCH");
+                    continue;
+                }
                 mpClientInterface->invalidateStream((audio_stream_type_t)i);
             }
         }
@@ -922,7 +925,10 @@ void AudioPolicyManager::setPhoneState(audio_mode_t state)
        //call invalidate tracks so that any open streams can fall back to deep buffer/compress path from ULL
        for (int i = AUDIO_STREAM_SYSTEM; i < (int)AUDIO_STREAM_CNT; i++) {
            ALOGD("Invalidate after call ends for stream :: %d ", i);
-           //FIXME see fixme on name change
+           if (i == AUDIO_STREAM_PATCH) {
+               ALOGV("not calling invalidate for AUDIO_STREAM_PATCH");
+               continue;
+           }
            mpClientInterface->invalidateStream((audio_stream_type_t)i);
        }
     }
@@ -2222,7 +2228,7 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
         // Move tracks associated to this strategy from previous output to new output
         for (int i = AUDIO_STREAM_SYSTEM; i < (int)AUDIO_STREAM_CNT; i++) {
             // Do not call invalidate for ENFORCED_AUDIBLE (otherwise pops are seen for camcorder)
-            if (i != AUDIO_STREAM_ENFORCED_AUDIBLE) {
+            if ((i != AUDIO_STREAM_ENFORCED_AUDIBLE) && (i != AUDIO_STREAM_PATCH)) {
                ALOGD("Invalidate on releaseInput for stream :: %d ", i);
                //FIXME see fixme on name change
                mpClientInterface->invalidateStream((audio_stream_type_t)i);
@@ -2345,8 +2351,8 @@ status_t AudioPolicyManager::stopInput(audio_io_handle_t input,
         //call invalidate tracks so that any open streams can fall back to deep buffer/compress path from ULL
         for (int i = AUDIO_STREAM_SYSTEM; i < (int)AUDIO_STREAM_CNT; i++) {
             //Do not call invalidate for ENFORCED_AUDIBLE (otherwise pops are seen for camcorder stop tone)
-            if (i != AUDIO_STREAM_ENFORCED_AUDIBLE) {
-               ALOGD(" Invalidate on stopInput for stream :: %d ", i);
+            if ((i != AUDIO_STREAM_ENFORCED_AUDIBLE) && (i != AUDIO_STREAM_PATCH)) {
+                ALOGD("Invalidate on stopInput for stream :: %d ", i);
                //FIXME see fixme on name change
                mpClientInterface->invalidateStream((audio_stream_type_t)i);
             }
@@ -5665,8 +5671,31 @@ uint32_t AudioPolicyManager::checkDeviceMuteStrategies(sp<AudioOutputDescriptor>
     // temporary mute output if device selection changes to avoid volume bursts due to
     // different per device volumes
     if (outputDesc->isActive() && (device != prevDevice)) {
-        if (muteWaitMs < outputDesc->latency() * 2) {
-            muteWaitMs = outputDesc->latency() * 2;
+        bool IsMutiHwModuleActive = false;
+
+        for (size_t i = 0; i < mOutputs.size(); i++) {
+            sp<AudioOutputDescriptor> desc = mOutputs.valueAt(i);
+
+            // update total number active HAL modules which can be
+            // used for caluclating mutewait delays
+            if ((desc != outputDesc) && desc->isActive() &&
+                !outputDesc->sharesHwModuleWith(desc)) {
+                ALOGV("FOUND multi HAL modules active");
+                IsMutiHwModuleActive =  true;
+            }
+        }
+
+        if (IsMutiHwModuleActive) {
+	        if (muteWaitMs < outputDesc->latency() * 2) {
+	            muteWaitMs = outputDesc->latency() * 2;
+            }
+        } else {
+            // If only one HAL is active no need to delay twice the latency
+            // for device switch one and half time should be good enough
+            if (muteWaitMs < outputDesc->latency() * 3/2) {
+                ALOGV("Reducting mutewait delay to 3/2 times");
+                muteWaitMs = outputDesc->latency() * 3/2;
+            }
         }
         for (size_t i = 0; i < NUM_STRATEGIES; i++) {
             if (outputDesc->isStrategyActive((routing_strategy)i)) {
