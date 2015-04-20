@@ -980,7 +980,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatReset:
         {
             ALOGV("kWhatReset");
-
+            mBuffering = false;
             mDeferredActions.push_back(
                     new ShutdownDecoderAction(
                         true /* audio */, true /* video */));
