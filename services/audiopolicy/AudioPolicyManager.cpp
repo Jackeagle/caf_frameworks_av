@@ -89,6 +89,7 @@
 #include <soundtrigger/SoundTrigger.h>
 #include "AudioPolicyManager.h"
 #include "audio_policy_conf.h"
+#include <audio_effects/effect_visualizer.h>
 #if defined(DOLBY_UDC) || defined(DOLBY_DAP_MOVE_EFFECT)
 #include "DolbyAudioPolicy_impl.h"
 #endif // DOLBY_END
@@ -1634,10 +1635,20 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
     // FIXME: We should check the audio session here but we do not have it in this context.
     // This may prevent offloading in rare situations where effects are left active by apps
     // in the background.
-
     if ((((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0) ||
             !isNonOffloadableEffectEnabled()) &&
             flags & AUDIO_OUTPUT_FLAG_DIRECT) {
+        if (flags & AUDIO_OUTPUT_FLAG_TUNNEL) {
+            for (size_t i = 0; i < mEffects.size(); i++) {
+                sp<EffectDescriptor> effectDesc = mEffects.valueAt(i);
+                //Visualizer Effect not supported for Tunnel playback
+                if (effectDesc->mSession == session  && (effectDesc->mStrategy == STRATEGY_MEDIA) &&
+                    !memcmp(&effectDesc->mDesc.type, SL_IID_VISUALIZATION, sizeof(effect_uuid_t))) {
+                    ALOGD ("Visualizer Effect unsupported for TUNNEL");
+                    return 0;
+                }
+            }
+        }
         profile = getProfileForDirectOutput(device,
                                            samplingRate,
                                            format,

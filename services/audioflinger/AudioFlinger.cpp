@@ -73,6 +73,7 @@
 #include <audio_effects/effect_visualizer.h>
 #include <audio_effects/effect_ns.h>
 #include <audio_effects/effect_aec.h>
+#include <audio_effects/effect_equalizer.h>
 
 #include <audio_utils/primitives.h>
 
@@ -787,6 +788,7 @@ sp<IDirectTrack> AudioFlinger::createDirectTrack(
         AudioEventObserver* obv = dynamic_cast<AudioEventObserver *>(directTrack);
         ALOGE("setting observer mOutputDesc track %p, obv %p", track.get(), obv);
         desc->stream->set_observer(desc->stream, reinterpret_cast<void *>(obv));
+        ((DirectAudioTrack*)desc->trackRefPtr)->mDirectTrackSessionId = *sessionId;
     } else {
         lStatus = BAD_VALUE;
     }
@@ -2846,6 +2848,20 @@ sp<IEffect> AudioFlinger::createEffect(
              (desc.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_AUXILIARY) {
             lStatus = INVALID_OPERATION;
             goto Exit;
+        }
+        if ((memcmp(&desc.type, SL_IID_VISUALIZATION, sizeof(effect_uuid_t)) == 0)) {
+            size_t dsize = mDirectAudioTracks.size();
+            for(size_t i = 0; i < dsize; i++) {
+                AudioSessionDescriptor *sessionDesc = mDirectAudioTracks.valueAt(i);
+                int directTrackSessionId = ((DirectAudioTrack*)sessionDesc->trackRefPtr)->mDirectTrackSessionId;
+                if (sessionDesc && (sessionDesc->flag & AUDIO_OUTPUT_FLAG_TUNNEL) &&
+                        sessionDesc->mActive && sessionId == directTrackSessionId) {
+                    if(((DirectAudioTrack*)sessionDesc->trackRefPtr)) {
+                        ALOGV("createEffect() signalling directAudioTrack for failure due to effects enabled");
+                        ((DirectAudioTrack*)sessionDesc->trackRefPtr)->postEOS(AudioTrack::EVENT_NEW_IAUDIOTRACK);
+                    }
+                }
+            }
         }
 
         // check recording permission for visualizer

@@ -116,7 +116,8 @@
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define DIRECT_TRACK_EOS 1
-#define DIRECT_TRACK_HW_FAIL 6
+#define DIRECT_TRACK_HW_FAIL 9
+
 static const char lockName[] = "DirectTrack";
 
 #ifdef DOLBY_DAP_QDSP
@@ -6826,7 +6827,7 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
                                                  IDirectTrackClient* client, audio_output_flags_t outflag)
     : BnDirectTrack(), mIsPaused(false), mAudioFlinger(audioFlinger), mOutput(output), mOutputDesc(outputDesc),
       mClient(client), mEffectConfigChanged(false), mKillEffectsThread(false), mFlag(outflag),
-      mEffectsThreadScratchBuffer(NULL)
+      mEffectsThreadScratchBuffer(NULL),mDirectTrackSessionId(0)
 {
 #ifdef SRS_PROCESSING
     ALOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
@@ -6980,10 +6981,13 @@ int64_t AudioFlinger::DirectAudioTrack::getTimeStamp() {
     return time;
 }
 
-void AudioFlinger::DirectAudioTrack::postEOS(int64_t delayUs) {
-    if (delayUs == 0 ) {
+void AudioFlinger::DirectAudioTrack::postEOS(int64_t event) {
+    if (event == 0 ) {
        ALOGV("Notify Audio Track of EOS event");
        mClient->notify(DIRECT_TRACK_EOS);
+    } else if (event == AudioTrack::EVENT_NEW_IAUDIOTRACK){
+       ALOGV("Notify Audio Track of new track creation ");
+       mClient->notify(AudioTrack::EVENT_NEW_IAUDIOTRACK);
     } else {
        ALOGV("Notify Audio Track of hardware failure event");
        mClient->notify(DIRECT_TRACK_HW_FAIL);
