@@ -82,10 +82,17 @@ void NuPlayer::DecoderPassThrough::onConfigure(const sp<AMessage> &format) {
     // The audio sink is already opened before the PassThrough decoder is created.
     // Opening again might be relevant if decoder is instantiated after shutdown and
     // format is different.
+    sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
     if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
-        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
         if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
             format->setInt32("sbit", 24);
+        }
+    }
+
+    if(ExtendedUtils::isWMAFormat(audioMeta)) {
+        int32_t wmaVersion;
+        if (ExtendedUtils::getWMAVersion(audioMeta, &wmaVersion) == OK) {
+            format->setInt32("wmav", wmaVersion);
         }
     }
 

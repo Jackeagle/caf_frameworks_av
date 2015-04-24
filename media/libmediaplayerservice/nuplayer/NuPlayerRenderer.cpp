@@ -1498,6 +1498,11 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
                     audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
                 }
             }
+            if (AUDIO_FORMAT_WMA == audioFormat) {
+                if (ExtendedUtils::isAudioWMAPro(format)) {
+                    audioFormat = AUDIO_FORMAT_WMA_PRO;
+                }
+            }
             ALOGV("Mime \"%s\" mapped to audio_format 0x%x",
                     mime.c_str(), audioFormat);
 
