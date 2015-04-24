@@ -284,17 +284,20 @@ MediaPlayerService::MediaPlayerService()
     // reset battery stats
     // if the mediaserver has crashed, battery stats could be left
     // in bad state, reset the state upon service start.
-    const sp<IServiceManager> sm(defaultServiceManager());
-    if (sm != NULL) {
-        const String16 name("batterystats");
-        sp<IBatteryStats> batteryStats =
+    char propValue[PROPERTY_VALUE_MAX] = {0};
+    property_get("AUTOPLATFORM_BOOT", propValue, "false");
+    if (!(strcmp(propValue, "true") == 0)) {
+        const sp<IServiceManager> sm(defaultServiceManager());
+        if (sm != NULL) {
+            const String16 name("batterystats");
+            sp<IBatteryStats> batteryStats =
                 interface_cast<IBatteryStats>(sm->getService(name));
-        if (batteryStats != NULL) {
-            batteryStats->noteResetVideo();
-            batteryStats->noteResetAudio();
+            if (batteryStats != NULL) {
+                batteryStats->noteResetVideo();
+                batteryStats->noteResetAudio();
+            }
         }
     }
-
     MediaPlayerFactory::registerBuiltinFactories();
 }
 
