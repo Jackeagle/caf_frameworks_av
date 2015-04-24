@@ -241,6 +241,8 @@ const StringToEnum sFormatNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_FORMAT_MP2),
     STRING_TO_ENUM(AUDIO_FORMAT_EVRCNW),
     STRING_TO_ENUM(AUDIO_FORMAT_FLAC),
+    STRING_TO_ENUM(AUDIO_FORMAT_ALAC),
+    STRING_TO_ENUM(AUDIO_FORMAT_APE),
     STRING_TO_ENUM(AUDIO_FORMAT_PCM_16_BIT_OFFLOAD),
     STRING_TO_ENUM(AUDIO_FORMAT_PCM_24_BIT_OFFLOAD),
     STRING_TO_ENUM(AUDIO_FORMAT_E_AC3_JOC),
@@ -3251,13 +3253,15 @@ bool AudioPolicyManager::isOffloadSupported(const audio_offload_info_t& offloadI
         }
     } else if (offloadInfo.duration_us < OFFLOAD_DEFAULT_MIN_DURATION_SECS * 1000000) {
         ALOGV("Offload denied by duration < default min(=%u)", OFFLOAD_DEFAULT_MIN_DURATION_SECS);
-        //duration checks only valid for MP3/AAC/WMA formats,
+        //duration checks only valid for MP3/AAC/FLAC/WMA/ALAC/APE formats,
         //do not check duration for other audio formats, e.g. dolby AAC/AC3 and amrwb+ formats
         if ((offloadInfo.format == AUDIO_FORMAT_MP3) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_AAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA_PRO) ||
+            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_ALAC) ||
+            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_APE) ||
             pcmOffload)
             return false;
     }
