@@ -1932,6 +1932,10 @@ void ExtendedUtils::overWriteAudioFormat(
     int32_t schannels = 0;
     int32_t drate = 0;
     int32_t srate = 0;
+    int32_t dmask = 0;
+    int32_t smask = 0;
+    int32_t scmask = 0;
+    int32_t dcmask = 0;
 
     dst->findInt32("channel-count", &dchannels);
     src->findInt32("channel-count", &schannels);
@@ -1939,8 +1943,16 @@ void ExtendedUtils::overWriteAudioFormat(
     dst->findInt32("sample-rate", &drate);
     src->findInt32("sample-rate", &srate);
 
-    ALOGI("channel count src: %d dst: %d", dchannels, schannels);
-    ALOGI("sample rate src: %d dst:%d ", drate, srate);
+    dst->findInt32("channel-mask", &dmask);
+    src->findInt32("channel-mask", &smask);
+
+    ALOGI("channel count src: %d dst: %d", schannels, dchannels);
+    ALOGI("sample rate src: %d dst:%d ", srate, drate);
+
+    scmask = audio_channel_count_from_out_mask(smask);
+    dcmask = audio_channel_count_from_out_mask(dmask);
+    ALOGI("channel mask src: %d dst:%d ", smask, dmask);
+    ALOGI("channel count from mask src: %d dst:%d ", scmask, dcmask);
 
     if (schannels && dchannels != schannels) {
         dst->setInt32("channel-count", schannels);
@@ -1948,6 +1960,10 @@ void ExtendedUtils::overWriteAudioFormat(
 
     if (srate && drate != srate) {
         dst->setInt32("sample-rate", srate);
+    }
+
+    if (dmask != smask) {
+        dst->setInt32("channel-mask", smask);
     }
 
     return;
