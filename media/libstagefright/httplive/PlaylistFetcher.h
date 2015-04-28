@@ -35,6 +35,7 @@ struct String8;
 
 struct PlaylistFetcher : public AHandler {
     static const int64_t kMinBufferedDurationUs;
+    static const int32_t kDownloadBlockSize;
 
     enum {
         kWhatStarted,
@@ -64,7 +65,9 @@ struct PlaylistFetcher : public AHandler {
             int64_t segmentStartTimeUs = -1ll, // starting position within playlist
             // startTimeUs!=segmentStartTimeUs only when playlist is live
             int32_t startDiscontinuitySeq = 0,
-            bool adaptive = false);
+            bool adaptive = false,
+            // last seq from old playlist fetcher during a switch
+            int32_t lastSeq = -1);
 
     void pauseAsync();
 
@@ -95,7 +98,6 @@ private:
     };
 
     static const int64_t kMaxMonitorDelayUs;
-    static const int32_t kDownloadBlockSize;
     static const int32_t kNumSkipFrames;
 
     static bool bufferStartsWithTsSyncByte(const sp<ABuffer>& buffer);
@@ -128,6 +130,7 @@ private:
     int64_t mLastPlaylistFetchTimeUs;
     sp<M3UParser> mPlaylist;
     int32_t mSeqNumber;
+    int32_t mLastSeqNumber; // Last seqnumber during switch
     int32_t mNumRetries;
     bool mStartup;
     bool mAdaptive;
