@@ -17,7 +17,6 @@ LOCAL_SRC_FILES:=               \
     MetadataRetrieverClient.cpp \
     MidiFile.cpp                \
     MidiMetadataRetriever.cpp   \
-    RemoteDisplay.cpp           \
     SharedLibrary.cpp           \
     StagefrightPlayer.cpp       \
     StagefrightRecorder.cpp     \
@@ -38,7 +37,6 @@ LOCAL_SHARED_LIBRARIES :=       \
     libstagefright_foundation   \
     libstagefright_httplive     \
     libstagefright_omx          \
-    libstagefright_wfd          \
     libutils                    \
     libvorbisidec               \
 
