@@ -29,7 +29,6 @@ LOCAL_SHARED_LIBRARIES :=       \
     libcamera_client            \
     libcrypto                   \
     libcutils                   \
-    libdrmframework             \
     liblog                      \
     libdl                       \
     libgui                      \
@@ -42,7 +41,6 @@ LOCAL_SHARED_LIBRARIES :=       \
     libstagefright_wfd          \
     libutils                    \
     libvorbisidec               \
-    libdrmframework             \
 
 LOCAL_STATIC_LIBRARIES :=       \
     libstagefright_nuplayer     \
