@@ -16,7 +16,6 @@ LOCAL_SRC_FILES:=               \
     MediaPlayerService.cpp      \
     MediaRecorderClient.cpp     \
     MetadataRetrieverClient.cpp \
-    RemoteDisplay.cpp           \
     SharedLibrary.cpp           \
     StagefrightRecorder.cpp     \
     TestPlayerStub.cpp          \
@@ -36,7 +35,6 @@ LOCAL_SHARED_LIBRARIES :=       \
     libstagefright_foundation   \
     libstagefright_httplive     \
     libstagefright_omx          \
-    libstagefright_wfd          \
     libutils                    \
     libvorbisidec               \
 

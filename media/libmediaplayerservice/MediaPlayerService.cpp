@@ -398,11 +398,15 @@ sp<IHDCP> MediaPlayerService::makeHDCP(bool createEncryptionModule) {
 sp<IRemoteDisplay> MediaPlayerService::listenForRemoteDisplay(
         const String16 &opPackageName,
         const sp<IRemoteDisplayClient>& client, const String8& iface) {
+    (void) opPackageName;
+    (void) client;
+    (void) iface;
     if (!checkPermission("android.permission.CONTROL_WIFI_DISPLAY")) {
         return NULL;
     }
 
-    return new RemoteDisplay(opPackageName, client, iface.string());
+    ALOGE("listenForRemoteDisplay is not available");
+    return NULL;
 }
 
 status_t MediaPlayerService::AudioOutput::dump(int fd, const Vector<String16>& args) const
