@@ -26,7 +26,6 @@ LOCAL_SHARED_LIBRARIES :=       \
     libcamera_client            \
     libcrypto                   \
     libcutils                   \
-    libdrmframework             \
     liblog                      \
     libdl                       \
     libgui                      \

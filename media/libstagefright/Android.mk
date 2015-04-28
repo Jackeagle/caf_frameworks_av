@@ -106,7 +106,6 @@ LOCAL_SHARED_LIBRARIES := \
         libcamera_client \
         libcutils \
         libdl \
-        libdrmframework \
         libexpat \
         libgui \
         libicui18n \

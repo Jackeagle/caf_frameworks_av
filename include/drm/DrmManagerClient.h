@@ -41,20 +41,6 @@ class DrmManagerClientImpl;
  */
 class DrmManagerClient {
 public:
-    DrmManagerClient();
-
-    virtual ~DrmManagerClient();
-
-public:
-    class OnInfoListener: virtual public RefBase {
-
-    public:
-        virtual ~OnInfoListener() {}
-
-    public:
-        virtual void onInfo(const DrmInfoEvent& event) = 0;
-    };
-
 /**
  * APIs which will be used by native modules (e.g. StageFright)
  *
@@ -70,7 +56,10 @@ public:
      * @return
      *     Handle for the decryption session
      */
-    sp<DecryptHandle> openDecryptSession(int fd, off64_t offset, off64_t length, const char* mime);
+    sp<DecryptHandle> openDecryptSession(int fd, off64_t offset, off64_t length, const char* mime)
+    {
+      return NULL;
+    }
 
     /**
      * Open the decrypt session to decrypt the given protected content
@@ -80,7 +69,10 @@ public:
      * @return
      *     Handle for the decryption session
      */
-    sp<DecryptHandle> openDecryptSession(const char* uri, const char* mime);
+    sp<DecryptHandle> openDecryptSession(const char* uri, const char* mime)
+    {
+      return NULL;
+    }
 
     /**
      * Open the decrypt session to decrypt the given protected content
@@ -90,7 +82,10 @@ public:
      * @return
      *     Handle for the decryption session
      */
-    sp<DecryptHandle> openDecryptSession(const DrmBuffer& buf, const String8& mimeType);
+    sp<DecryptHandle> openDecryptSession(const DrmBuffer& buf, const String8& mimeType)
+    {
+      return NULL;
+    }
 
     /**
      * Close the decrypt session for the given handle
@@ -99,7 +94,10 @@ public:
      * @return status_t
      *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
      */
-    status_t closeDecryptSession(sp<DecryptHandle> &decryptHandle);
+    status_t closeDecryptSession(sp<DecryptHandle> &decryptHandle)
+    {
+      return DRM_ERROR_CANNOT_HANDLE;
+    }
 
     /**
      * Consumes the rights for a content.
@@ -113,7 +111,10 @@ public:
      *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure.
      *     In case license has been expired, DRM_ERROR_LICENSE_EXPIRED will be returned.
      */
-    status_t consumeRights(sp<DecryptHandle> &decryptHandle, int action, bool reserve);
+    status_t consumeRights(sp<DecryptHandle> &decryptHandle, int action, bool reserve)
+    {
+      return DRM_ERROR_UNKNOWN;
+    }
 
     /**
      * Informs the DRM engine about the playback actions performed on the DRM files.
@@ -126,7 +127,10 @@ public:
      *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
      */
     status_t setPlaybackStatus(
-            sp<DecryptHandle> &decryptHandle, int playbackStatus, int64_t position);
+            sp<DecryptHandle> &decryptHandle, int playbackStatus, int64_t position)
+    {
+      return DRM_ERROR_CANNOT_HANDLE;
+    }
 
     /**
      * Initialize decryption for the given unit of the protected content
@@ -138,7 +142,10 @@ public:
      *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
      */
     status_t initializeDecryptUnit(
-            sp<DecryptHandle> &decryptHandle, int decryptUnitId, const DrmBuffer* headerInfo);
+            sp<DecryptHandle> &decryptHandle, int decryptUnitId, const DrmBuffer* headerInfo)
+    {
+      return DRM_ERROR_CANNOT_HANDLE;
+    }
 
     /**
      * Decrypt the protected content buffers for the given unit
@@ -158,7 +165,10 @@ public:
      */
     status_t decrypt(
             sp<DecryptHandle> &decryptHandle, int decryptUnitId,
-            const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV = NULL);
+            const DrmBuffer* encBuffer, DrmBuffer** decBuffer, DrmBuffer* IV = NULL)
+    {
+      return DRM_ERROR_CANNOT_HANDLE;
+    }
 
     /**
      * Finalize decryption for the given unit of the protected content
@@ -169,7 +179,10 @@ public:
      *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
      */
     status_t finalizeDecryptUnit(
-            sp<DecryptHandle> &decryptHandle, int decryptUnitId);
+            sp<DecryptHandle> &decryptHandle, int decryptUnitId)
+    {
+      return DRM_ERROR_CANNOT_HANDLE;
+    }
 
     /**
      * Reads the specified number of bytes from an open DRM file.
@@ -182,7 +195,10 @@ public:
      * @return Number of bytes read. Returns -1 for Failure.
      */
     ssize_t pread(sp<DecryptHandle> &decryptHandle,
-            void* buffer, ssize_t numBytes, off64_t offset);
+            void* buffer, ssize_t numBytes, off64_t offset)
+    {
+      return DRM_ERROR_CANNOT_HANDLE;
+    }
 
     /**
      * Validates whether an action on the DRM content is allowed or not.
@@ -192,196 +208,11 @@ public:
      * @param[in] description Detailed description of the action
      * @return true if the action is allowed.
      */
-    bool validateAction(const String8& path, int action, const ActionDescription& description);
+    bool validateAction(const String8& path, int action, const ActionDescription& description)
+    {
+      return false;
+    }
 
-/**
- * APIs which are just the underlying implementation for the Java API
- *
- */
-public:
-    /**
-     * Register a callback to be invoked when the caller required to
-     * receive necessary information
-     *
-     * @param[in] infoListener Listener
-     * @return status_t
-     *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
-     */
-    status_t setOnInfoListener(const sp<DrmManagerClient::OnInfoListener>& infoListener);
-
-    /**
-     * Get constraint information associated with input content
-     *
-     * @param[in] path Path of the protected content
-     * @param[in] action Actions defined such as,
-     *             Action::DEFAULT, Action::PLAY, etc
-     * @return DrmConstraints
-     *     key-value pairs of constraint are embedded in it
-     * @note
-     *     In case of error, return NULL
-     */
-    DrmConstraints* getConstraints(const String8* path, const int action);
-
-    /**
-     * Get metadata information associated with input content
-     *
-     * @param[in] path Path of the protected content
-     * @return DrmMetadata
-     *         key-value pairs of metadata
-     * @note
-     *     In case of error, return NULL
-     */
-    DrmMetadata* getMetadata(const String8* path);
-
-    /**
-     * Check whether the given mimetype or path can be handled
-     *
-     * @param[in] path Path of the content needs to be handled
-     * @param[in] mimetype Mimetype of the content needs to be handled
-     * @return
-     *     True if DrmManager can handle given path or mime type.
-     */
-    bool canHandle(const String8& path, const String8& mimeType);
-
-    /**
-     * Executes given drm information based on its type
-     *
-     * @param[in] drmInfo Information needs to be processed
-     * @return DrmInfoStatus
-     *     instance as a result of processing given input
-     */
-    DrmInfoStatus* processDrmInfo(const DrmInfo* drmInfo);
-
-    /**
-     * Retrieves necessary information for registration, unregistration or rights
-     * acquisition information.
-     *
-     * @param[in] drmInfoRequest Request information to retrieve drmInfo
-     * @return DrmInfo
-     *     instance as a result of processing given input
-     */
-    DrmInfo* acquireDrmInfo(const DrmInfoRequest* drmInfoRequest);
-
-    /**
-     * Save DRM rights to specified rights path
-     * and make association with content path
-     *
-     * @param[in] drmRights DrmRights to be saved
-     * @param[in] rightsPath File path where rights to be saved
-     * @param[in] contentPath File path where content was saved
-     * @return status_t
-     *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
-     */
-    status_t saveRights(
-        const DrmRights& drmRights, const String8& rightsPath, const String8& contentPath);
-
-    /**
-     * Retrieves the mime type embedded inside the original content
-     *
-     * @param[in] path the path of the protected content
-     * @param[in] fd the file descriptor of the protected content
-     * @return String8
-     *     Returns mime-type of the original content, such as "video/mpeg"
-     */
-    String8 getOriginalMimeType(const String8& path, int fd);
-
-    /**
-     * Retrieves the type of the protected object (content, rights, etc..)
-     * by using specified path or mimetype. At least one parameter should be non null
-     * to retrieve DRM object type
-     *
-     * @param[in] path Path of the content or null.
-     * @param[in] mimeType Mime type of the content or null.
-     * @return type of the DRM content,
-     *     such as DrmObjectType::CONTENT, DrmObjectType::RIGHTS_OBJECT
-     */
-    int getDrmObjectType(const String8& path, const String8& mimeType);
-
-    /**
-     * Check whether the given content has valid rights or not
-     *
-     * @param[in] path Path of the protected content
-     * @param[in] action Action to perform
-     * @return the status of the rights for the protected content,
-     *     such as RightsStatus::RIGHTS_VALID, RightsStatus::RIGHTS_EXPIRED, etc.
-     */
-    int checkRightsStatus(const String8& path, int action);
-
-    /**
-     * Removes the rights associated with the given protected content
-     *
-     * @param[in] path Path of the protected content
-     * @return status_t
-     *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
-     */
-    status_t removeRights(const String8& path);
-
-    /**
-     * Removes all the rights information of each plug-in associated with
-     * DRM framework. Will be used in master reset
-     *
-     * @return status_t
-     *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
-     */
-    status_t removeAllRights();
-
-    /**
-     * This API is for Forward Lock DRM.
-     * Each time the application tries to download a new DRM file
-     * which needs to be converted, then the application has to
-     * begin with calling this API.
-     *
-     * @param[in] convertId Handle for the convert session
-     * @param[in] mimeType Description/MIME type of the input data packet
-     * @return Return handle for the convert session
-     */
-    int openConvertSession(const String8& mimeType);
-
-    /**
-     * Passes the input data which need to be converted. The resultant
-     * converted data and the status is returned in the DrmConvertedInfo
-     * object. This method will be called each time there are new block
-     * of data received by the application.
-     *
-     * @param[in] convertId Handle for the convert session
-     * @param[in] inputData Input Data which need to be converted
-     * @return Return object contains the status of the data conversion,
-     *     the output converted data and offset. In this case the
-     *     application will ignore the offset information.
-     */
-    DrmConvertedStatus* convertData(int convertId, const DrmBuffer* inputData);
-
-    /**
-     * When there is no more data which need to be converted or when an
-     * error occurs that time the application has to inform the Drm agent
-     * via this API. Upon successful conversion of the complete data,
-     * the agent will inform that where the header and body signature
-     * should be added. This signature appending is needed to integrity
-     * protect the converted file.
-     *
-     * @param[in] convertId Handle for the convert session
-     * @return Return object contains the status of the data conversion,
-     *     the header and body signature data. It also informs
-     *     the application on which offset these signature data
-     *     should be appended.
-     */
-    DrmConvertedStatus* closeConvertSession(int convertId);
-
-    /**
-     * Retrieves all DrmSupportInfo instance that native DRM framework can handle.
-     * This interface is meant to be used by JNI layer
-     *
-     * @param[out] length Number of elements in drmSupportInfoArray
-     * @param[out] drmSupportInfoArray Array contains all DrmSupportInfo
-     *     that native DRM framework can handle
-     * @return status_t
-     *     Returns DRM_NO_ERROR for success, DRM_ERROR_UNKNOWN for failure
-     */
-    status_t getAllSupportInfo(int* length, DrmSupportInfo** drmSupportInfoArray);
-
-private:
-    int mUniqueId;
-    sp<DrmManagerClientImpl> mDrmManagerClientImpl;
 };
 
 };
