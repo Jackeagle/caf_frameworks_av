@@ -2346,7 +2346,7 @@ void AwesomePlayer::onVideoEvent() {
 
     if (mAudioPlayer != NULL && !(mFlags & (AUDIO_RUNNING | SEEK_PREVIEW))) {
         status_t err = startAudioPlayer_l(false /* sendErrorNotification */);
-        if ((err != OK) && mOffloadAudio) {
+        if ((err != OK) && (mOffloadAudio || mIsTunnelAudio)) {
             err = fallbackToSWDecoder();
         }
 
