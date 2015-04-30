@@ -759,6 +759,11 @@ void LiveSession::onConnect(const sp<AMessage> &msg) {
         }
     }
 
+    if (ExtendedUtils::DiscoverProxy::isProxySet(mExtraHeaders)) {
+        ALOGI("setBandwidthHistorySize to 10 for proxy");
+        mHTTPDataSource->setBandwidthHistorySize(10);
+    }
+
     // TODO currently we don't know if we are coming here from incognito mode
     ALOGI("onConnect %s", uriDebugString(url).c_str());
 
@@ -1388,6 +1393,26 @@ bool LiveSession::canSwitchUp() {
     return false;
 }
 
+bool LiveSession::canSwitchDown() {
+    for (size_t i = 0; i < kMaxStreams; ++i) {
+        int32_t targetDuration;
+        sp<AnotherPacketSource> packetSource = mPacketSources.valueFor(indexToType(i));
+        sp<AMessage> meta = packetSource->getLatestDequeuedMeta();
+        if (meta != NULL && meta->findInt32("targetDuration", &targetDuration) ) {
+            int64_t bufferedDurationUs = packetSource->getEstimatedDurationUs();
+            int64_t targetDurationUs = targetDuration * 1000000ll;
+            if (bufferedDurationUs < targetDurationUs / 3) {
+                ALOGI("fast switchdown stream %lu, actdur %5.2f, min expect %5.2f",
+                         i, bufferedDurationUs / 1000000.0f,
+                         (targetDurationUs / 3)/1000000.0f);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 void LiveSession::changeConfiguration(
         int64_t timeUs, size_t bandwidthIndex, bool pickTrack) {
     // Protect mPacketSources from a swapPacketSource race condition through reconfiguration.
@@ -1878,6 +1903,7 @@ void LiveSession::onCheckSwitchDown() {
         return;
     }
 
+    bool downswitchtriggered = false;
     for (size_t i = 0; i < kMaxStreams; ++i) {
         int32_t targetDuration;
         sp<AnotherPacketSource> packetSource = mPacketSources.valueFor(indexToType(i));
@@ -1889,12 +1915,49 @@ void LiveSession::onCheckSwitchDown() {
 
             if (bufferedDurationUs < targetDurationUs / 3) {
                 (new AMessage(kWhatSwitchDown, id()))->post();
+                ALOGI("fast switched down");
+                downswitchtriggered = true;
                 break;
             }
         }
     }
 
+    if (ExtendedUtils::DiscoverProxy::isProxySet(mExtraHeaders)) {
+        // check for upswitch to avoid slow up switch. check and do
+        // up switch in 1 sec timer instead waiting for 10 seconds timer.
+        // With STA based acceleration, segments downloads fast.
+        // so its better to up switch to play better resolution.
+        tryUpSwitch(downswitchtriggered);
+    }
+
     mSwitchDownMonitor->post(1000000ll);
+}
+
+void LiveSession::tryUpSwitch(bool isDownSwitced) {
+    if (!isDownSwitced && (!mReconfigurationInProgress && !mSwitchInProgress) &&
+        (mCurBandwidthIndex < (ssize_t)(mBandwidthItems.size() - 1)) && canSwitchUp()) {
+        if (mHLSExtStats != NULL)  {
+            mHLSExtStats->addNewStatItem(ALooper::GetNowUs());
+        }
+
+       size_t bandwidthIndex = getBandwidthIndex();
+       if ((ssize_t)bandwidthIndex > mCurBandwidthIndex) {
+           ALOGI("fast switched up");
+           if (mFetchInProgress) {
+              // Delay switch-up requests until the current segment completes so
+              // that we do not discard downloaded data or fetch duplicate data.
+              mSwitchUpRequested = true;
+           } else {
+              if (mHLSExtStats != NULL)  {
+                  mHLSExtStats->updateBWStatItem(
+                          mBandwidthItems.itemAt(bandwidthIndex).mBandwidth,
+                          (((ssize_t)bandwidthIndex > mCurBandwidthIndex) ?
+                                   kSwitchUp : kSwitchDown));
+              }
+              changeConfiguration(-1ll /* timeUs */, bandwidthIndex);
+           }
+        }
+    }
 }
 
 void LiveSession::onSwitchDown() {
@@ -1912,6 +1975,7 @@ void LiveSession::onSwitchDown() {
             mHLSExtStats->updateBWStatItem(mBandwidthItems.itemAt(bandwidthIndex).mBandwidth, kSwitchDown);
         }
 
+        ALOGI("fast switched down happened");
         changeConfiguration(-1, bandwidthIndex, false);
         return;
     }
@@ -1996,6 +2060,10 @@ bool LiveSession::canSwitchBandwidthTo(size_t bandwidthIndex) {
     } else if (bandwidthIndex > (size_t)mCurBandwidthIndex) {
         return canSwitchUp();
     } else {
+        if (ExtendedUtils::DiscoverProxy::isProxySet(mExtraHeaders)) {
+            return canSwitchDown();
+        }
+
         return true;
     }
 }

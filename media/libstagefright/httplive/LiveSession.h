@@ -305,6 +305,8 @@ private:
 
     void swapPacketSource(StreamType stream);
     bool canSwitchUp();
+    bool canSwitchDown();
+    void tryUpSwitch(bool val);
     status_t checkProxyAvail();
 
     DISALLOW_EVIL_CONSTRUCTORS(LiveSession);
