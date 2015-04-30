@@ -274,6 +274,9 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
 
 void AudioPlayer::pause(bool playPendingSamples) {
     CHECK(mStarted);
+    mLock.lock();
+    mPlaying = false;
+    mLock.unlock();
     if (playPendingSamples) {
         if (mAudioSink.get() != NULL) {
             mAudioSink->stop();
@@ -293,7 +296,6 @@ void AudioPlayer::pause(bool playPendingSamples) {
         mPinnedTimeUs = ALooper::GetNowUs();
     }
 
-    mPlaying = false;
     CHECK(mSource != NULL);
     if (mPauseRequired) {
         if (mSource->pause() == OK) {
@@ -733,7 +735,8 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
             mPinnedTimeUs = mNumFramesPlayedSysTimeUs;
         } else {
             mNumFramesPlayedSysTimeUs = ALooper::GetNowUs();
-            mPinnedTimeUs = -1ll;
+            if(mStarted == true && mPlaying != false && mPinnedTimeUs != -1)
+               mPinnedTimeUs = -1ll;
         }
     }
 
