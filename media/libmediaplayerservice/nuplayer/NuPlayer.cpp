@@ -628,6 +628,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+            if ((ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24))) {
+                ALOGI("Override meta to indicate to source we are waiting for sink");
+                ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_INVALID);
+            }
             mSource->start();
 
             uint32_t flags = 0;
