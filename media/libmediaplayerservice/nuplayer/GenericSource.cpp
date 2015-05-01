@@ -57,7 +57,9 @@ NuPlayer::GenericSource::GenericSource(
       mMetaDataSize(-1ll),
       mBitrate(-1ll),
       mPollBufferingGeneration(0),
-      mPendingReadBufferTypes(0) {
+      mPendingReadBufferTypes(0),
+      mCacheSeekTimeUs(0),
+      mStartCacheSeekTime(false) {
     resetDataSource();
     DataSource::RegisterDefaultSniffers();
 }
@@ -77,6 +79,8 @@ void NuPlayer::GenericSource::resetDataSource() {
     mDrmManagerClient = NULL;
     mStarted = false;
     mStopRead = true;
+    mCacheSeekTimeUs = 0;
+    mStartCacheSeekTime = false;
 }
 
 status_t NuPlayer::GenericSource::setDataSource(
@@ -460,24 +464,42 @@ void NuPlayer::GenericSource::start() {
     mStopRead = false;
     if (mAudioTrack.mSource != NULL) {
         sp<MetaData> audioMeta = mAudioTrack.mSource->getFormat();
-        if (ExtendedUtils::isRAWFormat(audioMeta) &&
-            ExtendedUtils::is24bitPCMOffloadEnabled() &&
-            (ExtendedUtils::getPCMFormat(audioMeta) == AUDIO_FORMAT_PCM_8_24_BIT)) {
-            /*call start with kKeyPCMFormat set to 24bit when:
-            * 1. is raw pcm format
-            * 2. 24bit pcm offload feature is enabled
-            * 3. kKeyPCMFormat is set to 24bit
-            * default format (16bit) will be used in WAVExtractor if:
-            * 1. kKeyPCMFormat is not set
-            * 2. kKeyPCMFormat is not set to 24bit
-            */
-            ALOGI("Retrieving 24 bit data from source");
-            CHECK_EQ(mAudioTrack.mSource->start(audioMeta.get()), (status_t)OK);
+        if (ExtendedUtils::is24bitPCMOffloadEnabled()){
+            if (ExtendedUtils::getPCMFormat(audioMeta) == AUDIO_FORMAT_INVALID) {
+                ALOGI("Ignore start for 24 bit content till sink is opened");
+                mStartCacheSeekTime = true;
+            } else if (ExtendedUtils::getPCMFormat(audioMeta) == AUDIO_FORMAT_PCM_8_24_BIT) {
+                /*call start with kKeyPCMFormat set to 24bit when:
+                * 1. is raw pcm format
+                * 2. 24bit pcm offload feature is enabled
+                * 3. kKeyPCMFormat is set to 24bit
+                * default format (16bit) will be used in WAVExtractor if:
+                * 1. kKeyPCMFormat is not set
+                * 2. kKeyPCMFormat is not set to 24bit
+                */
+                ALOGI("Retrieving 24 bit data from source");
+                CHECK_EQ(mAudioTrack.mSource->start(audioMeta.get()), (status_t)OK);
+                if (mStartCacheSeekTime) {
+                    readBuffer(MEDIA_TRACK_TYPE_AUDIO, mCacheSeekTimeUs);
+                    mStartCacheSeekTime = false;
+                    mCacheSeekTimeUs = 0;
+                }
+               postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
+           } else {
+                ALOGI("Retrieving data as usual from source");
+                CHECK_EQ(mAudioTrack.mSource->start(), (status_t)OK);
+                if (mStartCacheSeekTime) {
+                    readBuffer(MEDIA_TRACK_TYPE_AUDIO, mCacheSeekTimeUs);
+                    mStartCacheSeekTime = false;
+                    mCacheSeekTimeUs = 0;
+                }
+                postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
+            }
         } else {
             CHECK_EQ(mAudioTrack.mSource->start(), (status_t)OK);
+            postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
         }
 
-        postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
     }
 
     if (mVideoTrack.mSource != NULL) {
@@ -1154,7 +1176,12 @@ status_t NuPlayer::GenericSource::doSeek(int64_t seekTimeUs) {
     }
 
     if (mAudioTrack.mSource != NULL) {
-        readBuffer(MEDIA_TRACK_TYPE_AUDIO, seekTimeUs);
+        if (mStartCacheSeekTime) {
+            //Cache the seek time, do not seek as the sink info is not retrieved
+            mCacheSeekTimeUs = seekTimeUs;
+        } else {
+            readBuffer(MEDIA_TRACK_TYPE_AUDIO, seekTimeUs);
+        }
     }
 
     setDrmPlaybackStatusIfNeeded(Playback::START, seekTimeUs / 1000);

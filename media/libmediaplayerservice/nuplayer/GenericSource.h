@@ -142,6 +142,11 @@ private:
     uint32_t mPendingReadBufferTypes;
     mutable Mutex mReadBufferLock;
 
+    //for caching seek time in case source cannot be seeked
+    //while waiting for sink to be opened
+    bool mStartCacheSeekTime;
+    int64_t mCacheSeekTimeUs;
+
     sp<ALooper> mLooper;
 
     void resetDataSource();
