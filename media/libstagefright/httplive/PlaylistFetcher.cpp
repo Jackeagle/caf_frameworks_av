@@ -49,6 +49,7 @@ namespace android {
 
 // static
 const int64_t PlaylistFetcher::kMinBufferedDurationUs = 10000000ll;
+const int64_t PlaylistFetcher::kSegmentCorrectionUs = 100000ll;
 const int64_t PlaylistFetcher::kMaxMonitorDelayUs = 3000000ll;
 // LCM of 188 (size of a TS packet) & 1k works well
 const int32_t PlaylistFetcher::kDownloadBlockSize = 47 * 1024;
@@ -710,7 +711,7 @@ void PlaylistFetcher::onMonitorQueue() {
     downloadMore = (bufferedDurationUs < durationToBufferUs);
 
     // signal start if buffered up at least the target size
-    if (!mPrepared && bufferedDurationUs > targetDurationUs && downloadMore) {
+    if (!mPrepared && bufferedDurationUs > (targetDurationUs - kSegmentCorrectionUs) && downloadMore) {
         mPrepared = true;
 
         ALOGV("prepared, buffered=%" PRId64 " > %" PRId64 "",

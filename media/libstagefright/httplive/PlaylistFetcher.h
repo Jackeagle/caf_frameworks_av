@@ -34,6 +34,7 @@ struct String8;
 
 struct PlaylistFetcher : public AHandler {
     static const int64_t kMinBufferedDurationUs;
+    static const int64_t kSegmentCorrectionUs;
     static const int32_t kDownloadBlockSize;
 
     enum {
