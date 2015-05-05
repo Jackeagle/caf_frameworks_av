@@ -2001,12 +2001,12 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
                 case AUDIO_SOURCE_VOICE_COMMUNICATION:
                     if(prop_voip_enabled) {
                        ALOGD("BLOCKING VoIP request during incall mode for inputSource: %d ",inputSource);
-                       return 0;
+                       return NO_INIT;
                     }
                 break;
                 default:
                     ALOGD("BLOCKING input during incall mode for inputSource: %d ",inputSource);
-                return 0;
+                return NO_INIT;
             }
         }
     }//check for VoIP flag
@@ -2020,7 +2020,7 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
         {
             if(inputSource == AUDIO_SOURCE_VOICE_COMMUNICATION) {
                 ALOGD("BLOCKING VoIP request during incall mode for inputSource: %d ",inputSource);
-                return 0;
+                return NO_INIT;
             }
         }
     }
@@ -6751,6 +6751,12 @@ void AudioPolicyManager::handleIncallSonification(audio_stream_type_t stream,
     // interfere with the device used for phone strategy
     // if stateChange is true, we are called from setPhoneState() and we must mute or unmute as
     // many times as there are active tracks on the output
+
+    // no action needed for AUDIO_STREAM_PATCH stream type, it's for internal flinger tracks
+    if (stream == AUDIO_STREAM_PATCH) {
+        return;
+    }
+
     const routing_strategy stream_strategy = getStrategy(stream);
     if ((stream_strategy == STRATEGY_SONIFICATION) ||
             ((stream_strategy == STRATEGY_SONIFICATION_RESPECTFUL))) {
@@ -8534,10 +8540,14 @@ AudioPolicyManager::DeviceVector AudioPolicyManager::DeviceVector::getDevicesFro
                                                                         audio_devices_t type) const
 {
     DeviceVector devices;
+    bool isOutput = audio_is_output_devices(type);
+    type &= ~AUDIO_DEVICE_BIT_IN;
     for (size_t i = 0; (i < size()) && (type != AUDIO_DEVICE_NONE); i++) {
-        if (itemAt(i)->mDeviceType & type & ~AUDIO_DEVICE_BIT_IN) {
+        bool curIsOutput = audio_is_output_devices(itemAt(i)->mDeviceType);
+        audio_devices_t curType = itemAt(i)->mDeviceType & ~AUDIO_DEVICE_BIT_IN;
+        if ((isOutput == curIsOutput) && ((type & curType) != 0)) {
             devices.add(itemAt(i));
-            type &= ~itemAt(i)->mDeviceType;
+            type &= ~curType;
             ALOGV("DeviceVector::getDevicesFromType() for type %x found %p",
                   itemAt(i)->mDeviceType, itemAt(i).get());
         }
