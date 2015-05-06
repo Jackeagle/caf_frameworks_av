@@ -466,7 +466,7 @@ status_t AudioTrack::set(
                 char propValue[PROPERTY_VALUE_MAX] = {0};
                 property_get("use.voice.path.for.pcm.voip", propValue, "0");
                 bool voipPcmSysPropEnabled = !strncmp("true", propValue, sizeof("true"));
-                if (voipPcmSysPropEnabled) {
+                if (voipPcmSysPropEnabled && (format == AUDIO_FORMAT_PCM_16_BIT)) {
                     flags = (audio_output_flags_t)((flags &~AUDIO_OUTPUT_FLAG_FAST) |
                                 AUDIO_OUTPUT_FLAG_VOIP_RX | AUDIO_OUTPUT_FLAG_DIRECT);
                     ALOGD("Set VoIP and Direct output flags for PCM format");
@@ -603,6 +603,12 @@ status_t AudioTrack::start()
         // force refresh of remaining frames by processAudioBuffer() as last
         // write before stop could be partial.
         mRefreshRemaining = true;
+
+        // for static track, clear the old flags when start from stopped state
+        if (mSharedBuffer != 0)
+            android_atomic_and(
+                    ~(CBLK_LOOP_CYCLE | CBLK_LOOP_FINAL | CBLK_BUFFER_END),
+                    &mCblk->mFlags);
     }
     mNewPosition = mPosition + mUpdatePeriod;
     int32_t flags = android_atomic_and(~CBLK_DISABLED, &mCblk->mFlags);
