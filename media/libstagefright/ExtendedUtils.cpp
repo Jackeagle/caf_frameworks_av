@@ -2183,6 +2183,11 @@ bool ExtendedUtils::RTSPStream::pokeAHole_V6(int rtpSocket, int rtcpSocket,
     return true;
 }
 
+void ExtendedUtils::RTSPStream::notifyBye(const sp<AMessage> &msg, const int32_t what) {
+    msg->setInt32("what", what);
+    msg->post();
+}
+
 bool ExtendedUtils::RTSPStream::GetAttribute(const char *s, const char *key, AString *value) {
     value->clear();
 
@@ -3466,6 +3471,8 @@ bool ExtendedUtils::RTSPStream::pokeAHole_V6(int rtpSocket, int rtcpSocket,
         const AString &transport, AString &sessionHost) {
     return false;
 }
+
+void ExtendedUtils::RTSPStream::notifyBye(const sp<AMessage> &msg, const int32_t what) {}
 
 void ExtendedUtils::RTSPStream::bumpSocketBufferSize_V6(int s) {}
 

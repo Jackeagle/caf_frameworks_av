@@ -58,6 +58,7 @@ struct NuPlayer::Source : public AHandler {
         kWhatDrmNoLicense,
         kWhatShowImage,
         kWhatInstantiateSecureDecoders,
+        kWhatRTCPByeReceived,
     };
 
     // The provides message is used to notify the player about various
