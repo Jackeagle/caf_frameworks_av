@@ -59,7 +59,6 @@ LOCAL_SRC_FILES:=                         \
         VBRISeeker.cpp                    \
         WAVExtractor.cpp                  \
         WAVEWriter.cpp                    \
-        WVMExtractor.cpp                  \
         XINGSeeker.cpp                    \
         avc_utils.cpp                     \
         ExtendedExtractor.cpp             \
