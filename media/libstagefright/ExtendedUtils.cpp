@@ -1262,6 +1262,17 @@ sp<MediaExtractor> ExtendedUtils::MediaExtractor_CreateIfNeeded(sp<MediaExtracto
     bool hevcVideo               = false;
     int  numOfTrack              = 0;
 
+    bool ismpeg4 =
+        !strncasecmp(mime, MEDIA_MIMETYPE_CONTAINER_QCMPEG4,
+            strlen(MEDIA_MIMETYPE_CONTAINER_QCMPEG4)) ||
+        !strncasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4,
+            strlen(MEDIA_MIMETYPE_CONTAINER_MPEG4));
+
+    if (ismpeg4) {
+        ALOGI("Skipping mm-parser creation for %s", mime);
+        return defaultExt;
+    }
+
     if (defaultExt != NULL) {
         for (size_t trackItt = 0; trackItt < defaultExt->countTracks(); ++trackItt) {
             ++numOfTrack;
