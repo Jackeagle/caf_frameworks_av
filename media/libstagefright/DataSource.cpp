@@ -31,7 +31,6 @@
 #include "include/NuCachedSource2.h"
 #include "include/OggExtractor.h"
 #include "include/WAVExtractor.h"
-#include "include/WVMExtractor.h"
 
 #include "matroska/MatroskaExtractor.h"
 
@@ -174,7 +173,6 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer_l(SniffMP3);
     RegisterSniffer_l(SniffAAC);
     RegisterSniffer_l(SniffMPEG2PS);
-    RegisterSniffer_l(SniffWVM);
     RegisterSniffer_l(SniffMidi);
     RegisterSniffer_l(AVUtils::get()->getExtendedSniffer());
 

@@ -138,44 +138,14 @@ sp<MetaData> NuPlayer::GenericSource::getFileFormatMeta() const {
 
 status_t NuPlayer::GenericSource::initFromDataSource() {
     sp<MediaExtractor> extractor;
-    String8 mimeType;
-    float confidence;
-    sp<AMessage> dummy;
-    bool isWidevineStreaming = false;
 
     CHECK(mDataSource != NULL);
 
-    if (mIsWidevine) {
-        isWidevineStreaming = SniffWVM(
-                mDataSource, &mimeType, &confidence, &dummy);
-        if (!isWidevineStreaming ||
-                strcasecmp(
-                    mimeType.string(), MEDIA_MIMETYPE_CONTAINER_WVM)) {
-            ALOGE("unsupported widevine mime: %s", mimeType.string());
-            return UNKNOWN_ERROR;
-        }
-    } else if (mIsStreaming) {
-        if (!mDataSource->sniff(&mimeType, &confidence, &dummy)) {
-            return UNKNOWN_ERROR;
-        }
-        isWidevineStreaming = !strcasecmp(
-                mimeType.string(), MEDIA_MIMETYPE_CONTAINER_WVM);
-    }
-
-    if (isWidevineStreaming) {
-        // we don't want cached source for widevine streaming.
-        mCachedSource.clear();
-        mDataSource = mHttpSource;
-        mWVMExtractor = new WVMExtractor(mDataSource);
-        mWVMExtractor->setAdaptiveStreamingMode(true);
-        if (mUIDValid) {
-            mWVMExtractor->setUID(mUID);
-        }
-        extractor = mWVMExtractor;
+    if (mIsWidevine || mIsStreaming) {
+        return UNKNOWN_ERROR;
     } else {
         extractor = MediaExtractor::Create(mDataSource,
-                mimeType.isEmpty() ? NULL : mimeType.string(),
-                mIsStreaming ? 0 : AVNuUtils::get()->getFlags());
+                NULL, mIsStreaming ? 0 : AVNuUtils::get()->getFlags());
     }
 
     if (extractor == NULL) {
@@ -191,17 +161,6 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
         int64_t duration;
         if (mFileMeta->findInt64(kKeyDuration, &duration)) {
             mDurationUs = duration;
-        }
-
-        if (!mIsWidevine) {
-            // Check mime to see if we actually have a widevine source.
-            // If the data source is not URL-type (eg. file source), we
-            // won't be able to tell until now.
-            const char *fileMime;
-            if (mFileMeta->findCString(kKeyMIMEType, &fileMime)
-                    && !strncasecmp(fileMime, "video/wvm", 9)) {
-                mIsWidevine = true;
-            }
         }
     }
 
@@ -656,9 +615,7 @@ void NuPlayer::GenericSource::sendCacheStats() {
     int32_t kbps = 0;
     status_t err = UNKNOWN_ERROR;
 
-    if (mWVMExtractor != NULL) {
-        err = mWVMExtractor->getEstimatedBandwidthKbps(&kbps);
-    } else if (mCachedSource != NULL) {
+    if (mCachedSource != NULL) {
         err = mCachedSource->getEstimatedBandwidthKbps(&kbps);
     }
 
@@ -681,13 +638,9 @@ void NuPlayer::GenericSource::onPollBuffering() {
     int64_t cachedDurationUs = -1ll;
     ssize_t cachedDataRemaining = -1;
 
-    ALOGW_IF(mWVMExtractor != NULL && mCachedSource != NULL,
-            "WVMExtractor and NuCachedSource both present");
+    ALOGW_IF(mCachedSource != NULL, "NuCachedSource present");
 
-    if (mWVMExtractor != NULL) {
-        cachedDurationUs =
-                mWVMExtractor->getCachedDurationUs(&finalStatus);
-    } else if (mCachedSource != NULL) {
+    if (mCachedSource != NULL) {
         cachedDataRemaining =
                 mCachedSource->approxDataRemaining(&finalStatus);
 

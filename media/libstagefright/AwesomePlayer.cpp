@@ -499,11 +499,7 @@ status_t AwesomePlayer::setDataSource_l(const sp<MediaExtractor> &extractor) {
     }
 
     if (!haveAudio && !haveVideo) {
-        if (mWVMExtractor != NULL) {
-            return mWVMExtractor->getError();
-        } else {
             return UNKNOWN_ERROR;
-        }
     }
 
     mExtractorFlags = extractor->flags();
@@ -678,11 +674,6 @@ bool AwesomePlayer::getCachedDuration_l(int64_t *durationUs, bool *eos) {
         *durationUs = cachedDataRemaining * 8000000ll / bitrate;
         *eos = (finalStatus != OK);
         return true;
-    } else if (mWVMExtractor != NULL) {
-        status_t finalStatus;
-        *durationUs = mWVMExtractor->getCachedDurationUs(&finalStatus);
-        *eos = (finalStatus != OK);
-        return true;
     }
 
     return false;
@@ -773,30 +764,6 @@ void AwesomePlayer::onBufferingUpdate() {
                 }
             }
         }
-    } else if (mWVMExtractor != NULL) {
-        status_t finalStatus;
-
-        int64_t cachedDurationUs
-            = mWVMExtractor->getCachedDurationUs(&finalStatus);
-
-        bool eos = (finalStatus != OK);
-
-        if (eos) {
-            if (finalStatus == ERROR_END_OF_STREAM) {
-                notifyListener_l(MEDIA_BUFFERING_UPDATE, 100);
-            }
-            if (mFlags & PREPARING) {
-                ALOGV("cache has reached EOS, prepare is done.");
-                finishAsyncPrepare_l();
-            }
-        } else {
-            int percentage = 100.0 * (double)cachedDurationUs / mDurationUs;
-            if (percentage > 100) {
-                percentage = 100;
-            }
-
-            notifyListener_l(MEDIA_BUFFERING_UPDATE, percentage);
-        }
     }
 
     int64_t cachedDurationUs;
@@ -840,8 +807,6 @@ void AwesomePlayer::sendCacheStats() {
         status_t err = UNKNOWN_ERROR;
         if (mCachedSource != NULL) {
             err = mCachedSource->getEstimatedBandwidthKbps(&kbps);
-        } else if (mWVMExtractor != NULL) {
-            err = mWVMExtractor->getEstimatedBandwidthKbps(&kbps);
         }
         if (err == OK) {
             listener->sendEvent(
@@ -2394,28 +2359,7 @@ status_t AwesomePlayer::finishSetDataSource_l() {
     sp<MediaExtractor> extractor;
 
     if (isWidevineStreaming) {
-        String8 mimeType;
-        float confidence;
-        sp<AMessage> dummy;
-        bool success;
-
-        // SniffWVM is potentially blocking since it may require network access.
-        // Do not call it with mLock held.
-        mLock.unlock();
-        success = SniffWVM(dataSource, &mimeType, &confidence, &dummy);
-        mLock.lock();
-
-        if (!success
-                || strcasecmp(
-                    mimeType.string(), MEDIA_MIMETYPE_CONTAINER_WVM)) {
-            return ERROR_UNSUPPORTED;
-        }
-
-        mWVMExtractor = new WVMExtractor(dataSource);
-        mWVMExtractor->setAdaptiveStreamingMode(true);
-        if (mUIDValid)
-            mWVMExtractor->setUID(mUID);
-        extractor = mWVMExtractor;
+        return ERROR_UNSUPPORTED;
     } else {
         extractor = MediaExtractor::Create(
                 dataSource, sniffedMIME.empty() ? NULL : sniffedMIME.c_str());

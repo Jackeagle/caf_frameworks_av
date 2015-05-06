@@ -76,22 +76,7 @@ status_t NuMediaExtractor::setDataSource(
 
     mIsWidevineExtractor = false;
     if (!strncasecmp("widevine://", path, 11)) {
-        String8 mimeType;
-        float confidence;
-        sp<AMessage> dummy;
-        bool success = SniffWVM(dataSource, &mimeType, &confidence, &dummy);
-
-        if (!success
-                || strcasecmp(
-                    mimeType.string(), MEDIA_MIMETYPE_CONTAINER_WVM)) {
-            return ERROR_UNSUPPORTED;
-        }
-
-        sp<WVMExtractor> extractor = new WVMExtractor(dataSource);
-        extractor->setAdaptiveStreamingMode(true);
-
-        mImpl = extractor;
-        mIsWidevineExtractor = true;
+        return ERROR_UNSUPPORTED;
     } else {
         mImpl = MediaExtractor::Create(dataSource);
     }
@@ -105,13 +90,7 @@ status_t NuMediaExtractor::setDataSource(
     if (fileMeta != NULL
             && fileMeta->findCString(kKeyMIMEType, &containerMime)
             && !strcasecmp(containerMime, "video/wvm")) {
-        // We always want to use "cryptoPluginMode" when using the wvm
-        // extractor. We can tell that it is this extractor by looking
-        // at the container mime type.
-        // The cryptoPluginMode ensures that the extractor will actually
-        // give us data in a call to MediaSource::read(), unlike its
-        // default mode that we use from AwesomePlayer.
-        static_cast<WVMExtractor *>(mImpl.get())->setCryptoPluginMode(true);
+        return ERROR_UNSUPPORTED;
     } else if (mImpl->getDrmFlag()) {
         // For all other drm content, we don't want to expose decrypted
         // content to Java application.
@@ -557,13 +536,7 @@ bool NuMediaExtractor::getCachedDuration(
 
     int64_t bitrate;
     if (mIsWidevineExtractor) {
-        sp<WVMExtractor> wvmExtractor =
-            static_cast<WVMExtractor *>(mImpl.get());
-
-        status_t finalStatus;
-        *durationUs = wvmExtractor->getCachedDurationUs(&finalStatus);
-        *eos = (finalStatus != OK);
-        return true;
+        return false;
     } else if ((mDataSource->flags() & DataSource::kIsCachingDataSource)
             && getTotalBitrate(&bitrate)) {
         sp<NuCachedSource2> cachedSource =
