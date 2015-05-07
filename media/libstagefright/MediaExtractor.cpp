@@ -41,6 +41,8 @@
 
 #include "include/ExtendedUtils.h"
 
+#include <QCMediaDefs.h>
+
 namespace android {
 
 sp<MetaData> MediaExtractor::getMetaData() {
@@ -94,6 +96,7 @@ sp<MediaExtractor> MediaExtractor::Create(
 
     MediaExtractor *ret = NULL;
     if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
+            || !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_QCMPEG4)
             || !strcasecmp(mime, "audio/mp4")) {
         ret = new MPEG4Extractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
