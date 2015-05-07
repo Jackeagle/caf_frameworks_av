@@ -29,7 +29,6 @@
 #include "include/NuCachedSource2.h"
 #include "include/OggExtractor.h"
 #include "include/WAVExtractor.h"
-#include "include/WVMExtractor.h"
 #include "include/ExtendedExtractor.h"
 
 #include "matroska/MatroskaExtractor.h"
@@ -197,7 +196,6 @@ void Sniffer::registerDefaultSniffers() {
     registerSniffer_l(SniffMP3);
     registerSniffer_l(SniffAAC);
     registerSniffer_l(SniffMPEG2PS);
-    registerSniffer_l(SniffWVM);
     registerSniffer_l(ExtendedExtractor::Sniff);
 
     char value[PROPERTY_VALUE_MAX];

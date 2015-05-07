@@ -157,25 +157,7 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
     CHECK(mDataSource != NULL);
 
     if (mIsWidevine) {
-        String8 mimeType;
-        float confidence;
-        sp<AMessage> dummy;
-        bool success;
-
-        success = SniffWVM(mDataSource, &mimeType, &confidence, &dummy);
-        if (!success
-                || strcasecmp(
-                    mimeType.string(), MEDIA_MIMETYPE_CONTAINER_WVM)) {
-            ALOGE("unsupported widevine mime: %s", mimeType.string());
-            return UNKNOWN_ERROR;
-        }
-
-        mWVMExtractor = new WVMExtractor(mDataSource);
-        mWVMExtractor->setAdaptiveStreamingMode(true);
-        if (mUIDValid) {
-            mWVMExtractor->setUID(mUID);
-        }
-        extractor = mWVMExtractor;
+        return UNKNOWN_ERROR;
     } else {
         extractor = MediaExtractor::Create(mDataSource,
                 mSniffedMIME.empty() ? NULL: mSniffedMIME.c_str());
@@ -194,25 +176,6 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
         int64_t duration;
         if (mFileMeta->findInt64(kKeyDuration, &duration)) {
             mDurationUs = duration;
-        }
-
-        if (!mIsWidevine) {
-            // Check mime to see if we actually have a widevine source.
-            // If the data source is not URL-type (eg. file source), we
-            // won't be able to tell until now.
-            const char *fileMime;
-            if (mFileMeta->findCString(kKeyMIMEType, &fileMime)
-                    && !strncasecmp(fileMime, "video/wvm", 9)) {
-                mIsWidevine = true;
-                if (!mUri.empty()) {
-                  // streaming, but the app forgot to specify widevine:// url
-                  mWVMExtractor = static_cast<WVMExtractor *>(extractor.get());
-                  mWVMExtractor->setAdaptiveStreamingMode(true);
-                  if (mUIDValid) {
-                    mWVMExtractor->setUID(mUID);
-                  }
-                }
-            }
         }
     }
 
@@ -803,8 +766,6 @@ void NuPlayer::GenericSource::sendCacheStats() {
 
     if (mCachedSource != NULL) {
         err = mCachedSource->getEstimatedBandwidthKbps(&kbps);
-    } else if (mWVMExtractor != NULL) {
-        err = mWVMExtractor->getEstimatedBandwidthKbps(&kbps);
     }
 
     if (err == OK) {
@@ -842,9 +803,6 @@ void NuPlayer::GenericSource::onPollBuffering() {
                 cachedDurationUs = cachedDataRemaining * 8000000ll / bitrate;
             }
         }
-    } else if (mWVMExtractor != NULL) {
-        cachedDurationUs
-            = mWVMExtractor->getCachedDurationUs(&finalStatus);
     }
 
     if (finalStatus != OK) {
