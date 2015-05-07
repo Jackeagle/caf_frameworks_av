@@ -32,6 +32,9 @@
 #include <gui/Surface.h>
 #include <utils/String8.h>
 #include <cutils/properties.h>
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include <OMX_QCOMExtns.h>
+#endif
 #include "include/ExtendedUtils.h"
 
 #if LOG_NDEBUG
@@ -126,7 +129,11 @@ static int32_t getColorFormat(const char* colorFormat) {
     if (!strcmp(colorFormat, CameraParameters::PIXEL_FORMAT_ANDROID_OPAQUE)) {
         return OMX_COLOR_FormatAndroidOpaque;
     }
-
+#ifdef ENABLE_AV_ENHANCEMENTS
+    if (!strcmp(colorFormat, "YVU420SemiPlanar")) {
+        return QOMX_COLOR_FormatYVU420SemiPlanar;
+    }
+#endif
     ALOGE("Uknown color format (%s), please add it to "
          "CameraSource::getColorFormat", colorFormat);
 
