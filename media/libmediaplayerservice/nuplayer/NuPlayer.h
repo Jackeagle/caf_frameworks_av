@@ -200,6 +200,7 @@ private:
     bool mStarted;
     bool mBuffering;
     bool mPlaying;
+    bool mPausedByClient;
 
     inline const sp<Decoder> &getDecoder(bool audio) {
         return audio ? mAudioDecoder : mVideoDecoder;
