@@ -114,6 +114,10 @@ struct NuPlayer::Source : public AHandler {
         return false;
     }
 
+    virtual bool setSeekDoneNotify(const sp<AMessage> &notify) {
+        return false;
+    }
+
     virtual int64_t getServerTimeoutUs();
 
     virtual status_t suspend() {

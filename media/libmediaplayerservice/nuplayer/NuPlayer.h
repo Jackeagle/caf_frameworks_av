@@ -136,6 +136,7 @@ private:
         kWhatSelectTrack                = 'selT',
         kWhatSuspend                    = 'susp',
         kWhatResumeFromSuspended        = 'refs',
+        kWhatSeekDone                   = 'sekd',
     };
     sp<PlayerExtendedStats> mPlayerExtendedStats;
 
@@ -211,6 +212,8 @@ private:
     bool mSkipVideoFlushAfterSuspend;
 
     bool mImageDisplayed;
+
+    bool mSourceSeeking;
 
     inline const sp<Decoder> &getDecoder(bool audio) {
         return audio ? mAudioDecoder : mVideoDecoder;

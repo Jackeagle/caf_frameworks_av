@@ -401,6 +401,11 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
 
         case MyHandler::kWhatSeekDone:
         {
+            ALOGV("seek done");
+            if (mSeekDoneNotify != NULL) {
+                mSeekDoneNotify->post();
+                mSeekDoneNotify = NULL;
+            }
             mState = CONNECTED;
             break;
         }
@@ -703,6 +708,11 @@ void NuPlayer::RTSPSource::finishDisconnectIfPossible() {
 
     (new AMessage)->postReply(mDisconnectReplyID);
     mDisconnectReplyID = 0;
+}
+
+bool NuPlayer::RTSPSource::setSeekDoneNotify(const sp<AMessage> &notify) {
+     mSeekDoneNotify = notify;
+     return true;
 }
 
 }  // namespace android

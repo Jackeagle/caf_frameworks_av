@@ -56,6 +56,8 @@ struct NuPlayer::RTSPSource : public NuPlayer::Source {
 
     void onMessageReceived(const sp<AMessage> &msg);
 
+    virtual bool setSeekDoneNotify(const sp<AMessage> &notify);
+
 protected:
     virtual ~RTSPSource();
 
@@ -115,6 +117,8 @@ private:
 
     int64_t mEOSTimeoutAudio;
     int64_t mEOSTimeoutVideo;
+
+    sp<AMessage> mSeekDoneNotify;
 
     sp<AnotherPacketSource> getSource(bool audio);
 

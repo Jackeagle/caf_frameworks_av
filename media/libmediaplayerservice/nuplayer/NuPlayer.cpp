@@ -184,7 +184,8 @@ NuPlayer::NuPlayer()
       mSkipVideoFlushAfterSuspend(false),
       mDProxy(NULL),
       mSeeking(false),
-      mImageDisplayed(false) {
+      mImageDisplayed(false),
+      mSourceSeeking(false) {
 
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
@@ -1065,6 +1066,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatSeekDone:
+        {
+            ALOGV("source seek done");
+            mSourceSeeking = false;
+            break;
+        }
+
         case kWhatClosedCaptionNotify:
         {
             onClosedCaptionNotify(msg);
@@ -1575,6 +1583,12 @@ void NuPlayer::renderBuffer(bool audio, const sp<AMessage> &msg) {
     sp<AMessage> reply;
     CHECK(msg->findMessage("reply", &reply));
 
+    if (mSourceSeeking) {
+        ALOGV("Ignore render while source seeking");
+        reply->post();
+        return;
+    }
+
     if ((audio && mFlushingAudio != NONE)
             || (!audio && mFlushingVideo != NONE)) {
         // We're currently attempting to flush the decoder, in order
@@ -1835,6 +1849,10 @@ status_t NuPlayer::selectTrack(size_t trackIndex, bool select) {
 }
 
 status_t NuPlayer::getCurrentPosition(int64_t *mediaUs) {
+    if (mSeeking || mSourceSeeking) {
+        ALOGW("getCurrentPosition while seeking");
+        return UNKNOWN_ERROR;
+    }
     sp<Renderer> renderer = mRenderer;
     if (renderer == NULL) {
         return NO_INIT;
@@ -1890,6 +1908,11 @@ void NuPlayer::performSeek(int64_t seekTimeUs, bool needNotify) {
           seekTimeUs,
           seekTimeUs / 1E6,
           needNotify);
+
+    if (mSource->setSeekDoneNotify(new AMessage(kWhatSeekDone, id()))) {
+        ALOGV("source seeking");
+        mSourceSeeking = true;
+    }
 
     mSeeking = true;
     if (mSource == NULL) {
