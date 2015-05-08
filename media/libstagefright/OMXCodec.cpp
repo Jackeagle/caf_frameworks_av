@@ -2581,7 +2581,7 @@ void OMXCodec::onCmdComplete(OMX_COMMANDTYPE cmd, OMX_U32 data) {
                     && mPortStatus[kPortIndexOutput] == ENABLED) {
                     CODEC_LOGV("Finished flushing both ports, now continuing from"
                          " seek-time.");
-
+                    setState(EXECUTING);
                     // We implicitly resume pulling on our upstream source.
                     mPaused = false;
 
@@ -3906,6 +3906,10 @@ status_t OMXCodec::read(
 
     if (mState == ERROR) {
         return UNKNOWN_ERROR;
+    }
+
+    if (seeking) {
+        CHECK_EQ((int)mState, (int)EXECUTING);
     }
 
     if (mFilledBuffers.empty()) {
