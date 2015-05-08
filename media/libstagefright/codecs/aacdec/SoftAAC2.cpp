@@ -296,7 +296,7 @@ void SoftAAC2::maybeConfigureDownmix() const {
         if (!(property_get("media.aac_51_output_enabled", value, NULL) &&
                 (!strcmp(value, "1") || !strcasecmp(value, "true")))) {
             ALOGI("Downmixing multichannel AAC to stereo");
-            aacDecoder_SetParam(mAACDecoder, AAC_PCM_MIN_OUTPUT_CHANNELS, 2);
+            aacDecoder_SetParam(mAACDecoder, AAC_PCM_OUTPUT_CHANNELS, 2);
             mStreamInfo->numChannels = 2;
         }
     }
