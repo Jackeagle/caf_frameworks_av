@@ -45,7 +45,7 @@ static bool FileHasAcceptableExtension(const char *extension) {
         ".mkv", ".mka", ".webm", ".ts", ".fl", ".flac", ".mxmf",
         ".avi", ".mpeg", ".mpg", ".awb", ".mpga", ".aif", ".aiff"
 #ifdef ENABLE_AV_ENHANCEMENTS
-        ,".qcp", ".ac3", ".dts", ".wmv", ".ec3", ".mov"
+        ,".qcp", ".ac3", ".dts", ".wmv", ".ec3", ".mov", ".ape"
 #endif
     };
     static const size_t kNumValidExtensions =
