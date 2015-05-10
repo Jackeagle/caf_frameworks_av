@@ -2414,7 +2414,7 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
       3. this is 24 bit PCM */
 
     if (is24bitPCMOffloadEnabled() && isRAWFormat(sMeta) &&
-        getPcmSampleBits(sMeta) == 24) {
+        (getPcmSampleBits(sMeta) == 24 || getPcmSampleBits(sMeta) == 32)) {
         ALOGV("%s: decided its true for 24 bit PCM offloading", __func__);
         decision = true;
     }
@@ -2610,6 +2610,28 @@ status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData>& meta, AudioParamet
 #endif
     }
     return OK;
+}
+
+bool ExtendedUtils::isALACFormat(const sp<MetaData> &meta) {
+    const char *mime;
+
+    if ((meta == NULL) || !(meta->findCString(kKeyMIMEType, &mime))) {
+        return false;
+    }
+
+    return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_ALAC)) ? true : false;
+
+}
+
+bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
+    const char *mime;
+
+    if ((meta == NULL) || !(meta->findCString(kKeyMIMEType, &mime))) {
+        return false;
+    }
+
+    return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_APE)) ? true : false;
+
 }
 
 } // namespace android
@@ -2970,6 +2992,16 @@ status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData> &meta, AudioParamet
     ARG_TOUCH(meta);
     ARG_TOUCH(param);
     return OK;
+}
+
+bool ExtendedUtils::isALACFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
+}
+
+bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
 }
 
 } // namespace android

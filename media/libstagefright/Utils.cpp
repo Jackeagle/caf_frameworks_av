@@ -833,8 +833,12 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         if (info.format == AUDIO_FORMAT_PCM_16_BIT) {
             if (16 == bitWidth)
                 info.format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
-            else if (24 == bitWidth)
+            else if (24 == bitWidth || 32 == bitWidth) {
+            //for AIFF, parser pads 24 bit data with 8 bits as 0 and sets the bitwidth as 32
+                ALOGV("Override bitwidth to 24 for 24 bit AIFF clips");
+                bitWidth = 24;
                 info.format = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+            }
         }
 
 #ifdef ENABLE_AV_ENHANCEMENTS

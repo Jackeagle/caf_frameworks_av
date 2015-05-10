@@ -83,6 +83,7 @@ void NuPlayer::DecoderPassThrough::onConfigure(const sp<AMessage> &format, bool 
     // Opening again might be relevant if decoder is instantiated after shutdown and
     // format is different.
     sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+
     if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
         if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
             format->setInt32("sbit", 24);
@@ -93,6 +94,17 @@ void NuPlayer::DecoderPassThrough::onConfigure(const sp<AMessage> &format, bool 
         int32_t wmaVersion;
         if (ExtendedUtils::getWMAVersion(audioMeta, &wmaVersion) == OK) {
             format->setInt32("wmav", wmaVersion);
+        }
+    }
+
+    bool isAlacFormat = ExtendedUtils::isALACFormat(audioMeta);
+    bool isApeFormat = ExtendedUtils::isAPEFormat(audioMeta);
+
+    if (isAlacFormat || isApeFormat) {
+        ALOGV("Detected clip of %s format", isAlacFormat ? "alac" : "ape");
+        if (ExtendedUtils::getPcmSampleBits(audioMeta) == 24) {
+            ALOGV("Set bit width for 24 bit %s clip", isAlacFormat ? "alac" : "ape");
+            format->setInt32("sbit", 24);
         }
     }
 
