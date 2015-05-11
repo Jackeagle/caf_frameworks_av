@@ -196,6 +196,7 @@ private:
 
     int32_t mTotalBuffersQueued;
     int32_t mLastAudioBufferDrained;
+    bool mAudioSinkStopped;
     sp<AWakeLock> mWakeLock;
 
     List<sp<AMessage> > mPendingInputMessages;
