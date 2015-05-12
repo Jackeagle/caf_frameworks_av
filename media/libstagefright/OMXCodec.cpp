@@ -97,8 +97,8 @@
 namespace android {
 
 // Treat time out as an error if we have not received any output
-// buffers after 3 seconds.
-const static int64_t kBufferFilledEventTimeOutNs = 3000000000LL;
+// buffers after 5 seconds.
+const static int64_t kBufferFilledEventTimeOutNs = 5000000000LL;
 
 // OMX Spec defines less than 50 color formats. If the query for
 // color format is executed for more than kMaxColorFormatSupported,
