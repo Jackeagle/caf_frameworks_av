@@ -38,6 +38,7 @@
 
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/foundation/ABitReader.h>
+#include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/NativeWindowWrapper.h>
@@ -2422,6 +2423,64 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
     return decision;
 }
 
+bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
+    const char *mime;
+
+    if ((meta == NULL) || !(meta->findCString(kKeyMIMEType, &mime))) {
+        return false;
+    }
+
+    return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_VORBIS)) ? true : false;
+}
+
+sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
+    size_t vorbisHdrSize = 0;
+    sp<ABuffer> vorbisHdrBuffer = NULL;
+    const void *hdrDat1, *hdrDat2, *hdrDat3;
+    size_t hdrSize1 = 0, hdrSize2 = 0, hdrSize3 = 0;
+    uint32_t type;
+
+    if ((meta != NULL) && meta->findData(kKeyVorbisInfo, &type, &hdrDat1, &hdrSize1)) {
+        vorbisHdrSize += hdrSize1;
+        vorbisHdrSize += 4;
+
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisData, &type, &hdrDat2, &hdrSize2)) {
+        vorbisHdrSize += hdrSize2;
+        vorbisHdrSize += 4;
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisBooks, &type, &hdrDat3, &hdrSize3)) {
+        vorbisHdrSize += hdrSize3;
+        vorbisHdrSize += 4;
+    }
+
+    // assemble vorbis header
+    if (vorbisHdrSize > 0) {
+        size_t offset = 0;
+        vorbisHdrBuffer = new ABuffer(vorbisHdrSize);
+        vorbisHdrBuffer->setRange(0, 0);
+
+        if (hdrSize1 > 0) {
+            memcpy(vorbisHdrBuffer->base(), (int32_t *)&hdrSize1, sizeof(int32_t));
+            memcpy(vorbisHdrBuffer->base() + sizeof(int32_t), hdrDat1, hdrSize1);
+            offset += (hdrSize1 + sizeof(int32_t));
+        }
+        if (hdrSize2 > 0) {
+            memcpy(vorbisHdrBuffer->base() + offset, (int32_t *)&hdrSize2, sizeof(int32_t));
+            memcpy(vorbisHdrBuffer->base() + offset + sizeof(int32_t), hdrDat2, hdrSize2);
+            offset += (hdrSize2 + sizeof(int32_t));
+        }
+        if (hdrSize3 > 0) {
+            memcpy(vorbisHdrBuffer->base() + offset, (int32_t *)&hdrSize3, sizeof(int32_t));
+            memcpy(vorbisHdrBuffer->base() + offset + sizeof(int32_t), hdrDat3, hdrSize3);
+            offset += (hdrSize3 + sizeof(int32_t));
+        }
+        vorbisHdrBuffer->setRange(0, offset);
+    }
+
+    return vorbisHdrBuffer;
+}
+
 bool ExtendedUtils::isWMAFormat(const sp<MetaData> &meta) {
     const char *mime;
 
@@ -2969,6 +3028,16 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
     ARG_TOUCH(sMeta);
 
     return false;
+}
+
+bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
+}
+
+sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return NULL;
 }
 
 bool ExtendedUtils::isWMAFormat(const sp<MetaData> &meta) {

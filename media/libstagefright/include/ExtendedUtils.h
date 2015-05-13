@@ -285,6 +285,8 @@ struct ExtendedUtils {
             const CameraParameters& params, sp<MetaData> &meta);
 
     static bool isAudioAMR(const char* mime);
+    static bool isVorbisFormat(const sp<MetaData> &meta);
+    static sp<ABuffer> assembleVorbisHdr(const sp<MetaData> &meta);
     static bool isWMAFormat(const sp<MetaData> &meta);
     static bool isAudioWMAPro(const sp<AMessage> &format);
     static status_t getWMAVersion(const sp<MetaData> &meta, int32_t *version);

@@ -65,6 +65,12 @@ private:
     status_t    mPendingAudioErr;
     sp<ABuffer> mAggregateBuffer;
 
+    // for vorbis
+    bool mIsVorbis;
+    bool mInitBuffer;
+    sp<ABuffer> mVorbisHdrBuffer;
+    sp<ABuffer> mAnchorBuffer;
+
     // mPendingBuffersToDrain are only for debugging. It can be removed
     // when the power investigation is done.
     size_t  mPendingBuffersToDrain;
