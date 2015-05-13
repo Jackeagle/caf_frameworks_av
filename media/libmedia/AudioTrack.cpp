@@ -365,7 +365,7 @@ status_t AudioTrack::set(
         memcpy(&mAttributes, pAttributes, sizeof(audio_attributes_t));
         ALOGV("Building AudioTrack with attributes: usage=%d content=%d flags=0x%x tags=[%s]",
                 mAttributes.usage, mAttributes.content_type, mAttributes.flags, mAttributes.tags);
-        mStreamType = audio_attributes_to_stream_type(&mAttributes);
+        mStreamType = AUDIO_STREAM_DEFAULT;
     }
 
     // these below should probably come from the audioFlinger too...
@@ -608,6 +608,12 @@ status_t AudioTrack::start()
         // force refresh of remaining frames by processAudioBuffer() as last
         // write before stop could be partial.
         mRefreshRemaining = true;
+
+        // for static track, clear the old flags when start from stopped state
+        if (mSharedBuffer != 0)
+            android_atomic_and(
+                    ~(CBLK_LOOP_CYCLE | CBLK_LOOP_FINAL | CBLK_BUFFER_END),
+                    &mCblk->mFlags);
     }
     mNewPosition = mPosition + mUpdatePeriod;
     int32_t flags = android_atomic_and(~CBLK_DISABLED, &mCblk->mFlags);
