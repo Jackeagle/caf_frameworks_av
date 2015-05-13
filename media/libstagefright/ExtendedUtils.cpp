@@ -1904,11 +1904,24 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
         ALOGI("No channel count either");
     } else {
         //if channel mask is not set till now, use channel count
-        //to retrieve channel count
+        //to retrieve channel mask
         if (!cmask) {
             cmask = audio_channel_out_mask_from_count(channelCount);
         }
     }
+#ifdef DTS_CODEC_M_
+    const char *mime = {0};
+    sMeta->findCString(kKeyMIMEType, &mime);
+    if (mime && (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS, 9))) {
+        if ((channelCount <= 0) || (channelCount > 8)) {
+            channelCount = 8;
+        }
+        if (!(cmask ^ AUDIO_CHANNEL_INVALID) || !(cmask ^ AUDIO_CHANNEL_NONE)) {
+            cmask = AUDIO_CHANNEL_OUT_7POINT1;
+        }
+    }
+#endif //DTS_CODEC_M_
+    ALOGI("channel count %d channel mask 0x%x", channelCount, cmask);
     tPCMMeta->setInt32(kKeyChannelCount, channelCount);
     tPCMMeta->setInt32(kKeyChannelMask, cmask);
 
