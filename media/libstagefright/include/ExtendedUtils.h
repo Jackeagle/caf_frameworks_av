@@ -288,6 +288,8 @@ struct ExtendedUtils {
     static bool isWMAFormat(const sp<MetaData> &meta);
     static bool isAudioWMAPro(const sp<AMessage> &format);
     static status_t getWMAVersion(const sp<MetaData> &meta, int32_t *version);
+    static bool isALACFormat(const sp<MetaData> &meta);
+    static bool isAPEFormat(const sp<MetaData> &meta);
 
     static void updateVideoTrackInfoFromESDS_MPEG4Video(sp<MetaData> meta);
     static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);

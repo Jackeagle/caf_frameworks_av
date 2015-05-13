@@ -1361,6 +1361,18 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
         }
     }
 
+    bool isAlacFormat = ExtendedUtils::isALACFormat(audioMeta);
+    bool isApeFormat = ExtendedUtils::isAPEFormat(audioMeta);
+
+    if (isAlacFormat || isApeFormat) {
+        ALOGV("Detected clip of %s format", isAlacFormat ? "alac" : "ape");
+        if (ExtendedUtils::getPcmSampleBits(audioMeta) == 24) {
+            ALOGV("Set bit width for 24 bit %s clip", isAlacFormat ? "alac" : "ape");
+            format->setInt32("sbit", 24);
+        }
+    }
+
+
     status_t err = mRenderer->openAudioSink(
             format, true /* offloadOnly */, hasVideo, mIsStreaming, AUDIO_OUTPUT_FLAG_NONE, &mOffloadAudio);
     if (err != OK) {

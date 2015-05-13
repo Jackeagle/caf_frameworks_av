@@ -201,8 +201,11 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             if (audioFormat == AUDIO_FORMAT_PCM_16_BIT) {
                 if (16 == bitWidth)
                     audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
-                else if (24 == bitWidth)
+                else if (24 == bitWidth || 32 == bitWidth) {
+                //for AIFF, parser pads 24 bit data with 8 bits as 0 and sets the bitwidth as 32
+                    bitWidth = 24;
                     audioFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+                }
             }
 
 #ifdef ENABLE_AV_ENHANCEMENTS

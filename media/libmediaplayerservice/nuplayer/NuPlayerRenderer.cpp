@@ -1508,6 +1508,12 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
                     audioFormat = AUDIO_FORMAT_WMA_PRO;
                 }
             }
+            else if (AUDIO_FORMAT_ALAC == audioFormat || AUDIO_FORMAT_APE == audioFormat) {
+                if (ExtendedUtils::getPcmSampleBits(format) == 24) {
+                    ALOGV("Setting bitWidth as 24 for 24 bit ALAC/APE clip");
+                    bitWidth = 24;
+                }
+            }
             ALOGV("Mime \"%s\" mapped to audio_format 0x%x",
                     mime.c_str(), audioFormat);
 
