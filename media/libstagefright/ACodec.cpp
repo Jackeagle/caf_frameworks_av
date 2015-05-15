@@ -862,8 +862,8 @@ status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
             size_t totalSize = def.nBufferCountActual * bufSize;
             mDealer[portIndex] = new MemoryDealer(totalSize, "ACodec");
 
-            for (OMX_U32 i = 0; i < def.nBufferCountActual && err == OK; ++i) {
-                sp<IMemory> mem = mDealer[portIndex]->allocate(bufSize);
+            for (OMX_U32 i = 0; i < def.nBufferCountActual; ++i) {
+                sp<IMemory> mem = mDealer[portIndex]->allocate(def.nBufferSize);
                 if (mem == NULL || mem->pointer() == NULL) {
                     return NO_MEMORY;
                 }
@@ -1183,12 +1183,10 @@ status_t ACodec::allocateOutputMetadataBuffers() {
         info.mGraphicBuffer = NULL;
         info.mDequeuedAt = mDequeueCounter;
 
-        sp<IMemory> mem = mDealer[kPortIndexOutput]->allocate(bufSize);
+        sp<IMemory> mem = mDealer[kPortIndexOutput]->allocate(
+                sizeof(struct VideoDecoderOutputMetaData));
         if (mem == NULL || mem->pointer() == NULL) {
             return NO_MEMORY;
-        }
-        if (mOutputMetadataType == kMetadataBufferTypeANWBuffer) {
-            ((VideoNativeMetadata *)mem->pointer())->nFenceFd = -1;
         }
         info.mData = new ABuffer(mem->pointer(), mem->size());
 
