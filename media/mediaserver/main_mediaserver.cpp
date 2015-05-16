@@ -38,6 +38,7 @@
 #ifdef AUDIO_LISTEN_ENABLED
 #include "ListenService.h"
 #endif
+#define PROP_NAME "sys.mediaserver.ready"
 
 using namespace android;
 
@@ -141,6 +142,8 @@ int main(int argc __unused, char** argv)
         ALOGI("ServiceManager: %p", sm.get());
         AudioFlinger::instantiate();
         MediaPlayerService::instantiate();
+        // notify earlyaudio native app
+        property_set(PROP_NAME, "1");
         CameraService::instantiate();
 #ifdef AUDIO_LISTEN_ENABLED
         ALOGI("ListenService instantiated");
