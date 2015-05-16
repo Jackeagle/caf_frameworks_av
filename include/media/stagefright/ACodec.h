@@ -203,6 +203,8 @@ private:
     bool mSentFormat;
     bool mIsEncoder;
     bool mUseMetadataOnEncoderOutput;
+    bool mEncoderComponent;
+    bool mComponentAllocByName;
     bool mShutdownInProgress;
     bool mExplicitShutdown;
 
@@ -357,6 +359,8 @@ private:
 
     // Send EOS on input stream.
     void onSignalEndOfInputStream();
+
+    friend struct ExtendedCodec;
 
     DISALLOW_EVIL_CONSTRUCTORS(ACodec);
 };

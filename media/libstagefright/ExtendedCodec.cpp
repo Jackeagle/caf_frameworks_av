@@ -100,6 +100,19 @@ static const MetaKeyEntry MetaKeyTable[] {
    {kKeyChannelCount         , "channel-count"          , INT32},
 };
 
+// checks and converts status_t to a non-side-effect status_t
+static inline status_t makeNoSideEffectStatus(status_t err) {
+    switch (err) {
+    // the following errors have side effects and may come
+    // from other code modules. Remap for safety reasons.
+    case INVALID_OPERATION:
+    case DEAD_OBJECT:
+        return UNKNOWN_ERROR;
+    default:
+        return err;
+    }
+}
+
 const char* ExtendedCodec::getMsgKey(int key) {
     static const size_t numMetaKeys =
                      sizeof(MetaKeyTable) / sizeof(MetaKeyTable[0]);
@@ -654,6 +667,74 @@ status_t ExtendedCodec::handleSupportedVideoFormats(int format, AString* mime) {
         retVal = BAD_VALUE;
     }
     return retVal;
+}
+
+status_t ExtendedCodec::tryAllocateAndConfigureFallback(ACodec *codec,
+            const sp<AMessage> &msg, const sp<IOMXObserver> &observer) {
+    AString mime;
+    CHECK(msg->findString("mime", &mime));
+
+    Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
+
+    OMXCodec::findMatchingCodecs(
+        mime.c_str(),
+        false, // createEncoder
+        NULL,  // matchComponentName
+        0,     // flags
+        &matchingCodecs);
+
+    status_t err = codec->mOMX->freeNode(codec->mNode);
+
+    if (err != OK) {
+        ALOGE("Failed to freeNode");
+        codec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
+        return err;
+    }
+
+    codec->mNode = NULL;
+    AString componentName;
+
+    for (size_t matchIndex = 0; matchIndex < matchingCodecs.size();
+            ++matchIndex) {
+        componentName = matchingCodecs.itemAt(matchIndex).mName.string();
+        if (!strcmp(codec->mComponentName.c_str(), componentName.c_str())) {
+            continue;
+        }
+
+        status_t err = codec->mOMX->allocateNode(componentName.c_str(), observer, &codec->mNode);
+
+        if (err == OK) {
+            break;
+        } else {
+            ALOGW("Allocating component '%s' failed, try next one.", componentName.c_str());
+        }
+
+        codec->mNode = NULL;
+    }
+
+    if (codec->mNode == NULL) {
+        if (!mime.empty()) {
+            ALOGE("Unable to instantiate a decoder for type '%s'", mime.c_str());
+        } else {
+            ALOGE("Unable to instantiate codec '%s'.", componentName.c_str());
+        }
+
+        codec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
+        return err;
+    }
+
+    codec->mComponentName = componentName;
+
+    err = codec->configureCodec(mime.c_str(), msg);
+
+    if (err != OK) {
+        ALOGE("[%s] configureCodec returning error %d",
+              codec->mComponentName.c_str(), err);
+        codec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
+        return err;
+    }
+
+    return err;
 }
 
 bool ExtendedCodec::checkIfCompressionHEVC(int format) {
@@ -1427,6 +1508,14 @@ namespace android {
         ARG_TOUCH(componentName);
         ARG_TOUCH(portIndex);
         ARG_TOUCH(target);
+        return UNKNOWN_ERROR;
+    }
+
+    status_t ExtendedCodec::tryAllocateAndConfigureFallback(
+            ACodec *codec, const sp<AMessage> &msg, const sp<IOMXObserver> &observer) {
+        ARG_TOUCH(codec);
+        ARG_TOUCH(msg);
+        ARG_TOUCH(observer);
         return UNKNOWN_ERROR;
     }
 

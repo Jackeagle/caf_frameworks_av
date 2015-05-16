@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -35,6 +35,7 @@
 #include <media/MediaCodecInfo.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaSource.h>
+#include <media/stagefright/ACodec.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AString.h>
 #include <utils/threads.h>
@@ -90,6 +91,9 @@ struct ExtendedCodec {
 
     static status_t handleSupportedVideoFormats(
             int format, AString* mime);
+
+    static status_t tryAllocateAndConfigureFallback(
+            ACodec *codec, const sp<AMessage> &msg, const sp<IOMXObserver> &observer);
 
     static bool checkIfCompressionHEVC(int format);
 
