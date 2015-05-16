@@ -270,7 +270,9 @@ void NuPlayer::setDataSourceAsync(
 
     sp<Source> source;
     if (IsHTTPLiveURL(url)) {
-        source = new HTTPLiveSource(notify, httpService, url, headers);
+        KeyedVector<String8, String8> uriHeaders;
+        ExtendedUtils::DiscoverProxy::create(&mDProxy, &uriHeaders, headers);
+        source = new HTTPLiveSource(notify, httpService, url, &uriHeaders);
     } else if (!strncasecmp(url, "rtsp://", 7)) {
         source = new RTSPSource(
                 notify, httpService, url, headers, mUIDValid, mUID);

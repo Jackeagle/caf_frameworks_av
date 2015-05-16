@@ -49,6 +49,8 @@
 #define IPV4 4
 #define IPV6 6
 
+#define MAX_CHECK_PROXY_RETRY_COUNT 15
+
 namespace android {
 
 /*
@@ -177,12 +179,26 @@ struct ExtendedUtils {
 
         //500 ms timeout for deathnotifier function call
         static const int64_t kBinderDieTimeoutNs = 500000000LL;
-
+        static const int64_t kProxyPollDelayUs = 50000ll;
         typedef bool (*fnIsProxySupported)();
         typedef int (*fnGetPort)();
 
+        static void create(
+                sp<DiscoverProxy> *proxy,
+                KeyedVector<String8, String8> *hdr,
+                const KeyedVector<String8, String8> *headers);
         static sp<DiscoverProxy> create();
         bool getSTAProxyConfig(int32_t &port);
+        static status_t checkForProxyAvail(
+                sp<ExtendedUtils::DiscoverProxy> proxy,
+                KeyedVector<String8, String8> *headers,
+                int32_t *count,
+                uint32_t what, const AString &url,
+                ALooper::handler_id target);
+        status_t checkProxyAvail(
+                KeyedVector<String8, String8> *headers,
+                int32_t *count, int64_t *delayUs);
+        static bool isProxySet(const KeyedVector<String8, String8>& headers);
 
         class STAProxyServiceDeathRecepient: public IBinder::DeathRecipient {
            public:

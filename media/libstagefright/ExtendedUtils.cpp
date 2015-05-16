@@ -874,6 +874,103 @@ ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::binderDied(const wp
 }
 
 
+void ExtendedUtils::DiscoverProxy::create(
+        sp<ExtendedUtils::DiscoverProxy> *proxy,
+        KeyedVector<String8, String8> *hdr,
+        const KeyedVector<String8, String8> *headers) {
+    CHECK(hdr);
+    CHECK(proxy);
+    if (headers != NULL) {
+        *hdr = *headers;
+    }
+
+    // Disable STAProxy usage for custom hls specific usecases,
+    // Not starting STAProxy if HLS specific custom
+    // property is enabled
+    if (true == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+        return;
+    }
+
+    if ((*proxy) != NULL) {
+       ALOGI("Proxy already detected, pls reuse it");
+       return;
+    }
+
+    *proxy = ExtendedUtils::DiscoverProxy::create();
+    if ((*proxy) != NULL) {
+        // discover-proxy key signals lower layers to
+        // discover and set proxy port on stack before connect
+        hdr->add(String8("discover-proxy"), String8(""));
+    }
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkForProxyAvail(
+         sp<ExtendedUtils::DiscoverProxy> proxy,
+         KeyedVector<String8, String8> *headers, int32_t *count,
+         uint32_t what, const AString& url, ALooper::handler_id target) {
+    CHECK(headers);
+    CHECK(count);
+    status_t err = OK;
+    int64_t delayUs = 0;
+    if ((proxy != NULL) &&
+        ((err = proxy->checkProxyAvail(headers, count, &delayUs)) != OK)) {
+        if (err == -EAGAIN) {
+            sp<AMessage> msg = new AMessage(what, target);
+            msg->setString("url", url);
+            msg->setPointer("headers", headers);
+            msg->post(delayUs);
+            return err;
+         } else {
+            ALOGI("Failed checkProxyAvail continue without proxy %ld", err);
+         }
+     }
+
+     return err;
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkProxyAvail(
+         KeyedVector<String8, String8> *headers,
+         int32_t *count, int64_t *delayUs) {
+    CHECK(headers);
+    CHECK(count);
+    CHECK(delayUs);
+    if ((headers->indexOfKey(String8("discover-proxy"))) < 0) {
+        return OK;
+    }
+
+    (*count)++;
+    int32_t port = 0;
+    if (getSTAProxyConfig(port)) {
+        ALOGI("Detected Proxy at port %d in %d attempts", port, *count);
+        String8 portString = String8("127.0.0.1");
+        portString.appendFormat(":%d", port);
+        ALOGV("getSTAProxyConfig Proxy IPportString %s", portString.string());
+        headers->add(String8("use-proxy"), portString);
+        *count = 0;
+        ssize_t index;
+        if ((index = headers->indexOfKey(String8("discover-proxy"))) >= 0) {
+             headers->removeItemsAt(index);
+        }
+        return OK;
+    } else if ((*count) > MAX_CHECK_PROXY_RETRY_COUNT) {
+        ALOGI("Not Detected proxy in %d attempts, bypass proxy", *count);
+        ssize_t index;
+        if ((index = headers->indexOfKey(String8("discover-proxy"))) >= 0) {
+             headers->removeItemsAt(index);
+        }
+        return OK;
+    } else {
+        *delayUs = kProxyPollDelayUs;
+        ALOGV("Repost to query proxy count %d", *count);
+        return -EAGAIN;
+    }
+}
+
+bool ExtendedUtils::DiscoverProxy::isProxySet(
+   const KeyedVector<String8, String8>& headers) {
+   return (headers.indexOfKey(String8("use-proxy")) >= 0);
+}
+
 sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
    Mutex::Autolock autoLock(gLock);
    sp<DiscoverProxy> instance = gDProxy.promote();
@@ -2784,6 +2881,32 @@ ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::~STAProxyServiceDea
 
 void
 ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::binderDied(const wp<IBinder>& who) {
+}
+
+void ExtendedUtils::DiscoverProxy::create(
+        sp<ExtendedUtils::DiscoverProxy> *proxy,
+        KeyedVector<String8, String8> *hdr,
+        const KeyedVector<String8, String8> *headers) {
+    return;
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkForProxyAvail(
+         sp<ExtendedUtils::DiscoverProxy> proxy,
+         KeyedVector<String8, String8> *headers,
+         int32_t *count, uint32_t what,
+         const AString &url, ALooper::handler_id target) {
+    return OK;
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkProxyAvail(
+         KeyedVector<String8, String8> *headers,
+         int32_t *count, int64_t *delayUs) {
+    return OK;
+}
+
+bool ExtendedUtils::DiscoverProxy::isProxySet(
+         const KeyedVector<String8, String8>& headers) {
+    return false;
 }
 
 sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
