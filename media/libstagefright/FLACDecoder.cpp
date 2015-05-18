@@ -344,7 +344,7 @@ status_t FLACDecoder::read(MediaBuffer **out, const ReadOptions* options) {
             ALOGVV("Decoder has enough data. Need not read from parser");
             availLength = 0;
             // Reached EOS and also the internal buffer consumed
-            if (((ob.i32WritePtr - ob.i32ReadPtr) > 0) && eos) {
+            if ((ob.i32WritePtr >= ob.i32ReadPtr) && eos) {
                 ALOGV("Parser reported EOS");
                 ob.eos = 1;
                 availLength = 0;
