@@ -31,7 +31,6 @@
 
 #include "MidiFile.h"
 #include "TestPlayerStub.h"
-#include "StagefrightPlayer.h"
 #include "nuplayer/NuPlayerDriver.h"
 #include <dlfcn.h>
 
@@ -65,18 +64,6 @@ status_t MediaPlayerFactory::registerFactory_l(IFactory* factory,
 }
 
 static player_type getDefaultPlayerType() {
-    char value[PROPERTY_VALUE_MAX];
-    if (property_get("media.stagefright.use-awesome", value, NULL)
-            && (!strcmp("1", value) || !strcasecmp("true", value))) {
-        return STAGEFRIGHT_PLAYER;
-    }
-
-    // TODO: remove this EXPERIMENTAL developer settings property
-    if (property_get("persist.sys.media.use-awesome", value, NULL)
-            && !strcasecmp("true", value)) {
-        return STAGEFRIGHT_PLAYER;
-    }
-
     return NU_PLAYER;
 }
 
@@ -94,7 +81,7 @@ void MediaPlayerFactory::unregisterFactory(player_type type) {
 #define GET_PLAYER_TYPE_IMPL(a...)                      \
     Mutex::Autolock lock_(&sLock);                      \
                                                         \
-    player_type ret = STAGEFRIGHT_PLAYER;               \
+    player_type ret = NU_PLAYER;               \
     float bestScore = 0.0;                              \
                                                         \
     for (size_t i = 0; i < sFactoryMap.size(); ++i) {   \
@@ -176,84 +163,6 @@ sp<MediaPlayerBase> MediaPlayerFactory::createPlayer(
  *                     Built-In Factory Implementations                      *
  *                                                                           *
  *****************************************************************************/
-
-class StagefrightPlayerFactory :
-    public MediaPlayerFactory::IFactory {
-  public:
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
-                               int fd,
-                               int64_t offset,
-                               int64_t length,
-                               float /*curScore*/) {
-        if (legacyDrm()) {
-            sp<DataSource> source = new FileSource(dup(fd), offset, length);
-            String8 mimeType;
-            float confidence;
-            if (SniffWVM(source, &mimeType, &confidence, NULL /* format */)) {
-                return 1.0;
-            }
-        }
-
-#ifdef QTI_FLAC_DECODER
-        // Flac playback forced to Awesomeplayer
-        if (fd) {
-            char symName[40] = {0};
-            char fileName[256] = {0};
-            snprintf(symName, sizeof(symName), "/proc/%d/fd/%d", getpid(), fd);
-
-            if (readlink(symName, fileName, (sizeof(fileName) - 1)) != -1 ) {
-                static const char* extn = ".flac";
-                uint32_t lenExtn = strlen(extn);
-                uint32_t lenFileName = strlen(fileName);
-                uint32_t start = lenFileName - lenExtn;
-                if (start > 0) {
-                    if (!strncasecmp(fileName + start, extn, lenExtn)) {
-                        return 1.0;
-                    }
-                }
-            }
-        }
-#endif
-        if (getDefaultPlayerType()
-                == STAGEFRIGHT_PLAYER) {
-            char buf[20];
-            lseek(fd, offset, SEEK_SET);
-            read(fd, buf, sizeof(buf));
-            lseek(fd, offset, SEEK_SET);
-
-            uint32_t ident = *((uint32_t*)buf);
-
-            // Ogg vorbis?
-            if (ident == 0x5367674f) // 'OggS'
-                return 1.0;
-        }
-
-        return 0.0;
-    }
-
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
-                               const char* url,
-                               float /*curScore*/) {
-        if (legacyDrm() && !strncasecmp("widevine://", url, 11)) {
-            return 1.0;
-        }
-        return 0.0;
-    }
-
-    virtual sp<MediaPlayerBase> createPlayer() {
-        ALOGV(" create StagefrightPlayer");
-        return new StagefrightPlayer();
-    }
-  private:
-    bool legacyDrm() {
-        char value[PROPERTY_VALUE_MAX];
-        if (property_get("persist.sys.media.legacy-drm", value, NULL)
-                && (!strcmp("1", value) || !strcasecmp("true", value))) {
-            return true;
-        }
-        return false;
-    }
-};
 
 class NuPlayerFactory : public MediaPlayerFactory::IFactory {
   public:
@@ -394,7 +303,6 @@ void MediaPlayerFactory::registerBuiltinFactories() {
     if (sInitComplete)
         return;
 
-    registerFactory_l(new StagefrightPlayerFactory(), STAGEFRIGHT_PLAYER);
     registerFactory_l(new NuPlayerFactory(), NU_PLAYER);
     registerFactory_l(new SonivoxPlayerFactory(), SONIVOX_PLAYER);
     registerFactory_l(new TestPlayerFactory(), TEST_PLAYER);
