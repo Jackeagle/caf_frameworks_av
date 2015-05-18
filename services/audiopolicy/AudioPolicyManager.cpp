@@ -1967,28 +1967,6 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
     audio_source_t halInputSource;
     AudioMix *policyMix = NULL;
 
-    /*The below code is intentionally not ported.
-    It's not needed to update the channel mask based on source because
-    the source is sent to audio HAL through set_parameters().
-    For example, if source = VOICE_CALL, does not mean we need to capture two channels.
-    If the sound recorder app selects AMR as encoding format but source as RX+TX,
-    we need both in ONE channel. So we use the channels set by the app and use source
-    to tell the driver what needs to captured (RX only, TX only, or RX+TX ).*/
-    // adapt channel selection to input source
-    /*switch (inputSource) {
-    case AUDIO_SOURCE_VOICE_UPLINK:
-        channelMask = AUDIO_CHANNEL_IN_VOICE_UPLINK;
-        break;
-    case AUDIO_SOURCE_VOICE_DOWNLINK:
-        channelMask = AUDIO_CHANNEL_IN_VOICE_DNLINK;
-        break;
-    case AUDIO_SOURCE_VOICE_CALL:
-        channelMask = AUDIO_CHANNEL_IN_VOICE_UPLINK | AUDIO_CHANNEL_IN_VOICE_DNLINK;
-        break;
-    default:
-        break;
-    }*/
-
     if (inputSource == AUDIO_SOURCE_DEFAULT) {
         inputSource = AUDIO_SOURCE_MIC;
     }
@@ -2090,8 +2068,15 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
         } else {
             *inputType = API_INPUT_LEGACY;
         }
+        /*The below code is intentionally not ported.
+        It's not needed to update the channel mask based on source because
+        the source is sent to audio HAL through set_parameters().
+        For example, if source = VOICE_CALL, does not mean we need to capture two channels.
+        If the sound recorder app selects AMR as encoding format but source as RX+TX,
+        we need both in ONE channel. So we use the channels set by the app and use source
+        to tell the driver what needs to captured (RX only, TX only, or RX+TX ).*/
         // adapt channel selection to input source
-        switch (inputSource) {
+        /*switch (inputSource) {
         case AUDIO_SOURCE_VOICE_UPLINK:
             channelMask = AUDIO_CHANNEL_IN_VOICE_UPLINK;
             break;
@@ -2103,7 +2088,7 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
             break;
         default:
             break;
-        }
+        }*/
         if (inputSource == AUDIO_SOURCE_HOTWORD) {
             ssize_t index = mSoundTriggerSessions.indexOfKey(session);
             if (index >= 0) {
@@ -2178,7 +2163,7 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
     inputDesc->mIsSoundTrigger = isSoundTrigger;
     inputDesc->mPolicyMix = policyMix;
 
-    ALOGV("getInputForAttr() returns input type = %d", inputType);
+    ALOGV("getInputForAttr() returns input type = %d", *inputType);
 
     addInput(*input, inputDesc);
     mpClientInterface->onAudioPortListUpdate();
