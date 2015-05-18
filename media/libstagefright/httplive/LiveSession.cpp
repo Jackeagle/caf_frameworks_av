@@ -1205,6 +1205,20 @@ bool LiveSession::canSwitchUp() {
     return false;
 }
 
+void LiveSession::stopFetchers() {
+    ALOGV("stop fetching files");
+    for (size_t i = 0; i < mFetcherInfos.size(); i++) {
+        mFetcherInfos.valueAt(i).mFetcher->abort();
+    }
+}
+
+void LiveSession::disconnectUrl() {
+    if (mHTTPDataSource != NULL) {
+        ALOGV("disconnectUrl");
+        mHTTPDataSource->disconnect();
+    }
+}
+
 void LiveSession::changeConfiguration(
         int64_t timeUs, size_t bandwidthIndex, bool pickTrack) {
     // Protect mPacketSources from a swapPacketSource race condition through reconfiguration.

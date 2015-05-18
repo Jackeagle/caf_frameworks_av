@@ -81,7 +81,8 @@ PlaylistFetcher::PlaylistFetcher(
       mRefreshState(INITIAL_MINIMUM_RELOAD_DELAY),
       mFirstPTSValid(false),
       mAbsoluteTimeAnchorUs(0ll),
-      mVideoBuffer(new AnotherPacketSource(NULL)) {
+      mVideoBuffer(new AnotherPacketSource(NULL)),
+      mStopped(false) {
     memset(mPlaylistHash, 0, sizeof(mPlaylistHash));
     mStartTimeUsNotify->setInt32("what", kWhatStartedAt);
     mStartTimeUsNotify->setInt32("streamMask", 0);
@@ -388,6 +389,12 @@ void PlaylistFetcher::resumeUntilAsync(const sp<AMessage> &params) {
     AMessage* msg = new AMessage(kWhatResumeUntil, id());
     msg->setMessage("params", params);
     msg->post();
+}
+
+void PlaylistFetcher::abort() {
+    Mutex::Autolock autoLock(mLock);
+    ALOGV("abort");
+    mStopped = true;
 }
 
 void PlaylistFetcher::onMessageReceived(const sp<AMessage> &msg) {
@@ -912,6 +919,15 @@ void PlaylistFetcher::onDownloadNext() {
     bool startup = mStartup;
     ssize_t bytesRead;
     do {
+        {
+            Mutex::Autolock autoLock(mLock);
+            if (mStopped) {
+                ALOGV("stop to fetch file");
+                mSession->disconnectUrl();
+                cancelMonitorQueue();
+                return;
+            }
+        }
         bytesRead = mSession->fetchFile(
                 uri.c_str(), &buffer, range_offset, range_length, kDownloadBlockSize, &source);
 
@@ -993,6 +1009,8 @@ void PlaylistFetcher::onDownloadNext() {
         }
 
     } while (bytesRead != 0);
+
+    mSession->disconnectUrl();
 
     if (bufferStartsWithTsSyncByte(buffer)) {
         // If we still don't see a stream after fetching a full ts segment mark it as
@@ -1214,6 +1232,13 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
     buffer->setRange(buffer->offset() + offset, buffer->size() - offset);
 
     status_t err = OK;
+    // During SEEK video always starts from closest preceding IDR frame
+    // Adjust mStartTimeUs( seek time ) to lastIDRTime so that audio
+    // also starts from same time.
+    // Since the for loop below starts from higher index VIDEO stream
+    // will be parsed first, this will ensure that lastIDRTime will be
+    // set for AUDIO. Assumption here is enum VIDEO > AUDIO
+    int64_t lastIDRTime = -1;
     for (size_t i = mPacketSources.size(); i-- > 0;) {
         sp<AnotherPacketSource> packetSource = mPacketSources.valueAt(i);
 
@@ -1250,6 +1275,10 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
             continue;
         }
 
+        if (lastIDRTime >= 0) {
+            ALOGI("Adjusting seek time to IDR %lld from %lld", lastIDRTime, mStartTimeUs);
+            mStartTimeUs = lastIDRTime;
+        }
         int64_t timeUs;
         sp<ABuffer> accessUnit;
         status_t finalResult;
@@ -1288,6 +1317,7 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
                     if ((isAvc && IsIDR(accessUnit)) || (isHevc &&
                             ExtendedUtils::IsHevcIDR(accessUnit))) {
                         mVideoBuffer->clear();
+                        lastIDRTime = timeUs;
                     }
                     if (isAvc || isHevc) {
                         mVideoBuffer->queueAccessUnit(accessUnit);
@@ -1373,12 +1403,11 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
 
             // Note that we do NOT dequeue any discontinuities except for format change.
             if (stream == LiveSession::STREAMTYPE_VIDEO) {
-                const bool discard = true;
                 status_t status;
                 while (mVideoBuffer->hasBufferAvailable(&status)) {
                     sp<ABuffer> videoBuffer;
                     mVideoBuffer->dequeueAccessUnit(&videoBuffer);
-                    setAccessUnitProperties(videoBuffer, source, discard);
+                    setAccessUnitProperties(videoBuffer, source);
                     packetSource->queueAccessUnit(videoBuffer);
                 }
             }

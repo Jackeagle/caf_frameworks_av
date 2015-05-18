@@ -89,6 +89,8 @@ struct LiveSession : public AHandler {
     // swap:
     //   whether is format-change discontinuity should trigger a buffer swap
     sp<ABuffer> createFormatChangeBuffer(bool swap = true);
+
+    void stopFetchers();
 protected:
     virtual ~LiveSession();
 
@@ -276,6 +278,8 @@ private:
 
     void swapPacketSource(StreamType stream);
     bool canSwitchUp();
+
+    void disconnectUrl();
 
     DISALLOW_EVIL_CONSTRUCTORS(LiveSession);
 };

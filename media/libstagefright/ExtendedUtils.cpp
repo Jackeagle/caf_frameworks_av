@@ -1,4 +1,4 @@
-/*Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,6 +39,7 @@
 #include <media/stagefright/foundation/ABitReader.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/MediaDefs.h>
+#include <media/stagefright/MetaData.h>
 #include <media/stagefright/OMXCodec.h>
 #include <cutils/properties.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -938,6 +939,15 @@ void ExtendedUtils::setBFrames(
         h264type.nCabacInitIdc = 0;
     }
     return;
+}
+
+void ExtendedUtils::setSourceMime(const sp<MetaData> &audioMeta,
+                                        const sp<AMessage> &format) {
+    const char *mime = NULL;
+    if (audioMeta != NULL) {
+        CHECK(audioMeta->findCString(kKeyMIMEType, &mime));
+        format->setString("source-mime", mime);
+    }
 }
 
 sp<MetaData> ExtendedUtils::updatePCMFormatAndBitwidth(
@@ -1919,12 +1929,16 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
 }
 
 void ExtendedUtils::overWriteAudioFormat(
-                sp<AMessage> &dst, const sp<AMessage> &src)
-{
+                const sp<MetaData> &audioMeta,
+                sp<AMessage> &dst, const sp<AMessage> &src) {
     int32_t dchannels = 0;
     int32_t schannels = 0;
     int32_t drate = 0;
     int32_t srate = 0;
+    int32_t dmask = 0;
+    int32_t smask = 0;
+    int32_t scmask = 0;
+    int32_t dcmask = 0;
 
     dst->findInt32("channel-count", &dchannels);
     src->findInt32("channel-count", &schannels);
@@ -1932,8 +1946,16 @@ void ExtendedUtils::overWriteAudioFormat(
     dst->findInt32("sample-rate", &drate);
     src->findInt32("sample-rate", &srate);
 
-    ALOGI("channel count src: %d dst: %d", dchannels, schannels);
-    ALOGI("sample rate src: %d dst:%d ", drate, srate);
+    dst->findInt32("channel-mask", &dmask);
+    src->findInt32("channel-mask", &smask);
+
+    ALOGI("channel count src: %d dst: %d", schannels, dchannels);
+    ALOGI("sample rate src: %d dst:%d ", srate, drate);
+
+    scmask = audio_channel_count_from_out_mask(smask);
+    dcmask = audio_channel_count_from_out_mask(dmask);
+    ALOGI("channel mask src: %d dst:%d ", smask, dmask);
+    ALOGI("channel count from mask src: %d dst:%d ", scmask, dcmask);
 
     if (schannels && dchannels != schannels) {
         dst->setInt32("channel-count", schannels);
@@ -1943,6 +1965,11 @@ void ExtendedUtils::overWriteAudioFormat(
         dst->setInt32("sample-rate", srate);
     }
 
+    if (dmask != smask) {
+        dst->setInt32("channel-mask", smask);
+    }
+
+    setSourceMime(audioMeta, dst);
     return;
 }
 
@@ -1951,9 +1978,15 @@ void ExtendedUtils::overWriteAudioFormat(
 
 namespace android {
 
+void ExtendedUtils::setSourceMime(const sp<MetaData> &audioMeta,
+                                        const sp<AMessage> &format) {
+    ARG_TOUCH(audioMeta);
+    ARG_TOUCH(format);
+    return;
+}
+
 sp<MetaData> ExtendedUtils::updatePCMFormatAndBitwidth(
-                sp<MediaSource> &audioSource, bool offloadAudio)
-{
+                sp<MediaSource> &audioSource, bool offloadAudio) {
     ARG_TOUCH(audioSource);
     ARG_TOUCH(offloadAudio);
     sp<MetaData> tempMetadata = new MetaData;
@@ -2218,8 +2251,10 @@ sp<MetaData> ExtendedUtils::createPCMMetaFromSource(
 }
 
 void ExtendedUtils::overWriteAudioFormat(
+                const sp<MetaData> &audioMeta,
                 sp<AMessage> &dst, const sp<AMessage> &src)
 {
+    ARG_TOUCH(audioMeta);
     ARG_TOUCH(dst);
     ARG_TOUCH(src);
     return;

@@ -628,6 +628,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+            if ((ExtendedUtils::isRAWFormat(audioMeta) &&
+                ExtendedUtils::is24bitPCMOffloadEnabled() &&
+                (ExtendedUtils::getPcmSampleBits(audioMeta) == 24))) {
+                ALOGI("Override meta to indicate to source we are waiting for sink");
+                ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_INVALID);
+            }
             mSource->start();
 
             uint32_t flags = 0;
@@ -724,6 +730,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     // open audio sink early under offload mode.
                     sp<AMessage> format = mSource->getFormat(true /*audio*/);
                     if (format != NULL) {
+                        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                        ExtendedUtils::setSourceMime(audioMeta, format);
                         openAudioSink(format, true /*offloadOnly*/);
                     }
                 }
@@ -822,6 +830,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 ALOGV("decoder %s output format changed", audio ? "audio" : "video");
                 if (audio) {
+                    sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+                    ExtendedUtils::setSourceMime(audioMeta, format);
                     openAudioSink(format, false /*offloadOnly*/);
                 } else {
                     // video
@@ -1222,12 +1232,15 @@ void NuPlayer::openAudioSink(const sp<AMessage> &format, bool offloadOnly) {
     if (mOffloadDecodedPCM) {
         sp<MetaData> audioPCMMeta =
                      ExtendedUtils::createPCMMetaFromSource(aMeta);
+        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+        ExtendedUtils::setSourceMime(audioMeta, format);
         sp<AMessage> msg = new AMessage;
         if (convertMetaDataToMessage(audioPCMMeta, &msg) == OK) {
-              //override msg with value in format if format has updated values
-              ExtendedUtils::overWriteAudioFormat(msg, format);
-              mOffloadAudio = mRenderer->openAudioSink(
-                             msg, offloadOnly, hasVideo, flags);
+            //override msg with value in format if format has updated values
+            //update source format as well
+            ExtendedUtils::overWriteAudioFormat(audioMeta, msg, format);
+            mOffloadAudio = mRenderer->openAudioSink(
+                        msg, offloadOnly, hasVideo, flags);
         } else {
             mOffloadAudio = mRenderer->openAudioSink(
                 format, offloadOnly, hasVideo, flags);

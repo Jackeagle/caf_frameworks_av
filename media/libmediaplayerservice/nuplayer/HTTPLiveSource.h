@@ -45,6 +45,7 @@ struct NuPlayer::HTTPLiveSource : public NuPlayer::Source {
     virtual sp<AMessage> getTrackInfo(size_t trackIndex) const;
     virtual status_t selectTrack(size_t trackIndex, bool select);
     virtual status_t seekTo(int64_t seekTimeUs);
+    virtual void disconnect();
 
 protected:
     virtual ~HTTPLiveSource();

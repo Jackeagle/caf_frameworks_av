@@ -1355,10 +1355,17 @@ bool NuPlayer::Renderer::onOpenAudioSink(
     CHECK(format->findInt32("sample-rate", &sampleRate));
 
     if (offloadingAudio()) {
-        audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
+        audio_format_t sourceFormat = AUDIO_FORMAT_DEFAULT;
         AString mime;
+        format->findString("source-mime", &mime);
+        status_t err = mapMimeToAudioFormat(sourceFormat, mime.c_str());
+        if (err != OK) {
+            ALOGE("%s Couldn't map mime type\"%s\". Setting default src fmt",
+                        __func__, mime.c_str());
+        }
+        audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
         CHECK(format->findString("mime", &mime));
-        status_t err = mapMimeToAudioFormat(audioFormat, mime.c_str());
+        err = mapMimeToAudioFormat(audioFormat, mime.c_str());
 
         if (err != OK) {
             ALOGE("Couldn't map mime \"%s\" to a valid "
@@ -1366,14 +1373,23 @@ bool NuPlayer::Renderer::onOpenAudioSink(
             onDisableOffloadAudio();
         } else {
             int32_t bitWidth = 16;
+            // for pcm files, sourceFormat - derived from mime, will allways be
+            // AUDIO_FORMAT_PCM_16_BIT.
+            // Update source format as per bit-width (sample and offload)
             if (AUDIO_FORMAT_PCM_16_BIT == audioFormat) {
                 if ((ExtendedUtils::getPcmSampleBits(format) == 24) &&
                     ExtendedUtils::is24bitPCMOffloadEnabled()) {
                     bitWidth = 24;
                     audioFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+                    if (AUDIO_FORMAT_PCM_16_BIT == sourceFormat) {
+                        sourceFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+                    }
                 } else if (ExtendedUtils::is16bitPCMOffloadEnabled()) {
                     bitWidth = 16;
                     audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+                    if (AUDIO_FORMAT_PCM_16_BIT == sourceFormat) {
+                        sourceFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+                    }
                 }
             }
             ALOGV("Mime \"%s\" mapped to audio_format 0x%x",
@@ -1392,6 +1408,7 @@ bool NuPlayer::Renderer::onOpenAudioSink(
             }
 
             audio_offload_info_t offloadInfo = AUDIO_INFO_INITIALIZER;
+            offloadInfo.source_format = sourceFormat;
             offloadInfo.duration_us = -1;
             format->findInt64(
                     "durationUs", &offloadInfo.duration_us);
