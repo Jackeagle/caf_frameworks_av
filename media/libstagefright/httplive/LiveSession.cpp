@@ -85,11 +85,16 @@ LiveSession::LiveSession(
       mLastSeekTimeUs(0),
       mBackupFile(NULL),
       mEraseFirstTs(0),
+      mCheckProxyCount(0),
+      mDProxy(NULL),
+      mHLSExtStats(NULL),
       mSegmentCounter(0) {
 
     if (ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
         mDownloadFirstTS = true;
     }
+
+    mHLSExtStats = ExtendedHLSStats::create();
 
     mStreams[kAudioIndex] = StreamItem("audio");
     mStreams[kVideoIndex] = StreamItem("video");
@@ -108,9 +113,26 @@ LiveSession::LiveSession(
         numHistoryItems = 5;
     }
     mHTTPDataSource->setBandwidthHistorySize(numHistoryItems);
+
+
+    // Disable STAProxy usage for custome hls specific usecases,
+    // check for STAProxy usage only if HLS specific custom
+    // property is disabled
+    if (false == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+        mDProxy = ExtendedUtils::DiscoverProxy::create();
+        if (mDProxy == NULL) {
+            ALOGI("LiveSession bypass proxy");
+        }
+    }
 }
 
 LiveSession::~LiveSession() {
+    if (mHLSExtStats != NULL) {
+        mHLSExtStats->printBWStatItem2();
+    }
+
+    mHLSExtStats = NULL;
+
 #if SAVE_BACKUPS
     if (mBackupFile != NULL) {
         fclose(mBackupFile);
@@ -169,6 +191,9 @@ status_t LiveSession::dequeueAccessUnit(
     if (!packetSource->hasBufferAvailable(&finalResult)) {
         if (finalResult == OK) {
             mBuffering[idx] = true;
+            if ((mHLSExtStats != NULL) && (STREAMTYPE_VIDEO == stream))  {
+                mHLSExtStats->updateBufferingStats(true, (int64_t)ALooper::GetNowUs());
+            }
             return -EAGAIN;
         } else {
             return finalResult;
@@ -193,6 +218,11 @@ status_t LiveSession::dequeueAccessUnit(
         if (mSwitchInProgress
                 || packetSource->isFinished(0)
                 || packetSource->getEstimatedDurationUs() > targetDurationUs) {
+
+            if ((mHLSExtStats != NULL) && (STREAMTYPE_VIDEO == stream))  {
+                mHLSExtStats->updateBufferingStats(false, (int64_t)ALooper::GetNowUs());
+            }
+
             mBuffering[idx] = false;
         }
     }
@@ -332,6 +362,9 @@ status_t LiveSession::dequeueAccessUnit(
             ALOGV("[%s] read buffer at time %" PRId64 " us", streamStr, timeUs);
             (*accessUnit)->meta()->setInt64("timeUs",  timeUs);
             mLastDequeuedTimeUs = timeUs;
+            if (mHLSExtStats != NULL)  {
+                mHLSExtStats->updateStatsTime(timeUs);
+            }
             mRealTimeBaseUs = ALooper::GetNowUs() - timeUs;
         } else if (stream == STREAMTYPE_SUBTITLES) {
             int32_t subtitleGeneration;
@@ -713,8 +746,22 @@ void LiveSession::onConnect(const sp<AMessage> &msg) {
     } else {
         mExtraHeaders = *headers;
 
-        delete headers;
-        headers = NULL;
+        if ((mDProxy == NULL) || (mCheckProxyCount == 0)) {
+            delete headers;
+            headers = NULL;
+        }
+
+        if (ExtendedUtils::DiscoverProxy::checkForProxyAvail(
+                mDProxy, &mExtraHeaders,
+                &mCheckProxyCount, kWhatConnect, url, id()) == -EAGAIN) {
+            ALOGV("Failed to Detect proxy, Retrycount %d", mCheckProxyCount);
+            return;
+        }
+    }
+
+    if (ExtendedUtils::DiscoverProxy::isProxySet(mExtraHeaders)) {
+        ALOGI("setBandwidthHistorySize to 10 for proxy");
+        mHTTPDataSource->setBandwidthHistorySize(10);
     }
 
     // TODO currently we don't know if we are coming here from incognito mode
@@ -779,6 +826,10 @@ void LiveSession::onConnect(const sp<AMessage> &msg) {
     }
 
     mPlaylist->pickRandomMediaItems();
+    if (mHLSExtStats != NULL) {
+        mHLSExtStats->initilizeStats((unsigned long)initialBandwidth, (int64_t)ALooper::GetNowUs());
+    }
+
     changeConfiguration(
             0ll /* timeUs */, initialBandwidthIndex, false /* pickTrack */);
 }
@@ -1113,6 +1164,10 @@ size_t LiveSession::getBandwidthIndex() {
         int32_t bandwidthBps;
         if (mHTTPDataSource != NULL
                 && mHTTPDataSource->estimateBandwidth(&bandwidthBps)) {
+            if (mHLSExtStats != NULL)  {
+                mHLSExtStats->updateBWStatItem(bandwidthBps / 1024.0f);
+            }
+
             ALOGV("bandwidth estimated at %.2f kbps", bandwidthBps / 1024.0f);
         } else {
             ALOGV("no bandwidth estimate.");
@@ -1223,15 +1278,28 @@ int64_t LiveSession::latestMediaSegmentStartTimeUs() {
 }
 
 bool LiveSession::switchToRealBandwidth() {
+    if (mHLSExtStats != NULL)  {
+        mHLSExtStats->addNewStatItem(ALooper::GetNowUs());
+    }
+
     ssize_t bwIndex= getBandwidthIndex();
     if (mCurBandwidthIndex != bwIndex) {
         ALOGV("switching to RealBandwidth...");
+        if (mHLSExtStats != NULL)  {
+            mHLSExtStats->updateBWStatItem(mBandwidthItems.itemAt(bwIndex).mBandwidth,
+                               (( bwIndex > mCurBandwidthIndex) ? kSwitchUp : kSwitchDown));
+        }
         mCheckBandwidthGeneration++;
         mEraseFirstTs = true;
         (new AMessage(kWhatSwitchConfiguration, id()))->post();
         ALOGV("Posting switchConfiguration to change bandwidth to index %d on the first play", bwIndex);
         return true;
     }
+
+    if (mHLSExtStats != NULL)  {
+        mHLSExtStats->updateBWStatItem(mBandwidthItems.itemAt(bwIndex).mBandwidth, kNoSwitch);
+    }
+
     ALOGV("No need to switch bandwidth");
     return false;
 }
@@ -1322,6 +1390,26 @@ bool LiveSession::canSwitchUp() {
             return true;
         }
     }
+    return false;
+}
+
+bool LiveSession::canSwitchDown() {
+    for (size_t i = 0; i < kMaxStreams; ++i) {
+        int32_t targetDuration;
+        sp<AnotherPacketSource> packetSource = mPacketSources.valueFor(indexToType(i));
+        sp<AMessage> meta = packetSource->getLatestDequeuedMeta();
+        if (meta != NULL && meta->findInt32("targetDuration", &targetDuration) ) {
+            int64_t bufferedDurationUs = packetSource->getEstimatedDurationUs();
+            int64_t targetDurationUs = targetDuration * 1000000ll;
+            if (bufferedDurationUs < targetDurationUs / 3) {
+                ALOGI("fast switchdown stream %lu, actdur %5.2f, min expect %5.2f",
+                         i, bufferedDurationUs / 1000000.0f,
+                         (targetDurationUs / 3)/1000000.0f);
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
@@ -1704,6 +1792,15 @@ void LiveSession::onChangeConfiguration3(const sp<AMessage> &msg) {
             }
         }
 
+        if (mHLSExtStats != NULL) {
+            if (mEraseFirstTs && latestSeq == 0 && (mBandwidthItems.size() > 0)) {
+                mHLSExtStats->initilizeStats((unsigned long)mBandwidthItems.itemAt(mCurBandwidthIndex).mBandwidth, (int64_t)ALooper::GetNowUs());
+                mHLSExtStats->updateBWStatItem(-1, 0, kNoSwitch, -1, ALooper::GetNowUs());
+            } else {
+                mHLSExtStats->updateBWStatItem(latestSeq, startTimeUs, switchType, segmentStartTimeUs, ALooper::GetNowUs());
+            }
+        }
+
         if (mEraseFirstTs && latestSeq == 0) {
              latestSeq = -1;
              discontinuitySeq = -1;
@@ -1806,6 +1903,7 @@ void LiveSession::onCheckSwitchDown() {
         return;
     }
 
+    bool downswitchtriggered = false;
     for (size_t i = 0; i < kMaxStreams; ++i) {
         int32_t targetDuration;
         sp<AnotherPacketSource> packetSource = mPacketSources.valueFor(indexToType(i));
@@ -1817,12 +1915,49 @@ void LiveSession::onCheckSwitchDown() {
 
             if (bufferedDurationUs < targetDurationUs / 3) {
                 (new AMessage(kWhatSwitchDown, id()))->post();
+                ALOGI("fast switched down");
+                downswitchtriggered = true;
                 break;
             }
         }
     }
 
+    if (ExtendedUtils::DiscoverProxy::isProxySet(mExtraHeaders)) {
+        // check for upswitch to avoid slow up switch. check and do
+        // up switch in 1 sec timer instead waiting for 10 seconds timer.
+        // With STA based acceleration, segments downloads fast.
+        // so its better to up switch to play better resolution.
+        tryUpSwitch(downswitchtriggered);
+    }
+
     mSwitchDownMonitor->post(1000000ll);
+}
+
+void LiveSession::tryUpSwitch(bool isDownSwitced) {
+    if (!isDownSwitced && (!mReconfigurationInProgress && !mSwitchInProgress) &&
+        (mCurBandwidthIndex < (ssize_t)(mBandwidthItems.size() - 1)) && canSwitchUp()) {
+        if (mHLSExtStats != NULL)  {
+            mHLSExtStats->addNewStatItem(ALooper::GetNowUs());
+        }
+
+       size_t bandwidthIndex = getBandwidthIndex();
+       if ((ssize_t)bandwidthIndex > mCurBandwidthIndex) {
+           ALOGI("fast switched up");
+           if (mFetchInProgress) {
+              // Delay switch-up requests until the current segment completes so
+              // that we do not discard downloaded data or fetch duplicate data.
+              mSwitchUpRequested = true;
+           } else {
+              if (mHLSExtStats != NULL)  {
+                  mHLSExtStats->updateBWStatItem(
+                          mBandwidthItems.itemAt(bandwidthIndex).mBandwidth,
+                          (((ssize_t)bandwidthIndex > mCurBandwidthIndex) ?
+                                   kSwitchUp : kSwitchDown));
+              }
+              changeConfiguration(-1ll /* timeUs */, bandwidthIndex);
+           }
+        }
+    }
 }
 
 void LiveSession::onSwitchDown() {
@@ -1830,12 +1965,24 @@ void LiveSession::onSwitchDown() {
         return;
     }
 
+    if (mHLSExtStats != NULL)  {
+        mHLSExtStats->addNewStatItem(ALooper::GetNowUs());
+    }
+
     ssize_t bandwidthIndex = getBandwidthIndex();
     if (bandwidthIndex < mCurBandwidthIndex) {
+        if (mHLSExtStats != NULL) {
+            mHLSExtStats->updateBWStatItem(mBandwidthItems.itemAt(bandwidthIndex).mBandwidth, kSwitchDown);
+        }
+
+        ALOGI("fast switched down happened");
         changeConfiguration(-1, bandwidthIndex, false);
         return;
     }
 
+    if (mHLSExtStats != NULL) {
+        mHLSExtStats->updateBWStatItem(mBandwidthItems.itemAt(bandwidthIndex).mBandwidth, kNoSwitch);
+    }
 }
 
 // Mark switch done when:
@@ -1913,11 +2060,19 @@ bool LiveSession::canSwitchBandwidthTo(size_t bandwidthIndex) {
     } else if (bandwidthIndex > (size_t)mCurBandwidthIndex) {
         return canSwitchUp();
     } else {
+        if (ExtendedUtils::DiscoverProxy::isProxySet(mExtraHeaders)) {
+            return canSwitchDown();
+        }
+
         return true;
     }
 }
 
 void LiveSession::onCheckBandwidth(const sp<AMessage> &msg) {
+    if (mHLSExtStats != NULL)  {
+        mHLSExtStats->addNewStatItem(ALooper::GetNowUs());
+    }
+
     size_t bandwidthIndex = getBandwidthIndex();
     if (canSwitchBandwidthTo(bandwidthIndex)) {
         if (mFetchInProgress && (ssize_t)bandwidthIndex > mCurBandwidthIndex) {
@@ -1925,12 +2080,20 @@ void LiveSession::onCheckBandwidth(const sp<AMessage> &msg) {
             // that we do not discard downloaded data or fetch duplicate data
             mSwitchUpRequested = true;
         } else {
+            if (mHLSExtStats != NULL)  {
+                mHLSExtStats->updateBWStatItem(mBandwidthItems.itemAt(bandwidthIndex).mBandwidth,
+                              (( (ssize_t)bandwidthIndex > mCurBandwidthIndex) ? kSwitchUp : kSwitchDown));
+            }
             changeConfiguration(-1ll /* timeUs */, bandwidthIndex);
         }
     } else if (msg != NULL) {
         // Come back and check again 10 seconds later in case there is nothing to do now.
         // If we DO change configuration, once that completes it'll schedule a new
         // check bandwidth event with an incremented mCheckBandwidthGeneration.
+        if (mHLSExtStats != NULL)  {
+            mHLSExtStats->updateBWStatItem(mBandwidthItems.itemAt(bandwidthIndex).mBandwidth, kNoSwitch);
+        }
+
         msg->post(10000000ll);
     }
 }

@@ -470,7 +470,9 @@ ACodec::ACodec()
       mTimePerFrameUs(-1ll),
       mTimePerCaptureUs(-1ll),
       mCreateInputBuffersSuspended(false),
-      mTunneled(false) {
+      mTunneled(false),
+      mEncoderComponent(false),
+      mComponentAllocByName(false) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -2206,10 +2208,17 @@ status_t ACodec::setupFlacCodec(
         }
     }
 
+#ifdef QTI_FLAC_DECODER
     return setupRawAudioFormat(
             kPortIndexInput,
             sampleRate,
             numChannels);
+#else
+    return setupRawAudioFormat(
+            encoder ? kPortIndexInput : kPortIndexOutput,
+            sampleRate,
+            numChannels);
+#endif
 }
 
 status_t ACodec::setupRawAudioFormat(
@@ -4959,6 +4968,8 @@ void ACodec::UninitializedState::stateEntered() {
     mCodec->mOMX.clear();
     mCodec->mQuirks = 0;
     mCodec->mFlags = 0;
+    mCodec->mEncoderComponent = 0;
+    mCodec->mComponentAllocByName = 0;
     mCodec->mUseMetadataOnEncoderOutput = 0;
     mCodec->mComponentName.clear();
 }
@@ -5060,6 +5071,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         ssize_t index = matchingCodecs.add();
         OMXCodec::CodecNameAndQuirks *entry = &matchingCodecs.editItemAt(index);
         entry->mName = String8(componentName.c_str());
+        mCodec->mComponentAllocByName = true;
 
         if (!OMXCodec::findCodecQuirks(
                     componentName.c_str(), &entry->mQuirks)) {
@@ -5070,6 +5082,10 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
 
         if (!msg->findInt32("encoder", &encoder)) {
             encoder = false;
+        }
+
+        if (encoder == true) {
+            mCodec->mEncoderComponent = true;
         }
 
 #ifdef ENABLE_AV_ENHANCEMENTS
@@ -5298,12 +5314,28 @@ bool ACodec::LoadedState::onConfigureComponent(
         ALOGE("[%s] configureCodec returning error %d",
               mCodec->mComponentName.c_str(), err);
 
-        mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
-        return false;
+        // Try fallback for video decoder only if component is not allocated by name
+        if (!mCodec->mEncoderComponent && !mCodec->mComponentAllocByName
+                && !strncmp(mime.c_str(), "video/", strlen("video/"))) {
+            sp<CodecObserver> observer = new CodecObserver;
+            sp<AMessage> notify = new AMessage(kWhatOMXMessage, mCodec->id());
+            observer->setNotificationMessage(notify);
+            err = ExtendedCodec::tryAllocateAndConfigureFallback(mCodec, msg, observer);
+            if (err != OK) {
+                return err;
+            }
+        } else {
+            ALOGE("[%s] configureCodec returning error %d",
+                  mCodec->mComponentName.c_str(), err);
+            mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
+            return false;
+        }
+
     }
 
     {
         sp<AMessage> notify = mCodec->mNotify->dup();
+        notify->setString("componentName", mCodec->mComponentName.c_str());
         notify->setInt32("what", CodecBase::kWhatComponentConfigured);
         notify->setMessage("input-format", mCodec->mInputFormat);
         notify->setMessage("output-format", mCodec->mOutputFormat);

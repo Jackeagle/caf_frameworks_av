@@ -59,7 +59,9 @@
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMediaDefs.h"
 #include "QCMetaData.h"
-#if defined(FLAC_OFFLOAD_ENABLED) || defined(WMA_OFFLOAD_ENABLED) || defined(PCM_OFFLOAD_ENABLED_24)
+#if defined(FLAC_OFFLOAD_ENABLED) || defined(WMA_OFFLOAD_ENABLED) || \
+    defined(PCM_OFFLOAD_ENABLED_24) || defined(ALAC_OFFLOAD_ENABLED) || \
+    defined(APE_OFFLOAD_ENABLED)
 #include "audio_defs.h"
 #endif
 #endif
@@ -665,17 +667,6 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     int32_t channelMask = 0;
     int32_t delaySamples = 0;
     int32_t paddingSamples = 0;
-#ifdef ENABLE_AV_ENHANCEMENTS
-#ifdef WMA_OFFLOAD_ENABLED
-    int32_t wmaFormatTag = 0;
-    int32_t wmaBlockAlign = 0;
-    int32_t wmaChannelMask = 0;
-    int32_t wmaBitsPerSample = 0;
-    int32_t wmaEncodeOpt = 0;
-    int32_t wmaEncodeOpt1 = 0;
-    int32_t wmaEncodeOpt2 = 0;
-#endif
-#endif
 
     AudioParameter param = AudioParameter();
 
@@ -694,63 +685,15 @@ status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink,
     if (meta->findInt32(kKeyEncoderPadding, &paddingSamples)) {
         param.addInt(String8(AUDIO_OFFLOAD_CODEC_PADDING_SAMPLES), paddingSamples);
     }
-#ifdef ENABLE_AV_ENHANCEMENTS
-#ifdef FLAC_OFFLOAD_ENABLED
-    int32_t minBlkSize, maxBlkSize, minFrmSize, maxFrmSize; //FLAC params
-    if (meta->findInt32(kKeyMinBlkSize, &minBlkSize)) {
-        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MIN_BLK_SIZE), minBlkSize);
-    }
-    if (meta->findInt32(kKeyMaxBlkSize, &maxBlkSize)) {
-        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MAX_BLK_SIZE), maxBlkSize);
-    }
-    if (meta->findInt32(kKeyMinFrmSize, &minFrmSize)) {
-        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MIN_FRAME_SIZE), minFrmSize);
-    }
-    if (meta->findInt32(kKeyMaxFrmSize, &maxFrmSize)) {
-        param.addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MAX_FRAME_SIZE), maxFrmSize);
-    }
-#endif
-#ifdef WMA_OFFLOAD_ENABLED
-    const char *mime;
-    bool success = meta->findCString(kKeyMIMEType, &mime);
-    CHECK(success);
 
-    if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)) {
-        // WMA params
-        if (meta->findInt32(kKeyWMAFormatTag, &wmaFormatTag)) {
-            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_FORMAT_TAG), wmaFormatTag);
-        }
-        if (meta->findInt32(kKeyWMABlockAlign, &wmaBlockAlign)) {
-            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_BLOCK_ALIGN), wmaBlockAlign);
-        }
-        if (meta->findInt32(kKeyWMABitspersample, &wmaBitsPerSample)) {
-            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_BIT_PER_SAMPLE), wmaBitsPerSample);
-        }
-        if (meta->findInt32(kKeyWMAChannelMask, &wmaChannelMask)) {
-            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_CHANNEL_MASK), wmaChannelMask);
-        }
-        if (meta->findInt32(kKeyWMAEncodeOpt, &wmaEncodeOpt)) {
-            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION), wmaEncodeOpt);
-        }
-        if (meta->findInt32(kKeyWMAAdvEncOpt1, &wmaEncodeOpt1)) {
-            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION1), wmaEncodeOpt1);
-        }
-        if (meta->findInt32(kKeyWMAAdvEncOpt2, &wmaEncodeOpt2)) {
-            param.addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION2), wmaEncodeOpt2);
-        }
-    }
-    ALOGV("%s (WMA specific meta): fmt_tag 0x%x, blk_align %d, bits_per_sample %d, "
-          "enc_options 0x%x", __func__, wmaFormatTag, wmaBlockAlign,
-          wmaBitsPerSample, wmaEncodeOpt);
-#endif
-#endif
+    status_t err = ExtendedUtils::sendMetaDataToHal(meta, &param);
 
     ALOGV("sendMetaDataToHal: bitRate %d, sampleRate %d, chanMask %d,"
           "delaySample %d, paddingSample %d", bitRate, sampleRate,
           channelMask, delaySamples, paddingSamples);
 
     sink->setParameters(param.toString());
-    return OK;
+    return err;
 }
 
 struct mime_conv_t {
@@ -868,9 +811,9 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
 #ifdef ENABLE_AV_ENHANCEMENTS
 #ifdef PCM_OFFLOAD_ENABLED_24
     if(meta->findInt32(kKeySampleBits, &bitWidth) && 24 == bitWidth)
-        ALOGV("%s Bits per sample is 24", __func__);
+        ALOGV("Bits per sample is 24");
     else
-        ALOGV("%s Sample Bit info in meta data is %d", __func__, bitWidth);
+        ALOGV("Sample Bit info in meta data is %d", bitWidth);
 #endif
 #ifdef WMA_OFFLOAD_ENABLED
     int32_t wmaVersion = kTypeWMA;
@@ -890,8 +833,12 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         if (info.format == AUDIO_FORMAT_PCM_16_BIT) {
             if (16 == bitWidth)
                 info.format = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
-            else if (24 == bitWidth)
+            else if (24 == bitWidth || 32 == bitWidth) {
+            //for AIFF, parser pads 24 bit data with 8 bits as 0 and sets the bitwidth as 32
+                ALOGV("Override bitwidth to 24 for 24 bit AIFF clips");
+                bitWidth = 24;
                 info.format = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+            }
         }
 
 #ifdef ENABLE_AV_ENHANCEMENTS
@@ -904,7 +851,7 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         }
 #endif
 #endif
-        ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
+        ALOGV("Mime type \"%s\" mapped to audio_format %x", mime, info.format);
     }
 
     if (AUDIO_FORMAT_INVALID == info.format) {

@@ -627,4 +627,152 @@ void RecorderExtendedStats::dump() {
     ALOGI("-------------------End RecorderExtendedStats----------------------");
 }
 
+sp<ExtendedHLSStats> ExtendedHLSStats::create() {
+   char value[PROPERTY_VALUE_MAX];
+   property_get("persist.debug.hls.extendedstats", value, "0");
+   // Return false if  eist.debug.sf.extendedstatss set to 0
+   if (!atoi(value)) {
+        ALOGV("hls extendedstats disabled using persist.debug.hls.extendedstats 0");
+        return NULL;
+   }
+
+   sp<ExtendedHLSStats> instance = new ExtendedHLSStats();
+   if (instance != NULL) {
+      ALOGV("hls extendedstats enabled persist.debug.hls.extendedstats 1");
+      return instance;
+   }
+
+   return NULL;
+}
+
+void ExtendedHLSStats::addNewStatItem(int64_t nowus) {
+    mBWStatsInfo.push(BWStats());
+    BWStats *info = &mBWStatsInfo.editItemAt(mBWStatsInfo.size() - 1);
+    if (info != NULL) {
+        info->mTimeUs = nowus - (mBaseTimeUs > 0 ? mBaseTimeUs : 0);
+    }
+}
+
+void ExtendedHLSStats::updateBWStatItem(int32_t bw) {
+    BWStats *info = &mBWStatsInfo.editItemAt(mBWStatsInfo.size() - 1);
+    if ((info != NULL) && (info->mBwkbps == -1)) {
+        info->mBwkbps = bw;
+    }
+}
+
+void  ExtendedHLSStats::updateBWStatItem(unsigned long list_bw, int32_t swtch_type) {
+    BWStats *info = &mBWStatsInfo.editItemAt(mBWStatsInfo.size() - 1);
+    if ((info != NULL) && (info->mListBW == 0)) {
+        info->mListBW = list_bw;
+    }
+
+    if ((info != NULL) && (info->mSwtch == -1)) {
+        info->mSwtch = swtch_type;
+    }
+}
+
+void  ExtendedHLSStats::updateBWStatItem(int32_t seq, int64_t swtch_pb, int32_t swtch_type, int64_t segStartUs, int64_t nowus) {
+    BWStats *info = &mBWStatsInfo.editItemAt(mBWStatsInfo.size() - 1);
+    if (info != NULL) {
+        if (info->mActualSwitch == -1) {
+            info->mActualSwitch = swtch_type;
+        }
+        if (info->mActualSwitchTimeUs == -1) {
+            info->mActualSwitchTimeUs = nowus - (mBaseTimeUs > 0 ? mBaseTimeUs : 0);
+        }
+        if (info->mSwtchSeg == -1) {
+            info->mSwtchSeg = seq;
+        }
+        if (info->mSwtchPb == -1) {
+            info->mSwtchPb = swtch_pb;
+        }
+        if (info->mSegStartTimeUs == -1) {
+            info->mSegStartTimeUs = segStartUs;
+        }
+    }
+}
+
+void  ExtendedHLSStats::initilizeStats(unsigned long initBW, int64_t basetimeus) {
+   mBaseTimeUs = basetimeus;
+   mInitBW = initBW;
+   mStartTime = -1;
+   mLastTimeUs = -1;
+}
+
+void  ExtendedHLSStats::updateStatsTime(int64_t timeUs) {
+   if (mStartTime == -1) {
+       mStartTime = timeUs;
+   }
+
+   if (timeUs > 0) {
+       mLastTimeUs = timeUs;
+   }
+}
+
+void  ExtendedHLSStats::updateBufferingStats(bool val, int64_t timeUs) {
+   if (!mIsBufferingStart && val) {
+       mIsBufferingStart = val;
+       mBufferingStarttime = (timeUs - mBaseTimeUs)/1000000.0f;
+       ALOGI("HLS video Buffering started at time %6.2f sec", (timeUs - mBaseTimeUs)/1000000.0f);
+   } else if (mIsBufferingStart && !val) {
+       mIsBufferingStart = false;
+       mCumlativeRebuffTime += (((timeUs - mBaseTimeUs)/1000000.0f) - mBufferingStarttime);
+       ALOGI("HLS video Buffering ended at time %6.2f sec, total re-buf dur %6.2f", ((timeUs - mBaseTimeUs)/1000000.0f), (((timeUs - mBaseTimeUs)/1000000.0f) - mBufferingStarttime));
+   } else {
+       ALOGV("HLS video Buffering may be wrong current %d updated %d, time %6.2f sec", mIsBufferingStart, val, (timeUs - mBaseTimeUs)/1000000.0f);
+   }
+}
+
+void ExtendedHLSStats::printBWStatItem2() {
+    int32_t avgbwkbps = 0;
+    int64_t startduration = -1;
+    int64_t endDuration = -1;
+    unsigned long startbw = mInitBW;
+    int32_t lastSeg = -1;
+    int64_t pb = mStartTime;
+    int64_t totalbits = 0;
+    int64_t lastactualSwitch = -1;
+
+    for (size_t i = 0; i < mBWStatsInfo.size(); ++i) {
+         BWStats *info = &mBWStatsInfo.editItemAt(i);
+         if (info != NULL) {
+             ALOGI("observed-bw = %5d kbps, timeUs = %6.2f sec, listBW = %8lu bps, switchType = %2d/%2d, Seg = %3d, SwitchPb = %6.2f sec, SegStart = %6.2f sec switch-delta = %6.2f",
+             info->mBwkbps, info->mTimeUs/1000000.0f, info->mListBW, info->mSwtch, info->mActualSwitch, info->mSwtchSeg, info->mSwtchPb/1000000.0f, info->mSegStartTimeUs/1000000.0f, info->mActualSwitchTimeUs == -1 ? -1.0f : (info->mActualSwitchTimeUs - info->mTimeUs)/1000000.0f);
+
+             if (info->mActualSwitch == 1 /* kSwitchUp */ || info->mActualSwitch == 2/* kSwitchDown */) {
+                 if (pb >= 0 && startbw > 0) {
+                     totalbits += (double)((info->mSwtchPb - pb) / (double)1000000) * (int64_t)startbw;
+                     ALOGI("playout-bitrate %8lu bps starttime %6.2f endtime %6.2f total-playoutbits %12" PRId64 " ", startbw, pb/1000000.0f, info->mSwtchPb/1000000.0f, totalbits);
+                 }
+
+                 if (startduration < 0) {
+                     //startduration = info->swtchPb / 1000000;
+                     startduration = pb;
+                 }
+
+                 startbw = info->mListBW;
+                 pb = info->mSwtchPb;
+                 lastactualSwitch =  info->mActualSwitchTimeUs;
+            }
+
+            if (i == (mBWStatsInfo.size() - 1)) {
+                if (mLastTimeUs > 0) {
+                    totalbits += (double)((mLastTimeUs - pb) / (double)1000000) * (int64_t)startbw;
+                    ALOGI("playout-bitrate %8lu bps starttime %6.2f endtime %6.2f total-playoutbits %12" PRId64 " ", startbw, pb/1000000.0f, mLastTimeUs/1000000.0f, totalbits);
+                }
+             }
+
+             avgbwkbps += info->mBwkbps;
+         }
+     }
+
+     if (startduration < 0) {
+        startduration = mStartTime;
+     }
+
+     endDuration = mLastTimeUs;
+     double totalDuration = (double)(endDuration - startduration) / 1000000;
+     ALOGI("StartPbTime %" PRId64 " us, EndPbtime %" PRId64 " us", startduration, endDuration);
+     ALOGI("Avg Bitrate Estimated %.2f kbps, Avg Bitrate Playedout %.2f kbps total rebuff delay %.2f", (float)((float)avgbwkbps / (float)mBWStatsInfo.size()) ,(float)(((float)totalbits / (float)(totalDuration))/1024.0f), mCumlativeRebuffTime);
+}
 }

@@ -270,7 +270,9 @@ void NuPlayer::setDataSourceAsync(
 
     sp<Source> source;
     if (IsHTTPLiveURL(url)) {
-        source = new HTTPLiveSource(notify, httpService, url, headers);
+        KeyedVector<String8, String8> uriHeaders;
+        ExtendedUtils::DiscoverProxy::create(&mDProxy, &uriHeaders, headers);
+        source = new HTTPLiveSource(notify, httpService, url, &uriHeaders);
     } else if (!strncasecmp(url, "rtsp://", 7)) {
         source = new RTSPSource(
                 notify, httpService, url, headers, mUIDValid, mUID);
@@ -1360,6 +1362,18 @@ void NuPlayer::tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVi
             format->setInt32("wmav", wmaVersion);
         }
     }
+
+    bool isAlacFormat = ExtendedUtils::isALACFormat(audioMeta);
+    bool isApeFormat = ExtendedUtils::isAPEFormat(audioMeta);
+
+    if (isAlacFormat || isApeFormat) {
+        ALOGV("Detected clip of %s format", isAlacFormat ? "alac" : "ape");
+        if (ExtendedUtils::getPcmSampleBits(audioMeta) == 24) {
+            ALOGV("Set bit width for 24 bit %s clip", isAlacFormat ? "alac" : "ape");
+            format->setInt32("sbit", 24);
+        }
+    }
+
 
     status_t err = mRenderer->openAudioSink(
             format, true /* offloadOnly */, hasVideo, mIsStreaming, AUDIO_OUTPUT_FLAG_NONE, &mOffloadAudio);

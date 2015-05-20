@@ -22,6 +22,7 @@
 #include <media/mediaplayer.h>
 
 #include <utils/String8.h>
+#include "ExtendedUtils.h"
 
 namespace android {
 
@@ -229,6 +230,10 @@ private:
 
     FILE *mBackupFile;
     bool mEraseFirstTs;
+    int32_t mCheckProxyCount;
+    sp<ExtendedUtils::DiscoverProxy> mDProxy;
+    sp<ExtendedHLSStats> mHLSExtStats;
+
     uint32_t mSegmentCounter;
 
     bool mIsFirstSwitch;
@@ -300,6 +305,9 @@ private:
 
     void swapPacketSource(StreamType stream);
     bool canSwitchUp();
+    bool canSwitchDown();
+    void tryUpSwitch(bool val);
+    status_t checkProxyAvail();
 
     DISALLOW_EVIL_CONSTRUCTORS(LiveSession);
 };

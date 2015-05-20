@@ -1,4 +1,4 @@
-/*Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -38,6 +38,7 @@
 
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/foundation/ABitReader.h>
+#include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/NativeWindowWrapper.h>
@@ -92,6 +93,11 @@ static const uint8_t kHEVCNalUnitTypePicParamSet = 0x22;
 #include <QCMetaData.h>
 #include <QCMediaDefs.h>
 
+#if defined(FLAC_OFFLOAD_ENABLED) || defined(WMA_OFFLOAD_ENABLED) || \
+    defined(PCM_OFFLOAD_ENABLED_24) || defined(ALAC_OFFLOAD_ENABLED) || \
+    defined(APE_OFFLOAD_ENABLED)
+#include "audio_defs.h"
+#endif
 #include "include/ExtendedExtractor.h"
 #include "include/avc_utils.h"
 
@@ -868,6 +874,103 @@ ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::binderDied(const wp
 }
 
 
+void ExtendedUtils::DiscoverProxy::create(
+        sp<ExtendedUtils::DiscoverProxy> *proxy,
+        KeyedVector<String8, String8> *hdr,
+        const KeyedVector<String8, String8> *headers) {
+    CHECK(hdr);
+    CHECK(proxy);
+    if (headers != NULL) {
+        *hdr = *headers;
+    }
+
+    // Disable STAProxy usage for custom hls specific usecases,
+    // Not starting STAProxy if HLS specific custom
+    // property is enabled
+    if (true == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+        return;
+    }
+
+    if ((*proxy) != NULL) {
+       ALOGI("Proxy already detected, pls reuse it");
+       return;
+    }
+
+    *proxy = ExtendedUtils::DiscoverProxy::create();
+    if ((*proxy) != NULL) {
+        // discover-proxy key signals lower layers to
+        // discover and set proxy port on stack before connect
+        hdr->add(String8("discover-proxy"), String8(""));
+    }
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkForProxyAvail(
+         sp<ExtendedUtils::DiscoverProxy> proxy,
+         KeyedVector<String8, String8> *headers, int32_t *count,
+         uint32_t what, const AString& url, ALooper::handler_id target) {
+    CHECK(headers);
+    CHECK(count);
+    status_t err = OK;
+    int64_t delayUs = 0;
+    if ((proxy != NULL) &&
+        ((err = proxy->checkProxyAvail(headers, count, &delayUs)) != OK)) {
+        if (err == -EAGAIN) {
+            sp<AMessage> msg = new AMessage(what, target);
+            msg->setString("url", url);
+            msg->setPointer("headers", headers);
+            msg->post(delayUs);
+            return err;
+         } else {
+            ALOGI("Failed checkProxyAvail continue without proxy %ld", err);
+         }
+     }
+
+     return err;
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkProxyAvail(
+         KeyedVector<String8, String8> *headers,
+         int32_t *count, int64_t *delayUs) {
+    CHECK(headers);
+    CHECK(count);
+    CHECK(delayUs);
+    if ((headers->indexOfKey(String8("discover-proxy"))) < 0) {
+        return OK;
+    }
+
+    (*count)++;
+    int32_t port = 0;
+    if (getSTAProxyConfig(port)) {
+        ALOGI("Detected Proxy at port %d in %d attempts", port, *count);
+        String8 portString = String8("127.0.0.1");
+        portString.appendFormat(":%d", port);
+        ALOGV("getSTAProxyConfig Proxy IPportString %s", portString.string());
+        headers->add(String8("use-proxy"), portString);
+        *count = 0;
+        ssize_t index;
+        if ((index = headers->indexOfKey(String8("discover-proxy"))) >= 0) {
+             headers->removeItemsAt(index);
+        }
+        return OK;
+    } else if ((*count) > MAX_CHECK_PROXY_RETRY_COUNT) {
+        ALOGI("Not Detected proxy in %d attempts, bypass proxy", *count);
+        ssize_t index;
+        if ((index = headers->indexOfKey(String8("discover-proxy"))) >= 0) {
+             headers->removeItemsAt(index);
+        }
+        return OK;
+    } else {
+        *delayUs = kProxyPollDelayUs;
+        ALOGV("Repost to query proxy count %d", *count);
+        return -EAGAIN;
+    }
+}
+
+bool ExtendedUtils::DiscoverProxy::isProxySet(
+   const KeyedVector<String8, String8>& headers) {
+   return (headers.indexOfKey(String8("use-proxy")) >= 0);
+}
+
 sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
    Mutex::Autolock autoLock(gLock);
    sp<DiscoverProxy> instance = gDProxy.promote();
@@ -892,7 +995,11 @@ sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
       return NULL;
    }
 
-   sendSTAProxyStartIntent();
+   char val[PROPERTY_VALUE_MAX];
+   property_get("persist.mm.sta.start.bootup", val, "0");
+   if (!atoi(val)) {
+       sendSTAProxyStartIntent();
+   }
 
    gDProxy = instance;
    return instance;
@@ -933,7 +1040,12 @@ ExtendedUtils::DiscoverProxy::~DiscoverProxy() {
     Mutex::Autolock autoLock(gLock);
     if (mStaLibHandle != NULL) {
         dlclose(mStaLibHandle);
-        sendSTAProxyStopIntent();
+
+        char val[PROPERTY_VALUE_MAX];
+        property_get("persist.mm.sta.start.bootup", val, "0");
+        if (!atoi(val)) {
+            sendSTAProxyStopIntent();
+        }
     }
 
     gDProxy = NULL;
@@ -2409,12 +2521,70 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
       3. this is 24 bit PCM */
 
     if (is24bitPCMOffloadEnabled() && isRAWFormat(sMeta) &&
-        getPcmSampleBits(sMeta) == 24) {
+        (getPcmSampleBits(sMeta) == 24 || getPcmSampleBits(sMeta) == 32)) {
         ALOGV("%s: decided its true for 24 bit PCM offloading", __func__);
         decision = true;
     }
 
     return decision;
+}
+
+bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
+    const char *mime;
+
+    if ((meta == NULL) || !(meta->findCString(kKeyMIMEType, &mime))) {
+        return false;
+    }
+
+    return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_VORBIS)) ? true : false;
+}
+
+sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
+    size_t vorbisHdrSize = 0;
+    sp<ABuffer> vorbisHdrBuffer = NULL;
+    const void *hdrDat1, *hdrDat2, *hdrDat3;
+    size_t hdrSize1 = 0, hdrSize2 = 0, hdrSize3 = 0;
+    uint32_t type;
+
+    if ((meta != NULL) && meta->findData(kKeyVorbisInfo, &type, &hdrDat1, &hdrSize1)) {
+        vorbisHdrSize += hdrSize1;
+        vorbisHdrSize += 4;
+
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisData, &type, &hdrDat2, &hdrSize2)) {
+        vorbisHdrSize += hdrSize2;
+        vorbisHdrSize += 4;
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisBooks, &type, &hdrDat3, &hdrSize3)) {
+        vorbisHdrSize += hdrSize3;
+        vorbisHdrSize += 4;
+    }
+
+    // assemble vorbis header
+    if (vorbisHdrSize > 0) {
+        size_t offset = 0;
+        vorbisHdrBuffer = new ABuffer(vorbisHdrSize);
+        vorbisHdrBuffer->setRange(0, 0);
+
+        if (hdrSize1 > 0) {
+            memcpy(vorbisHdrBuffer->base(), (int32_t *)&hdrSize1, sizeof(int32_t));
+            memcpy(vorbisHdrBuffer->base() + sizeof(int32_t), hdrDat1, hdrSize1);
+            offset += (hdrSize1 + sizeof(int32_t));
+        }
+        if (hdrSize2 > 0) {
+            memcpy(vorbisHdrBuffer->base() + offset, (int32_t *)&hdrSize2, sizeof(int32_t));
+            memcpy(vorbisHdrBuffer->base() + offset + sizeof(int32_t), hdrDat2, hdrSize2);
+            offset += (hdrSize2 + sizeof(int32_t));
+        }
+        if (hdrSize3 > 0) {
+            memcpy(vorbisHdrBuffer->base() + offset, (int32_t *)&hdrSize3, sizeof(int32_t));
+            memcpy(vorbisHdrBuffer->base() + offset + sizeof(int32_t), hdrDat3, hdrSize3);
+            offset += (hdrSize3 + sizeof(int32_t));
+        }
+        vorbisHdrBuffer->setRange(0, offset);
+    }
+
+    return vorbisHdrBuffer;
 }
 
 bool ExtendedUtils::isWMAFormat(const sp<MetaData> &meta) {
@@ -2455,6 +2625,178 @@ status_t ExtendedUtils::getWMAVersion(const sp<MetaData> &meta, int32_t *version
     }
 
     return BAD_VALUE;
+}
+
+status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData>& meta, AudioParameter *param) {
+
+    const char *mime;
+    bool success = meta->findCString(kKeyMIMEType, &mime);
+    CHECK(success);
+
+#ifdef FLAC_OFFLOAD_ENABLED
+    int32_t minBlkSize = 0, maxBlkSize = 0, minFrmSize = 0, maxFrmSize = 0;
+    if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC)) {
+        if (meta->findInt32(kKeyMinBlkSize, &minBlkSize)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MIN_BLK_SIZE), minBlkSize);
+        }
+        if (meta->findInt32(kKeyMaxBlkSize, &maxBlkSize)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MAX_BLK_SIZE), maxBlkSize);
+        }
+        if (meta->findInt32(kKeyMinFrmSize, &minFrmSize)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MIN_FRAME_SIZE), minFrmSize);
+        }
+        if (meta->findInt32(kKeyMaxFrmSize, &maxFrmSize)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_FLAC_MAX_FRAME_SIZE), maxFrmSize);
+        }
+        ALOGV("FLAC metadata: minBlkSize %d, maxBlkSize %d, minFrmSize %d, maxFrmSize %d",
+                minBlkSize, maxBlkSize, minFrmSize, maxFrmSize);
+        return OK;
+    }
+#endif
+
+#ifdef WMA_OFFLOAD_ENABLED
+    int32_t wmaFormatTag = 0, wmaBlockAlign = 0, wmaChannelMask = 0;
+    int32_t wmaBitsPerSample = 0, wmaEncodeOpt = 0, wmaEncodeOpt1 = 0;
+    int32_t wmaEncodeOpt2 = 0;
+
+    if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)) {
+        if (meta->findInt32(kKeyWMAFormatTag, &wmaFormatTag)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_FORMAT_TAG), wmaFormatTag);
+        }
+        if (meta->findInt32(kKeyWMABlockAlign, &wmaBlockAlign)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_BLOCK_ALIGN), wmaBlockAlign);
+        }
+        if (meta->findInt32(kKeyWMABitspersample, &wmaBitsPerSample)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_BIT_PER_SAMPLE), wmaBitsPerSample);
+        }
+        if (meta->findInt32(kKeyWMAChannelMask, &wmaChannelMask)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_CHANNEL_MASK), wmaChannelMask);
+        }
+        if (meta->findInt32(kKeyWMAEncodeOpt, &wmaEncodeOpt)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION), wmaEncodeOpt);
+        }
+        if (meta->findInt32(kKeyWMAAdvEncOpt1, &wmaEncodeOpt1)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION1), wmaEncodeOpt1);
+        }
+        if (meta->findInt32(kKeyWMAAdvEncOpt2, &wmaEncodeOpt2)) {
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_WMA_ENCODE_OPTION2), wmaEncodeOpt2);
+        }
+        ALOGV("WMA specific meta: fmt_tag 0x%x, blk_align %d, bits_per_sample %d, "
+                "enc_options 0x%x", wmaFormatTag, wmaBlockAlign,
+                wmaBitsPerSample, wmaEncodeOpt);
+        return OK;
+    }
+#endif
+
+    const void *data;
+    size_t size;
+    uint32_t type = 0;
+    if (meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
+        CHECK(data && (size == 24 || size == 32)); //size = 24 for ALAC, 32 for APE
+        ALOGV("Found kKeyRawCodecSpecificData of size %d", size);
+        const uint8_t *ptr = (uint8_t *) data;
+
+#ifdef ALAC_OFFLOAD_ENABLED
+        if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_ALAC,
+                    strlen(MEDIA_MIMETYPE_AUDIO_ALAC))) {
+            uint32_t frameLength = 0, maxFrameBytes = 0, avgBitRate = 0;
+            uint32_t samplingRate = 0, channelLayoutTag = 0;
+            uint8_t compatibleVersion = 0, pb = 0, mb = 0, kb = 0, numChannels = 0, bitDepth = 0;
+            uint16_t maxRun = 0;
+
+            memcpy(&frameLength, ptr + kKeyIndexAlacFrameLength, sizeof(frameLength));
+            memcpy(&compatibleVersion, ptr + kKeyIndexAlacCompatibleVersion, sizeof(compatibleVersion));
+            memcpy(&bitDepth, ptr + kKeyIndexAlacBitDepth, sizeof(bitDepth));
+            memcpy(&pb, ptr + kKeyIndexAlacPb, sizeof(pb));
+            memcpy(&mb, ptr + kKeyIndexAlacMb, sizeof(mb));
+            memcpy(&kb, ptr + kKeyIndexAlacKb, sizeof(kb));
+            memcpy(&numChannels, ptr + kKeyIndexAlacNumChannels, sizeof(numChannels));
+            memcpy(&maxRun, ptr + kKeyIndexAlacMaxRun, sizeof(maxRun));
+            memcpy(&maxFrameBytes, ptr + kKeyIndexAlacMaxFrameBytes, sizeof(maxFrameBytes));
+            memcpy(&avgBitRate, ptr + kKeyIndexAlacAvgBitRate, sizeof(avgBitRate));
+            memcpy(&samplingRate, ptr + kKeyIndexAlacSamplingRate, sizeof(samplingRate));
+
+            ALOGV("ALAC CSD values: frameLength %d bitDepth %d numChannels %d"
+                    " maxFrameBytes %d avgBitRate %d samplingRate %d",
+                    frameLength, bitDepth, numChannels, maxFrameBytes, avgBitRate, samplingRate);
+
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_FRAME_LENGTH), frameLength);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_COMPATIBLE_VERSION), compatibleVersion);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_BIT_DEPTH), bitDepth);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_PB), pb);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_MB), mb);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_KB), kb);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_NUM_CHANNELS), numChannels);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_MAX_RUN), maxRun);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_MAX_FRAME_BYTES), maxFrameBytes);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_AVG_BIT_RATE), avgBitRate);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_SAMPLING_RATE), samplingRate);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_ALAC_CHANNEL_LAYOUT_TAG), channelLayoutTag);
+            return OK;
+        }
+#endif
+#ifdef APE_OFFLOAD_ENABLED
+        if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_APE,
+                    strlen(MEDIA_MIMETYPE_AUDIO_APE))) {
+            uint16_t compatibleVersion = 0, compressionLevel = 0;
+            uint16_t bitsPerSample = 0, numChannels = 0;
+            uint32_t formatFlags = 0, blocksPerFrame = 0, finalFrameBlocks = 0;
+            uint32_t totalFrames = 0, sampleRate = 0, seekTablePresent = 0;
+
+            memcpy(&compatibleVersion, ptr + kKeyIndexApeCompatibleVersion, sizeof(compatibleVersion));
+            memcpy(&compressionLevel, ptr + kKeyIndexApeCompressionLevel, sizeof(compressionLevel));
+            memcpy(&formatFlags, ptr + kKeyIndexApeFormatFlags, sizeof(formatFlags));
+            memcpy(&blocksPerFrame, ptr + kKeyIndexApeBlocksPerFrame, sizeof(blocksPerFrame));
+            memcpy(&finalFrameBlocks, ptr + kKeyIndexApeFinalFrameBlocks, sizeof(finalFrameBlocks));
+            memcpy(&totalFrames, ptr + kKeyIndexApeTotalFrames, sizeof(totalFrames));
+            memcpy(&bitsPerSample, ptr + kKeyIndexApeBitsPerSample, sizeof(bitsPerSample));
+            memcpy(&numChannels, ptr + kKeyIndexApeNumChannels, sizeof(numChannels));
+            memcpy(&sampleRate, ptr + kKeyIndexApeSampleRate, sizeof(sampleRate));
+            memcpy(&seekTablePresent, ptr + kKeyIndexApeSeekTablePresent, sizeof(seekTablePresent));
+
+            ALOGV("APE CSD values: compatibleVersion %d compressionLevel %d formatFlags %d"
+                    " blocksPerFrame %d finalFrameBlocks %d totalFrames %d bitsPerSample %d"
+                    " numChannels %d sampleRate %d seekTablePresent %d",
+                    compatibleVersion, compressionLevel, formatFlags, blocksPerFrame, finalFrameBlocks, totalFrames,
+                    bitsPerSample, numChannels, sampleRate, seekTablePresent);
+
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_COMPATIBLE_VERSION), compatibleVersion);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_COMPRESSION_LEVEL), compressionLevel);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_FORMAT_FLAGS), formatFlags);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_BLOCKS_PER_FRAME), blocksPerFrame);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_FINAL_FRAME_BLOCKS), finalFrameBlocks);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_TOTAL_FRAMES), totalFrames);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_BITS_PER_SAMPLE), bitsPerSample);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_NUM_CHANNELS), numChannels);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_SAMPLE_RATE), sampleRate);
+            param->addInt(String8(AUDIO_OFFLOAD_CODEC_APE_SEEK_TABLE_PRESENT), seekTablePresent);
+            return OK;
+        }
+#endif
+    }
+    return OK;
+}
+
+bool ExtendedUtils::isALACFormat(const sp<MetaData> &meta) {
+    const char *mime;
+
+    if ((meta == NULL) || !(meta->findCString(kKeyMIMEType, &mime))) {
+        return false;
+    }
+
+    return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_ALAC)) ? true : false;
+
+}
+
+bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
+    const char *mime;
+
+    if ((meta == NULL) || !(meta->findCString(kKeyMIMEType, &mime))) {
+        return false;
+    }
+
+    return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_APE)) ? true : false;
+
 }
 
 } // namespace android
@@ -2548,6 +2890,32 @@ ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::~STAProxyServiceDea
 
 void
 ExtendedUtils::DiscoverProxy::STAProxyServiceDeathRecepient::binderDied(const wp<IBinder>& who) {
+}
+
+void ExtendedUtils::DiscoverProxy::create(
+        sp<ExtendedUtils::DiscoverProxy> *proxy,
+        KeyedVector<String8, String8> *hdr,
+        const KeyedVector<String8, String8> *headers) {
+    return;
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkForProxyAvail(
+         sp<ExtendedUtils::DiscoverProxy> proxy,
+         KeyedVector<String8, String8> *headers,
+         int32_t *count, uint32_t what,
+         const AString &url, ALooper::handler_id target) {
+    return OK;
+}
+
+status_t ExtendedUtils::DiscoverProxy::checkProxyAvail(
+         KeyedVector<String8, String8> *headers,
+         int32_t *count, int64_t *delayUs) {
+    return OK;
+}
+
+bool ExtendedUtils::DiscoverProxy::isProxySet(
+         const KeyedVector<String8, String8>& headers) {
+    return false;
 }
 
 sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
@@ -2794,6 +3162,16 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
     return false;
 }
 
+bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
+}
+
+sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return NULL;
+}
+
 bool ExtendedUtils::isWMAFormat(const sp<MetaData> &meta) {
     ARG_TOUCH(meta);
     return false;
@@ -2809,6 +3187,22 @@ status_t ExtendedUtils::getWMAVersion(const sp<MetaData> &meta, int32_t *version
     ARG_TOUCH(meta);
     ARG_TOUCH(version);
     return BAD_VALUE;
+}
+
+status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData> &meta, AudioParameter *param) {
+    ARG_TOUCH(meta);
+    ARG_TOUCH(param);
+    return OK;
+}
+
+bool ExtendedUtils::isALACFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
+}
+
+bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
 }
 
 } // namespace android

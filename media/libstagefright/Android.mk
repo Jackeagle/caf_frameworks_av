@@ -180,7 +180,14 @@ endif
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_WMA_OFFLOAD)),true)
        LOCAL_CFLAGS     += -DWMA_OFFLOAD_ENABLED
 endif
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_ALAC_OFFLOAD)),true)
+       LOCAL_CFLAGS     += -DALAC_OFFLOAD_ENABLED
 endif
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_APE_OFFLOAD)),true)
+       LOCAL_CFLAGS     += -DAPE_OFFLOAD_ENABLED
+endif
+endif
+
 
 LOCAL_SHARED_LIBRARIES += \
         libstagefright_enc_common \

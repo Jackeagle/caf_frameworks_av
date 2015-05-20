@@ -1,4 +1,4 @@
-/* Copyright (c) 2013 - 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -35,6 +35,7 @@
 #include <media/stagefright/foundation/AString.h>
 #include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MPEG4Writer.h>
+#include <media/AudioParameter.h>
 
 #include <media/MediaRecorderBase.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -47,6 +48,8 @@
 
 #define IPV4 4
 #define IPV6 6
+
+#define MAX_CHECK_PROXY_RETRY_COUNT 15
 
 namespace android {
 
@@ -176,12 +179,26 @@ struct ExtendedUtils {
 
         //500 ms timeout for deathnotifier function call
         static const int64_t kBinderDieTimeoutNs = 500000000LL;
-
+        static const int64_t kProxyPollDelayUs = 50000ll;
         typedef bool (*fnIsProxySupported)();
         typedef int (*fnGetPort)();
 
+        static void create(
+                sp<DiscoverProxy> *proxy,
+                KeyedVector<String8, String8> *hdr,
+                const KeyedVector<String8, String8> *headers);
         static sp<DiscoverProxy> create();
         bool getSTAProxyConfig(int32_t &port);
+        static status_t checkForProxyAvail(
+                sp<ExtendedUtils::DiscoverProxy> proxy,
+                KeyedVector<String8, String8> *headers,
+                int32_t *count,
+                uint32_t what, const AString &url,
+                ALooper::handler_id target);
+        status_t checkProxyAvail(
+                KeyedVector<String8, String8> *headers,
+                int32_t *count, int64_t *delayUs);
+        static bool isProxySet(const KeyedVector<String8, String8>& headers);
 
         class STAProxyServiceDeathRecepient: public IBinder::DeathRecipient {
            public:
@@ -284,9 +301,13 @@ struct ExtendedUtils {
             const CameraParameters& params, sp<MetaData> &meta);
 
     static bool isAudioAMR(const char* mime);
+    static bool isVorbisFormat(const sp<MetaData> &meta);
+    static sp<ABuffer> assembleVorbisHdr(const sp<MetaData> &meta);
     static bool isWMAFormat(const sp<MetaData> &meta);
     static bool isAudioWMAPro(const sp<AMessage> &format);
     static status_t getWMAVersion(const sp<MetaData> &meta, int32_t *version);
+    static bool isALACFormat(const sp<MetaData> &meta);
+    static bool isAPEFormat(const sp<MetaData> &meta);
 
     static void updateVideoTrackInfoFromESDS_MPEG4Video(sp<MetaData> meta);
     static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);
@@ -307,6 +328,8 @@ struct ExtendedUtils {
                 sp<AMessage> &dst, const sp<AMessage> &src);
     static bool is24bitPCMOffloaded(
                 const sp<MetaData> &sMeta);
+
+    static status_t sendMetaDataToHal(const sp<MetaData>& meta, AudioParameter *param);
 };
 
 }
