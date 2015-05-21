@@ -330,6 +330,8 @@ struct ExtendedUtils {
                 const sp<MetaData> &sMeta);
 
     static status_t sendMetaDataToHal(const sp<MetaData>& meta, AudioParameter *param);
+
+    static bool isHwAudioDecoderSessionAllowed(const char *meta);
 };
 
 }

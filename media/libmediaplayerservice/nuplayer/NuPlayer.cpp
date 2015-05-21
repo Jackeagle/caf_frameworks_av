@@ -1115,6 +1115,24 @@ void NuPlayer::onResume() {
         return;
     }
     mPaused = false;
+
+    if(mSource != NULL) {
+        sp<AMessage> audioformat = mSource->getFormat(true /*audio*/);
+        const bool hasaudio = (audioformat != NULL);
+
+        //check whether decoder can be allowed from utils
+        if(hasaudio) {
+            AString mime;
+
+            audioformat->findString("mime", &mime);
+            if(!ExtendedUtils::isHwAudioDecoderSessionAllowed(mime.c_str())) {
+                ALOGD("Failed to resume %s audio decoder", mime.c_str());
+                notifyListener(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, 0);
+                return;
+            }
+        }
+    }
+
     if (mSource != NULL) {
         mSource->resume();
     } else {
