@@ -1163,14 +1163,6 @@ void NuPlayer::finishFlushIfPossible() {
 
     ALOGV("both audio and video are flushed now.");
 
-    mPendingAudioAccessUnit.clear();
-    mAggregateBuffer.clear();
-
-    if (mTimeDiscontinuityPending) {
-        mRenderer->signalTimeDiscontinuity();
-        mTimeDiscontinuityPending = false;
-    }
-
     if (mAudioDecoder != NULL && mFlushingAudio == FLUSHED) {
         mAudioDecoder->signalResume();
     }
@@ -1715,6 +1707,20 @@ void NuPlayer::flushDecoder(
         ALOGI("flushDecoder %s without decoder present",
              audio ? "audio" : "video");
         return;
+    }
+
+    if (audio) {
+        mPendingAudioAccessUnit.clear();
+        mAggregateBuffer.clear();
+    }
+    // if has audio, when flusing video decoder, don't reset anchor media time
+    // as it may have already been set by audio rendering
+    if (!audio && mAudioDecoder != NULL)
+        mTimeDiscontinuityPending = false;
+
+    if (mTimeDiscontinuityPending) {
+        mRenderer->signalTimeDiscontinuity();
+        mTimeDiscontinuityPending = false;
     }
 
     // Make sure we don't continue to scan sources until we finish flushing.
