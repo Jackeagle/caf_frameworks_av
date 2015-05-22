@@ -179,7 +179,8 @@ NuPlayer::NuPlayer()
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
       mStarted(false),
       mBuffering(false),
-      mPlaying(false) {
+      mPlaying(false),
+      mPausedByClient(false) {
 
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
@@ -324,6 +325,7 @@ void NuPlayer::start() {
 
 void NuPlayer::pause() {
     PLAYER_STATS(profileStart, STATS_PROFILE_PAUSE);
+    mPausedByClient = true;
     (new AMessage(kWhatPause, id()))->post();
     //*Note* PLAYER_STATS(notifyPause, <timeUs>) done in NuPlayerRenderer
 }
@@ -699,6 +701,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
             postScanSources();
             mPlaying = true;
+            mPausedByClient = false;
             break;
         }
 
@@ -1089,6 +1092,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 ALOGW("resume called when renderer is gone or not set");
             }
             mPlaying = true;
+            mPausedByClient = false;
             break;
         }
 
@@ -2004,6 +2008,7 @@ void NuPlayer::performReset() {
     mStarted = false;
     mBuffering = false;
     mPlaying = false;
+    mPausedByClient = false;
     PLAYER_STATS(notifyEOS);
     PLAYER_STATS(dump);
     PLAYER_STATS(reset);
@@ -2114,13 +2119,14 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
             if (!mBuffering && durationUs < kLowWaterMarkUs && !eos) {
                 mBuffering = true;
                 if (mPlaying) {
-                    pause();
+                    PLAYER_STATS(profileStart, STATS_PROFILE_PAUSE);
+                    (new AMessage(kWhatPause, id()))->post();
                 }
                 notifyListener(MEDIA_INFO, MEDIA_INFO_BUFFERING_START, 0);
                 ALOGI("cache running low (< %g secs)..pausing",
                         (double)durationUs / 1000000.0);
             } else if (mBuffering && (eos || durationUs > kHighWaterMarkUs)) {
-                if (!mPlaying) {
+                if (!mPlaying && !mPausedByClient) {
                     resume();
                     ALOGI("cache has filled up..resuming");
                 }
