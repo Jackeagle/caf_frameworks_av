@@ -1,5 +1,5 @@
 /*
-** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+** Copyright (c) 2012-2013, 2015, The Linux Foundation. All rights reserved.
 ** Not a Contribution.
 ** Copyright 2007, The Android Open Source Project
 **
@@ -366,7 +366,7 @@ status_t AudioTrack::set(
         memcpy(&mAttributes, pAttributes, sizeof(audio_attributes_t));
         ALOGV("Building AudioTrack with attributes: usage=%d content=%d flags=0x%x tags=[%s]",
                 mAttributes.usage, mAttributes.content_type, mAttributes.flags, mAttributes.tags);
-        mStreamType = audio_attributes_to_stream_type(&mAttributes);
+        mStreamType = AUDIO_STREAM_DEFAULT;
     }
 
     // these below should probably come from the audioFlinger too...
@@ -407,18 +407,18 @@ status_t AudioTrack::set(
                 ((flags | AUDIO_OUTPUT_FLAG_DIRECT) & ~AUDIO_OUTPUT_FLAG_FAST);
     }
 
+    audio_stream_type_t attr_streamType = (mStreamType == AUDIO_STREAM_DEFAULT) ?
+                                           audio_attributes_to_stream_type(&mAttributes):
+                                           mStreamType;
+
     // only allow deep buffering for music stream type
-    if (mStreamType != AUDIO_STREAM_MUSIC) {
+    if (attr_streamType != AUDIO_STREAM_MUSIC) {
         flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
         if (flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
             ALOGE("Offloading only allowed with music stream");
             return BAD_VALUE; // To trigger fallback or let the client handle
         }
     }
-
-    audio_stream_type_t attr_streamType = (mStreamType == AUDIO_STREAM_DEFAULT) ?
-                                           audio_attributes_to_stream_type(&mAttributes):
-                                           mStreamType;
 
     if ((attr_streamType == AUDIO_STREAM_VOICE_CALL) &&
         (mChannelCount == 1) &&
