@@ -120,6 +120,41 @@ private:
     DISALLOW_EVIL_CONSTRUCTORS(ShutdownDecoderAction);
 };
 
+
+struct NuPlayer::FlushDecoderAction : public Action {
+    FlushDecoderAction(FlushCommand audio, FlushCommand video)
+        : mAudio(audio),
+          mVideo(video) {
+    }
+
+    virtual void execute(NuPlayer *player) {
+        player->performDecoderFlush(mAudio, mVideo);
+    }
+
+private:
+    FlushCommand mAudio;
+    FlushCommand mVideo;
+
+    DISALLOW_EVIL_CONSTRUCTORS(FlushDecoderAction);
+};
+
+struct NuPlayer::InstantiateDecoderAction : public Action {
+    InstantiateDecoderAction(bool audio, sp<Decoder> *decoder)
+        : mAudio(audio),
+          mdecoder(decoder) {
+    }
+
+    virtual void execute(NuPlayer *player) {
+        player->instantiateDecoder(mAudio, mdecoder);
+    }
+
+private:
+    bool mAudio;
+    sp<Decoder> *mdecoder;
+
+    DISALLOW_EVIL_CONSTRUCTORS(InstantiateDecoderAction);
+};
+
 struct NuPlayer::PostMessageAction : public Action {
     PostMessageAction(const sp<AMessage> &msg)
         : mMessage(msg) {
@@ -990,16 +1025,13 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 CHECK(msg->findInt32("reason", &reason));
                 closeAudioSink();
                 sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
-                if (!mOffloadDecodedPCM) {
-                    mAudioDecoder.clear();
-                    ++mAudioDecoderGeneration;
-                } else {
-                    ALOGV("Decoded PCM offload flushing mFLushingAudio %d", mFlushingAudio);
-                    if (mAudioDecoder != NULL && mFlushingAudio == NONE) {
-                        mSwitchingFromPcmOffload = true;
-                        flushDecoder(true /* audio */, false/* needShutdown */);
-                    }
+
+                if (mAudioDecoder != NULL && mFlushingAudio == NONE) {
+                    mDeferredActions.push_back(
+                        new FlushDecoderAction(FLUSH_CMD_SHUTDOWN /* audio */,
+                                               FLUSH_CMD_NONE /* video */));
                 }
+
                 mRenderer->flush(true /* audio */);
                 if (mVideoDecoder != NULL) {
                     mRenderer->flush(false /* audio */);
@@ -1018,8 +1050,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 performSeek(positionUs, false /* needNotify */);
                 if (reason == Renderer::kDueToError) {
-                    instantiateDecoder(true /* audio */, &mAudioDecoder);
+                    mDeferredActions.push_back(
+                            new InstantiateDecoderAction(true /* audio */, &mAudioDecoder));
+
                 }
+                processDeferredActions();
             }
             break;
         }
@@ -1102,6 +1137,24 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 convertMessageToMetaData(videoFormat, vMeta);
                 mOffloadAudio = canOffloadStream(audioMeta, (videoFormat != NULL), vMeta,
                                      mIsStreaming /* is_streaming */, streamType);
+
+                if (!mOffloadAudio && (audioMeta != NULL)) {
+                    sp<MetaData> audioSourceMeta = mSource->getFormatMeta(true/* audio */);
+                    sp<MetaData> audioPCMMeta =
+                            ExtendedUtils::createPCMMetaFromSource(audioSourceMeta);
+                    const char *mime = NULL;
+                    if (audioMeta != NULL) {
+                        audioMeta->findCString(kKeyMIMEType, &mime);
+                    }
+                    mOffloadAudio =
+                            ((mime && !ExtendedUtils::pcmOffloadException(mime)) &&
+                            canOffloadStream(audioPCMMeta, (videoFormat != NULL), vMeta,
+                                    mIsStreaming /* is_streaming */, streamType));
+                    mOffloadDecodedPCM = mOffloadAudio;
+                    ALOGI("Could not offload audio decode, pcm offload decided :%d",
+                            mOffloadDecodedPCM);
+                }
+
                 if (mOffloadAudio) {
                     flags |= Renderer::FLAG_OFFLOAD_AUDIO;
                     if (mRenderer != NULL) {
@@ -1474,11 +1527,6 @@ status_t NuPlayer::feedDecoderInputData(bool audio, const sp<AMessage> &msg) {
                      audio ? "audio" : "video", formatChange, timeChange);
 
                 if (audio) {
-                    if (mSwitchingFromPcmOffload) {
-                        //force format change if the discontinuity was triggered from fallback
-                        formatChange = true;
-                        mSwitchingFromPcmOffload = false;
-                    }
                     mSkipRenderingAudioUntilMediaTimeUs = -1;
                 } else {
                     mSkipRenderingVideoUntilMediaTimeUs = -1;
@@ -1787,6 +1835,18 @@ void NuPlayer::flushDecoder(
         return;
     }
 
+    FlushStatus *state = audio ? &mFlushingAudio : &mFlushingVideo;
+
+    bool inShutdown = *state != NONE &&
+                      *state != FLUSHING_DECODER &&
+                      *state != FLUSHED;
+
+    // Reject flush if the decoder state is not one of the above
+    if (inShutdown) {
+        ALOGI("flush of %s called while in shutdown", audio ? "audio" : "video");
+        return;
+    }
+
     // Make sure we don't continue to scan sources until we finish flushing.
     ++mScanSourcesGeneration;
     mScanSourcesPending = false;
@@ -2002,6 +2062,22 @@ void NuPlayer::performDecoderFlush() {
     }
 }
 
+void NuPlayer::performDecoderFlush(FlushCommand audio, FlushCommand video) {
+    ALOGV("performDecoderFlush audio=%d, video=%d", audio, video);
+
+    if ((audio == FLUSH_CMD_NONE || mAudioDecoder == NULL)
+            && (video == FLUSH_CMD_NONE || mVideoDecoder == NULL)) {
+        return;
+    }
+
+    if (audio != FLUSH_CMD_NONE && mAudioDecoder != NULL) {
+        flushDecoder(true /* audio */, (audio == FLUSH_CMD_SHUTDOWN));
+    }
+
+    if (video != FLUSH_CMD_NONE && mVideoDecoder != NULL) {
+        flushDecoder(false /* audio */, (video == FLUSH_CMD_SHUTDOWN));
+    }
+}
 void NuPlayer::performDecoderShutdown(bool audio, bool video) {
     ALOGV("performDecoderShutdown audio=%d, video=%d", audio, video);
 
