@@ -180,6 +180,9 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_FLAC_OFFLOAD)),true)
 			$(TOP)/hardware/qcom/audio/hal/audio_extn \
 			$(TOP)/hardware/qcom/audio/hal
 endif
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_WMA_OFFLOAD)),true)
+       LOCAL_CFLAGS     += -DWMA_OFFLOAD_ENABLED
+endif
 endif
 
 LOCAL_SHARED_LIBRARIES += \
