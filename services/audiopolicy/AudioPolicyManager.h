@@ -812,6 +812,10 @@ protected:
         static uint32_t parseOutputFlagNames(char *name);
         static uint32_t parseInputFlagNames(char *name);
         static audio_devices_t parseDeviceNames(char *name);
+#ifdef VOICE_CONCURRENCY
+        static audio_output_flags_t getFallBackPath();
+        int mFallBackflag;
+#endif /*VOICE_CONCURRENCY*/
         void loadHwModule(cnode *root);
         void loadHwModules(cnode *root);
         void loadGlobalConfig(cnode *root, const sp<HwModule>& module);
