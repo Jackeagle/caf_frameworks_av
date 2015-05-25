@@ -37,6 +37,7 @@
 
 #include "avc_utils.h"
 #include "ATSParser.h"
+#include "ExtendedUtils.h"
 
 namespace android {
 
@@ -137,6 +138,14 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format, bool isStreaming
         surface = mNativeWindow->getSurfaceTextureClient();
     }
 
+    if(mIsAudio) {
+        //check whether decoder can be allowed from utils
+        if(!ExtendedUtils::isHwAudioDecoderSessionAllowed(mime.c_str())) {
+            ALOGD("Failed to create %s audio decoder", mime.c_str());
+            handleError(UNKNOWN_ERROR);
+            return;
+        }
+   }
     mComponentName = mime;
     mComponentName.append(" decoder");
     ALOGV("[%s] onConfigure (surface=%p)", mComponentName.c_str(), surface.get());

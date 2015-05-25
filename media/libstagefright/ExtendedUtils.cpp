@@ -66,6 +66,9 @@
 #include <system/window.h>
 #include <ui/GraphicBufferMapper.h>
 
+#include <media/AudioParameter.h>
+#include <media/AudioSystem.h>
+
 extern "C" {
     #include "jpeglib.h"
     #include "jerror.h"
@@ -105,6 +108,8 @@ namespace android {
 
 const uint32_t START_SERVICE_TRANSACTION = IBinder::FIRST_CALL_TRANSACTION + 33;
 const uint32_t STOP_SERVICE_TRANSACTION  = IBinder::FIRST_CALL_TRANSACTION + 34;
+
+#define AUDIO_PARAMETER_IS_HW_DECODER_SESSION_ALLOWED  "is_hw_dec_session_allowed"
 
 void ExtendedUtils::HFR::setHFRIfEnabled(
         const CameraParameters& params,
@@ -2799,6 +2804,31 @@ bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
 
 }
 
+bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
+
+    if (mime != NULL) {
+        int isallowed = 0;
+        String8  hal_result,hal_query;
+
+        hal_query = AUDIO_PARAMETER_IS_HW_DECODER_SESSION_ALLOWED;
+        //Append mime type to query
+        hal_query += "=";
+        hal_query +=  mime;
+
+        //Check with HAL whether new session can be created for DSP only decoding formats
+        hal_result = AudioSystem::getParameters((audio_io_handle_t)0, hal_query);
+        AudioParameter result = AudioParameter(hal_result);
+        if (result.getInt(String8(AUDIO_PARAMETER_IS_HW_DECODER_SESSION_ALLOWED),
+                                     isallowed) == NO_ERROR) {
+            if(0 == isallowed) {
+               ALOGD(" ExtendedUtils : Rejecting audio decoder session request for %s ", mime);
+               return false;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace android
 #else //ENABLE_AV_ENHANCEMENTS
 
@@ -3203,6 +3233,11 @@ bool ExtendedUtils::isALACFormat(const sp<MetaData> &meta) {
 bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
     ARG_TOUCH(meta);
     return false;
+}
+
+bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
+    ARG_TOUCH(mime);
+    return true;
 }
 
 } // namespace android
