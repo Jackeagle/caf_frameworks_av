@@ -1756,6 +1756,7 @@ status_t MediaPlayerService::AudioOutput::open(
         if (reuse) {
             ALOGV("chaining to next output and recycling track");
             close();
+            Mutex::Autolock _l(mLock);
             mTrack = mRecycledTrack;
             mRecycledTrack.clear();
             if (mCallbackData != NULL) {
@@ -1792,6 +1793,7 @@ status_t MediaPlayerService::AudioOutput::open(
     if (t->getPosition(&pos) == OK) {
         mBytesWritten = uint64_t(pos) * t->frameSize();
     }
+    Mutex::Autolock _l(mLock);
     mTrack = t;
 
     status_t res = NO_ERROR;
@@ -1826,6 +1828,7 @@ void MediaPlayerService::AudioOutput::setNextOutput(const sp<AudioOutput>& nextO
 
 
 void MediaPlayerService::AudioOutput::switchToNextOutput() {
+    Mutex::Autolock _l(mLock);
     ALOGV("switchToNextOutput");
     if (mNextOutput != NULL) {
         if (mCallbackData != NULL) {
@@ -1880,12 +1883,14 @@ void MediaPlayerService::AudioOutput::pause()
 void MediaPlayerService::AudioOutput::close()
 {
     ALOGV("close");
+    Mutex::Autolock _l(mLock);
     mTrack.clear();
 }
 
 void MediaPlayerService::AudioOutput::setVolume(float left, float right)
 {
     ALOGV("setVolume(%f, %f)", left, right);
+    Mutex::Autolock _l(mLock);
     mLeftVolume = left;
     mRightVolume = right;
     if (mTrack != 0) {
@@ -1912,6 +1917,7 @@ status_t MediaPlayerService::AudioOutput::setPlaybackRatePermille(int32_t ratePe
 status_t MediaPlayerService::AudioOutput::setAuxEffectSendLevel(float level)
 {
     ALOGV("setAuxEffectSendLevel(%f)", level);
+    Mutex::Autolock _l(mLock);
     mSendLevel = level;
     if (mTrack != 0) {
         return mTrack->setAuxEffectSendLevel(level);
@@ -1922,6 +1928,7 @@ status_t MediaPlayerService::AudioOutput::setAuxEffectSendLevel(float level)
 status_t MediaPlayerService::AudioOutput::attachAuxEffect(int effectId)
 {
     ALOGV("attachAuxEffect(%d)", effectId);
+    Mutex::Autolock _l(mLock);
     mAuxEffectId = effectId;
     if (mTrack != 0) {
         return mTrack->attachAuxEffect(effectId);
