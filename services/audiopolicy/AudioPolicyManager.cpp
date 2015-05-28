@@ -5301,9 +5301,7 @@ AudioPolicyManager::routing_strategy AudioPolicyManager::getStrategy(
         // NOTE: SYSTEM stream uses MEDIA strategy because muting music and switching outputs
         // while key clicks are played produces a poor result
     case AUDIO_STREAM_MUSIC:
-#ifdef AUDIO_EXTN_INCALL_MUSIC_ENABLED
     case AUDIO_STREAM_INCALL_MUSIC:
-#endif
         return STRATEGY_MEDIA;
     case AUDIO_STREAM_ENFORCED_AUDIBLE:
         return STRATEGY_ENFORCED_AUDIBLE;
