@@ -45,7 +45,10 @@ static bool isProtectedCallAllowed() {
             return true;
         }
     }
-    return false;
+    // TODO: To decrypt DRM image and midi audio allows Gallery and music apps
+    // to access DRM drm service. Returning always true because we do not have
+    // better approach to allow third pary applications.
+    return true;
 }
 
 void DrmManagerService::instantiate() {
