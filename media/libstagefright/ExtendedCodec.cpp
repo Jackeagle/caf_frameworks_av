@@ -398,8 +398,21 @@ status_t ExtendedCodec::setAudioFormat(
         err = setALACFormat(numChannels, sampleRate, OMXhandle, nodeID);
     } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_APE, mime)) {
         int32_t numChannels, sampleRate;
+        uint32_t compressionLevel = 0;
         CHECK(msg->findInt32("channel-count", &numChannels));
         CHECK(msg->findInt32("sample-rate", &sampleRate));
+        sp<ABuffer> buffer;
+        msg->findBuffer("csd-0", &buffer);
+        CHECK(buffer->data() != NULL);
+        const uint8_t *ptr = (uint8_t *) buffer->data();
+        memcpy(&compressionLevel, ptr + kKeyIndexApeCompressionLevel, sizeof(compressionLevel));
+        /*TODO: move this check to APE OMX component once the ION ALLOC bug is fixed*/
+        if (compressionLevel != APE_COMPRESSION_LEVEL_FAST &&
+            compressionLevel != APE_COMPRESSION_LEVEL_NORMAL &&
+            compressionLevel != APE_COMPRESSION_LEVEL_HIGH) {
+            ALOGD("Cannot play APE clip with compression level %d", compressionLevel);
+            return OMX_ErrorInsufficientResources;
+        }
         err = setAPEFormat(numChannels, sampleRate, OMXhandle, nodeID);
     }
     return err;
