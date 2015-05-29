@@ -1270,41 +1270,49 @@ status_t ExtendedCodec::setALACFormat(
     QOMX_AUDIO_PARAM_ALACTYPE paramALAC;
     OMX_PARAM_PORTDEFINITIONTYPE portParam;
     OMX_INDEXTYPE indexTypeALAC;
+    status_t err = OK;
 
     ALOGV("setALACFormat sampleRate:%d numChannels:%d", sampleRate, numChannels);
 
     //configure input port
     InitOMXParams(&portParam);
     portParam.nPortIndex = kPortIndexInput;
-    status_t err = OMXhandle->getParameter(
-                    nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    err = OMXhandle->getParameter(
+           nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
+    if (err != OK)
+        return err;
     err = OMXhandle->setParameter(
            nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     //configure output port
     portParam.nPortIndex = kPortIndexOutput;
     err = OMXhandle->getParameter(
            nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
     err = OMXhandle->setParameter(
            nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     err = OMXhandle->getExtensionIndex(nodeID, OMX_QCOM_INDEX_PARAM_ALAC, &indexTypeALAC);
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     //for input port
     InitOMXParams(&paramALAC);
     paramALAC.nPortIndex = kPortIndexInput;
     err = OMXhandle->getParameter(nodeID, indexTypeALAC, &paramALAC, sizeof(paramALAC));
-    CHECK_EQ(err,(status_t)OK);
+    if (err != OK)
+        return err;
 
     paramALAC.nSampleRate = sampleRate;
     paramALAC.nChannels = numChannels;
     err = OMXhandle->setParameter(nodeID, indexTypeALAC, &paramALAC, sizeof(paramALAC));
-    CHECK_EQ(err,(status_t)OK);
+    if (err != OK)
+        return err;
 
     //for output port
     OMX_AUDIO_PARAM_PCMMODETYPE profilePcm;
@@ -1312,13 +1320,15 @@ status_t ExtendedCodec::setALACFormat(
     profilePcm.nPortIndex = kPortIndexOutput;
     err = OMXhandle->getParameter(
            nodeID, OMX_IndexParamAudioPcm, &profilePcm, sizeof(profilePcm));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     profilePcm.nSamplingRate = sampleRate;
     profilePcm.nChannels = numChannels;
     err = OMXhandle->setParameter(
            nodeID, OMX_IndexParamAudioPcm, &profilePcm, sizeof(profilePcm));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     return err;
 }
@@ -1330,41 +1340,49 @@ status_t ExtendedCodec::setAPEFormat(
     QOMX_AUDIO_PARAM_APETYPE paramAPE;
     OMX_PARAM_PORTDEFINITIONTYPE portParam;
     OMX_INDEXTYPE indexTypeAPE;
+    status_t err = OK;
 
     ALOGV("setAPEFormat sampleRate:%d numChannels:%d", sampleRate, numChannels);
 
     //configure input port
     InitOMXParams(&portParam);
     portParam.nPortIndex = kPortIndexInput;
-    status_t err = OMXhandle->getParameter(
-                    nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    err = OMXhandle->getParameter(
+           nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
+    if (err != OK)
+        return err;
     err = OMXhandle->setParameter(
            nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     //configure output port
     portParam.nPortIndex = kPortIndexOutput;
     err = OMXhandle->getParameter(
            nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
     err = OMXhandle->setParameter(
            nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     err = OMXhandle->getExtensionIndex(nodeID, OMX_QCOM_INDEX_PARAM_APE, &indexTypeAPE);
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     //for input port
     InitOMXParams(&paramAPE);
     paramAPE.nPortIndex = kPortIndexInput;
     err = OMXhandle->getParameter(nodeID, indexTypeAPE, &paramAPE, sizeof(paramAPE));
-    CHECK_EQ(err,(status_t)OK);
+    if (err != OK)
+        return err;
 
     paramAPE.nSampleRate = sampleRate;
     paramAPE.nChannels = numChannels;
     err = OMXhandle->setParameter(nodeID, indexTypeAPE, &paramAPE, sizeof(paramAPE));
-    CHECK_EQ(err,(status_t)OK);
+    if (err != OK)
+        return err;
 
     //for output port
     OMX_AUDIO_PARAM_PCMMODETYPE profilePcm;
@@ -1372,13 +1390,15 @@ status_t ExtendedCodec::setAPEFormat(
     profilePcm.nPortIndex = kPortIndexOutput;
     err = OMXhandle->getParameter(
            nodeID, OMX_IndexParamAudioPcm, &profilePcm, sizeof(profilePcm));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     profilePcm.nSamplingRate = sampleRate;
     profilePcm.nChannels = numChannels;
     err = OMXhandle->setParameter(
            nodeID, OMX_IndexParamAudioPcm, &profilePcm, sizeof(profilePcm));
-    CHECK_EQ(err, (status_t)OK);
+    if (err != OK)
+        return err;
 
     return err;
 }

@@ -95,6 +95,7 @@ static const uint8_t kHEVCNalUnitTypePicParamSet = 0x22;
 
 #include <QCMetaData.h>
 #include <QCMediaDefs.h>
+#include <QOMX_AudioExtensions.h>
 
 #if defined(FLAC_OFFLOAD_ENABLED) || defined(WMA_OFFLOAD_ENABLED) || \
     defined(PCM_OFFLOAD_ENABLED_24) || defined(ALAC_OFFLOAD_ENABLED) || \
@@ -2710,7 +2711,7 @@ status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData>& meta, AudioParamet
     size_t size;
     uint32_t type = 0;
     if (meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
-        CHECK(data && (size == 24 || size == 32)); //size = 24 for ALAC, 32 for APE
+        CHECK(data && (size == ALAC_CSD_SIZE || size == APE_CSD_SIZE));
         ALOGV("Found kKeyRawCodecSpecificData of size %d", size);
         const uint8_t *ptr = (uint8_t *) data;
 
@@ -2815,6 +2816,24 @@ bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
 
     return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_APE)) ? true : false;
 
+}
+
+bool ExtendedUtils::checkAPECompressionLevel(const sp<MetaData> &meta) {
+    const void *data;
+    size_t size;
+    uint32_t type = 0, compressionLevel = 0;
+
+    if (meta != NULL && meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
+        CHECK(data && (size == APE_CSD_SIZE));
+        memcpy(&compressionLevel, (uint8_t *) data + kKeyIndexApeCompressionLevel, sizeof(compressionLevel));
+    }
+    if (compressionLevel != APE_COMPRESSION_LEVEL_FAST &&
+        compressionLevel != APE_COMPRESSION_LEVEL_NORMAL &&
+        compressionLevel != APE_COMPRESSION_LEVEL_HIGH) {
+        ALOGD("Disallow offload for APE clip with compressionLevel %d", compressionLevel);
+        return false;
+    }
+    return true;
 }
 
 bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
@@ -3248,6 +3267,11 @@ bool ExtendedUtils::isALACFormat(const sp<MetaData> &meta) {
 }
 
 bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
+}
+
+bool ExtendedUtils::checkAPECompressionLevel(const sp<MetaData> &meta) {
     ARG_TOUCH(meta);
     return false;
 }
