@@ -1677,6 +1677,7 @@ void NuPlayer::GenericSource::readBuffer(
             options.setSeekTo(seekTimeUs, MediaSource::ReadOptions::SEEK_PREVIOUS_SYNC);
         }
         seeking = true;
+        track->mPackets->clear();
     }
 
     if (mIsWidevine) {
