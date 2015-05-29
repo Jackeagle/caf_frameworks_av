@@ -3953,7 +3953,7 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
     mAudioPortGeneration(1),
     mBeaconMuteRefCount(0),
     mBeaconPlayingRefCount(0),
-    mBeaconMuted(false)
+    mBeaconMuted(true)
 
 {
     mUidCached = getuid();
