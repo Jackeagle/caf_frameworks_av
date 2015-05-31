@@ -26,6 +26,14 @@
 #include <utils/Log.h>
 #include <private/media/AudioTrackShared.h>
 #include <media/IAudioFlinger.h>
+#include "seemp_api.h"
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <dlfcn.h>
+#include <dirent.h>
+#include <fcntl.h>
+static void (*seemp_log_record_func)(int type, const char* msg) = NULL;
+static void *libhandle = NULL;
 
 #define WAIT_PERIOD_MS          10
 
@@ -278,6 +286,16 @@ status_t AudioRecord::start(AudioSystem::sync_event_t event, int triggerSession)
 {
     ALOGV("start, sync event %d trigger session %d", event, triggerSession);
 
+    if (libhandle == NULL) {
+        libhandle = dlopen("libSeemplog.so", RTLD_NOW);
+        if (libhandle != NULL) {
+            *(void **)(&seemp_log_record_func) =
+                           dlsym(libhandle,"seemp_log_record");
+        }
+    }
+    if (seemp_log_record_func)
+        seemp_log_record_func(SEEMP_API_AudioRecord__start, "");
+
     AutoMutex lock(mLock);
     if (mActive) {
         return NO_ERROR;
@@ -323,6 +341,16 @@ status_t AudioRecord::start(AudioSystem::sync_event_t event, int triggerSession)
 
 void AudioRecord::stop()
 {
+    if (libhandle == NULL) {
+        libhandle = dlopen("libSeemplog.so", RTLD_NOW);
+        if (libhandle != NULL) {
+            *(void **)(&seemp_log_record_func) =
+                           dlsym(libhandle,"seemp_log_record");
+        }
+    }
+    if (seemp_log_record_func)
+        seemp_log_record_func(SEEMP_API_AudioRecord__stop, "");
+
     AutoMutex lock(mLock);
     if (!mActive) {
         return;
