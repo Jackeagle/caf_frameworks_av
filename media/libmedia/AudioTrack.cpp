@@ -235,8 +235,7 @@ bool AudioTrack::canOffloadTrack(
        // Track offload only if the following criterion
        // 1. Track offload info structure should NOT have been provided
        // 2. Format is 16 bit
-       // 3. Track is NOT fast track (to prevent tones, and low latency from
-       //     being offloaded
+       // 3. Track should not have any flags other NONE
        // 4. Client uses write interface to provide data
 
 
@@ -245,7 +244,7 @@ bool AudioTrack::canOffloadTrack(
         if (!offloadInfo &&
              (format == AUDIO_FORMAT_PCM_16_BIT) &&
              (streamType == AUDIO_STREAM_MUSIC) &&
-             (!(flags & AUDIO_OUTPUT_FLAG_FAST)) &&
+             (flags == AUDIO_OUTPUT_FLAG_NONE) &&
              (transferType != TRANSFER_CALLBACK))
         {
 
@@ -350,10 +349,13 @@ status_t AudioTrack::set(
         return INVALID_OPERATION;
     }
 
-    // handle default values first.
+    mCanOffloadPcmTrack = decideTrackOffloadFromStreamType(streamType);
+
+     // handle default values first.
     if (streamType == AUDIO_STREAM_DEFAULT) {
         streamType = AUDIO_STREAM_MUSIC;
     }
+
     if (pAttributes == NULL) {
         if (uint32_t(streamType) >= AUDIO_STREAM_PUBLIC_CNT) {
             ALOGE("Invalid stream type %d", streamType);
@@ -366,6 +368,7 @@ status_t AudioTrack::set(
         memcpy(&mAttributes, pAttributes, sizeof(audio_attributes_t));
         ALOGV("Building AudioTrack with attributes: usage=%d content=%d flags=0x%x tags=[%s]",
                 mAttributes.usage, mAttributes.content_type, mAttributes.flags, mAttributes.tags);
+        mCanOffloadPcmTrack = decideTrackOffloadfromAttributes(&mAttributes);
         mStreamType = AUDIO_STREAM_DEFAULT;
     }
 
@@ -406,14 +409,6 @@ status_t AudioTrack::set(
                 // FIXME why can't we allow direct AND fast?
                 ((flags | AUDIO_OUTPUT_FLAG_DIRECT) & ~AUDIO_OUTPUT_FLAG_FAST);
     }
-    // only allow deep buffering for music stream type
-    if (mStreamType != AUDIO_STREAM_MUSIC) {
-        flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
-        if (flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
-            ALOGE("Offloading only allowed with music stream");
-            return BAD_VALUE; // To trigger fallback or let the client handle
-        }
-    } 
 
     // force direct flag if HW A/V sync requested
     if ((flags & AUDIO_OUTPUT_FLAG_HW_AV_SYNC) != 0) {
@@ -757,10 +752,17 @@ void AudioTrack::pause()
             // here can be slightly off.
 
             // TODO: check return code for getRenderPosition.
-
-            uint32_t halFrames;
-            AudioSystem::getRenderPosition(mOutput, &halFrames, &mPausedPosition);
-            ALOGV("AudioTrack::pause for offload, cache current position %u", mPausedPosition);
+            if (mIsPcmTrackOffloaded) {
+                uint32_t tempPos = 0;
+                tempPos = (mState == STATE_STOPPED || mState == STATE_FLUSHED) ?
+                    0 : updateAndGetPosition_l();
+                mPausedPosition = (tempPos / (mChannelCount * audio_bytes_per_sample(mFormat)));
+                ALOGV("TrackOffload::pause for offload, cache current position %u", mPausedPosition);
+            } else {
+                uint32_t halFrames;
+                AudioSystem::getRenderPosition(mOutput, &halFrames, &mPausedPosition);
+                ALOGV("AudioTrack::pause for offload, cache current position %u", mPausedPosition);
+            }
         }
     }
 }
@@ -1095,14 +1097,15 @@ status_t AudioTrack::createTrack_l()
     audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
     audio_stream_type_t streamType = mStreamType;
     audio_attributes_t *attr = (mStreamType == AUDIO_STREAM_DEFAULT) ? &mAttributes : NULL;
-    mCanOffloadPcmTrack = false;
     mIsPcmTrackOffloaded = false;
     mPcmTrackOffloadInfo = AUDIO_INFO_INITIALIZER;
 
     // Check if the track can be offloaded. Store the decision in mCanOffloadPcmTrack
-    mCanOffloadPcmTrack = canOffloadTrack(mStreamType, mFormat, mChannelMask, mFlags,
-                              mTransfer, &mAttributes, mOffloadInfo);
-
+    // if stream type was not set, then do not try to offload track
+    if (mCanOffloadPcmTrack) {
+        mCanOffloadPcmTrack = canOffloadTrack(mStreamType, mFormat, mChannelMask, mFlags,
+                                  mTransfer, &mAttributes, mOffloadInfo);
+    }
 
     if(mCanOffloadPcmTrack) {
         ALOGV("TrackOffload: Tying to create PCM Offload track");
@@ -2445,6 +2448,34 @@ void AudioTrack::AudioTrackThread::pauseInternal(nsecs_t ns)
     AutoMutex _l(mMyLock);
     mPausedInt = true;
     mPausedNs = ns;
+}
+
+bool AudioTrack::decideTrackOffloadFromStreamType(const audio_stream_type_t sType){
+
+   bool decision = false;
+   if(sType != AUDIO_STREAM_DEFAULT) {
+       decision = true;
+   }
+
+   return decision;
+}
+
+bool AudioTrack::decideTrackOffloadfromAttributes(const audio_attributes_t *pAttributes) {
+
+    bool decision = false;
+    if (pAttributes == NULL) {
+       return decision;
+    }
+
+    if ((pAttributes->usage == AUDIO_USAGE_MEDIA) ||
+        (pAttributes->usage == AUDIO_USAGE_GAME)) {
+        //the track can potentially be offloaded
+        decision = true;
+    } else {
+        ALOGV("TrackOffload: do not offload the track if attributes->usage is not media/game");
+    }
+
+    return decision;
 }
 
 }; // namespace android

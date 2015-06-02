@@ -1649,11 +1649,6 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
     }
 
-    if ((format == AUDIO_FORMAT_PCM_16_BIT) &&(popcount(channelMask) > 2)) {
-        ALOGV("owerwrite flag(%x) for PCM16 multi-channel(CM:%x) playback", flags ,channelMask);
-        flags = AUDIO_OUTPUT_FLAG_DIRECT;
-    }
-
     sp<IOProfile> profile;
 
     // skip direct output selection if the request can obviously be attached to a mixed output
@@ -1671,9 +1666,8 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
     // This may prevent offloading in rare situations where effects are left active by apps
     // in the background.
 
-    if ((((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0) ||
-            !isNonOffloadableEffectEnabled()) &&
-            flags & AUDIO_OUTPUT_FLAG_DIRECT) {
+    if (((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0) ||
+            !isNonOffloadableEffectEnabled()) {
         profile = getProfileForDirectOutput(device,
                                            samplingRate,
                                            format,
@@ -5925,31 +5919,8 @@ uint32_t AudioPolicyManager::checkDeviceMuteStrategies(sp<AudioOutputDescriptor>
     // temporary mute output if device selection changes to avoid volume bursts due to
     // different per device volumes
     if (outputDesc->isActive() && (device != prevDevice)) {
-        bool IsMutiHwModuleActive = false;
-
-        for (size_t i = 0; i < mOutputs.size(); i++) {
-            sp<AudioOutputDescriptor> desc = mOutputs.valueAt(i);
-
-            // update total number active HAL modules which can be
-            // used for caluclating mutewait delays
-            if ((desc != outputDesc) && desc->isActive() &&
-                !outputDesc->sharesHwModuleWith(desc)) {
-                ALOGV("FOUND multi HAL modules active");
-                IsMutiHwModuleActive =  true;
-            }
-        }
-
-        if (IsMutiHwModuleActive) {
-	        if (muteWaitMs < outputDesc->latency() * 2) {
-	            muteWaitMs = outputDesc->latency() * 2;
-            }
-        } else {
-            // If only one HAL is active no need to delay twice the latency
-            // for device switch one and half time should be good enough
-            if (muteWaitMs < outputDesc->latency() * 3/2) {
-                ALOGV("Reducting mutewait delay to 3/2 times");
-                muteWaitMs = outputDesc->latency() * 3/2;
-            }
+        if (muteWaitMs < outputDesc->latency() * 2) {
+            muteWaitMs = outputDesc->latency() * 2;
         }
         for (size_t i = 0; i < NUM_STRATEGIES; i++) {
             if (outputDesc->isStrategyActive((routing_strategy)i)) {
