@@ -120,15 +120,16 @@ sp<MediaExtractor> MediaExtractor::Create(
         ret = new MPEG2PSExtractor(source);
     }
 
-    if (ret != NULL) {
-       if (isDrm) {
-           ret->setDrmFlag(true);
-       } else {
-           ret->setDrmFlag(false);
-       }
+    sp<MediaExtractor> mediaExtactor = NULL;
+    mediaExtactor = ExtendedUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
+    if (mediaExtactor != NULL) {
+        if (isDrm) {
+            mediaExtactor->setDrmFlag(true);
+        } else {
+            mediaExtactor->setDrmFlag(false);
+        }
     }
-
-    return ExtendedUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
+    return mediaExtactor;
 }
 
 }  // namespace android

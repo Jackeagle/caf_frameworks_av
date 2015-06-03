@@ -61,6 +61,8 @@ static const char mime_type_audio_wav[]   = "audio/wav";
 static const char mime_type_video_mpeg4[] = "video/mpeg4";
 static const char mime_type_video_3gpp[]  = "video/3gpp";
 
+static const char mime_type_image_bmp[]  = "image/x-ms-bmp";
+
 // Known mimetype groups
 static const char mime_group_audio[]       = "audio/";
 static const char mime_group_application[] = "application/";
@@ -106,6 +108,12 @@ static struct MimeTypeList mimeTypeList[] = {
     // 3gpp video mime types
     {MIMETYPE_VIDEO, "3gp",          sizeof("3gp")-1,         mime_type_video_3gpp},
 
+    // bmp image mime types
+    {MIMETYPE_IMAGE, "bmp",          sizeof("bmp")-1,         mime_type_image_bmp},
+    {MIMETYPE_IMAGE, "x-bmp",        sizeof("x-bmp")-1,       mime_type_image_bmp},
+
+
+
     // Must be last entry
     {MIMETYPE_LAST,  NULL,           0,                       NULL}
 };
@@ -131,6 +139,7 @@ String8 MimeTypeUtil::convertMimeType(String8& mimeType) {
     pMimeType = mimeType.string();
     if (NULL != pMimeType) {
         if ((0 == strncmp(pMimeType, mime_group_audio, (sizeof mime_group_audio) - 1)) ||
+            (0 == strncmp(pMimeType, mime_group_image, (sizeof mime_group_image) - 1)) ||
             (0 == strncmp(pMimeType, mime_group_video, (sizeof mime_group_video) - 1))) {
             /* Check which group the mimetype is */
             pGroup = mimeGroup;

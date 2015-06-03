@@ -45,7 +45,7 @@ static bool isProtectedCallAllowed() {
             return true;
         }
     }
-    return false;
+    return true;
 }
 
 void DrmManagerService::instantiate() {
