@@ -2210,13 +2210,13 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
                     if(prop_voip_enabled) {
                        ALOGD("voice_conc:BLOCK VoIP requst incall mode for inputSource: %d",
                         inputSource);
-                       return 0;
+                       return NO_INIT;
                     }
                 break;
                 default:
                     ALOGD("voice_conc:BLOCK VoIP requst incall mode for inputSource: %d",
                         inputSource);
-                return 0;
+                return NO_INIT;
             }
         }
     }//check for VoIP flag
