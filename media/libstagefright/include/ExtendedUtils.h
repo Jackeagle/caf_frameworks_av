@@ -280,6 +280,9 @@ struct ExtendedUtils {
     static int32_t getPcmSampleBits(const sp<AMessage> &format);
     static int32_t getPCMFormat(const sp<MetaData> &meta);
     static void setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat);
+    static status_t convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffer> &newBuffer,
+                                        audio_format_t srcFormat, audio_format_t pcmFormat,
+                                        bool isOffload);
 
     static sp<MediaExtractor> MediaExtractor_CreateIfNeeded(
             sp<MediaExtractor> defaultExt, const sp<DataSource> &source,

@@ -68,6 +68,7 @@
 
 #include <media/AudioParameter.h>
 #include <media/AudioSystem.h>
+#include <audio_utils/format.h>
 
 extern "C" {
     #include "jpeglib.h"
@@ -1452,7 +1453,7 @@ int32_t ExtendedUtils::getPcmSampleBits(const sp<AMessage> &format) {
 }
 
 int32_t ExtendedUtils::getPCMFormat(const sp<MetaData> &meta) {
-    int32_t pcmFormat = AUDIO_FORMAT_PCM_16_BIT;
+    int32_t pcmFormat = AUDIO_FORMAT_INVALID;
     if (meta != NULL) {
         meta->findInt32(kKeyPcmFormat, &pcmFormat);
     }
@@ -1463,6 +1464,86 @@ void ExtendedUtils::setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat)
     if (meta != NULL) {
         meta->setInt32(kKeyPcmFormat, pcmFormat);
     }
+}
+
+status_t ExtendedUtils::convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffer> &newBuffer,
+                                                 audio_format_t srcFormat, audio_format_t pcmFormat,
+                                                 bool isOffload) {
+    size_t bps = audio_bytes_per_sample(srcFormat);
+
+    if (bps <= 0) {
+        ALOGE("Invalid pcmformat %x given for conversion", srcFormat);
+        return INVALID_OPERATION;
+    }
+
+    size_t frames = buffer->size() / bps;
+
+    if (frames == 0) {
+        ALOGE("zero sized buffer, nothing to convert");
+        return BAD_VALUE;
+    }
+
+    ALOGV("convert %zu bytes (frames %d) of format %x",
+          buffer->size(), frames, srcFormat);
+
+    audio_format_t dstFormat;
+    if (isOffload) {
+        switch (pcmFormat) {
+            case AUDIO_FORMAT_PCM_16_BIT_OFFLOAD:
+                dstFormat = AUDIO_FORMAT_PCM_16_BIT;
+                break;
+            case AUDIO_FORMAT_PCM_24_BIT_OFFLOAD:
+                if (srcFormat != AUDIO_FORMAT_PCM_24_BIT_PACKED &&
+                    srcFormat != AUDIO_FORMAT_PCM_8_24_BIT) {
+                        ALOGE("Invalid src format for 24 bit conversion");
+                        return INVALID_OPERATION;
+                }
+                dstFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+                break;
+            case AUDIO_FORMAT_DEFAULT:
+                ALOGI("OffloadInfo not yet initialized, retry");
+                return NO_INIT;
+            default:
+                ALOGE("Invalid offload format %x given for conversion",
+                      pcmFormat);
+                return INVALID_OPERATION;
+        }
+    } else {
+        if (pcmFormat == AUDIO_FORMAT_DEFAULT) {
+            return NO_INIT;
+        }
+
+        dstFormat = pcmFormat;
+    }
+
+    if (srcFormat == dstFormat) {
+        ALOGV("same format");
+        newBuffer = buffer;
+        return OK;
+    }
+
+    size_t dstFrameSize = audio_bytes_per_sample(dstFormat);
+    size_t dstBytes = frames * dstFrameSize;
+
+    newBuffer = new ABuffer(dstBytes);
+
+    memcpy_by_audio_format(newBuffer->data(), dstFormat,
+                           buffer->data(), srcFormat, frames);
+
+    ALOGV("convert to format %x newBuffer->size() %zu",
+          dstFormat, newBuffer->size());
+
+    // copy over some meta info
+    int64_t timeUs = 0;
+    buffer->meta()->findInt64("timeUs", &timeUs);
+    newBuffer->meta()->setInt64("timeUs", timeUs);
+
+    int32_t eos = false;
+    buffer->meta()->findInt32("eos", &eos);
+    newBuffer->meta()->setInt32("eos", eos);
+
+    newBuffer->meta()->setInt32("pcm-format", (int32_t)dstFormat);
+    return OK;
 }
 
 //- returns NULL if we dont really need a new extractor (or cannot),
@@ -3053,6 +3134,17 @@ int32_t ExtendedUtils::getPCMFormat(const sp<MetaData> &meta) {
 void ExtendedUtils::setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat) {
     ARG_TOUCH(meta);
     ARG_TOUCH(pcmFormat);
+}
+
+status_t ExtendedUtils::convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffer> &newBuffer,
+                                                 audio_format_t srcFormat, audio_format_t pcmFormat,
+                                                 bool isOffload) {
+    ARG_TOUCH(buffer);
+    ARG_TOUCH(newBuffer);
+    ARG_TOUCH(srcFormat);
+    ARG_TOUCH(pcmFormat);
+    ARG_TOUCH(isOffload);
+    return OK;
 }
 
 sp<MediaExtractor> ExtendedUtils::MediaExtractor_CreateIfNeeded(

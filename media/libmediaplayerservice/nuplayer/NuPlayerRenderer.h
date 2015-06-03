@@ -260,6 +260,8 @@ private:
     void startAudioOffloadPauseTimeout();
     void cancelAudioOffloadPauseTimeout();
 
+    status_t convertToSinkFormatIfNeeded(const sp<ABuffer> &buffer, sp<ABuffer> &newBuffer);
+
     DISALLOW_EVIL_CONSTRUCTORS(Renderer);
 };
 
