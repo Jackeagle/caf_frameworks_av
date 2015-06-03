@@ -394,7 +394,13 @@ status_t LiveSession::getStreamFormat(StreamType stream, sp<AMessage> *format) {
     sp<MetaData> meta = packetSource->getFormat();
 
     if (meta == NULL) {
-        return -EAGAIN;
+        sp<AnotherPacketSource> packetSource = mPacketSources2.editValueFor(stream);
+        if (packetSource != NULL) {
+            meta = packetSource->getFormat();
+            if (meta == NULL) {
+                return -EAGAIN;
+            }
+        }
     }
 
     return convertMetaDataToMessage(meta, format);
