@@ -31,6 +31,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
+ * This file was modified by DTS, Inc. The portions of the
+ * code that are surrounded by "DTS..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2015 DTS, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef ES_QUEUE_H_
@@ -57,6 +74,9 @@ struct ElementaryStreamQueue {
         MPEG_VIDEO,
         MPEG4_VIDEO,
         PCM_AUDIO,
+#ifdef DTS_CODEC_M_
+        DTSHD,
+#endif
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
         DDP_EC3_AUDIO,
 #endif // DOLBY_END
@@ -101,6 +121,9 @@ private:
     sp<ABuffer> dequeueAccessUnitDDP();
 #endif // DOLBY_END
 
+#ifdef DTS_CODEC_M_
+    sp<ABuffer> dequeueAccessUnitDTS();
+#endif
     // consume a logical (compressed) access unit of size "size",
     // returns its timestamp in us (or -1 if no time information).
     int64_t fetchTimestamp(size_t size);
