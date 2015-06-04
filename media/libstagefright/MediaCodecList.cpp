@@ -97,13 +97,13 @@ sp<IMediaCodecList> MediaCodecList::getInstance() {
 MediaCodecList::MediaCodecList()
     : mInitCheck(NO_INIT) {
     char value[PROPERTY_VALUE_MAX] = {0};
-    int ret = 0;
-    int enableForHW = 0;
 
-    ret = property_get("media.msm8939hw", value, NULL);
-    enableForHW = atoi(value);
-    if (ret && enableForHW) {
+    if (property_get("media.msm8939hw", value, "0") &&
+        atoi(value)) {
         parseTopLevelXMLFile("/etc/media_codecs_8939.xml");
+    } else if (property_get("media.msm8956hw", value, "0") &&
+               atoi(value)) {
+        parseTopLevelXMLFile("/etc/media_codecs_8956.xml");
     } else {
         parseTopLevelXMLFile("/etc/media_codecs.xml");
     }
