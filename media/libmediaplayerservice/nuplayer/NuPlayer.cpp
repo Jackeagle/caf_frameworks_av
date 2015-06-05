@@ -983,15 +983,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 
                 performSeek(positionUs, false /* needNotify */);
                 if (reason == Renderer::kDueToError) {
-                    if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
-                        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
-                        if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
-                              ALOGV("Override pcm format to 16 bits");
-                              ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT);
-                              mSource->stop();
-                              mSource->start();
-                        }
-                    }
                     mRenderer->signalDisableOffloadAudio();
                     mOffloadAudio = false;
                     mOffloadDecodedPCM = false;
@@ -1457,27 +1448,20 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<DecoderBase> *decoder) {
 
         sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
 
-        if (mOffloadAudio && !mOffloadDecodedPCM) {
-            if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
-                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
-                if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
-                    ALOGV("Overriding PCM format with 24 bit and calling start");
-                    ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_8_24_BIT);
-                    mSource->stop();
-                    mSource->start();
-                }
+        const char *mime = NULL;
+        audioMeta->findCString(kKeyMIMEType, &mime);
+        bool pcm = mime && !strcasecmp(MEDIA_MIMETYPE_AUDIO_RAW, mime);
+
+        if (pcm) {
+            audio_format_t pcmFormat = (audio_format_t)ExtendedUtils::getPCMFormat(audioMeta);
+            if (pcmFormat != AUDIO_FORMAT_INVALID) {
+                format->setInt32("pcm-format", (int32_t)pcmFormat);
             }
+        }
+
+        if (mOffloadAudio && !mOffloadDecodedPCM) {
             *decoder = new DecoderPassThrough(notify, mSource, mRenderer);
         } else {
-            if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
-                sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
-                if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
-                    ALOGV("Setting 16 bit in case session is not offloaded");
-                    ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_16_BIT);
-                    mSource->stop();
-                    mSource->start();
-                }
-            }
             *decoder = new Decoder(notify, mSource, mRenderer);
         }
     } else {
