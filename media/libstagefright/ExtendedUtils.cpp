@@ -3611,6 +3611,20 @@ bool ExtendedUtils::isVideoMuxFormatSupported(const char *mime) {
     return false;
 }
 
+bool ExtendedUtils::isAudioMuxFormatSupported(const char *mime) {
+    if (mime == NULL) {
+        ALOGE("NULL audio mime type");
+        return false;
+    }
+
+    if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_AMR_NB, mime)
+            || !strcasecmp(MEDIA_MIMETYPE_AUDIO_AMR_WB, mime)
+            || !strcasecmp(MEDIA_MIMETYPE_AUDIO_AAC, mime)) {
+        return true;
+    }
+    return false;
+}
+
 void ExtendedUtils::printFileName(int fd) {
     if (fd) {
         char prop[PROPERTY_VALUE_MAX];
