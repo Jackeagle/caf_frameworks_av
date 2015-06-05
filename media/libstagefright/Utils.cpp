@@ -59,6 +59,7 @@
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMediaDefs.h"
 #include "QCMetaData.h"
+
 #if defined(FLAC_OFFLOAD_ENABLED) || defined(WMA_OFFLOAD_ENABLED) || \
     defined(PCM_OFFLOAD_ENABLED_24) || defined(ALAC_OFFLOAD_ENABLED) || \
     defined(APE_OFFLOAD_ENABLED)
@@ -859,6 +860,15 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo, const sp<MetaData
         ALOGE("mime type \"%s\" not a known audio format", mime);
         return false;
     }
+
+#ifdef ENABLE_AV_ENHANCEMENTS
+#ifdef APE_OFFLOAD_ENABLED
+    if (ExtendedUtils::isAPEFormat(meta) &&
+        !ExtendedUtils::checkAPECompressionLevel(meta)) {
+        return false;
+    }
+#endif
+#endif
 
     // Redefine aac format according to its profile
     // Offloading depends on audio DSP capabilities.

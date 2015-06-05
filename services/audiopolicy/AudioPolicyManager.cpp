@@ -3277,14 +3277,23 @@ bool AudioPolicyManager::isOffloadSupported(const audio_offload_info_t& offloadI
             }
         }
 
-        //check if it's multi-channel AAC (includes sub formats), FLAC and VORBIS format
+        //check if it's multi-channel AAC (includes sub formats) and VORBIS format
         if ((popcount(offloadInfo.channel_mask) > 2) &&
             (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_AAC) ||
-            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_VORBIS))) {
-            ALOGD("offload disabled for multi-channel AAC, FLAC and VORBIS format");
+            ALOGD("offload disabled for multi-channel AAC and VORBIS formats");
             return false;
         }
+
+#ifdef AUDIO_EXTN_FORMATS_ENABLED
+        //check if it's multi-channel FLAC or ALAC format with sample rate > 48k
+        if ((popcount(offloadInfo.channel_mask) > 2) &&
+            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
+            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_ALAC) && offloadInfo.sample_rate > 48000))) {
+            ALOGD("offload disabled for multi-channel FLAC/ALAC clips with sample rate > 48kHz");
+            return false;
+        }
+#endif
 
         if (offloadInfo.has_video)
         {
@@ -3327,12 +3336,14 @@ bool AudioPolicyManager::isOffloadSupported(const audio_offload_info_t& offloadI
         //do not check duration for other audio formats, e.g. dolby AAC/AC3 and amrwb+ formats
         if ((offloadInfo.format == AUDIO_FORMAT_MP3) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_AAC) ||
-            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_VORBIS) ||
+#ifdef AUDIO_EXTN_FORMATS_ENABLED
+            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA_PRO) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_ALAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_APE) ||
+#endif
             pcmOffload)
             return false;
     }
