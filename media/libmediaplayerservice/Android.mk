@@ -19,7 +19,6 @@ LOCAL_SRC_FILES:=               \
     MidiMetadataRetriever.cpp   \
     RemoteDisplay.cpp           \
     SharedLibrary.cpp           \
-    StagefrightPlayer.cpp       \
     StagefrightRecorder.cpp     \
     TestPlayerStub.cpp          \
     VideoFrameScheduler.cpp     \
