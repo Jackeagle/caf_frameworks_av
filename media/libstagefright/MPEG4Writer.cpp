@@ -483,8 +483,12 @@ status_t MPEG4Writer::addSource(const sp<MediaSource> &source) {
         return ERROR_UNSUPPORTED;
     }
 
-    // Check that muxing is supported for the given video type
+    // Check that muxing is supported for the given video or audio type
     if (isVideo && !ExtendedUtils::isVideoMuxFormatSupported(mime)) {
+        ALOGE("Muxing is not supported for %s", mime);
+        return ERROR_UNSUPPORTED;
+    }
+    if (isAudio && !ExtendedUtils::isAudioMuxFormatSupported(mime)) {
         ALOGE("Muxing is not supported for %s", mime);
         return ERROR_UNSUPPORTED;
     }
