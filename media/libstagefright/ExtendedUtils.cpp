@@ -987,8 +987,8 @@ sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
    }
 
    char value[PROPERTY_VALUE_MAX];
-   property_get("persist.mm.sta.enable", value, "1");
-   // Return false if persist.mm.sta.enable is set to 1
+   property_get("persist.mm.sta.enable", value, "0");
+   // Return NULL if persist.mm.sta.enable is set to 0
    if (!atoi(value)) {
         ALOGW("Proxy is disabled using persist.mm.sta.enable 0");
         return NULL;
@@ -1167,7 +1167,7 @@ bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
 bool ExtendedUtils::DiscoverProxy::getSTAProxyConfig(int32_t &port) {
     Mutex::Autolock autoLock(gLock);
     char value[PROPERTY_VALUE_MAX];
-    property_get("persist.mm.sta.enable", value, "1");
+    property_get("persist.mm.sta.enable", value, "0");
     // Return false if persist.mm.sta.enable is set to 0
     if (!atoi(value)) {
         ALOGW("Proxy is disabled using persist.mm.sta.enable 0");
@@ -1197,8 +1197,8 @@ bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
     void* staLibHandle = NULL;
 
     char value[PROPERTY_VALUE_MAX];
-    property_get("persist.mm.sta.enable", value, "1");
-    // Return false if persist.mm.sta.ebable is set to 1
+    property_get("persist.mm.sta.enable", value, "0");
+    // Return false if persist.mm.sta.enable is set to 0
     if (!atoi(value)) {
         ALOGW("Proxy is disabled using persist.mm.sta.enable");
         return false;
