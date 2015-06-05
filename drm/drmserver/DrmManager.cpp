@@ -89,9 +89,6 @@ void DrmManager::removeUniqueId(int uniqueId) {
 
 status_t DrmManager::loadPlugIns() {
 
-    String8 vendorPluginDirPath64("/vendor/lib64/drm");
-    loadPlugIns(vendorPluginDirPath64);
-
     String8 vendorPluginDirPath("/vendor/lib/drm");
     loadPlugIns(vendorPluginDirPath);
 
