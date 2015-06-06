@@ -1184,7 +1184,7 @@ status_t ACodec::setComponentRole(
             "audio_decoder.raw", "audio_encoder.raw" },
 #ifdef QTI_FLAC_DECODER
         { MEDIA_MIMETYPE_AUDIO_FLAC,
-            "audio_decoder.raw", NULL },
+            "audio_decoder.flac", NULL },
 #else
         { MEDIA_MIMETYPE_AUDIO_FLAC,
             "audio_decoder.flac", "audio_encoder.flac" },
@@ -1723,7 +1723,7 @@ status_t ACodec::configureCodec(
         } else {
             err = setupG711Codec(encoder, numChannels);
         }
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC)) {
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC) && encoder) {
         int32_t numChannels = 0, sampleRate = 0, compressionLevel = -1;
         if (encoder &&
                 (!msg->findInt32("channel-count", &numChannels)
@@ -5103,18 +5103,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
                 0,     // flags
                 &matchingCodecs);
     }
-#ifdef QTI_FLAC_DECODER
-    else if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_FLAC) && !encoder) {
-        //use google's raw decoder
-        OMXCodec::findMatchingCodecs(
-                MEDIA_MIMETYPE_AUDIO_RAW,
-                encoder, //createEncoder
-                "OMX.google.raw.decoder",
-                0, //flags
-                &matchingCodecs);
-    }
-#endif
-     else
+    else
         OMXCodec::findMatchingCodecs(
                 mime.c_str(),
                 encoder, // createEncoder

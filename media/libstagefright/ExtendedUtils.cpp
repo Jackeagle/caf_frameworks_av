@@ -3102,6 +3102,29 @@ bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
     return true;
 }
 
+sp<MediaCodec> ExtendedUtils::CreateCustomComponentByName(const sp<ALooper> &looper,
+                        const char* mime, bool encoder) {
+    sp<MediaCodec> codec = NULL;
+    if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10) && !encoder) {
+        ALOGV("CreateByComponentName() for FLAC decoder");
+        codec = MediaCodec::CreateByComponentName(looper, "OMX.qti.audio.decoder.flac");
+    } else {
+        ALOGV("Could not create by component name");
+    }
+
+    return codec;
+}
+
+void ExtendedUtils::extractBitWidth(const sp<AMessage> &format,
+                        audio_format_t audioFormat, int32_t *bitWidth) {
+    int32_t bitsPerSample;
+    if ((audioFormat == AUDIO_FORMAT_FLAC) &&
+        format->findInt32("bits-per-sample", &bitsPerSample)) {
+        CHECK(bitsPerSample == 16 || bitsPerSample == 24);
+        *bitWidth = bitsPerSample;
+    }
+}
+
 } // namespace android
 #else //ENABLE_AV_ENHANCEMENTS
 
@@ -3547,6 +3570,24 @@ bool ExtendedUtils::DTS::IsSeeminglyValidDTSHeader(const uint8_t *ptr, size_t si
     return false;
 }
 #endif //DTS_CODEC_M_
+
+sp<MediaCodec> ExtendedUtils::CreateCustomComponentByName(const sp<ALooper> &looper,
+                        const char* mime, bool encoder) {
+    ARG_TOUCH(looper);
+    ARG_TOUCH(mime);
+    ARG_TOUCH(encoder);
+
+    return NULL;
+}
+
+void ExtendedUtils::extractBitWidth(const sp<AMessage> &format,
+                        audio_format_t audioFormat, int32_t *bitWidth) {
+    ARG_TOUCH(format);
+    ARG_TOUCH(audioFormat);
+    ARG_TOUCH(bitWidth);
+
+    return;
+}
 
 } // namespace android
 #endif //ENABLE_AV_ENHANCEMENTS

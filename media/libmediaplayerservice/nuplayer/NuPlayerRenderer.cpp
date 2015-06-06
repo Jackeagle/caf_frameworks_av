@@ -1569,6 +1569,8 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
                         aacProfile);
             }
 
+            ExtendedUtils::extractBitWidth(format, audioFormat, &bitWidth);
+
             audio_offload_info_t offloadInfo = AUDIO_INFO_INITIALIZER;
             offloadInfo.duration_us = -1;
             format->findInt64(

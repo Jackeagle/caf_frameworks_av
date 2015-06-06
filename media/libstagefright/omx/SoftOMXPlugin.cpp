@@ -103,6 +103,9 @@ static const struct {
 #ifdef DTS_CODEC_M_
     { "OMX.DTS.audio_decoder.dts", "dtsdec", "audio_decoder.dts" },
 #endif
+#ifdef QTI_FLAC_DECODER
+    { "OMX.qti.audio.decoder.flac", "flacdec", "audio_decoder.flac" },
+#endif
 };
 
 static const size_t kNumComponents =

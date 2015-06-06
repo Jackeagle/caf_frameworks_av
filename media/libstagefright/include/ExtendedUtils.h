@@ -36,6 +36,7 @@
 #include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MPEG4Writer.h>
 #include <media/AudioParameter.h>
+#include <media/stagefright/MediaCodec.h>
 
 #include <media/MediaRecorderBase.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -348,6 +349,10 @@ struct ExtendedUtils {
     static status_t sendMetaDataToHal(const sp<MetaData>& meta, AudioParameter *param);
 
     static bool isHwAudioDecoderSessionAllowed(const char *meta);
+    static sp<MediaCodec> CreateCustomComponentByName(const sp<ALooper> &looper,
+                        const char* mime, bool encoder);
+    static void extractBitWidth(const sp<AMessage> &format,
+                        audio_format_t audioFormat, int32_t *bitWidth);
 };
 
 }

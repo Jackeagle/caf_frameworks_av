@@ -167,7 +167,10 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format, bool isStreaming
         ExtendedStats::AutoProfile autoProfile(
                 STATS_PROFILE_ALLOCATE_NODE(isVideo), mPlayerExtendedStats);
 
-        mCodec = MediaCodec::CreateByType(mCodecLooper, mime.c_str(), false /* encoder */);
+        mCodec = ExtendedUtils::CreateCustomComponentByName(mCodecLooper, mime.c_str(), false /* encoder */);
+        if (mCodec == NULL) {
+            mCodec = MediaCodec::CreateByType(mCodecLooper, mime.c_str(), false /* encoder */);
+        }
     }
 
     int32_t secure = 0;
