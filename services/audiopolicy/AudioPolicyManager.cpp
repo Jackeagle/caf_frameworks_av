@@ -190,6 +190,7 @@ const StringToEnum sOutputFlagNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_COMPRESS_PASSTHROUGH),
 #endif
     STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_DRIVER_SIDE),
+    STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_REAR_ENTERTAINMENT_SYSTEM),
 };
 
 const StringToEnum sInputFlagNameToEnumTable[] = {
@@ -5345,6 +5346,7 @@ uint32_t AudioPolicyManager::getStrategyForAttr(const audio_attributes_t *attr) 
     case AUDIO_USAGE_GAME:
     case AUDIO_USAGE_ASSISTANCE_NAVIGATION_GUIDANCE:
     case AUDIO_USAGE_ASSISTANCE_SONIFICATION:
+    case AUDIO_USAGE_REAR_ENTERTAINMENT_SYSTEM:
         return (uint32_t) STRATEGY_MEDIA;
 
     case AUDIO_USAGE_VOICE_COMMUNICATION:
@@ -9094,6 +9096,7 @@ audio_stream_type_t AudioPolicyManager::streamTypefromAttributesInt(const audio_
     case AUDIO_USAGE_MEDIA:
     case AUDIO_USAGE_GAME:
     case AUDIO_USAGE_ASSISTANCE_NAVIGATION_GUIDANCE:
+    case AUDIO_USAGE_REAR_ENTERTAINMENT_SYSTEM:
         return AUDIO_STREAM_MUSIC;
     case AUDIO_USAGE_ASSISTANCE_ACCESSIBILITY:
         if (isStreamActive(AUDIO_STREAM_ALARM)) {
@@ -9592,6 +9595,7 @@ bool AudioPolicyManager::isValidAttributes(const audio_attributes_t *paa) {
     case AUDIO_USAGE_ASSISTANCE_SONIFICATION:
     case AUDIO_USAGE_GAME:
     case AUDIO_USAGE_VIRTUAL_SOURCE:
+    case AUDIO_USAGE_REAR_ENTERTAINMENT_SYSTEM:
         break;
     default:
         return false;
