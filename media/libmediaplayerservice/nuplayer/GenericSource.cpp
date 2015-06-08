@@ -295,32 +295,35 @@ status_t NuPlayer::GenericSource::startSources() {
     // Widevine sources might re-initialize crypto when starting, if we delay
     // this to start(), all data buffered during prepare would be wasted.
     // (We don't actually start reading until start().)
-    sp<MetaData> audioMeta = NULL;
-    audioMeta = mAudioTrack.mSource->getFormat();
-    const char *mime;
-    audioMeta->findCString(kKeyMIMEType, &mime);
-    bool pcm = !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW);
-    if(pcm)
+    if (mAudioTrack.mSource != NULL)
     {
-        audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
-        switch (ExtendedUtils::getPcmSampleBits(audioMeta)) {
-            case 24:
-                ALOGV("bit PerSample == 24, outputFormat = 24 bit packed");
-                audioFormat = AUDIO_FORMAT_PCM_24_BIT_PACKED;
-                break;
-            case 32:
-                ALOGV("bitsPerSample == 32, outputFormat = 32 bit");
-                audioFormat = AUDIO_FORMAT_PCM_32_BIT;
-                break;
-            default:
-                audioFormat = AUDIO_FORMAT_PCM_16_BIT;
-                break;
+        sp<MetaData> audioMeta = NULL;
+        audioMeta = mAudioTrack.mSource->getFormat();
+        const char *mime;
+        audioMeta->findCString(kKeyMIMEType, &mime);
+        bool pcm = !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW);
+        if(pcm)
+        {
+            audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
+            switch (ExtendedUtils::getPcmSampleBits(audioMeta)) {
+                case 24:
+                    ALOGV("bit PerSample == 24, outputFormat = 24 bit packed");
+                    audioFormat = AUDIO_FORMAT_PCM_24_BIT_PACKED;
+                    break;
+                case 32:
+                    ALOGV("bitsPerSample == 32, outputFormat = 32 bit");
+                    audioFormat = AUDIO_FORMAT_PCM_32_BIT;
+                    break;
+                default:
+                    audioFormat = AUDIO_FORMAT_PCM_16_BIT;
+                    break;
+            }
+            ExtendedUtils::setKeyPCMFormat(audioMeta, audioFormat);
         }
-        ExtendedUtils::setKeyPCMFormat(audioMeta, audioFormat);
-    }
-    if (mAudioTrack.mSource != NULL && mAudioTrack.mSource->start() != OK) {
-        ALOGE("failed to start audio track!");
-        return UNKNOWN_ERROR;
+        if (mAudioTrack.mSource->start() != OK) {
+            ALOGE("failed to start audio track!");
+            return UNKNOWN_ERROR;
+        }
     }
 
     if (mVideoTrack.mSource != NULL && mVideoTrack.mSource->start() != OK) {
