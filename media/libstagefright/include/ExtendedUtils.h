@@ -255,6 +255,17 @@ struct ExtendedUtils {
 
     };
 
+#ifdef DTS_CODEC_M_
+    /*
+     * This class is a placeholder for set of methods used
+     * to support DTS contents in HLS streaming
+     */
+    struct DTS {
+        static size_t parseDTSSyncFrame(const uint8_t *ptr, size_t size,
+                                      sp<MetaData> *metaData);
+        static bool IsSeeminglyValidDTSHeader(const uint8_t *ptr, size_t size);
+    };
+#endif //DTS_CODEC_M_
 
     static const int32_t kNumBFramesPerPFrame = 1;
     static bool mIsQCHWAACEncoder;
@@ -280,6 +291,9 @@ struct ExtendedUtils {
     static int32_t getPcmSampleBits(const sp<AMessage> &format);
     static int32_t getPCMFormat(const sp<MetaData> &meta);
     static void setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat);
+    static status_t convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffer> &newBuffer,
+                                        audio_format_t srcFormat, audio_format_t pcmFormat,
+                                        bool isOffload);
 
     static sp<MediaExtractor> MediaExtractor_CreateIfNeeded(
             sp<MediaExtractor> defaultExt, const sp<DataSource> &source,
@@ -309,6 +323,7 @@ struct ExtendedUtils {
     static status_t getWMAVersion(const sp<MetaData> &meta, int32_t *version);
     static bool isALACFormat(const sp<MetaData> &meta);
     static bool isAPEFormat(const sp<MetaData> &meta);
+    static bool checkAPECompressionLevel(const sp<MetaData> &meta);
 
     static void updateVideoTrackInfoFromESDS_MPEG4Video(sp<MetaData> meta);
     static bool checkDPFromVOLHeader(const uint8_t *ptr, size_t size);

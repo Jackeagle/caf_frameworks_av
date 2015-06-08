@@ -295,31 +295,32 @@ status_t NuPlayer::GenericSource::startSources() {
     // Widevine sources might re-initialize crypto when starting, if we delay
     // this to start(), all data buffered during prepare would be wasted.
     // (We don't actually start reading until start().)
-    if (mAudioTrack.mSource != NULL) {
-        bool overrideSourceStart = false;
-        status_t status = false;
-        sp<MetaData> audioMeta = NULL;
-        audioMeta = mAudioTrack.mSource->getFormat();
-
-        if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
-            if(ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
-                ExtendedUtils::setKeyPCMFormat(audioMeta, AUDIO_FORMAT_PCM_8_24_BIT);
-                overrideSourceStart = true;
-            }
+    sp<MetaData> audioMeta = NULL;
+    audioMeta = mAudioTrack.mSource->getFormat();
+    const char *mime;
+    audioMeta->findCString(kKeyMIMEType, &mime);
+    bool pcm = !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW);
+    if(pcm)
+    {
+        audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
+        switch (ExtendedUtils::getPcmSampleBits(audioMeta)) {
+            case 24:
+                ALOGV("bit PerSample == 24, outputFormat = 24 bit packed");
+                audioFormat = AUDIO_FORMAT_PCM_24_BIT_PACKED;
+                break;
+            case 32:
+                ALOGV("bitsPerSample == 32, outputFormat = 32 bit");
+                audioFormat = AUDIO_FORMAT_PCM_32_BIT;
+                break;
+            default:
+                audioFormat = AUDIO_FORMAT_PCM_16_BIT;
+                break;
         }
-
-        if (overrideSourceStart && audioMeta.get()) {
-            ALOGV("Override AudioTrack source with Meta");
-            status = mAudioTrack.mSource->start(audioMeta.get());
-        } else {
-            ALOGV("Do not override AudioTrack source with Meta");
-            status = mAudioTrack.mSource->start();
-        }
-
-        if (status != OK ) {
-            ALOGE("failed to start audio track!");
-            return UNKNOWN_ERROR;
-        }
+        ExtendedUtils::setKeyPCMFormat(audioMeta, audioFormat);
+    }
+    if (mAudioTrack.mSource != NULL && mAudioTrack.mSource->start() != OK) {
+        ALOGE("failed to start audio track!");
+        return UNKNOWN_ERROR;
     }
 
     if (mVideoTrack.mSource != NULL && mVideoTrack.mSource->start() != OK) {
@@ -1593,6 +1594,13 @@ sp<ABuffer> NuPlayer::GenericSource::mediaBufferToABuffer(
 
     if (actualTimeUs) {
         *actualTimeUs = timeUs;
+    }
+
+    if (audio) {
+        audio_format_t pcmFormat = (audio_format_t)ExtendedUtils::getPCMFormat(mb->meta_data());
+        if (pcmFormat != AUDIO_FORMAT_INVALID) {
+            meta->setInt32("pcm-format", (int32_t)pcmFormat);
+        }
     }
 
     mb->release();

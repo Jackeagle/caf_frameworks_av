@@ -98,6 +98,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/icu/icu4c/source/common \
         $(TOP)/external/icu/icu4c/source/i18n \
         $(TOP)/external/jpeg \
+        $(TOP)/system/media/audio_utils/include \
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -124,6 +125,7 @@ LOCAL_SHARED_LIBRARIES := \
         libz \
         libpowermanager \
         libjpeg \
+        libaudioutils \
 
 #QTI FLAC Decoder
 ifeq ($(call is-vendor-board-platform,QCOM),true)

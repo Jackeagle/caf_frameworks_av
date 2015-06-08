@@ -68,6 +68,7 @@
 
 #include <media/AudioParameter.h>
 #include <media/AudioSystem.h>
+#include <audio_utils/format.h>
 
 extern "C" {
     #include "jpeglib.h"
@@ -95,6 +96,7 @@ static const uint8_t kHEVCNalUnitTypePicParamSet = 0x22;
 
 #include <QCMetaData.h>
 #include <QCMediaDefs.h>
+#include <QOMX_AudioExtensions.h>
 
 #if defined(FLAC_OFFLOAD_ENABLED) || defined(WMA_OFFLOAD_ENABLED) || \
     defined(PCM_OFFLOAD_ENABLED_24) || defined(ALAC_OFFLOAD_ENABLED) || \
@@ -1452,7 +1454,7 @@ int32_t ExtendedUtils::getPcmSampleBits(const sp<AMessage> &format) {
 }
 
 int32_t ExtendedUtils::getPCMFormat(const sp<MetaData> &meta) {
-    int32_t pcmFormat = AUDIO_FORMAT_PCM_16_BIT;
+    int32_t pcmFormat = AUDIO_FORMAT_INVALID;
     if (meta != NULL) {
         meta->findInt32(kKeyPcmFormat, &pcmFormat);
     }
@@ -1463,6 +1465,86 @@ void ExtendedUtils::setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat)
     if (meta != NULL) {
         meta->setInt32(kKeyPcmFormat, pcmFormat);
     }
+}
+
+status_t ExtendedUtils::convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffer> &newBuffer,
+                                                 audio_format_t srcFormat, audio_format_t pcmFormat,
+                                                 bool isOffload) {
+    size_t bps = audio_bytes_per_sample(srcFormat);
+
+    if (bps <= 0) {
+        ALOGE("Invalid pcmformat %x given for conversion", srcFormat);
+        return INVALID_OPERATION;
+    }
+
+    size_t frames = buffer->size() / bps;
+
+    if (frames == 0) {
+        ALOGE("zero sized buffer, nothing to convert");
+        return BAD_VALUE;
+    }
+
+    ALOGV("convert %zu bytes (frames %d) of format %x",
+          buffer->size(), frames, srcFormat);
+
+    audio_format_t dstFormat;
+    if (isOffload) {
+        switch (pcmFormat) {
+            case AUDIO_FORMAT_PCM_16_BIT_OFFLOAD:
+                dstFormat = AUDIO_FORMAT_PCM_16_BIT;
+                break;
+            case AUDIO_FORMAT_PCM_24_BIT_OFFLOAD:
+                if (srcFormat != AUDIO_FORMAT_PCM_24_BIT_PACKED &&
+                    srcFormat != AUDIO_FORMAT_PCM_8_24_BIT) {
+                        ALOGE("Invalid src format for 24 bit conversion");
+                        return INVALID_OPERATION;
+                }
+                dstFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+                break;
+            case AUDIO_FORMAT_DEFAULT:
+                ALOGI("OffloadInfo not yet initialized, retry");
+                return NO_INIT;
+            default:
+                ALOGE("Invalid offload format %x given for conversion",
+                      pcmFormat);
+                return INVALID_OPERATION;
+        }
+    } else {
+        if (pcmFormat == AUDIO_FORMAT_DEFAULT) {
+            return NO_INIT;
+        }
+
+        dstFormat = pcmFormat;
+    }
+
+    if (srcFormat == dstFormat) {
+        ALOGV("same format");
+        newBuffer = buffer;
+        return OK;
+    }
+
+    size_t dstFrameSize = audio_bytes_per_sample(dstFormat);
+    size_t dstBytes = frames * dstFrameSize;
+
+    newBuffer = new ABuffer(dstBytes);
+
+    memcpy_by_audio_format(newBuffer->data(), dstFormat,
+                           buffer->data(), srcFormat, frames);
+
+    ALOGV("convert to format %x newBuffer->size() %zu",
+          dstFormat, newBuffer->size());
+
+    // copy over some meta info
+    int64_t timeUs = 0;
+    buffer->meta()->findInt64("timeUs", &timeUs);
+    newBuffer->meta()->setInt64("timeUs", timeUs);
+
+    int32_t eos = false;
+    buffer->meta()->findInt32("eos", &eos);
+    newBuffer->meta()->setInt32("eos", eos);
+
+    newBuffer->meta()->setInt32("pcm-format", (int32_t)dstFormat);
+    return OK;
 }
 
 //- returns NULL if we dont really need a new extractor (or cannot),
@@ -2710,7 +2792,7 @@ status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData>& meta, AudioParamet
     size_t size;
     uint32_t type = 0;
     if (meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
-        CHECK(data && (size == 24 || size == 32)); //size = 24 for ALAC, 32 for APE
+        CHECK(data && (size == ALAC_CSD_SIZE || size == APE_CSD_SIZE));
         ALOGV("Found kKeyRawCodecSpecificData of size %d", size);
         const uint8_t *ptr = (uint8_t *) data;
 
@@ -2795,6 +2877,166 @@ status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData>& meta, AudioParamet
     return OK;
 }
 
+#ifdef DTS_CODEC_M_
+// Parse DTS header assuming the current ptr is start position of syncframe,
+// update metadata only applicable, and return the payload size
+size_t ExtendedUtils::DTS::parseDTSSyncFrame(
+        const uint8_t *ptr, size_t size, sp<MetaData> *metaData) {
+
+    #define DTS_SYNCWORD_CORE       0x7FFE8001
+    #define DTS_SYNCWORD_SUBSTREAM  0x64582025
+    #define DTS_SYNCWORD_LBR        0x0a801921
+
+    ABitReader bits(ptr, size);
+    unsigned syncValue = 0;
+    static unsigned dtsChannelCount = 0;
+    static unsigned dtsSamplingRate = 0;
+    unsigned payloadSize = 0;
+
+    // Check for DTS core or substream sync
+    if (bits.numBitsLeft() < 32) {
+        return 0;
+    }
+
+    // Get the sync value
+    syncValue = bits.getBits(32);
+    if (!((syncValue == DTS_SYNCWORD_CORE) ||
+        (syncValue == DTS_SYNCWORD_SUBSTREAM))) {
+        return 0;
+    }
+
+    if (syncValue == DTS_SYNCWORD_CORE) {
+        // Stream with a core
+        if (bits.numBitsLeft() < 1 + 5 + 1 + 7 + 14 + 6 + 4) { //FTYPE(1) + SHORT(5) + CRC(1) + NBLKS(7) + FSIZE(14) + AMODE(6) + SFREQ(4)
+            ALOGV("Not enough bits left for further parsing");
+            return 0;
+        }
+
+        bits.skipBits(14);  //FTYPE(1) + SHORT(5) + CRC(1) + NBLKS(7)
+
+        // Get frame size
+        unsigned frameByteSize = bits.getBits(14) + 1;
+        payloadSize = frameByteSize;
+        ALOGV("DTSHD core sub stream frame size = %u", frameByteSize);
+
+        // Get channel count
+        static const unsigned dtsChannelCountTable[] = { 1, 2, 2, 2, 2, 3, 3, 4, 4, 5, 6, 6, 6, 7, 8, 8 };
+        unsigned aMode = bits.getBits(6);
+        dtsChannelCount = (aMode < 16) ? dtsChannelCountTable[aMode] : 0;
+
+        // Get sampling freq
+        static const unsigned samplingRateTable[] = {   0, 8000, 16000, 32000, 0,
+                                                        0, 11025, 22050, 44100, 0,
+                                                        0, 12000, 24000, 48000, 0, 0};
+        unsigned srIndex = bits.getBits(4);
+        dtsSamplingRate = samplingRateTable[srIndex];
+
+    } else {
+        // Stream with extension substream
+        if (bits.numBitsLeft() < 2 + 2 + 1) { //UserDefinedBits(2) + nExtSSIndex(2) + bHeaderSizeType(1)
+            ALOGV("Not enough bits left for further parsing DTSHD");
+            return 0;
+        }
+
+        bits.skipBits(4); //UserDefinedBits(2) + nExtSSIndex(2)
+
+        unsigned bHeaderSizeType = bits.getBits(1);
+        unsigned numBits4Header = 0;
+        unsigned numBits4ExSSFsize = 0;
+
+        if (bHeaderSizeType == 0) {
+            numBits4Header = 8;
+            numBits4ExSSFsize = 16;
+        } else {
+            numBits4Header = 12;
+            numBits4ExSSFsize = 20;
+        }
+
+        if (bits.numBitsLeft() < numBits4Header + numBits4ExSSFsize) {
+            ALOGV("Not enough bits left for further parsing");
+            return 0;
+        }
+
+        // Get substream header size
+        unsigned numExtSSHeaderSize = bits.getBits(numBits4Header) + 1;
+
+        // Get substream frame size
+        unsigned numExtSSFsize = bits.getBits(numBits4ExSSFsize) + 1;
+        unsigned frameByteSize = numExtSSFsize;
+        payloadSize = frameByteSize;
+        ALOGV("DTSHD extension sub stream info: frame size = %u", frameByteSize);
+
+        // Scroll through to find the LBR header
+        // Skip to nearest DWORD
+        if (bHeaderSizeType == 0) {
+            // 4 + 1 + 8 + 16 = 29
+            bits.skipBits(3); //32-29
+        }
+        else {
+            // 4 + 1 + 12 + 20 = 37
+            bits.skipBits(27); //64-37
+        }
+
+        while (bits.numBitsLeft() >= 32) {
+            // Big endian DWORD aligned sync
+            if (bits.getBits(32) == DTS_SYNCWORD_LBR) {
+                ALOGV("DTSHD extension sub stream info: LBR coding component syncword found");
+
+                if (bits.numBitsLeft() < (8 + 8 + 16)) {
+                    ALOGV("Not enough bits left for further lbr stream parsing");
+                    return 0;
+                }
+
+                unsigned lbrHdrType = bits.getBits(8);
+                if (lbrHdrType == 2) {
+                    ALOGV("DTSHD extension sub stream info: LBR decoder init header code found");
+
+                    unsigned lbrSampleRateCode = bits.getBits(8);
+                    uint16_t lbrChannelMask = bits.getBits(16);
+
+                    static const unsigned lbrSamplingRateTable[] = {    8000, 16000, 32000, 0, 0,
+                                                                        22050, 44100, 0, 0, 0,
+                                                                        12000, 24000, 48000, 0, 0, 0};
+                    dtsSamplingRate = lbrSamplingRateTable[lbrSampleRateCode];
+
+                    static const unsigned lbrChannelCountTable[] = {    1, 2, 2, 1,
+                                                                        1, 2, 2,
+                                                                        1, 1, 2,
+                                                                        2, 2, 1,
+                                                                        2, 1, 2};
+
+                    // Spkr mask in big endian format
+                    lbrChannelMask = ((lbrChannelMask >> 8) | (lbrChannelMask << 8));
+                    ALOGV("DTSHD extension sub stream info: lbrChannelMask=%04x", (unsigned)lbrChannelMask);
+                    dtsChannelCount = 0;
+                    for (unsigned i = 0; i < 16; i++) {
+                        if (lbrChannelMask & 1) {
+                            dtsChannelCount += lbrChannelCountTable[i];
+                        }
+                        lbrChannelMask >>= 1;
+                    }
+                    ALOGV("DTSHD extension sub stream info: dtsSamplingRate=%u, dtsChannelCount=%u",
+                            dtsSamplingRate, dtsChannelCount);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (metaData != NULL) {
+        (*metaData)->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_DTS);
+        (*metaData)->setInt32(kKeyChannelCount, dtsChannelCount);
+        (*metaData)->setInt32(kKeySampleRate, dtsSamplingRate);
+    }
+
+    return payloadSize;
+}
+
+bool ExtendedUtils::DTS::IsSeeminglyValidDTSHeader(const uint8_t *ptr, size_t size) {
+    return parseDTSSyncFrame(ptr, size, NULL) > 0;
+}
+#endif //DTS_CODEC_M_
+
 bool ExtendedUtils::isALACFormat(const sp<MetaData> &meta) {
     const char *mime;
 
@@ -2815,6 +3057,24 @@ bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
 
     return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_APE)) ? true : false;
 
+}
+
+bool ExtendedUtils::checkAPECompressionLevel(const sp<MetaData> &meta) {
+    const void *data;
+    size_t size;
+    uint32_t type = 0, compressionLevel = 0;
+
+    if (meta != NULL && meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
+        CHECK(data && (size == APE_CSD_SIZE));
+        memcpy(&compressionLevel, (uint8_t *) data + kKeyIndexApeCompressionLevel, sizeof(compressionLevel));
+    }
+    if (compressionLevel != APE_COMPRESSION_LEVEL_FAST &&
+        compressionLevel != APE_COMPRESSION_LEVEL_NORMAL &&
+        compressionLevel != APE_COMPRESSION_LEVEL_HIGH) {
+        ALOGD("Disallow offload for APE clip with compressionLevel %d", compressionLevel);
+        return false;
+    }
+    return true;
 }
 
 bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
@@ -3055,6 +3315,17 @@ void ExtendedUtils::setKeyPCMFormat(const sp<MetaData> &meta, int32_t pcmFormat)
     ARG_TOUCH(pcmFormat);
 }
 
+status_t ExtendedUtils::convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffer> &newBuffer,
+                                                 audio_format_t srcFormat, audio_format_t pcmFormat,
+                                                 bool isOffload) {
+    ARG_TOUCH(buffer);
+    ARG_TOUCH(newBuffer);
+    ARG_TOUCH(srcFormat);
+    ARG_TOUCH(pcmFormat);
+    ARG_TOUCH(isOffload);
+    return OK;
+}
+
 sp<MediaExtractor> ExtendedUtils::MediaExtractor_CreateIfNeeded(
         sp<MediaExtractor> defaultExt,
         const sp<DataSource> &source,
@@ -3252,10 +3523,30 @@ bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
     return false;
 }
 
+bool ExtendedUtils::checkAPECompressionLevel(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return false;
+}
+
 bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
     ARG_TOUCH(mime);
     return true;
 }
+#ifdef DTS_CODEC_M_
+size_t ExtendedUtils::DTS::parseDTSSyncFrame(const uint8_t *ptr, size_t size,
+                                  sp<MetaData> *metaData) {
+    ARG_TOUCH(ptr);
+    ARG_TOUCH(size);
+    ARG_TOUCH(metaData);
+    return 0;
+}
+
+bool ExtendedUtils::DTS::IsSeeminglyValidDTSHeader(const uint8_t *ptr, size_t size) {
+    ARG_TOUCH(ptr);
+    ARG_TOUCH(size);
+    return false;
+}
+#endif //DTS_CODEC_M_
 
 } // namespace android
 #endif //ENABLE_AV_ENHANCEMENTS

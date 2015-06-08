@@ -1964,6 +1964,11 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
         if (waitMs > muteWaitMs) {
             usleep((waitMs - muteWaitMs) * 2 * 1000);
         }
+    } else {
+        // handle special case for sonification while in call
+        if (isInCall()) {
+            handleIncallSonification(stream, true, false, output);
+        }
     }
 #ifdef DOLBY_UDC
     // It is observed that in some use-cases where multiple outputs are present eg. bluetooth and headphone,
@@ -2015,7 +2020,7 @@ status_t AudioPolicyManager::stopOutput(audio_io_handle_t output,
     handleEventForBeacon(stream == AUDIO_STREAM_TTS ? STOPPING_BEACON : STOPPING_OUTPUT);
 
     // handle special case for sonification while in call
-    if ((isInCall()) && (outputDesc->mRefCount[stream] == 1)) {
+    if (isInCall()) {
         if (outputDesc->isDuplicated()) {
             handleIncallSonification(stream, false, false, outputDesc->mOutput1->mIoHandle);
             handleIncallSonification(stream, false, false, outputDesc->mOutput2->mIoHandle);
@@ -2210,13 +2215,13 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
                     if(prop_voip_enabled) {
                        ALOGD("voice_conc:BLOCK VoIP requst incall mode for inputSource: %d",
                         inputSource);
-                       return 0;
+                       return NO_INIT;
                     }
                 break;
                 default:
                     ALOGD("voice_conc:BLOCK VoIP requst incall mode for inputSource: %d",
                         inputSource);
-                return 0;
+                return NO_INIT;
             }
         }
     }//check for VoIP flag
@@ -3272,14 +3277,23 @@ bool AudioPolicyManager::isOffloadSupported(const audio_offload_info_t& offloadI
             }
         }
 
-        //check if it's multi-channel AAC (includes sub formats), FLAC and VORBIS format
+        //check if it's multi-channel AAC (includes sub formats) and VORBIS format
         if ((popcount(offloadInfo.channel_mask) > 2) &&
             (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_AAC) ||
-            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_VORBIS))) {
-            ALOGD("offload disabled for multi-channel AAC, FLAC and VORBIS format");
+            ALOGD("offload disabled for multi-channel AAC and VORBIS formats");
             return false;
         }
+
+#ifdef AUDIO_EXTN_FORMATS_ENABLED
+        //check if it's multi-channel FLAC or ALAC format with sample rate > 48k
+        if ((popcount(offloadInfo.channel_mask) > 2) &&
+            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
+            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_ALAC) && offloadInfo.sample_rate > 48000))) {
+            ALOGD("offload disabled for multi-channel FLAC/ALAC clips with sample rate > 48kHz");
+            return false;
+        }
+#endif
 
         if (offloadInfo.has_video)
         {
@@ -3322,12 +3336,14 @@ bool AudioPolicyManager::isOffloadSupported(const audio_offload_info_t& offloadI
         //do not check duration for other audio formats, e.g. dolby AAC/AC3 and amrwb+ formats
         if ((offloadInfo.format == AUDIO_FORMAT_MP3) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_AAC) ||
-            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_VORBIS) ||
+#ifdef AUDIO_EXTN_FORMATS_ENABLED
+            ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA_PRO) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_ALAC) ||
             ((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_APE) ||
+#endif
             pcmOffload)
             return false;
     }
@@ -5270,7 +5286,8 @@ audio_devices_t AudioPolicyManager::getNewOutputDevice(audio_io_handle_t output,
         mForceUse[AUDIO_POLICY_FORCE_FOR_SYSTEM] == AUDIO_POLICY_FORCE_SYSTEM_ENFORCED) {
         device = getDeviceForStrategy(STRATEGY_ENFORCED_AUDIBLE, fromCache);
     } else if (isInCall() ||
-                    outputDesc->isStrategyActive(STRATEGY_PHONE)) {
+                 outputDesc->isStrategyActive(STRATEGY_PHONE) ||
+                 primaryOutputDesc->isStrategyActive(STRATEGY_PHONE)) {
         device = getDeviceForStrategy(STRATEGY_PHONE, fromCache);
     } else if (outputDesc->isStrategyActive(STRATEGY_ENFORCED_AUDIBLE)) {
         device = getDeviceForStrategy(STRATEGY_ENFORCED_AUDIBLE, fromCache);
