@@ -3774,7 +3774,7 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
 
                     CHECK_GT(params.nChannels, 0);
                     CHECK(params.nChannels == 1 || params.bInterleaved);
-                    CHECK_EQ(params.nBitPerSample, 16u);
+                    ALOGV("PCM bit width: nBitPerSample %d", params.nBitPerSample);
 
                     CHECK_EQ((int)params.eNumData,
                              (int)OMX_NumericalDataSigned);
