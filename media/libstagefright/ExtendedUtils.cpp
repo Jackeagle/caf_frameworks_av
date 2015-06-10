@@ -2639,23 +2639,58 @@ bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
     return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_VORBIS)) ? true : false;
 }
 
+size_t ExtendedUtils::getVorbisHdrSize(const sp<MetaData> &meta) {
+    size_t vorbisHdrSize = 0;
+    const void *hdrDat;
+    size_t hdrSize;
+    uint32_t type;
+
+    if ((meta != NULL) && meta->findData(kKeyVorbisInfo, &type, &hdrDat, &hdrSize)) {
+        vorbisHdrSize += hdrSize;
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisData, &type, &hdrDat, &hdrSize)) {
+        vorbisHdrSize += hdrSize;
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisBooks, &type, &hdrDat, &hdrSize)) {
+        vorbisHdrSize += hdrSize;
+    }
+
+    return vorbisHdrSize;
+}
+
 sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
     size_t vorbisHdrSize = 0;
     sp<ABuffer> vorbisHdrBuffer = NULL;
+    const size_t MAX_META_SIZE = 32 * 1024;
     const void *hdrDat1, *hdrDat2, *hdrDat3;
     size_t hdrSize1 = 0, hdrSize2 = 0, hdrSize3 = 0;
     uint32_t type;
 
-    if ((meta != NULL) && meta->findData(kKeyVorbisInfo, &type, &hdrDat1, &hdrSize1)) {
+    if (meta == NULL) {
+        ALOGE("invalid meta data");
+        return NULL;
+    }
+
+    if (meta->findData(kKeyVorbisInfo, &type, &hdrDat1, &hdrSize1)) {
         vorbisHdrSize += hdrSize1;
         vorbisHdrSize += 4;
-
     }
-    if ((meta != NULL) && meta->findData(kKeyVorbisData, &type, &hdrDat2, &hdrSize2)) {
+
+    if (meta->findData(kKeyVorbisData, &type, &hdrDat2, &hdrSize2)) {
+        // comment packet size more than 32K will be zeroed,
+        // dsp tolerates the missing of 2nd packet.
+        if (hdrSize2 > MAX_META_SIZE) {
+            hdrSize2 = 0;
+        }
         vorbisHdrSize += hdrSize2;
         vorbisHdrSize += 4;
+    } else {
+        // fill vacant header even if parser doesn't provide kKeyVorbisData.
+        hdrSize2 = 0;
+        vorbisHdrSize += 4;
     }
-    if ((meta != NULL) && meta->findData(kKeyVorbisBooks, &type, &hdrDat3, &hdrSize3)) {
+
+    if (meta->findData(kKeyVorbisBooks, &type, &hdrDat3, &hdrSize3)) {
         vorbisHdrSize += hdrSize3;
         vorbisHdrSize += 4;
     }
@@ -2671,7 +2706,7 @@ sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
             memcpy(vorbisHdrBuffer->base() + sizeof(int32_t), hdrDat1, hdrSize1);
             offset += (hdrSize1 + sizeof(int32_t));
         }
-        if (hdrSize2 > 0) {
+        if (hdrSize2 >= 0) {
             memcpy(vorbisHdrBuffer->base() + offset, (int32_t *)&hdrSize2, sizeof(int32_t));
             memcpy(vorbisHdrBuffer->base() + offset + sizeof(int32_t), hdrDat2, hdrSize2);
             offset += (hdrSize2 + sizeof(int32_t));
@@ -3122,6 +3157,15 @@ void ExtendedUtils::extractBitWidth(const sp<AMessage> &format,
         format->findInt32("bits-per-sample", &bitsPerSample)) {
         CHECK(bitsPerSample == 16 || bitsPerSample == 24);
         *bitWidth = bitsPerSample;
+    } else if (audioFormat == AUDIO_FORMAT_VORBIS) {
+        *bitWidth = 16;
+
+        char value[PROPERTY_VALUE_MAX];
+        if (property_get("audio.offload.vorbis.24b.enable", value, NULL)
+                && (!strcmp("1", value) || !strcasecmp("true", value))) {
+            ALOGV("dsp vorbis decoder operates in 24bit");
+            *bitWidth = 24;
+        }
     }
 }
 
@@ -3506,6 +3550,11 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
 bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
     ARG_TOUCH(meta);
     return false;
+}
+
+size_t ExtendedUtils::getVorbisHdrSize(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return 0;
 }
 
 sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {

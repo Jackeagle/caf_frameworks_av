@@ -318,6 +318,7 @@ struct ExtendedUtils {
 
     static bool isAudioAMR(const char* mime);
     static bool isVorbisFormat(const sp<MetaData> &meta);
+    static size_t getVorbisHdrSize(const sp<MetaData> &meta);
     static sp<ABuffer> assembleVorbisHdr(const sp<MetaData> &meta);
     static bool isWMAFormat(const sp<MetaData> &meta);
     static bool isAudioWMAPro(const sp<AMessage> &format);

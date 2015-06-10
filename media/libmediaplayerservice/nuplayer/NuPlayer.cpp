@@ -25,6 +25,7 @@
 #include "NuPlayerDecoder.h"
 #include "NuPlayerDecoderBase.h"
 #include "NuPlayerDecoderPassThrough.h"
+#include "NuPlayerDecVobPassThrough.h"
 #include "NuPlayerDriver.h"
 #include "NuPlayerRenderer.h"
 #include "NuPlayerSource.h"
@@ -1460,7 +1461,11 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<DecoderBase> *decoder) {
         }
 
         if (mOffloadAudio && !mOffloadDecodedPCM) {
-            *decoder = new DecoderPassThrough(notify, mSource, mRenderer);
+            if (ExtendedUtils::isVorbisFormat(audioMeta)) {
+                *decoder = new VorbisDecoderPassThrough(notify, mSource, mRenderer);
+            } else {
+                *decoder = new DecoderPassThrough(notify, mSource, mRenderer);
+            }
         } else {
             *decoder = new Decoder(notify, mSource, mRenderer);
         }
