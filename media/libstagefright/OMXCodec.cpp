@@ -108,10 +108,6 @@
 #include "include/OMX_Audio_DTS.h"
 #endif
 
-#ifdef QTI_FLAC_DECODER
-#include "include/FLACDecoder.h"
-#endif
-
 namespace android {
 
 // Treat time out as an error if we have not received any output
@@ -136,9 +132,6 @@ static sp<MediaSource> Make##name(const sp<MediaSource> &source, const sp<MetaDa
 
 #define FACTORY_REF(name) { #name, Make##name },
 
-#ifdef QTI_FLAC_DECODER
-FACTORY_CREATE(FLACDecoder)
-#endif
 FACTORY_CREATE_ENCODER(AACEncoder)
 
 static sp<MediaSource> InstantiateSoftwareEncoder(
@@ -161,29 +154,6 @@ static sp<MediaSource> InstantiateSoftwareEncoder(
 
     return NULL;
 }
-
-#ifdef QTI_FLAC_DECODER
-static sp<MediaSource> InstantiateSoftwareDecoder(
-        const char *name, const sp<MediaSource> &source) {
-    struct FactoryInfo {
-        const char *name;
-        sp<MediaSource> (*CreateFunc)(const sp<MediaSource> &);
-    };
-
-    static const FactoryInfo kFactoryInfo[] = {
-        FACTORY_REF(FLACDecoder)
-    };
-    for (size_t i = 0;
-         i < sizeof(kFactoryInfo) / sizeof(kFactoryInfo[0]); ++i) {
-        if (!strcmp(name, kFactoryInfo[i].name)) {
-            return (*kFactoryInfo[i].CreateFunc)(source);
-        }
-
-    }
-
-    return NULL;
-}
-#endif
 
 #undef FACTORY_CREATE_ENCODER
 #undef FACTORY_REF
@@ -310,17 +280,6 @@ void OMXCodec::findMatchingCodecs(
         entry->mQuirks = 0;
         return;
     }
-
-#ifdef QTI_FLAC_DECODER
-    if (matchComponentName && !strncmp("FLACDecoder", matchComponentName, strlen("FLACDecoder"))) {
-            matchingCodecs->add();
-
-            CodecNameAndQuirks *entry = &matchingCodecs->editItemAt(index);
-            entry->mName = String8("FLACDecoder");
-            entry->mQuirks = 0;
-            return;
-    }
-#endif
 #endif
 
     for (;;) {
@@ -450,14 +409,8 @@ sp<MediaSource> OMXCodec::Create(
 
     Vector<CodecNameAndQuirks> matchingCodecs;
 
-#ifdef QTI_FLAC_DECODER
-    if (!strncmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, strlen(MEDIA_MIMETYPE_AUDIO_FLAC))) {
-        findMatchingCodecs(mime, createEncoder,
-            "FLACDecoder", flags, &matchingCodecs);
-    } else
-#endif
-        findMatchingCodecs(
-            mime, createEncoder, matchComponentName, flags, &matchingCodecs);
+    findMatchingCodecs(
+        mime, createEncoder, matchComponentName, flags, &matchingCodecs);
 
     if (matchingCodecs.isEmpty()) {
         ALOGV("No matching codecs! (mime: %s, createEncoder: %s, "
@@ -486,11 +439,6 @@ sp<MediaSource> OMXCodec::Create(
         if (createEncoder) {
             softwareCodec = InstantiateSoftwareEncoder(componentName, source, meta);
         }
-#ifdef QTI_FLAC_DECODER
-        else {
-            softwareCodec = InstantiateSoftwareDecoder(componentName, source);
-        }
-#endif
 
         if (softwareCodec != NULL) {
             ALOGV("Successfully allocated software codec '%s'", componentName);

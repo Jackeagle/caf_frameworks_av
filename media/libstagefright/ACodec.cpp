@@ -2208,17 +2208,10 @@ status_t ACodec::setupFlacCodec(
         }
     }
 
-#ifdef QTI_FLAC_DECODER
-    return setupRawAudioFormat(
-            kPortIndexInput,
-            sampleRate,
-            numChannels);
-#else
     return setupRawAudioFormat(
             encoder ? kPortIndexInput : kPortIndexOutput,
             sampleRate,
             numChannels);
-#endif
 }
 
 status_t ACodec::setupRawAudioFormat(
@@ -4709,7 +4702,7 @@ bool ACodec::BaseState::onOMXFillBufferDone(
         size_t rangeOffset, size_t rangeLength,
         OMX_U32 flags,
         int64_t timeUs) {
-    ALOGV("[%s] onOMXFillBufferDone %u time %" PRId64 " us, flags = 0x%08x",
+    ALOGV("[%s] onOMXFillBufferDone %p time %" PRId64 " us, flags = 0x%08x",
          mCodec->mComponentName.c_str(), bufferID, timeUs, flags);
 
     ssize_t index;
@@ -4747,7 +4740,7 @@ bool ACodec::BaseState::onOMXFillBufferDone(
         {
             if (rangeLength == 0 && (!(flags & OMX_BUFFERFLAG_EOS)
                     || mCodec->mPortEOS[kPortIndexOutput])) {
-                ALOGV("[%s] calling fillBuffer %u",
+                ALOGV("[%s] calling fillBuffer %p",
                      mCodec->mComponentName.c_str(), info->mBufferID);
 
                 CHECK_EQ(mCodec->mOMX->fillBuffer(
@@ -4926,7 +4919,7 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
                 }
 
                 if (info != NULL) {
-                    ALOGV("[%s] calling fillBuffer %u",
+                    ALOGV("[%s] calling fillBuffer %p",
                          mCodec->mComponentName.c_str(), info->mBufferID);
 
                     CHECK_EQ(mCodec->mOMX->fillBuffer(mCodec->mNode, info->mBufferID),
