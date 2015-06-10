@@ -1445,28 +1445,10 @@ status_t ExtendedCodec::setFLACDecoderFormat(
 
     QOMX_AUDIO_PARAM_FLAC_DEC_TYPE profileFLACDec;
     OMX_PARAM_PORTDEFINITIONTYPE portParam;
+    status_t err;
 
     ALOGV("FLACDec setformat sampleRate:%d numChannels:%d, bitsPerSample:%d",
             sampleRate, numChannels, bitsPerSample);
-
-    //configure input port
-    InitOMXParams(&portParam);
-    portParam.nPortIndex = kPortIndexInput;
-    status_t err = OMXhandle->getParameter(
-       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
-    err = OMXhandle->setParameter(
-       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
-
-    //configure output port
-    portParam.nPortIndex = kPortIndexOutput;
-    err = OMXhandle->getParameter(
-       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
-    err = OMXhandle->setParameter(
-       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
-    CHECK_EQ(err, (status_t)OK);
 
     //for input port
     InitOMXParams(&profileFLACDec);

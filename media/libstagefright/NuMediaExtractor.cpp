@@ -23,10 +23,6 @@
 #include "include/ESDS.h"
 #include "include/NuCachedSource2.h"
 #include "include/WVMExtractor.h"
-#ifdef QTI_FLAC_DECODER
-#include "include/FLACDecoder.h"
-#endif
-
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -286,17 +282,8 @@ status_t NuMediaExtractor::selectTrack(size_t index) {
 
     const char *mime;
     CHECK(source->getFormat()->findCString(kKeyMIMEType, &mime));
-#ifdef QTI_FLAC_DECODER
-    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC)) {
-        sp<MediaSource> mFlacSource = new FLACDecoder(source);
-        info->mSource = mFlacSource;
-        mFlacSource->start();
-    } else
-#endif
-    {
-        CHECK_EQ((status_t)OK, source->start());
-        info->mSource = source;
-    }
+    CHECK_EQ((status_t)OK, source->start());
+    info->mSource = source;
 
     info->mTrackIndex = index;
     info->mFinalResult = OK;
