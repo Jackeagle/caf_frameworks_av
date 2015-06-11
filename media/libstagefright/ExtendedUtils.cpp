@@ -3146,6 +3146,29 @@ sp<MediaCodec> ExtendedUtils::CreateCustomComponentByName(const sp<ALooper> &loo
                         const char* mime, bool encoder) {
     sp<MediaCodec> codec = NULL;
 
+    if (mime != NULL) {
+        ALOGV("createByComponentName for clip of mimetype %s", mime);
+        if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_ALAC) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.alac");
+        } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_APE) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.ape");
+        } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.wma");
+        } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA_PRO) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.wma10Pro");
+        } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA_LOSSLESS) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.wmaLossLess");
+        } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.amrwbplus");
+        } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_QCELP) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.Qcelp13");
+        } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_EVRC) && !encoder) {
+            codec = MediaCodec::CreateByComponentName(looper, "OMX.qcom.audio.decoder.evrc");
+        } else {
+            ALOGV("Could not create by component name");
+        }
+    }
+
     return codec;
 }
 
