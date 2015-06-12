@@ -1494,6 +1494,11 @@ status_t ExtendedUtils::convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffe
                 dstFormat = AUDIO_FORMAT_PCM_16_BIT;
                 break;
             case AUDIO_FORMAT_PCM_24_BIT_OFFLOAD:
+                if (srcFormat == AUDIO_FORMAT_PCM_32_BIT) {
+                    ALOGV("No conversion needed for 32 bit");
+                    newBuffer = buffer;
+                    return OK;
+                }
                 if (srcFormat != AUDIO_FORMAT_PCM_24_BIT_PACKED &&
                     srcFormat != AUDIO_FORMAT_PCM_8_24_BIT) {
                         ALOGE("Invalid src format for 24 bit conversion");
