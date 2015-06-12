@@ -1363,7 +1363,11 @@ void NuPlayer::closeAudioSink() {
 }
 
 int64_t NuPlayer::getServerTimeoutUs() {
-    return mSource->getServerTimeoutUs();
+    int64_t ret = 0;
+    if (mSource != NULL) {
+        ret = mSource->getServerTimeoutUs();
+    }
+    return ret;
 }
 
 status_t NuPlayer::instantiateDecoder(bool audio, sp<Decoder> *decoder) {
