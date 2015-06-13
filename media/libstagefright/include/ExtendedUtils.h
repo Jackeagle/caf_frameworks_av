@@ -244,6 +244,8 @@ struct ExtendedUtils {
         static bool pokeAHole_V6(int rtpSocket, int rtcpSocket,
                  const AString &transport, AString &sessionHost);
 
+        static void notifyBye(const sp<AMessage> &msg, const int32_t what);
+
         private:
 
         static void bumpSocketBufferSize_V6(int s);
