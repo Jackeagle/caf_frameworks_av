@@ -1074,22 +1074,20 @@ sp<MediaSource> StagefrightRecorder::createAudioSource() {
     }
     sp<MediaSource> audioEncoder =
             MediaCodecSource::Create(mLooper, format, audioSource);
+    mAudioEncoderOMX = audioEncoder;
+
     // If encoder could not be created (as in LPCM), then
     // use the AudioSource directly as the MediaSource.
     if (audioEncoder == NULL) {
-        ALOGD("No encoder is needed, use the AudioSource directly as the MediaSource");
+        ALOGW("Fail to create audio encoder or no encoder is needed, use the AudioSource directly as the MediaSource");
         audioEncoder = audioSource;
     }
+
     if (mAudioSourceNode != NULL) {
         mAudioSourceNode.clear();
     }
     mAudioSourceNode = audioSource;
 
-    if (audioEncoder == NULL) {
-        ALOGE("Failed to create audio encoder");
-    }
-
-    mAudioEncoderOMX = audioEncoder;
     return audioEncoder;
 }
 
@@ -1255,7 +1253,11 @@ status_t StagefrightRecorder::setupMPEG2TSRecording() {
             return err;
         }
 
-        writer->addSource(encoder);
+        err = writer->addSource(encoder);
+        if (err != OK) {
+            return err;
+        }
+
     }
 
     if (mMaxFileDurationUs != 0) {
@@ -1785,8 +1787,7 @@ status_t StagefrightRecorder::setupAudioEncoder(const sp<MediaWriter>& writer) {
         return UNKNOWN_ERROR;
     }
 
-    writer->addSource(audioEncoder);
-    return OK;
+    return writer->addSource(audioEncoder);
 }
 
 status_t StagefrightRecorder::setupMPEG4orWEBMRecording() {
@@ -1816,7 +1817,11 @@ status_t StagefrightRecorder::setupMPEG4orWEBMRecording() {
             return err;
         }
 
-        writer->addSource(encoder);
+        err = writer->addSource(encoder);
+        if (err != OK) {
+            return err;
+        }
+
         mTotalBitRate += mVideoBitRate;
     }
 
