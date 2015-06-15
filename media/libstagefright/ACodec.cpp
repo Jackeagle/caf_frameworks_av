@@ -5311,7 +5311,7 @@ bool ACodec::LoadedState::onConfigureComponent(
             observer->setNotificationMessage(notify);
             err = ExtendedCodec::tryAllocateAndConfigureFallback(mCodec, msg, observer);
             if (err != OK) {
-                return err;
+                return false;
             }
         } else {
             ALOGE("[%s] configureCodec returning error %d",
