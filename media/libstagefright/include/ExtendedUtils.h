@@ -174,6 +174,7 @@ struct ExtendedUtils {
         static bool getSTAProxyConfig(int32_t &port);
 
         static bool isCustomHLSEnabled();
+        static bool isHLSProxyEnabled();
     };
 
     struct DiscoverProxy : public RefBase {
