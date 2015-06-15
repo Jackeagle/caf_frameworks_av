@@ -9,6 +9,7 @@ LOCAL_SRC_FILES:=                       \
         NuPlayerDecoder.cpp             \
         NuPlayerDecoderBase.cpp         \
         NuPlayerDecoderPassThrough.cpp  \
+        NuPlayerDecVobPassThrough.cpp   \
         NuPlayerDriver.cpp              \
         NuPlayerRenderer.cpp            \
         NuPlayerStreamListener.cpp      \
