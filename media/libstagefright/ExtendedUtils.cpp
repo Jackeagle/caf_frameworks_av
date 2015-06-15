@@ -894,7 +894,7 @@ void ExtendedUtils::DiscoverProxy::create(
     // Disable STAProxy usage for custom hls specific usecases,
     // Not starting STAProxy if HLS specific custom
     // property is enabled
-    if (true == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+    if (false == ExtendedUtils::ShellProp::isHLSProxyEnabled()) {
         return;
     }
 
@@ -1244,6 +1244,19 @@ bool ExtendedUtils::ShellProp::isCustomHLSEnabled() {
     property_get("persist.sys.media.hls-custom", customHLS, "0");
     if (atoi(customHLS)) {
         retVal = true;
+    }
+    return retVal;
+}
+
+bool ExtendedUtils::ShellProp::isHLSProxyEnabled() {
+    bool retVal = false;
+
+    if (false == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+        char customHLS[PROPERTY_VALUE_MAX];
+        property_get("persist.sta.hls.test.enable", customHLS, "0");
+        if (atoi(customHLS)) {
+            retVal = true;
+        }
     }
     return retVal;
 }
@@ -3312,6 +3325,10 @@ bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
 }
 
 bool ExtendedUtils::ShellProp::isCustomHLSEnabled() {
+    return false;
+}
+
+bool ExtendedUtils::ShellProp::isHLSProxyEnabled() {
     return false;
 }
 
