@@ -101,6 +101,7 @@ private:
     struct Decoder;
     struct DecoderBase;
     struct DecoderPassThrough;
+    struct VorbisDecoderPassThrough;
     struct CCDecoder;
     struct GenericSource;
     struct HTTPLiveSource;
