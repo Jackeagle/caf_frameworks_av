@@ -30,6 +30,7 @@
 #include <media/stagefright/Utils.h>
 #include <utils/String8.h>
 #include <cutils/bitops.h>
+#include "include/ExtendedUtils.h"
 
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMediaDefs.h"
@@ -374,6 +375,19 @@ WAVSource::~WAVSource() {
 status_t WAVSource::start(MetaData *params) {
     ALOGV("WAVSource::start");
 
+    switch (mBitsPerSample) {
+        case 24:
+            ALOGV("mBitsPerSample == 24, outputFormat = 24 bit packed");
+            mOutputFormat = AUDIO_FORMAT_PCM_24_BIT_PACKED;
+            break;
+        default:
+            mOutputFormat = AUDIO_FORMAT_PCM_16_BIT;
+            break;
+    }
+
+    // override with whatever has been sent in start. This should
+    // maintain compatibility with AwesomePlayer.
+
 #ifdef ENABLE_AV_ENHANCEMENTS
 #ifdef PCM_OFFLOAD_ENABLED_24
     if (params != NULL) {
@@ -385,16 +399,17 @@ status_t WAVSource::start(MetaData *params) {
                __func__, mOutputFormat);
         }
     } else {
-        ALOGV("Use default output format if metadata is not set");
-        mOutputFormat = AUDIO_FORMAT_PCM_16_BIT;
+        ALOGV("Use existing output format if metadata is not set");
     }
 #endif
 #endif
 
-    if(mStarted) {
+    if (mStarted) {
         ALOGW("WAVSource::start, already started. mOutputFormat set to:%d",mOutputFormat);
         return OK;
     }
+
+    ExtendedUtils::setKeyPCMFormat(mMeta, mOutputFormat);
 
     mGroup = new MediaBufferGroup;
     mGroup->add_buffer(new MediaBuffer(kMaxFrameSize));
@@ -583,6 +598,7 @@ status_t WAVSource::read(
     buffer->meta_data()->setInt64(kKeyTime, timeStampUs);
 
     buffer->meta_data()->setInt32(kKeyIsSyncFrame, 1);
+    ExtendedUtils::setKeyPCMFormat(buffer->meta_data(), mOutputFormat);
     mCurrentPos += n;
 
     *out = buffer;

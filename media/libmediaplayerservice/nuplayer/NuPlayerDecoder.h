@@ -85,6 +85,7 @@ private:
     bool mPaused;
     bool mResumePending;
     AString mComponentName;
+    audio_format_t mPCMFormat;
 
     bool handleAnInputBuffer();
     bool handleAnOutputBuffer();

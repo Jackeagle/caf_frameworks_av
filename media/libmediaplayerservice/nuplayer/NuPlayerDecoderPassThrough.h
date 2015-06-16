@@ -70,6 +70,7 @@ private:
     size_t  mPendingBuffersToDrain;
     size_t  mCachedBytes;
     AString mComponentName;
+    audio_format_t mPCMFormat;
 
     bool isStaleReply(const sp<AMessage> &msg);
     bool isDoneFetching() const;

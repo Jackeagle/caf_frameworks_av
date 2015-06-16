@@ -60,7 +60,8 @@ NuPlayer::Decoder::Decoder(
       mFormatChangePending(false),
       mPaused(true),
       mResumePending(false),
-      mComponentName("decoder") {
+      mComponentName("decoder"),
+      mPCMFormat(AUDIO_FORMAT_INVALID) {
     mCodecLooper = new ALooper;
     mCodecLooper->setName("NPDecoder-CL");
     mCodecLooper->start(false, false, ANDROID_PRIORITY_AUDIO);
@@ -131,6 +132,11 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
 
     mIsAudio = !strncasecmp("audio/", mime.c_str(), 6);
     mIsVideoAVC = !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str());
+    bool pcm = mime.c_str() && !strcasecmp(MEDIA_MIMETYPE_AUDIO_RAW, mime.c_str());
+
+    if (pcm) {
+        format->findInt32("pcm-format", (int32_t *)&mPCMFormat);
+    }
 
     sp<Surface> surface = NULL;
     if (mNativeWindow != NULL) {
@@ -468,6 +474,10 @@ bool NuPlayer::Decoder::handleAnOutputBuffer() {
             sp<AMessage> notify = mNotify->dup();
             notify->findInt32("isStreaming", (int32_t *)&isStreaming);
 
+            if (mPCMFormat != AUDIO_FORMAT_INVALID) {
+                format->setInt32("pcm-format", (int32_t)mPCMFormat);
+            }
+
             res = mRenderer->openAudioSink(
                     format, false /* offloadOnly */, hasVideo, flags, isStreaming, NULL /* isOffloaded */);
             if (res != OK) {
@@ -499,6 +509,11 @@ bool NuPlayer::Decoder::handleAnOutputBuffer() {
         buffer->meta()->setInt32("eos", true);
         notifyResumeCompleteIfNecessary();
     }
+
+    if (mIsAudio && (mPCMFormat != AUDIO_FORMAT_INVALID)) {
+        buffer->meta()->setInt32("pcm-format", (int32_t)mPCMFormat);
+    }
+
     // we do not expect CODECCONFIG or SYNCFRAME for decoder
 
     sp<AMessage> reply = new AMessage(kWhatRenderBuffer, id());
