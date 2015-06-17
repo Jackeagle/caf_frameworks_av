@@ -5340,6 +5340,7 @@ bool ACodec::LoadedState::onConfigureComponent(
 
         if (!mCodec->mEncoderComponent && !mCodec->mComponentAllocByName &&  !strncmp(mime.c_str(), "video/", strlen("video/"))) {
             Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
+            status_t err = UNKNOWN_ERROR;
 
             OMXCodec::findMatchingCodecs(
                 mime.c_str(),
@@ -5348,15 +5349,6 @@ bool ACodec::LoadedState::onConfigureComponent(
                 0,     // flags
                 &matchingCodecs);
 
-            status_t err = mCodec->mOMX->freeNode(mCodec->mNode);
-
-            if (err != OK) {
-                ALOGE("Failed to freeNode");
-                mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
-                return false;
-            }
-
-            mCodec->mNode = NULL;
             AString componentName;
             sp<CodecObserver> observer = new CodecObserver;
             for (size_t matchIndex = 0; matchIndex < matchingCodecs.size();
@@ -5366,7 +5358,19 @@ bool ACodec::LoadedState::onConfigureComponent(
                     continue;
                 }
 
-                status_t err = mCodec->mOMX->allocateNode(componentName.c_str(), observer, &mCodec->mNode);
+                if(mCodec->mNode != NULL){
+                    err = mCodec->mOMX->freeNode(mCodec->mNode);
+
+                    if (err != OK) {
+                        ALOGE("Failed to freeNode");
+                        mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
+                        return false;
+                    }
+
+                    mCodec->mNode = NULL;
+                }
+
+                err = mCodec->mOMX->allocateNode(componentName.c_str(), observer, &mCodec->mNode);
 
                 if (err == OK) {
                     break;
