@@ -2823,6 +2823,14 @@ status_t ExtendedUtils::sendMetaDataToHal(const sp<MetaData>& meta, AudioParamet
     }
 #endif
 
+#ifdef VORBIS_OFFLOAD_ENABLED
+    int32_t bitstream_fmt = 1;
+    if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_VORBIS)) {
+        param->addInt(String8(AUDIO_OFFLOAD_CODEC_VORBIS_BITSTREAM_FMT), bitstream_fmt);
+        return OK;
+    }
+#endif
+
     const void *data;
     size_t size;
     uint32_t type = 0;
