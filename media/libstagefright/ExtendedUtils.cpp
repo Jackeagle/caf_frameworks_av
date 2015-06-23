@@ -3145,12 +3145,6 @@ bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
 sp<MediaCodec> ExtendedUtils::CreateCustomComponentByName(const sp<ALooper> &looper,
                         const char* mime, bool encoder) {
     sp<MediaCodec> codec = NULL;
-    if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10) && !encoder) {
-        ALOGV("CreateByComponentName() for FLAC decoder");
-        codec = MediaCodec::CreateByComponentName(looper, "OMX.qti.audio.decoder.flac");
-    } else {
-        ALOGV("Could not create by component name");
-    }
 
     return codec;
 }
