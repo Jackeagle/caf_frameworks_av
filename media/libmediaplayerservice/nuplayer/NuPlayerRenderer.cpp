@@ -336,6 +336,11 @@ status_t NuPlayer::Renderer::openAudioSink(
     return err;
 }
 
+void NuPlayer::Renderer::startAudioSink() {
+    sp<AMessage> msg = new AMessage(kWhatStartAudioSink, id());
+    msg->post();
+}
+
 void NuPlayer::Renderer::closeAudioSink() {
     sp<AMessage> msg = new AMessage(kWhatCloseAudioSink, id());
 
@@ -384,6 +389,13 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
 
             sp<AMessage> response = new AMessage;
             response->postReply(replyID);
+            break;
+        }
+
+        case kWhatStartAudioSink:
+        {
+            mAudioSink->start();
+            mAudioSinkStopped = false;
             break;
         }
 
@@ -1566,6 +1578,11 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
         ALOGV("openAudioSink: open AudioSink in NON-offload mode");
         uint32_t pcmFlags = flags;
         pcmFlags &= ~AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD;
+
+        if (ExtendedUtils::isTrackOffloadEnabled()) {
+            ALOGV("TrackOffload: Enabled, setting deep buffer flag");
+            pcmFlags |= AUDIO_OUTPUT_FLAG_DEEP_BUFFER;
+        }
 
         const PcmInfo info = {
                 (audio_channel_mask_t)channelMask,

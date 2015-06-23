@@ -1047,13 +1047,8 @@ bool ExtendedUtils::UseQCHWAACEncoder(audio_encoder Encoder,int32_t Channel,int3
             }
             break;
         case AUDIO_ENCODER_HE_AAC:// for AAC+ format
-            if (Channel == 1) {//mono
-                minBiteRate = MIN_BITERATE_AAC;
-                maxBiteRate = MAX_BITERATE_AAC<(SampleRate*6)?MAX_BITERATE_AAC:(SampleRate*6);
-            } else if (Channel == 2) {//stereo
-                minBiteRate = MIN_BITERATE_AAC;
-                maxBiteRate = MAX_BITERATE_AAC<(SampleRate*12)?MAX_BITERATE_AAC:(SampleRate*12);
-            }
+            // Do not use HW AAC encoder for HE AAC(AAC+) formats.
+            mIsQCHWAACEncoder = false;
             break;
         default:
             ALOGV("encoder:%d not supported by QCOM HW AAC encoder",Encoder);
@@ -1085,6 +1080,19 @@ bool ExtendedUtils::is16bitPCMOffloadEnabled() {
         return true;
     else
         return false;
+}
+
+bool ExtendedUtils::isTrackOffloadEnabled() {
+    char propTrackOffload[PROPERTY_VALUE_MAX] = {0};
+
+    //track offload will work only if 16 bit PCM offloading is enabled
+    if (is16bitPCMOffloadEnabled()) {
+        property_get("audio.offload.track.enabled", propTrackOffload, "0");
+        if (!strncmp(propTrackOffload, "true", 4) || atoi(propTrackOffload))
+            return true;
+    }
+
+    return false;
 }
 
 bool ExtendedUtils::isRAWFormat(const sp<MetaData> &meta) {
@@ -2156,6 +2164,10 @@ bool ExtendedUtils::is24bitPCMOffloadEnabled() {
 }
 
 bool ExtendedUtils::is16bitPCMOffloadEnabled() {
+    return false;
+}
+
+bool ExtendedUtils::isTrackOffloadEnabled() {
     return false;
 }
 
