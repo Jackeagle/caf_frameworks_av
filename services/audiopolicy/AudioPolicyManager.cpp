@@ -404,6 +404,8 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(audio_devices_t device,
                 }
                 if (mHdmiAudioDisabled || !mHdmiAudioEvent) {
                     mAvailableOutputDevices.remove(devDesc);
+                    ALOGW("HDMI sink not connected, do not route audio to HDMI out");
+                    return INVALID_OPERATION;
                 }
             }
 #endif
