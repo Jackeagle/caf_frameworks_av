@@ -1360,13 +1360,8 @@ bool ExtendedUtils::UseQCHWAACEncoder(audio_encoder Encoder,int32_t Channel,int3
             }
             break;
         case AUDIO_ENCODER_HE_AAC:// for AAC+ format
-            if (Channel == 1) {//mono
-                minBiteRate = MIN_BITERATE_AAC;
-                maxBiteRate = MAX_BITERATE_AAC<(SampleRate*6)?MAX_BITERATE_AAC:(SampleRate*6);
-            } else if (Channel == 2) {//stereo
-                minBiteRate = MIN_BITERATE_AAC;
-                maxBiteRate = MAX_BITERATE_AAC<(SampleRate*12)?MAX_BITERATE_AAC:(SampleRate*12);
-            }
+            // Do not use HW AAC encoder for HE AAC(AAC+) formats.
+            mIsQCHWAACEncoder = false;
             break;
         default:
             ALOGV("encoder:%d not supported by QCOM HW AAC encoder",Encoder);
@@ -2183,6 +2178,11 @@ bool ExtendedUtils::RTSPStream::pokeAHole_V6(int rtpSocket, int rtcpSocket,
     return true;
 }
 
+void ExtendedUtils::RTSPStream::notifyBye(const sp<AMessage> &msg, const int32_t what) {
+    msg->setInt32("what", what);
+    msg->post();
+}
+
 bool ExtendedUtils::RTSPStream::GetAttribute(const char *s, const char *key, AString *value) {
     value->clear();
 
@@ -2639,23 +2639,58 @@ bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
     return (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_VORBIS)) ? true : false;
 }
 
+size_t ExtendedUtils::getVorbisHdrSize(const sp<MetaData> &meta) {
+    size_t vorbisHdrSize = 0;
+    const void *hdrDat;
+    size_t hdrSize;
+    uint32_t type;
+
+    if ((meta != NULL) && meta->findData(kKeyVorbisInfo, &type, &hdrDat, &hdrSize)) {
+        vorbisHdrSize += hdrSize;
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisData, &type, &hdrDat, &hdrSize)) {
+        vorbisHdrSize += hdrSize;
+    }
+    if ((meta != NULL) && meta->findData(kKeyVorbisBooks, &type, &hdrDat, &hdrSize)) {
+        vorbisHdrSize += hdrSize;
+    }
+
+    return vorbisHdrSize;
+}
+
 sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
     size_t vorbisHdrSize = 0;
     sp<ABuffer> vorbisHdrBuffer = NULL;
+    const size_t MAX_META_SIZE = 32 * 1024;
     const void *hdrDat1, *hdrDat2, *hdrDat3;
     size_t hdrSize1 = 0, hdrSize2 = 0, hdrSize3 = 0;
     uint32_t type;
 
-    if ((meta != NULL) && meta->findData(kKeyVorbisInfo, &type, &hdrDat1, &hdrSize1)) {
+    if (meta == NULL) {
+        ALOGE("invalid meta data");
+        return NULL;
+    }
+
+    if (meta->findData(kKeyVorbisInfo, &type, &hdrDat1, &hdrSize1)) {
         vorbisHdrSize += hdrSize1;
         vorbisHdrSize += 4;
-
     }
-    if ((meta != NULL) && meta->findData(kKeyVorbisData, &type, &hdrDat2, &hdrSize2)) {
+
+    if (meta->findData(kKeyVorbisData, &type, &hdrDat2, &hdrSize2)) {
+        // comment packet size more than 32K will be zeroed,
+        // dsp tolerates the missing of 2nd packet.
+        if (hdrSize2 > MAX_META_SIZE) {
+            hdrSize2 = 0;
+        }
         vorbisHdrSize += hdrSize2;
         vorbisHdrSize += 4;
+    } else {
+        // fill vacant header even if parser doesn't provide kKeyVorbisData.
+        hdrSize2 = 0;
+        vorbisHdrSize += 4;
     }
-    if ((meta != NULL) && meta->findData(kKeyVorbisBooks, &type, &hdrDat3, &hdrSize3)) {
+
+    if (meta->findData(kKeyVorbisBooks, &type, &hdrDat3, &hdrSize3)) {
         vorbisHdrSize += hdrSize3;
         vorbisHdrSize += 4;
     }
@@ -2671,7 +2706,7 @@ sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
             memcpy(vorbisHdrBuffer->base() + sizeof(int32_t), hdrDat1, hdrSize1);
             offset += (hdrSize1 + sizeof(int32_t));
         }
-        if (hdrSize2 > 0) {
+        if (hdrSize2 >= 0) {
             memcpy(vorbisHdrBuffer->base() + offset, (int32_t *)&hdrSize2, sizeof(int32_t));
             memcpy(vorbisHdrBuffer->base() + offset + sizeof(int32_t), hdrDat2, hdrSize2);
             offset += (hdrSize2 + sizeof(int32_t));
@@ -3102,6 +3137,38 @@ bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
     return true;
 }
 
+sp<MediaCodec> ExtendedUtils::CreateCustomComponentByName(const sp<ALooper> &looper,
+                        const char* mime, bool encoder) {
+    sp<MediaCodec> codec = NULL;
+    if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10) && !encoder) {
+        ALOGV("CreateByComponentName() for FLAC decoder");
+        codec = MediaCodec::CreateByComponentName(looper, "OMX.qti.audio.decoder.flac");
+    } else {
+        ALOGV("Could not create by component name");
+    }
+
+    return codec;
+}
+
+void ExtendedUtils::extractBitWidth(const sp<AMessage> &format,
+                        audio_format_t audioFormat, int32_t *bitWidth) {
+    int32_t bitsPerSample;
+    if ((audioFormat == AUDIO_FORMAT_FLAC) &&
+        format->findInt32("bits-per-sample", &bitsPerSample)) {
+        CHECK(bitsPerSample == 16 || bitsPerSample == 24);
+        *bitWidth = bitsPerSample;
+    } else if (audioFormat == AUDIO_FORMAT_VORBIS) {
+        *bitWidth = 16;
+
+        char value[PROPERTY_VALUE_MAX];
+        if (property_get("audio.offload.vorbis.24b.enable", value, NULL)
+                && (!strcmp("1", value) || !strcasecmp("true", value))) {
+            ALOGV("dsp vorbis decoder operates in 24bit");
+            *bitWidth = 24;
+        }
+    }
+}
+
 } // namespace android
 #else //ENABLE_AV_ENHANCEMENTS
 
@@ -3444,6 +3511,8 @@ bool ExtendedUtils::RTSPStream::pokeAHole_V6(int rtpSocket, int rtcpSocket,
     return false;
 }
 
+void ExtendedUtils::RTSPStream::notifyBye(const sp<AMessage> &msg, const int32_t what) {}
+
 void ExtendedUtils::RTSPStream::bumpSocketBufferSize_V6(int s) {}
 
 bool ExtendedUtils::RTSPStream::GetAttribute(const char *s, const char *key, AString *value) {
@@ -3483,6 +3552,11 @@ bool ExtendedUtils::is24bitPCMOffloaded(const sp<MetaData> &sMeta) {
 bool ExtendedUtils::isVorbisFormat(const sp<MetaData> &meta) {
     ARG_TOUCH(meta);
     return false;
+}
+
+size_t ExtendedUtils::getVorbisHdrSize(const sp<MetaData> &meta) {
+    ARG_TOUCH(meta);
+    return 0;
 }
 
 sp<ABuffer> ExtendedUtils::assembleVorbisHdr(const sp<MetaData> &meta) {
@@ -3548,6 +3622,24 @@ bool ExtendedUtils::DTS::IsSeeminglyValidDTSHeader(const uint8_t *ptr, size_t si
 }
 #endif //DTS_CODEC_M_
 
+sp<MediaCodec> ExtendedUtils::CreateCustomComponentByName(const sp<ALooper> &looper,
+                        const char* mime, bool encoder) {
+    ARG_TOUCH(looper);
+    ARG_TOUCH(mime);
+    ARG_TOUCH(encoder);
+
+    return NULL;
+}
+
+void ExtendedUtils::extractBitWidth(const sp<AMessage> &format,
+                        audio_format_t audioFormat, int32_t *bitWidth) {
+    ARG_TOUCH(format);
+    ARG_TOUCH(audioFormat);
+    ARG_TOUCH(bitWidth);
+
+    return;
+}
+
 } // namespace android
 #endif //ENABLE_AV_ENHANCEMENTS
 
@@ -3567,6 +3659,20 @@ bool ExtendedUtils::isVideoMuxFormatSupported(const char *mime) {
         return true;
     }
 
+    return false;
+}
+
+bool ExtendedUtils::isAudioMuxFormatSupported(const char *mime) {
+    if (mime == NULL) {
+        ALOGE("NULL audio mime type");
+        return false;
+    }
+
+    if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_AMR_NB, mime)
+            || !strcasecmp(MEDIA_MIMETYPE_AUDIO_AMR_WB, mime)
+            || !strcasecmp(MEDIA_MIMETYPE_AUDIO_AAC, mime)) {
+        return true;
+    }
     return false;
 }
 

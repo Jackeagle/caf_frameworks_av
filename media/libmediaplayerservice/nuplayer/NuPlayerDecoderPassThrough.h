@@ -47,29 +47,24 @@ protected:
     virtual void onShutdown(bool notifyComplete);
     virtual void doRequestBuffers();
 
+    sp<Source> mSource;
+    status_t mPendingAudioErr;
+
+    // Used by feedDecoderInputData to aggregate small buffers into
+    // one large buffer.
+    sp<ABuffer> mPendingAudioAccessUnit;
+    sp<ABuffer> mAggregateBuffer;
+
 private:
     enum {
         kWhatBufferConsumed     = 'bufC',
     };
 
-    sp<Source> mSource;
     sp<Renderer> mRenderer;
     int64_t mSkipRenderingUntilMediaTimeUs;
     bool mPaused;
 
-    bool    mReachedEOS;
-
-    // Used by feedDecoderInputData to aggregate small buffers into
-    // one large buffer.
-    sp<ABuffer> mPendingAudioAccessUnit;
-    status_t    mPendingAudioErr;
-    sp<ABuffer> mAggregateBuffer;
-
-    // for vorbis
-    bool mIsVorbis;
-    bool mInitBuffer;
-    sp<ABuffer> mVorbisHdrBuffer;
-    sp<ABuffer> mAnchorBuffer;
+    bool mReachedEOS;
 
     // mPendingBuffersToDrain are only for debugging. It can be removed
     // when the power investigation is done.
@@ -82,7 +77,7 @@ private:
     bool isDoneFetching() const;
 
     status_t dequeueAccessUnit(sp<ABuffer> *accessUnit);
-    sp<ABuffer> aggregateBuffer(const sp<ABuffer> &accessUnit);
+    virtual sp<ABuffer> aggregateBuffer(const sp<ABuffer> &accessUnit);
     status_t fetchInputData(sp<AMessage> &reply);
 
     void onInputBufferFetched(const sp<AMessage> &msg);

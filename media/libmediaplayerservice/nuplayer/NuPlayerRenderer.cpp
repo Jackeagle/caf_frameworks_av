@@ -1559,10 +1559,6 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
                     audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
                 }
             }
-            if (AUDIO_FORMAT_VORBIS == audioFormat) {
-                ALOGV("dsp vorbis decoder operates in 24bit by default");
-                bitWidth = 24;
-            }
             if (AUDIO_FORMAT_WMA == audioFormat) {
                 if (ExtendedUtils::isAudioWMAPro(format)) {
                     audioFormat = AUDIO_FORMAT_WMA_PRO;
@@ -1588,6 +1584,8 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
                         audioFormat,
                         aacProfile);
             }
+
+            ExtendedUtils::extractBitWidth(format, audioFormat, &bitWidth);
 
             audio_offload_info_t offloadInfo = AUDIO_INFO_INITIALIZER;
             offloadInfo.duration_us = -1;

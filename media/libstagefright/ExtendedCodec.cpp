@@ -98,6 +98,11 @@ static const MetaKeyEntry MetaKeyTable[] {
 
    {kKeySampleRate           , "sample-rate"            , INT32},
    {kKeyChannelCount         , "channel-count"          , INT32},
+   {kKeyMinBlkSize           , "min-block-size"         , INT32},
+   {kKeyMaxBlkSize           , "max-block-size"         , INT32},
+   {kKeyMinFrmSize           , "min-frame-size"         , INT32},
+   {kKeyMaxFrmSize           , "max-frame-size"         , INT32},
+   {kKeySampleBits           , "bits-per-sample"        , INT32},
 };
 
 // checks and converts status_t to a non-side-effect status_t
@@ -414,6 +419,20 @@ status_t ExtendedCodec::setAudioFormat(
             return OMX_ErrorInsufficientResources;
         }
         err = setAPEFormat(numChannels, sampleRate, OMXhandle, nodeID);
+    } else if (!strcasecmp(MEDIA_MIMETYPE_AUDIO_FLAC, mime) && !isEncoder) {
+        int32_t numChannels, sampleRate, bitsPerSample;
+        int32_t minBlkSize, maxBlkSize, minFrmSize, maxFrmSize;
+        ALOGV("ExtendedCodec::setAudioFormat(): FLAC Decoder");
+        CHECK(msg->findInt32("channel-count", &numChannels));
+        CHECK(msg->findInt32("sample-rate", &sampleRate));
+        CHECK(msg->findInt32(getMsgKey(kKeySampleBits), &bitsPerSample));
+        CHECK(msg->findInt32(getMsgKey(kKeyMinBlkSize), &minBlkSize));
+        CHECK(msg->findInt32(getMsgKey(kKeyMaxBlkSize), &maxBlkSize));
+        CHECK(msg->findInt32(getMsgKey(kKeyMinFrmSize), &minFrmSize));
+        CHECK(msg->findInt32(getMsgKey(kKeyMaxFrmSize), &maxFrmSize));
+
+        err = setFLACDecoderFormat(numChannels, sampleRate, bitsPerSample, minBlkSize, maxBlkSize,
+                                    minFrmSize, maxFrmSize, OMXhandle, nodeID);
     }
     return err;
 }
@@ -1416,6 +1435,73 @@ status_t ExtendedCodec::setAPEFormat(
     return err;
 }
 
+status_t ExtendedCodec::setFLACDecoderFormat(
+        int32_t numChannels, int32_t sampleRate, int32_t bitsPerSample,
+        int32_t minBlkSize, int32_t maxBlkSize,
+        int32_t minFrmSize, int32_t maxFrmSize,
+        sp<IOMX> OMXhandle, IOMX::node_id nodeID) {
+
+    QOMX_AUDIO_PARAM_FLAC_DEC_TYPE profileFLACDec;
+    OMX_PARAM_PORTDEFINITIONTYPE portParam;
+
+    ALOGV("FLACDec setformat sampleRate:%d numChannels:%d, bitsPerSample:%d",
+            sampleRate, numChannels, bitsPerSample);
+
+    //configure input port
+    InitOMXParams(&portParam);
+    portParam.nPortIndex = kPortIndexInput;
+    status_t err = OMXhandle->getParameter(
+       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
+    CHECK_EQ(err, (status_t)OK);
+    err = OMXhandle->setParameter(
+       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
+    CHECK_EQ(err, (status_t)OK);
+
+    //configure output port
+    portParam.nPortIndex = kPortIndexOutput;
+    err = OMXhandle->getParameter(
+       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
+    CHECK_EQ(err, (status_t)OK);
+    err = OMXhandle->setParameter(
+       nodeID, OMX_IndexParamPortDefinition, &portParam, sizeof(portParam));
+    CHECK_EQ(err, (status_t)OK);
+
+    //for input port
+    InitOMXParams(&profileFLACDec);
+    profileFLACDec.nPortIndex = kPortIndexInput;
+    err = OMXhandle->getParameter(nodeID, (OMX_INDEXTYPE)QOMX_IndexParamAudioFlacDec,
+                                    &profileFLACDec, sizeof(profileFLACDec));
+    CHECK_EQ(err,(status_t)OK);
+
+    profileFLACDec.nSampleRate = sampleRate;
+    profileFLACDec.nChannels = numChannels;
+    profileFLACDec.nBitsPerSample = bitsPerSample;
+    profileFLACDec.nMinBlkSize = minBlkSize;
+    profileFLACDec.nMaxBlkSize = maxBlkSize;
+    profileFLACDec.nMinFrmSize = minFrmSize;
+    profileFLACDec.nMaxFrmSize = maxFrmSize;
+    err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)QOMX_IndexParamAudioFlacDec,
+                                    &profileFLACDec, sizeof(profileFLACDec));
+    CHECK_EQ(err,(status_t)OK);
+
+    //for output port
+    OMX_AUDIO_PARAM_PCMMODETYPE profilePcm;
+    InitOMXParams(&profilePcm);
+    profilePcm.nPortIndex = kPortIndexOutput;
+    err = OMXhandle->getParameter(
+            nodeID, OMX_IndexParamAudioPcm, &profilePcm, sizeof(profilePcm));
+    CHECK_EQ(err, (status_t)OK);
+
+    profilePcm.nSamplingRate = sampleRate;
+    profilePcm.nChannels = numChannels;
+    profilePcm.nBitPerSample = bitsPerSample;
+    err = OMXhandle->setParameter(
+            nodeID, OMX_IndexParamAudioPcm, &profilePcm, sizeof(profilePcm));
+    CHECK_EQ(err, (status_t)OK);
+
+    return err;
+}
+
 bool ExtendedCodec::useHWAACDecoder(const char *mime) {
     char value[PROPERTY_VALUE_MAX] = {0};
     int aaccodectype = 0;
@@ -1694,6 +1780,23 @@ namespace android {
             sp<IOMX> OMXhandle, IOMX::node_id nodeID) {
         ARG_TOUCH(numChannels);
         ARG_TOUCH(sampleRate);
+        ARG_TOUCH(OMXhandle);
+        ARG_TOUCH(nodeID);
+        return OK;
+    }
+
+    status_t ExtendedCodec::setFLACDecoderFormat(
+        int32_t numChannels, int32_t sampleRate, int32_t bitsPerSample,
+        int32_t minBlkSize, int32_t maxBlkSize,
+        int32_t minFrmSize, int32_t maxFrmSize,
+        sp<IOMX> OMXhandle, IOMX::node_id nodeID) {
+        ARG_TOUCH(numChannels);
+        ARG_TOUCH(sampleRate);
+        ARG_TOUCH(bitsPerSample);
+        ARG_TOUCH(minBlkSize);
+        ARG_TOUCH(maxBlkSize);
+        ARG_TOUCH(minFrmSize);
+        ARG_TOUCH(maxFrmSize);
         ARG_TOUCH(OMXhandle);
         ARG_TOUCH(nodeID);
         return OK;

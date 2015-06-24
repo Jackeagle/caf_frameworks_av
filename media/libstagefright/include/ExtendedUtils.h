@@ -36,6 +36,7 @@
 #include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MPEG4Writer.h>
 #include <media/AudioParameter.h>
+#include <media/stagefright/MediaCodec.h>
 
 #include <media/MediaRecorderBase.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -243,6 +244,8 @@ struct ExtendedUtils {
         static bool pokeAHole_V6(int rtpSocket, int rtcpSocket,
                  const AString &transport, AString &sessionHost);
 
+        static void notifyBye(const sp<AMessage> &msg, const int32_t what);
+
         private:
 
         static void bumpSocketBufferSize_V6(int s);
@@ -309,6 +312,8 @@ struct ExtendedUtils {
 
     static bool isVideoMuxFormatSupported(const char *mime);
 
+    static bool isAudioMuxFormatSupported(const char *mime);
+
     static void printFileName(int fd);
     static sp<MetaData> updatePCMFormatAndBitwidth(sp<MediaSource> &audioSource,
                                             bool offloadAudio);
@@ -317,6 +322,7 @@ struct ExtendedUtils {
 
     static bool isAudioAMR(const char* mime);
     static bool isVorbisFormat(const sp<MetaData> &meta);
+    static size_t getVorbisHdrSize(const sp<MetaData> &meta);
     static sp<ABuffer> assembleVorbisHdr(const sp<MetaData> &meta);
     static bool isWMAFormat(const sp<MetaData> &meta);
     static bool isAudioWMAPro(const sp<AMessage> &format);
@@ -348,6 +354,10 @@ struct ExtendedUtils {
     static status_t sendMetaDataToHal(const sp<MetaData>& meta, AudioParameter *param);
 
     static bool isHwAudioDecoderSessionAllowed(const char *meta);
+    static sp<MediaCodec> CreateCustomComponentByName(const sp<ALooper> &looper,
+                        const char* mime, bool encoder);
+    static void extractBitWidth(const sp<AMessage> &format,
+                        audio_format_t audioFormat, int32_t *bitWidth);
 };
 
 }

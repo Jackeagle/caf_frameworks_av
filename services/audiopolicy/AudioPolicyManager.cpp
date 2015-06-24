@@ -3286,11 +3286,13 @@ bool AudioPolicyManager::isOffloadSupported(const audio_offload_info_t& offloadI
         }
 
 #ifdef AUDIO_EXTN_FORMATS_ENABLED
-        //check if it's multi-channel FLAC or ALAC format with sample rate > 48k
+        //check if it's multi-channel FLAC/ALAC/WMA format with sample rate > 48k
         if ((popcount(offloadInfo.channel_mask) > 2) &&
             (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_FLAC) ||
-            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_ALAC) && offloadInfo.sample_rate > 48000))) {
-            ALOGD("offload disabled for multi-channel FLAC/ALAC clips with sample rate > 48kHz");
+            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_ALAC) && offloadInfo.sample_rate > 48000) ||
+            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA) && offloadInfo.sample_rate > 48000) ||
+            (((offloadInfo.format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_WMA_PRO) && offloadInfo.sample_rate > 48000))) {
+            ALOGD("offload disabled for multi-channel FLAC/ALAC/WMA clips with sample rate > 48kHz");
             return false;
         }
 #endif

@@ -200,6 +200,12 @@ private:
     static status_t setAPEFormat(
             int32_t numChannels, int32_t sampleRate,
             sp<IOMX> OMXhandle, IOMX::node_id nodeID);
+
+    static status_t setFLACDecoderFormat(
+            int32_t numChannels, int32_t sampleRate, int32_t bitsPerSample,
+            int32_t minBlkSize, int32_t maxBlkSize,
+            int32_t minFrmSize, int32_t maxFrmSize,
+            sp<IOMX> OMXhandle, IOMX::node_id nodeID);
 };
 
 }

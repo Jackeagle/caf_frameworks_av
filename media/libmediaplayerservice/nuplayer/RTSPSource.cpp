@@ -28,6 +28,8 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaData.h>
 
+#include "ExtendedUtils.h"
+
 namespace android {
 
 const int64_t kNearEOSTimeoutUs = 2000000ll; // 2 secs
@@ -555,6 +557,12 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
             info->mRTPTime = rtpTime;
             info->mNormalPlaytimeUs = nptUs;
             info->mNPTMappingValid = true;
+            break;
+        }
+
+        case MyHandler::kWhatByeReceived:
+        {
+            ExtendedUtils::RTSPStream::notifyBye(dupNotify(), kWhatRTCPByeReceived);
             break;
         }
 

@@ -108,6 +108,7 @@ struct MyHandler : public AHandler {
         kWhatEOS                        = 'eos!',
         kWhatSeekDiscontinuity          = 'seeD',
         kWhatNormalPlayTimeMapping      = 'nptM',
+        kWhatByeReceived                = 'byeR',
     };
 
     MyHandler(
@@ -1072,6 +1073,7 @@ struct MyHandler : public AHandler {
                 int32_t eos;
                 if (msg->findInt32("eos", &eos)) {
                     ALOGI("received BYE on track index %d", trackIndex);
+                    ExtendedUtils::RTSPStream::notifyBye(mNotify->dup(), kWhatByeReceived);
                     if (!mAllTracksHaveTime && dataReceivedOnAllChannels()) {
                         ALOGI("No time established => fake existing data");
 
