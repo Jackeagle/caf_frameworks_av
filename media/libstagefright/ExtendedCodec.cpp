@@ -704,6 +704,9 @@ status_t ExtendedCodec::handleSupportedVideoFormats(int format, AString* mime) {
 status_t ExtendedCodec::tryAllocateAndConfigureFallback(ACodec *codec,
             const sp<AMessage> &msg, const sp<IOMXObserver> &observer) {
     AString mime;
+    AString componentName;
+    status_t err = UNKNOWN_ERROR;
+
     CHECK(msg->findString("mime", &mime));
 
     Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
@@ -715,17 +718,6 @@ status_t ExtendedCodec::tryAllocateAndConfigureFallback(ACodec *codec,
         0,     // flags
         &matchingCodecs);
 
-    status_t err = codec->mOMX->freeNode(codec->mNode);
-
-    if (err != OK) {
-        ALOGE("Failed to freeNode");
-        codec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
-        return err;
-    }
-
-    codec->mNode = NULL;
-    AString componentName;
-
     for (size_t matchIndex = 0; matchIndex < matchingCodecs.size();
             ++matchIndex) {
         componentName = matchingCodecs.itemAt(matchIndex).mName.string();
@@ -733,15 +725,25 @@ status_t ExtendedCodec::tryAllocateAndConfigureFallback(ACodec *codec,
             continue;
         }
 
-        status_t err = codec->mOMX->allocateNode(componentName.c_str(), observer, &codec->mNode);
+        if (codec->mNode != NULL) {
+            err = codec->mOMX->freeNode(codec->mNode);
+
+            if (err != OK) {
+                ALOGE("Failed to freeNode");
+                codec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
+                return err;
+            }
+
+            codec->mNode = NULL;
+        }
+
+        err = codec->mOMX->allocateNode(componentName.c_str(), observer, &codec->mNode);
 
         if (err == OK) {
             break;
         } else {
             ALOGW("Allocating component '%s' failed, try next one.", componentName.c_str());
         }
-
-        codec->mNode = NULL;
     }
 
     if (codec->mNode == NULL) {
