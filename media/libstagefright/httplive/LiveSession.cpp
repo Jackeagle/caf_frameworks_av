@@ -115,10 +115,7 @@ LiveSession::LiveSession(
     mHTTPDataSource->setBandwidthHistorySize(numHistoryItems);
 
 
-    // Disable STAProxy usage for custome hls specific usecases,
-    // check for STAProxy usage only if HLS specific custom
-    // property is disabled
-    if (false == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+    if (true == ExtendedUtils::ShellProp::isHLSProxyEnabled()) {
         mDProxy = ExtendedUtils::DiscoverProxy::create();
         if (mDProxy == NULL) {
             ALOGI("LiveSession bypass proxy");
