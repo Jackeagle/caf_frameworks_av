@@ -1154,7 +1154,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     ALOGI("Could not offload audio decode, pcm offload decided :%d",
                             mOffloadDecodedPCM);
                 }
-
+                sp<AMessage> format = mSource->getFormat(true /* audio */);
+                if (format != NULL)
+                    openAudioSink(format, true /*offloadOnly*/);
                 if (mOffloadAudio) {
                     flags |= Renderer::FLAG_OFFLOAD_AUDIO;
                     if (mRenderer != NULL) {
