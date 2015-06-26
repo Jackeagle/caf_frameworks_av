@@ -1776,7 +1776,7 @@ void LiveSession::postPrepared(status_t err) {
     mInPreparationPhase = false;
 
     //start switchdown monitor only for variant playlists
-    if (mPlaylist->isVariantPlaylist()) {
+    if (mPlaylist != NULL && mPlaylist->isVariantPlaylist()) {
         mSwitchDownMonitor = new AMessage(kWhatCheckSwitchDown, id());
         mSwitchDownMonitor->post();
     }
