@@ -404,6 +404,8 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(audio_devices_t device,
                 }
                 if (mHdmiAudioDisabled || !mHdmiAudioEvent) {
                     mAvailableOutputDevices.remove(devDesc);
+                    ALOGW("HDMI sink not connected, do not route audio to HDMI out");
+                    return INVALID_OPERATION;
                 }
             }
 #endif
@@ -1647,6 +1649,9 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
     // only allow deep buffering for music stream type
     if (stream != AUDIO_STREAM_MUSIC) {
         flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_DEEP_BUFFER);
+    } else if (flags == AUDIO_OUTPUT_FLAG_NONE) {
+        //use DEEP_BUFFER as default output for music stream type
+        flags = AUDIO_OUTPUT_FLAG_DEEP_BUFFER;
     }
 
     sp<IOProfile> profile;
@@ -1683,6 +1688,33 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         property_get("audio.offload.multiple.enabled", value, NULL);
         if (atoi(value) || !strncmp("true", value, 4))
             multiOffloadEnabled = true;
+
+        if (multiOffloadEnabled &&  property_get("audio.offload.maxsessions", propValue, NULL)) {
+            // check for max supported offload sessions and
+            // route to non offload session if limit reached
+            int max_supported_sessions = atoi(propValue);
+            int total_active_sessions = 0;
+
+            for (size_t i = 0; i < mOutputs.size(); i++) {
+                sp<AudioOutputDescriptor> outputDesc = mOutputs.valueAt(i);
+                if ((outputDesc == NULL) || (outputDesc->mProfile == NULL)) {
+                    ALOGV("multioffload:ouput desc / profile is NULL");
+                    continue;
+                }
+                if (outputDesc->mProfile->mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
+                    total_active_sessions++;
+                    ALOGV("multioffload:found active compression total_active_sessions:%d",total_active_sessions);
+                }
+            }
+            if ((max_supported_sessions > 0) && (total_active_sessions >= max_supported_sessions)) {
+                ALOGD("multioffload: Reached max supported compress sessions fallback to non offload output \n"
+                          "total_active_sessions [%d] max_supported_sessions[%d]",
+                            total_active_sessions, max_supported_sessions);
+                flags = (audio_output_flags_t)(flags &~AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD);
+                goto non_direct_output;
+            }
+        }
+
         // if multiple concurrent offload decode is supported
         // do no check for reuse and also don't close previous output if its offload
         // previous output will be closed during track destruction

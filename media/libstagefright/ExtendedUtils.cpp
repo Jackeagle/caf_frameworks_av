@@ -894,7 +894,7 @@ void ExtendedUtils::DiscoverProxy::create(
     // Disable STAProxy usage for custom hls specific usecases,
     // Not starting STAProxy if HLS specific custom
     // property is enabled
-    if (true == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+    if (false == ExtendedUtils::ShellProp::isHLSProxyEnabled()) {
         return;
     }
 
@@ -987,8 +987,8 @@ sp<ExtendedUtils::DiscoverProxy> ExtendedUtils::DiscoverProxy::create() {
    }
 
    char value[PROPERTY_VALUE_MAX];
-   property_get("persist.mm.sta.enable", value, "1");
-   // Return false if persist.mm.sta.enable is set to 1
+   property_get("persist.mm.sta.enable", value, "0");
+   // Return NULL if persist.mm.sta.enable is set to 0
    if (!atoi(value)) {
         ALOGW("Proxy is disabled using persist.mm.sta.enable 0");
         return NULL;
@@ -1167,7 +1167,7 @@ bool ExtendedUtils::DiscoverProxy::sendSTAProxyStopIntent() {
 bool ExtendedUtils::DiscoverProxy::getSTAProxyConfig(int32_t &port) {
     Mutex::Autolock autoLock(gLock);
     char value[PROPERTY_VALUE_MAX];
-    property_get("persist.mm.sta.enable", value, "1");
+    property_get("persist.mm.sta.enable", value, "0");
     // Return false if persist.mm.sta.enable is set to 0
     if (!atoi(value)) {
         ALOGW("Proxy is disabled using persist.mm.sta.enable 0");
@@ -1197,8 +1197,8 @@ bool ExtendedUtils::ShellProp::getSTAProxyConfig(int32_t &port) {
     void* staLibHandle = NULL;
 
     char value[PROPERTY_VALUE_MAX];
-    property_get("persist.mm.sta.enable", value, "1");
-    // Return false if persist.mm.sta.ebable is set to 1
+    property_get("persist.mm.sta.enable", value, "0");
+    // Return false if persist.mm.sta.enable is set to 0
     if (!atoi(value)) {
         ALOGW("Proxy is disabled using persist.mm.sta.enable");
         return false;
@@ -1244,6 +1244,19 @@ bool ExtendedUtils::ShellProp::isCustomHLSEnabled() {
     property_get("persist.sys.media.hls-custom", customHLS, "0");
     if (atoi(customHLS)) {
         retVal = true;
+    }
+    return retVal;
+}
+
+bool ExtendedUtils::ShellProp::isHLSProxyEnabled() {
+    bool retVal = false;
+
+    if (false == ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+        char customHLS[PROPERTY_VALUE_MAX];
+        property_get("persist.sta.hls.test.enable", customHLS, "0");
+        if (atoi(customHLS)) {
+            retVal = true;
+        }
     }
     return retVal;
 }
@@ -3145,12 +3158,6 @@ bool ExtendedUtils::isHwAudioDecoderSessionAllowed(const char *mime) {
 sp<MediaCodec> ExtendedUtils::CreateCustomComponentByName(const sp<ALooper> &looper,
                         const char* mime, bool encoder) {
     sp<MediaCodec> codec = NULL;
-    if (!strncasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC, 10) && !encoder) {
-        ALOGV("CreateByComponentName() for FLAC decoder");
-        codec = MediaCodec::CreateByComponentName(looper, "OMX.qti.audio.decoder.flac");
-    } else {
-        ALOGV("Could not create by component name");
-    }
 
     return codec;
 }
@@ -3318,6 +3325,10 @@ bool ExtendedUtils::DiscoverProxy::sendSTAProxyStartIntent() {
 }
 
 bool ExtendedUtils::ShellProp::isCustomHLSEnabled() {
+    return false;
+}
+
+bool ExtendedUtils::ShellProp::isHLSProxyEnabled() {
     return false;
 }
 
