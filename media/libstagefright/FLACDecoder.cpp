@@ -310,7 +310,7 @@ sp<MetaData> FLACDecoder::getFormat() {
 status_t FLACDecoder::read(MediaBuffer **out, const ReadOptions* options) {
     int err, status = 0;
     *out = NULL;
-    uint32 blockSize, usedBitstream, availLength = 0;
+    uint32 blockSize = 0, usedBitstream = 0, availLength = 0;
     uint32 flacOutputBufSize = FLAC_OUTPUT_BUFFER_SIZE;
     int32_t decode_successful = 0;
 
@@ -403,7 +403,7 @@ status_t FLACDecoder::read(MediaBuffer **out, const ReadOptions* options) {
         if (ob.i32BufferInitialized) {
             if (!updatePointers(&ob, usedBitstream, status)) {
                 if (ob.eos) {
-                    break;
+                    return ERROR_END_OF_STREAM;
                 } else {
                     continue;
                 }//Some error or insufficient data - read again from parser.
