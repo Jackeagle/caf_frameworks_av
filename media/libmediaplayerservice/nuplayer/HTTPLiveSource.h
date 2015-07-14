@@ -72,6 +72,7 @@ private:
     sp<ALooper> mLiveLooper;
     sp<LiveSession> mLiveSession;
     int32_t mFetchSubtitleDataGeneration;
+    bool mImageDisplay;
 
     void onSessionNotify(const sp<AMessage> &msg);
 
