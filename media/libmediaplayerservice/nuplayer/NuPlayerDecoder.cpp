@@ -600,6 +600,9 @@ status_t NuPlayer::Decoder::fetchInputData(sp<AMessage> &reply) {
                         supportsSeamlessFormatChange(newFormat);
                     // treat seamless format change separately
                     formatChange = !seamlessFormatChange;
+                    if (!mIsAudio && accessUnit->meta()->contains("force-formatChange")) {
+                        formatChange = true;
+                    }
                 }
 
                 if (formatChange || timeChange) {
