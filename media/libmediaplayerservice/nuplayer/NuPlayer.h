@@ -203,8 +203,6 @@ private:
     bool mSkipAudioFlushAfterSuspend;
     bool mSkipVideoFlushAfterSuspend;
 
-    bool mImageDisplayed;
-
     // Actual pause state, either as requested by client or due to buffering.
     bool mPaused;
 

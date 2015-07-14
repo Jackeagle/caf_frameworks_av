@@ -197,7 +197,6 @@ NuPlayer::NuPlayer()
       mSkipAudioFlushAfterSuspend(false),
       mSkipVideoFlushAfterSuspend(false),
       mDProxy(NULL),
-      mImageDisplayed(false), 
       mPaused(false),
       mPausedByClient(false),
       mOffloadAudioTornDown(false) {
@@ -2092,7 +2091,6 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
                     && format->findInt32("height", &height)) {
                 ALOGV("show the image with width = %ld,  height = %ld", width, height);
                 notifyListener(MEDIA_SET_VIDEO_SIZE, width, height);
-                mImageDisplayed = true;
             }
             break;
         }
