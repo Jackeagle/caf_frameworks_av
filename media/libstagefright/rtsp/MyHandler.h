@@ -1930,7 +1930,7 @@ private:
             mLastMediaTimeUs = mediaTimeUs;
         }
 
-        if (mediaTimeUs < 0) {
+        if (mediaTimeUs < 0 && !mSeekable) {
             ALOGV("dropping early accessUnit.");
             return false;
         }
