@@ -313,6 +313,10 @@ status_t ExtendedWriter::threadFunc() {
     if (err == ERROR_END_OF_STREAM || (err == -ETIMEDOUT)) {
         return OK;
     }
+    else if (err == ERROR_IO) {
+        notify(MEDIA_RECORDER_EVENT_ERROR, MEDIA_RECORDER_TRACK_ERROR_GENERAL, err);
+        return OK;
+    }
     return err;
 }
 
