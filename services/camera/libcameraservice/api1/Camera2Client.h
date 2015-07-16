@@ -104,6 +104,9 @@ public:
 
     virtual void notifyAutoFocus(uint8_t newState, int triggerId);
     virtual void notifyAutoExposure(uint8_t newState, int triggerId);
+    virtual void notifyError(ICameraDeviceCallbacks::CameraErrorCode errorCode,
+            const CaptureResultExtras& resultExtras);
+
 
     /**
      * Interface used by independent components of Camera2Client.

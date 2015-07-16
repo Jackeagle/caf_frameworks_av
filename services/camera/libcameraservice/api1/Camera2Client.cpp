@@ -1847,6 +1847,22 @@ void Camera2Client::notifyAutoExposure(uint8_t newState, int triggerId) {
     mCaptureSequencer->notifyAutoExposure(newState, triggerId);
 }
 
+void Camera2Client::notifyError(ICameraDeviceCallbacks::CameraErrorCode errorCode,
+                                     const CaptureResultExtras& resultExtras) {
+    ALOGE("%s: errorCode %d, requestId %d",
+            __FUNCTION__, errorCode, resultExtras.requestId);
+    //Handle only fatal errors. Ignore others.
+    if ((errorCode == ICameraDeviceCallbacks::ERROR_CAMERA_DISCONNECTED) ||
+            (errorCode == ICameraDeviceCallbacks::ERROR_CAMERA_DEVICE) ||
+            (errorCode == ICameraDeviceCallbacks::ERROR_CAMERA_SERVICE)) {
+        SharedCameraCallbacks::Lock l(mSharedCameraCallbacks);
+        if (l.mRemoteCallback != 0) {
+            l.mRemoteCallback->notifyCallback(CAMERA_MSG_ERROR,
+                    CAMERA_ERROR_SERVER_DIED, 0);
+        }
+    }
+}
+
 camera2::SharedParameters& Camera2Client::getParameters() {
     return mParameters;
 }
