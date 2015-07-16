@@ -28,6 +28,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include <media/stagefright/MediaDefs.h>
 
 #include <VideoFrameScheduler.h>
 
@@ -1035,13 +1036,33 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
     entry.mNotifyConsumed = notifyConsumed;
     entry.mOffset = 0;
     entry.mFinalResult = OK;
-    entry.mBufferOrdinal = ++mTotalBuffersQueued;
 
     Mutex::Autolock autoLock(mLock);
     if (audio) {
+        sp<ABuffer> newBuffer;
+        status_t err = convertToSinkFormatIfNeeded(buffer, newBuffer);
+        switch (err) {
+        case NO_INIT:
+            // passthru decoder pushes some buffers before the audio sink
+            // is opened. Since the offload format is known only when the sink
+            // is opened, pcm conversions cannot take place. So, retry.
+            ALOGI("init pending, retrying in 10ms, this shouldn't happen");
+            msg->post(10000LL);
+            return;
+        case OK:
+            break;
+        default:
+            ALOGW("error 0x%x in converting to sink format, drop buffer", err);
+            notifyConsumed->post();
+            return;
+        }
+        CHECK(newBuffer != NULL);
+        entry.mBuffer = newBuffer;
+        entry.mBufferOrdinal = ++mTotalBuffersQueued;
         mAudioQueue.push_back(entry);
         postDrainAudioQueue_l();
     } else {
+        entry.mBufferOrdinal = ++mTotalBuffersQueued;
         mVideoQueue.push_back(entry);
         postDrainVideoQueue_l();
     }
@@ -1587,11 +1608,19 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
             ALOGV("TrackOffload: Enabled, setting deep buffer flag");
             pcmFlags |= AUDIO_OUTPUT_FLAG_DEEP_BUFFER;
         }
+        audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
+        AString mime;
+        CHECK(format->findString("mime", &mime));
+        bool pcm = !strcasecmp(MEDIA_MIMETYPE_AUDIO_RAW, mime.c_str());
+
+        if (pcm) {
+            format->findInt32("pcm-format", (int32_t *)&audioFormat);
+        }
 
         const PcmInfo info = {
                 (audio_channel_mask_t)channelMask,
                 (audio_output_flags_t)pcmFlags,
-                AUDIO_FORMAT_PCM_16_BIT, // TODO: change to audioFormat
+                audioFormat,
                 numChannels,
                 sampleRate
         };
@@ -1608,7 +1637,7 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
                     sampleRate,
                     numChannels,
                     (audio_channel_mask_t)channelMask,
-                    AUDIO_FORMAT_PCM_16_BIT,
+                    audioFormat,
                     8 /* bufferCount */,
                     NULL,
                     NULL,
@@ -1635,6 +1664,20 @@ void NuPlayer::Renderer::onCloseAudioSink() {
     mAudioSink->close();
     mCurrentOffloadInfo = AUDIO_INFO_INITIALIZER;
     mCurrentPcmInfo = AUDIO_PCMINFO_INITIALIZER;
+}
+
+status_t NuPlayer::Renderer::convertToSinkFormatIfNeeded(const sp<ABuffer> &buffer,
+                                                         sp<ABuffer> &newBuffer) {
+    audio_format_t format;
+    bool pcm = buffer->meta()->findInt32("pcm-format", (int32_t *)&format);
+    if (!pcm) {
+        newBuffer = buffer;
+        return OK;
+    }
+    audio_format_t srcFormat;
+    audio_format_t pcmFormat = (offloadingAudio()) ? mCurrentOffloadInfo.format : mCurrentPcmInfo.mFormat;
+    CHECK(buffer->meta()->findInt32("pcm-format", (int32_t *)&srcFormat));
+    return ExtendedUtils::convertToSinkFormat(buffer, newBuffer, srcFormat, pcmFormat, offloadingAudio());
 }
 
 }  // namespace android

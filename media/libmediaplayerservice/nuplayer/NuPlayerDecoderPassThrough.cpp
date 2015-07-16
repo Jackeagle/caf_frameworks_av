@@ -29,6 +29,7 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MediaErrors.h>
+#include <media/stagefright/MediaDefs.h>
 
 #include "ATSParser.h"
 
@@ -54,7 +55,8 @@ NuPlayer::DecoderPassThrough::DecoderPassThrough(
       mPendingAudioErr(OK),
       mPendingBuffersToDrain(0),
       mCachedBytes(0),
-      mComponentName("pass through decoder") {
+      mComponentName("pass through decoder"),
+      mPCMFormat(AUDIO_FORMAT_INVALID) {
     ALOGW_IF(renderer == NULL, "expect a non-NULL renderer");
 }
 
@@ -85,10 +87,21 @@ void NuPlayer::DecoderPassThrough::onConfigure(const sp<AMessage> &format) {
     // The audio sink is already opened before the PassThrough decoder is created.
     // Opening again might be relevant if decoder is instantiated after shutdown and
     // format is different.
+    sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
     if (ExtendedUtils::is24bitPCMOffloadEnabled()) {
-        sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
         if (ExtendedUtils::is24bitPCMOffloaded(audioMeta)) {
             format->setInt32("sbit", 24);
+        }
+    }
+
+    const char * mime;
+    audioMeta->findCString(kKeyMIMEType, &mime);
+    bool pcm = mime && !strcasecmp(MEDIA_MIMETYPE_AUDIO_RAW, mime);
+    if (pcm) {
+        audio_format_t pcmFormat = (audio_format_t)ExtendedUtils::getPCMFormat(audioMeta);
+        if (pcmFormat != AUDIO_FORMAT_INVALID) {
+            mPCMFormat = pcmFormat;
+            format->setInt32("pcm-format", (int32_t)pcmFormat);
         }
     }
 
@@ -218,6 +231,9 @@ sp<ABuffer> NuPlayer::DecoderPassThrough::aggregateBuffer(
             memcpy(mAggregateBuffer->base() + bigSize, accessUnit->data(), smallSize);
             bigSize += smallSize;
             mAggregateBuffer->setRange(0, bigSize);
+            if (mPCMFormat != AUDIO_FORMAT_INVALID) {
+                mAggregateBuffer->meta()->setInt32("pcm-format", (int32_t)mPCMFormat);
+            }
 
             ALOGV("feedDecoderInputData() smallSize = %zu, bigSize = %zu, capacity = %zu",
                     smallSize, bigSize, mAggregateBuffer->capacity());
