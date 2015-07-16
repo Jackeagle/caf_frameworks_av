@@ -1506,6 +1506,100 @@ bool ExtendedCodec::isSourcePauseRequired(const char *componentName) {
     return false;
 }
 
+void ExtendedCodec::setParameters(
+        const sp<AMessage> &msg, sp<IOMX> OMXhandle,
+        IOMX::node_id nodeID, const char* componentName ) {
+
+    if ((strncmp(componentName, "OMX.qcom.video.", 15))) {
+        //do nothing for non QC components
+        return;
+    }
+
+    int32_t value;
+
+    if (msg->findInt32("vpp-algo-level", &value)) {
+        QOMX_VPP_HQVCONTROL vppHqvCtrl;
+        ALOGI("vpp-algo-level is %d\n", value);
+
+        /* First get the algorithm type and then set the level*/
+        status_t err = OMXhandle->getParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamVppHqvControl,
+                &vppHqvCtrl, sizeof(vppHqvCtrl));
+
+        if (err != OK) {
+            ALOGW("Failed to get vpp control parameters");
+            return;
+        }
+
+        //Change the level depending on the algorithm
+        if (vppHqvCtrl.ctrl_type == VPP_HQV_CONTROL_AIE) {
+            vppHqvCtrl.aie.cade_level = value;
+        } else {
+            vppHqvCtrl.cnr.level = value;
+        }
+
+        err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamVppHqvControl,
+                (void *)&vppHqvCtrl, sizeof(vppHqvCtrl));
+
+        if (err != OK) {
+            ALOGW("Failed to set vpp control parameters");
+        }
+    }
+}
+
+void ExtendedCodec::configureVPP(
+    const sp<AMessage> &msg, sp<IOMX> OMXhandle,
+    IOMX::node_id nodeID ){
+
+    /* VPP Stuff */
+    ALOGI("Setting of vpp-enable");
+    int32_t value = 0;
+    bool paramsSet = false;
+    paramsSet = msg->findInt32("vpp-enable", (int32_t *)&value);
+    ALOGI("vpp-enable search is %d and value is %d", paramsSet, value);
+
+    if (paramsSet) {
+        /*Pass the vpp-enable flag to the OMX component */
+        QOMX_VPP_ENABLE vppEnableCtrl;
+        vppEnableCtrl.enable_vpp = (OMX_BOOL)value;
+        status_t err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamEnableVpp,
+                   (void *)&vppEnableCtrl, sizeof(vppEnableCtrl));
+
+        if (err != OK) {
+            ALOGW("Failed to set vpp-enable flag");
+        }
+    }
+
+
+    /* VPP Algo*/
+    sp<ABuffer> cfg_buf;
+    paramsSet = msg->findBuffer("vpp-config", &cfg_buf);
+    ALOGI("vpp-config search is %d ", paramsSet);
+    if (paramsSet && cfg_buf->size() > 0) {
+        ALOGI("vpp-config buffer size is %d\n", cfg_buf->size());
+        QOMX_VPP_HQVCONTROL mhQvCtrl;
+        if(cfg_buf->size() > sizeof(QOMX_VPP_HQVCONTROL)) {
+            ALOGW("Size of the buffer larger than expected.Failed to set vpp-config params");
+            return;
+        }
+
+        memcpy((void*)&mhQvCtrl, cfg_buf->data(), cfg_buf->size());
+        ALOGI("VPP config params received");
+        ALOGI("Top level mode: %d", mhQvCtrl.mode);
+        ALOGI("Algo type: %d", mhQvCtrl.ctrl_type);
+        ALOGI("CADE: mode=%d level=%d", mhQvCtrl.cade.mode, mhQvCtrl.cade.level);
+        ALOGI("AIE: mode=%d level=%d", mhQvCtrl.aie.mode, mhQvCtrl.aie.cade_level);
+        ALOGI("AIE HUE: mode=%d level=%d", mhQvCtrl.aie.hue_mode, mhQvCtrl.aie.ltm_level);
+        ALOGI("CNR: mode=%d level=%d", mhQvCtrl.cnr.mode, mhQvCtrl.cnr.level);
+
+        status_t err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamVppHqvControl,
+               (void *)&mhQvCtrl, sizeof(mhQvCtrl));
+
+        if (err != OK) {
+            ALOGW("Failed to set vpp-config params");
+        }
+    }
+}
+
 } //namespace android
 
 #else //ENABLE_AV_ENHANCEMENTS
@@ -1844,6 +1938,24 @@ namespace android {
     bool ExtendedCodec::isSourcePauseRequired(const char *componentName) {
         return false;
     }
+
+    void ExtendedCodec::setParameters(
+        const sp<AMessage> &msg, sp<IOMX> OMXhandle,
+        IOMX::node_id nodeID, const char* componentName) {
+        ARG_TOUCH(msg);
+        ARG_TOUCH(OMXhandle);
+        ARG_TOUCH(nodeID);
+        ARG_TOUCH(componentName);
+    }
+
+    void ExtendedCodec::configureVPP(
+        const sp<AMessage> &msg,sp<IOMX> OMXhandle,
+        IOMX::node_id nodeID ) {
+        ARG_TOUCH(msg);
+        ARG_TOUCH(OMXhandle);
+        ARG_TOUCH(nodeID);
+    }
+
 } //namespace android
 
 #endif //ENABLE_AV_ENHANCEMENTS

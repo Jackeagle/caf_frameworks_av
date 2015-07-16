@@ -160,6 +160,14 @@ struct ExtendedCodec {
 
     static bool isSourcePauseRequired(const char *componentName);
 
+    static void setParameters(
+            const sp<AMessage> &msg, const sp<IOMX> OMXhandle,
+            IOMX::node_id nodeID, const char* componentName);
+
+    static void configureVPP(
+            const sp<AMessage> &msg, const sp<IOMX> OMXhandle,
+            IOMX::node_id nodeID);
+
 private:
     static const char* getMsgKey(int key );
 
