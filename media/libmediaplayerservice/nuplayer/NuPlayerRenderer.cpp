@@ -105,7 +105,9 @@ NuPlayer::Renderer::Renderer(
       mCurrentPcmInfo(AUDIO_PCMINFO_INITIALIZER),
       mTotalBuffersQueued(0),
       mLastAudioBufferDrained(0),
-      mWakeLock(new AWakeLock()) {
+      mWakeLock(new AWakeLock()),
+      mIsWaitVideoSyncFrame(false),
+      mIsDropAudio(false) {
 
     notify->findObject(MEDIA_EXTENDED_STATS, (sp<RefBase>*)&mPlayerExtendedStats);
     readProperties();
@@ -190,6 +192,10 @@ void NuPlayer::Renderer::pause() {
 
 void NuPlayer::Renderer::resume() {
     (new AMessage(kWhatResume, id()))->post();
+}
+
+void NuPlayer::Renderer::waitVideoSyncFrame() {
+    (new AMessage(kWhatWaitVideoSyncFrame, id()))->post();
 }
 
 void NuPlayer::Renderer::setVideoFrameRate(float fps) {
@@ -560,6 +566,19 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
             ALOGV("Audio Offload tear down due to pause timeout.");
             onAudioOffloadTearDown(kDueToTimeout);
             mWakeLock->release();
+            break;
+        }
+
+        case kWhatWaitVideoSyncFrame:
+        {
+            ALOGV("wait for the next video sync frame");
+            mIsWaitVideoSyncFrame = true;
+            char value[PROPERTY_VALUE_MAX];
+            if (property_get("rtsp.video.syncframe.dropaudio", value, NULL) &&
+                    (!strcmp("1", value) || !strcasecmp("true", value))) {
+                ALOGV("drop audio when waiting for video sync frame");
+                mIsDropAudio = true;
+            }
             break;
         }
 
@@ -1055,6 +1074,33 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
 
     sp<AMessage> notifyConsumed;
     CHECK(msg->findMessage("notifyConsumed", &notifyConsumed));
+
+    bool isDrop = false;
+    if (mIsWaitVideoSyncFrame) {
+        if (audio && mIsDropAudio) {
+            ALOGV("drop audio frame");
+            isDrop = true;
+        }
+
+        if (!audio) {
+            int32_t isSyncFrame = 0;
+            buffer->meta()->findInt32("sync_frame", &isSyncFrame);
+            if (isSyncFrame) {
+                ALOGV("found sync frame");
+                mIsWaitVideoSyncFrame = false;
+            } else {
+                ALOGV("drop video frame until the next sync frame");
+                isDrop = true;
+            }
+        }
+    }
+
+    if (isDrop) {
+        ALOGW("video sync frame didn't come, drop output [%s]frame after seek",
+                audio ? "audio" : "video");
+        notifyConsumed->post();
+        return;
+    }
 
     QueueEntry entry;
     entry.mBuffer = buffer;

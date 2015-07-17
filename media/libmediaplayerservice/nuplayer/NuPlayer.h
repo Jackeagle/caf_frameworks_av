@@ -219,6 +219,8 @@ private:
 
     bool mOffloadAudioTornDown;
 
+    bool isRTSPSource;
+
     inline const sp<DecoderBase> &getDecoder(bool audio) {
         return audio ? mAudioDecoder : mVideoDecoder;
     }
