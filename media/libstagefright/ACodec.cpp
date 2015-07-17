@@ -4790,6 +4790,10 @@ bool ACodec::BaseState::onOMXFillBufferDone(
             sp<AMessage> notify = mCodec->mNotify->dup();
             notify->setInt32("what", CodecBase::kWhatDrainThisBuffer);
             notify->setInt32("buffer-id", info->mBufferID);
+            if (flags & OMX_BUFFERFLAG_SYNCFRAME) {
+                ALOGV("Found sync frame");
+                info->mData->meta()->setInt32("sync_frame", (int32_t)1);
+            }
             notify->setBuffer("buffer", info->mData);
             notify->setInt32("flags", flags);
 

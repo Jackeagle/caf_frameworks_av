@@ -511,8 +511,15 @@ bool NuPlayer::Decoder::handleAnOutputBuffer() {
     CHECK_LT(bufferIx, mOutputBuffers.size());
     sp<ABuffer> buffer = mOutputBuffers[bufferIx];
     buffer->setRange(offset, size);
+    int32_t syncFrame = 0;
+    if (buffer->meta()->findInt32("sync_frame", &syncFrame)) {
+        ALOGV("Found sync frame");
+    }
     buffer->meta()->clear();
     buffer->meta()->setInt64("timeUs", timeUs);
+    if (syncFrame) {
+        buffer->meta()->setInt32("sync_frame", syncFrame);
+    }
     if (!mIsAudio && mResumePending) {
         buffer->meta()->setInt32("seeking", 1);
     }
