@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -141,6 +141,8 @@ status_t ExtendedWriter::start(MetaData *params) {
     //space for header;
     size_t headerSize = sizeof( struct QCPEVRCHeader );
     uint8_t * header = (uint8_t *)malloc(headerSize);
+    if(header == NULL)
+        return NO_MEMORY;
     memset( header, '?', headerSize);
     fwrite( header, 1, headerSize, mFile );
     mOffset += headerSize;
