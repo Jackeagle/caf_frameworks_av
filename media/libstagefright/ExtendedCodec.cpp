@@ -519,7 +519,9 @@ status_t ExtendedCodec::setSupportedRole(
         InitOMXParams(&roleParams);
 
         strlcpy((char *)roleParams.cRole,
-                role, OMX_MAX_STRINGNAME_SIZE);
+                role, OMX_MAX_STRINGNAME_SIZE - 1);
+
+        roleParams.cRole[OMX_MAX_STRINGNAME_SIZE - 1] = '\0';
 
         status_t err = omx->setParameter(
                 node, OMX_IndexParamStandardComponentRole,
