@@ -2517,6 +2517,12 @@ status_t ACodec::setupVideoDecoder(
         frameRateFloat = (float)frameRateInt;
     }
 
+    // Setup VPP parameters before port definition on input and output as vpp algo can be
+    // changed only when vpp is in init state.
+
+    ExtendedCodec::configureVPP(msg, mOMX, mNode);
+
+
     err = setVideoFormatOnPort(
             kPortIndexInput, width, height, compressionFormat, frameRateFloat);
 
@@ -5847,6 +5853,8 @@ status_t ACodec::setParameters(const sp<AMessage> &params) {
             return err;
         }
     }
+
+    ExtendedCodec::setParameters(params, mOMX, mNode, mComponentName.c_str());
 
     return OK;
 }
