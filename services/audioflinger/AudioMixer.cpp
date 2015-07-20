@@ -983,7 +983,7 @@ bool AudioMixer::track_t::setResampler(uint32_t trackSampleRate, uint32_t devSam
 #ifdef QTI_RESAMPLER
                 if ((trackSampleRate <= QTI_RESAMPLER_MAX_SAMPLERATE) &&
                        (trackSampleRate > devSampleRate * 2) &&
-                       (devSampleRate == 48000)) {
+                       ((devSampleRate == 48000)||(devSampleRate == 44100))) {
                     quality = AudioResampler::QTI_QUALITY;
                 } else
 #endif
@@ -998,7 +998,7 @@ bool AudioMixer::track_t::setResampler(uint32_t trackSampleRate, uint32_t devSam
                 // but if none exists, it is the channel count (1 for mono).
                 const int resamplerChannelCount = downmixerBufferProvider != NULL
                         ? mMixerChannelCount : channelCount;
-                ALOGVV("Creating resampler:"
+                ALOGI("Creating resampler:"
                         " format(%#x) channels(%d) devSampleRate(%u) quality(%d)\n",
                         mMixerInFormat, resamplerChannelCount, devSampleRate, quality);
                 resampler = AudioResampler::create(
