@@ -679,6 +679,7 @@ protected:
             static bool decideTrackOffloadFromStreamType(const audio_stream_type_t sType);
 
             static bool decideTrackOffloadfromAttributes(const audio_attributes_t *pAttributes);
+            void initializeTrackOffloadParams();
     // Next 4 fields may be changed if IAudioTrack is re-created, but always != 0
     sp<IAudioTrack>         mAudioTrack;
     sp<IMemory>             mCblkMemory;
@@ -697,8 +698,10 @@ protected:
 
     // constant after constructor or set()
     audio_format_t          mFormat;                // as requested by client, not forced to 16-bit
+    audio_format_t          mOriginalFormat;
     audio_stream_type_t     mStreamType;            // mStreamType == AUDIO_STREAM_DEFAULT implies
                                                     // this AudioTrack has valid attributes
+    bool                    mValidStreamType;
     uint32_t                mChannelCount;
     audio_channel_mask_t    mChannelMask;
     sp<IMemory>             mSharedBuffer;
@@ -706,11 +709,14 @@ protected:
     audio_offload_info_t    mOffloadInfoCopy;
     const audio_offload_info_t* mOffloadInfo;
     audio_attributes_t      mAttributes;
+    bool                    mValidAttributes;
 
     // mFrameSize is equal to mFrameSizeAF for non-PCM or 16-bit PCM data.  For 8-bit PCM data, it's
     // twice as large as mFrameSize because data is expanded to 16-bit before it's stored in buffer.
     size_t                  mFrameSize;             // app-level frame size
+    size_t                  mOriginalFrameSize;
     size_t                  mFrameSizeAF;           // AudioFlinger frame size
+    size_t                  mOriginalFrameSizeAF;
 
     status_t                mStatus;
 
@@ -768,6 +774,8 @@ protected:
                                                     // only used for offloaded and direct tracks.
 
     audio_output_flags_t    mFlags;
+    audio_output_flags_t    mOriginalFlags;
+    bool                    mSavedParams;
         // const after set(), except for bits AUDIO_OUTPUT_FLAG_FAST and AUDIO_OUTPUT_FLAG_OFFLOAD.
         // mLock must be held to read or write those bits reliably.
 
