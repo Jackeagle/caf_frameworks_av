@@ -45,7 +45,8 @@ NuPlayer::HTTPLiveSource::HTTPLiveSource(
       mFlags(0),
       mFinalResult(OK),
       mOffset(0),
-      mFetchSubtitleDataGeneration(0) {
+      mFetchSubtitleDataGeneration(0),
+      mImageDisplay(false) {
     if (headers) {
         mExtraHeaders = *headers;
 
@@ -132,7 +133,20 @@ status_t NuPlayer::HTTPLiveSource::dequeueAccessUnit(
             // Detect the image in audio only clip
             sp<AMessage> notify = dupNotify();
             notify->setInt32("what", kWhatShowImage);
-            ExtendedUtils::detectAndPostImage(*accessUnit, notify);
+            if (ExtendedUtils::detectAndPostImage(*accessUnit, notify)) {
+                mImageDisplay = true;
+            }
+        }
+    }
+
+    if (err == INFO_DISCONTINUITY && !audio && mImageDisplay) {
+        int32_t type;
+        // If the image was showed in native window, video decoder
+        // needs to be changed to reconfigure native window.
+        if((*accessUnit)->meta()->findInt32("discontinuity", &type)
+                && (type & ATSParser::DISCONTINUITY_VIDEO_FORMAT)) {
+            mImageDisplay = false;
+            (*accessUnit)->meta()->setInt32("force-formatChange", 1);
         }
     }
     return err;
