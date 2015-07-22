@@ -259,9 +259,9 @@ void ExtendedCodec::overrideMimeType(
             if (WMAVersion==kTypeWMA) {
                 //no need to update mime type
             } else if (WMAVersion==kTypeWMAPro) {
-                mime->setTo("audio/x-ms-wma-pro");
+                mime->setTo(MEDIA_MIMETYPE_AUDIO_WMA_PRO);
             } else if (WMAVersion==kTypeWMALossLess) {
-                mime->setTo("audio/x-ms-wma-lossless");
+                mime->setTo(MEDIA_MIMETYPE_AUDIO_WMA_LOSSLESS);
             } else {
                 ALOGE("could not set valid wma mime type");
             }
