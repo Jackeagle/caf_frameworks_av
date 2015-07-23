@@ -3117,7 +3117,8 @@ bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
 bool ExtendedUtils::checkAPECompressionLevel(const sp<MetaData> &meta) {
     const void *data;
     size_t size;
-    uint32_t type = 0, compressionLevel = 0;
+    uint32_t type = 0;
+    uint16_t compressionLevel = 0;
 
     if (meta != NULL && meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
         CHECK(data && (size == APE_CSD_SIZE));
