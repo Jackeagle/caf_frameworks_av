@@ -1103,7 +1103,7 @@ status_t ExtendedCodec::setWMAFormat(
         ALOGV("Channels: %d, SampleRate: %d, BitRate; %d"
                    "EncodeOptions: %d, blockAlign: %d", numChannels,
                    sampleRate, bitRate, encodeOptions, blockAlign);
-        if (sampleRate>48000 || numChannels>2)
+        if (sampleRate>48000 && numChannels>2)
         {
             ALOGE("Unsupported samplerate/channels");
             return ERROR_UNSUPPORTED;
