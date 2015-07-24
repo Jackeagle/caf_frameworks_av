@@ -981,7 +981,6 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                             false /* audio */, false /* notifyComplete */);
                 }
 
-                performSeek(positionUs, false /* needNotify */);
                 if (reason == Renderer::kDueToError) {
                     mRenderer->signalDisableOffloadAudio();
                     mOffloadAudio = false;
@@ -991,6 +990,10 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 } else {
                     mOffloadAudioTornDown = true;
                 }
+
+                mDeferredActions.push_back(
+                    new SeekAction(positionUs, false /* needNotify */));
+
                 processDeferredActions();
             }
             break;
