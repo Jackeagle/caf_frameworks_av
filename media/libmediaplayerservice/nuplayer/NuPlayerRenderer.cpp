@@ -1446,7 +1446,7 @@ int64_t NuPlayer::Renderer::getPlayedOutAudioDurationUs(int64_t nowUs) {
         res = mAudioSink->getPosition(&numFramesPlayed);
         if (res != OK) {
             //query to getPosition fails, use system clock to simulate render position
-            getCurrentPosition(&durationUs);
+            getCurrentPositionOnLooper(&durationUs);
             durationUs = durationUs - mAnchorTimeMediaUs;
             return durationUs;
         } else {
