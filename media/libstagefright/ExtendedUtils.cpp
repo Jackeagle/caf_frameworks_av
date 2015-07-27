@@ -1963,10 +1963,10 @@ void ExtendedUtils::cacheCaptureBuffers(sp<ICamera> camera, video_encoder encode
     }
 }
 
-void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
+bool ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
         const sp<AMessage> &notify) {
     if (accessUnit == NULL || notify == NULL)
-        return;
+        return false;
     sp<RefBase> obj;
     if (accessUnit->meta()->findObject("format", &obj) && obj != NULL) {
         sp<MetaData> format = static_cast<MetaData*>(obj.get());
@@ -1979,8 +1979,10 @@ void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
             notify->setBuffer("image-buffer", imagebuffer);
             notify->post();
             format->remove(kKeyAlbumArt);
+            return true;
         }
     }
+    return false;
 }
 
 void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
@@ -2349,10 +2351,11 @@ int32_t ExtendedUtils::getEncoderTypeFlags() {
 
 void ExtendedUtils::cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder) {}
 
-void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
+bool ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
         const sp<AMessage> &notify) {
     ARG_TOUCH(accessUnit);
     ARG_TOUCH(notify);
+    return false;
 }
 
 void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
