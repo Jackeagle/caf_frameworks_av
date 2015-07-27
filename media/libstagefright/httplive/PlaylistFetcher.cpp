@@ -1531,7 +1531,11 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
                     streamMask |= mPacketSources.keyAt(i);
                     mStartTimeUsNotify->setInt32("streamMask", streamMask);
 
-                    if (streamMask == mStreamTypeMask) {
+                    if (streamMask == mStreamTypeMask
+                            || (streamMask == LiveSession::STREAMTYPE_AUDIO
+                                && mTSParser->getSource(ATSParser::VIDEO).get() == NULL)
+                            || (streamMask == LiveSession::STREAMTYPE_VIDEO
+                                && mTSParser->getSource(ATSParser::AUDIO).get() == NULL)) {
                         mStartup = false;
                         mStartTimeUsNotify->setInt32("switchType", mAdaptive);
                         mStartTimeUsNotify->post();
