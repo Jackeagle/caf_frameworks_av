@@ -37,9 +37,6 @@ static bool isProtectedCallAllowed() {
     // TODO
     // Following implementation is just for reference.
     // Each OEM manufacturer should implement/replace with their own solutions.
-
-    // Disabling the reference to allow all process to access DRM API.
-    /*
     IPCThreadState* ipcState = IPCThreadState::self();
     uid_t uid = ipcState->getCallingUid();
 
@@ -48,10 +45,9 @@ static bool isProtectedCallAllowed() {
             return true;
         }
     }
-    return false;
-    */
-
-    // All process can access DRM  Framework APIs.
+    // TODO: To decrypt DRM image and midi audio allows Gallery and music apps
+    // to access DRM drm service. Returning always true because we do not have
+    // better approach to allow third pary applications.
     return true;
 }
 
