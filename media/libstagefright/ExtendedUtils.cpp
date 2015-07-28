@@ -2468,10 +2468,10 @@ void ExtendedUtils::overWriteAudioFormat(
     return;
 }
 
-void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
+bool ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
         const sp<AMessage> &notify) {
     if (accessUnit == NULL || notify == NULL)
-        return;
+        return false;
     sp<RefBase> obj;
     if (accessUnit->meta()->findObject("format", &obj) && obj != NULL) {
         sp<MetaData> format = static_cast<MetaData*>(obj.get());
@@ -2484,8 +2484,10 @@ void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
             notify->setBuffer("image-buffer", imagebuffer);
             notify->post();
             format->remove(kKeyAlbumArt);
+            return true;
         }
     }
+    return false;
 }
 
 void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
@@ -3115,7 +3117,8 @@ bool ExtendedUtils::isAPEFormat(const sp<MetaData> &meta) {
 bool ExtendedUtils::checkAPECompressionLevel(const sp<MetaData> &meta) {
     const void *data;
     size_t size;
-    uint32_t type = 0, compressionLevel = 0;
+    uint32_t type = 0;
+    uint16_t compressionLevel = 0;
 
     if (meta != NULL && meta->findData(kKeyRawCodecSpecificData, &type, &data, &size)) {
         CHECK(data && (size == APE_CSD_SIZE));
@@ -3525,10 +3528,11 @@ int32_t ExtendedUtils::getEncoderTypeFlags() {
 
 void ExtendedUtils::cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder) {}
 
-void ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
+bool ExtendedUtils::detectAndPostImage(const sp<ABuffer> accessUnit,
         const sp<AMessage> &notify) {
     ARG_TOUCH(accessUnit);
     ARG_TOUCH(notify);
+    return false;
 }
 
 void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
