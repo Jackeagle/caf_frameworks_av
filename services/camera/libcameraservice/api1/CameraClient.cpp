@@ -919,7 +919,10 @@ void CameraClient::handlePostview(const sp<IMemory>& mem) {
 
 // picture callback - raw image ready
 void CameraClient::handleRawPicture(const sp<IMemory>& mem) {
-    disableMsgType(CAMERA_MSG_RAW_IMAGE);
+
+    if (!mBurstCnt && !mLongshotEnabled) {
+        disableMsgType(CAMERA_MSG_RAW_IMAGE);
+    }
 
     ssize_t offset;
     size_t size;
