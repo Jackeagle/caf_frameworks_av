@@ -869,7 +869,8 @@ void AudioMixer::setParameter(int name, int target, int param, void *value)
         case ENABLE_HW_ACC_EFFECTS: {
             ALOGV("ENABLE_HW_ACC");
             if (track.mFormat == AUDIO_FORMAT_PCM_16_BIT) {
-                track.hwAcc->prepareEffects(&track.bufferProvider, track.sessionId,
+                track.hwAcc->prepareEffects(&track.mInputBufferProvider,
+                                            &track.bufferProvider, track.sessionId,
                                             track.channelMask, mState.frameCount);
                 *valueBuf = 0;
                 if (track.hwAcc->mEnabled) {
