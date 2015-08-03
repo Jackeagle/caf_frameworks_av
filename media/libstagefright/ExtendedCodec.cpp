@@ -1608,6 +1608,21 @@ void ExtendedCodec::configureVPP(
     }
 }
 
+void ExtendedCodec::setIntraPeriod(
+    int nPFrames, int nBFrames, sp<IOMX> omxHandle,
+    IOMX::node_id nodeID) {
+
+    QOMX_VIDEO_INTRAPERIODTYPE intraperiod;
+    InitOMXParams(&intraperiod);
+
+    intraperiod.nPortIndex = kPortIndexOutput;
+    intraperiod.nIDRPeriod = 1;
+    intraperiod.nPFrames = nPFrames - 1;
+    intraperiod.nBFrames = nBFrames;
+    omxHandle->setConfig(
+        nodeID, (OMX_INDEXTYPE)QOMX_IndexConfigVideoIntraperiod, &intraperiod, sizeof(intraperiod));
+}
+
 } //namespace android
 
 #else //ENABLE_AV_ENHANCEMENTS
@@ -1960,6 +1975,15 @@ namespace android {
         const sp<AMessage> &msg,sp<IOMX> OMXhandle,
         IOMX::node_id nodeID ) {
         ARG_TOUCH(msg);
+        ARG_TOUCH(OMXhandle);
+        ARG_TOUCH(nodeID);
+    }
+
+    void ExtendedCodec::setIntraPeriod(
+        int nPFrames, int nBFrames, sp<IOMX> OMXhandle,
+        IOMX::node_id nodeID) {
+        ARG_TOUCH(nPFrames);
+        ARG_TOUCH(nBFrames);
         ARG_TOUCH(OMXhandle);
         ARG_TOUCH(nodeID);
     }
