@@ -3109,6 +3109,8 @@ status_t ACodec::setupHEVCEncoderParameters(const sp<AMessage> &msg) {
         frameRate = (float)tmp;
     }
 
+    ExtendedCodec::setIntraPeriod(setPFramesSpacing(iFrameInterval, frameRate), 0, mOMX, mNode);
+
     OMX_VIDEO_PARAM_HEVCTYPE hevcType;
     InitOMXParams(&hevcType);
     hevcType.nPortIndex = kPortIndexOutput;
