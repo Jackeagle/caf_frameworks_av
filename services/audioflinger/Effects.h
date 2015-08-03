@@ -70,6 +70,9 @@ public:
     void reset_l();
 #ifdef HW_ACC_EFFECTS
     void setHwAccEffect(int id);
+    bool getHwAccModeStatus() const {
+        return mHwAccModeEnabled;
+    }
 #endif
     status_t configure();
     status_t init();

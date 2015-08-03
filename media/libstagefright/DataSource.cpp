@@ -142,7 +142,8 @@ bool Sniffer::sniff(
     char value[PROPERTY_VALUE_MAX];
     if (property_get("drm.service.enabled", value, NULL)
             && (!strcmp(value, "1") || !strcasecmp(value, "true"))) {
-         decryptHandle = source->DrmInitialization();
+        ALOGV("Calling source->DrmInitialization");
+        decryptHandle = source->DrmInitialization();
     }
 
     Mutex::Autolock autoLock(mSnifferMutex);

@@ -120,6 +120,7 @@ sp<MediaExtractor> MediaExtractor::Create(
         ret = new MPEG2PSExtractor(source);
     }
 
+    // Determine drm flag after sniffing all extractors
     sp<MediaExtractor> mediaExtactor = NULL;
     mediaExtactor = ExtendedUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
     if (mediaExtactor != NULL) {

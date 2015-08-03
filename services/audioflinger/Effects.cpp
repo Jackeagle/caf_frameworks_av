@@ -1745,6 +1745,11 @@ bool AudioFlinger::EffectChain::setVolume_l(uint32_t *left, uint32_t *right)
             (mEffects[i - 1]->desc().flags & EFFECT_FLAG_VOLUME_MASK) == EFFECT_FLAG_VOLUME_CTRL) {
             ctrlIdx = i - 1;
             hasControl = true;
+#ifdef HW_ACC_EFFECTS
+            if (mEffects[i - 1]->getHwAccModeStatus()) {
+                hasControl = false;
+            }
+#endif
             break;
         }
     }

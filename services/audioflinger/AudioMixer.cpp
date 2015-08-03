@@ -869,7 +869,8 @@ void AudioMixer::setParameter(int name, int target, int param, void *value)
         case ENABLE_HW_ACC_EFFECTS: {
             ALOGV("ENABLE_HW_ACC");
             if (track.mFormat == AUDIO_FORMAT_PCM_16_BIT) {
-                track.hwAcc->prepareEffects(&track.bufferProvider, track.sessionId,
+                track.hwAcc->prepareEffects(&track.mInputBufferProvider,
+                                            &track.bufferProvider, track.sessionId,
                                             track.channelMask, mState.frameCount);
                 *valueBuf = 0;
                 if (track.hwAcc->mEnabled) {
@@ -1849,6 +1850,9 @@ void AudioMixer::process__OneTrack16BitsStereoNoResampling(state_t* state,
                 // Note: In case of later int16_t sink output,
                 // conversion and clamping is done by memcpy_to_i16_from_float().
             } while (--outFrames);
+            // assign fout to out, when no more frames are available, so that 0s
+            // can be filled at the right place
+            out = (int32_t *)fout;
             break;
         case AUDIO_FORMAT_PCM_16_BIT:
             if (CC_UNLIKELY(uint32_t(vl) > UNITY_GAIN_INT || uint32_t(vr) > UNITY_GAIN_INT)) {
