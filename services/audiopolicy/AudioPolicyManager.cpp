@@ -1291,10 +1291,16 @@ sp<AudioPolicyManager::IOProfile> AudioPolicyManager::getProfileForDirectOutput(
         }
         for (size_t j = 0; j < mHwModules[i]->mOutputProfiles.size(); j++) {
             sp<IOProfile> profile = mHwModules[i]->mOutputProfiles[j];
+            audio_output_flags_t direct_flags = AUDIO_OUTPUT_FLAG_DIRECT;
+#ifdef HDMI_PASSTHROUGH_ENABLED
+            if (flags & AUDIO_OUTPUT_FLAG_COMPRESS_PASSTHROUGH) {
+                direct_flags = AUDIO_OUTPUT_FLAG_COMPRESS_PASSTHROUGH | AUDIO_OUTPUT_FLAG_DIRECT;
+            }
+#endif
             bool found = profile->isCompatibleProfile(device, String8(""), samplingRate,
                     NULL /*updatedSamplingRate*/, format, channelMask,
                     flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD ?
-                        flags : (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_DIRECT | flags));
+                        AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD : direct_flags);
             if (found && (mAvailableOutputDevices.types() & profile->mSupportedDevices.types())) {
                 return profile;
             }
