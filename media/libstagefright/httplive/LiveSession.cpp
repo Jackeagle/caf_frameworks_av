@@ -97,6 +97,7 @@ LiveSession::LiveSession(
       mIsFirstSwitch(true) {
 
     if (ExtendedUtils::ShellProp::isCustomHLSEnabled()) {
+        mHTTPDataSource->setCustomBwEstimate(true);
         mDownloadFirstTS = true;
     }
 
