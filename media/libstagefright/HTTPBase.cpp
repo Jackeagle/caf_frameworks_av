@@ -37,6 +37,7 @@ HTTPBase::HTTPBase()
       mPrevBandwidthMeasureTimeUs(0),
       mPrevEstimatedBandWidthKbps(0),
       mBandWidthCollectFreqMs(5000),
+      mCustomBwEstimate(0),
       mMaxBandwidthHistoryItems(100) {
 }
 
@@ -50,14 +51,41 @@ void HTTPBase::addBandwidthMeasurement(
     mTotalTransferTimeUs += delayUs;
     mTotalTransferBytes += numBytes;
 
-    mBandwidthHistory.push_back(entry);
-    if (++mNumBandwidthHistoryItems > mMaxBandwidthHistoryItems) {
-        BandwidthEntry *entry = &*mBandwidthHistory.begin();
-        mTotalTransferTimeUs -= entry->mDelayUs;
-        mTotalTransferBytes -= entry->mNumBytes;
-        mBandwidthHistory.erase(mBandwidthHistory.begin());
-        --mNumBandwidthHistoryItems;
+    if (!mCustomBwEstimate) {
+        mBandwidthHistory.push_back(entry);
+        if (++mNumBandwidthHistoryItems > mMaxBandwidthHistoryItems) {
+            BandwidthEntry *entry = &*mBandwidthHistory.begin();
+            mTotalTransferTimeUs -= entry->mDelayUs;
+            mTotalTransferBytes -= entry->mNumBytes;
+            mBandwidthHistory.erase(mBandwidthHistory.begin());
+            --mNumBandwidthHistoryItems;
 
+            int64_t timeNowUs = ALooper::GetNowUs();
+            if (timeNowUs - mPrevBandwidthMeasureTimeUs >=
+                    mBandWidthCollectFreqMs * 1000LL) {
+
+                if (mPrevBandwidthMeasureTimeUs != 0) {
+                    mPrevEstimatedBandWidthKbps =
+                        (mTotalTransferBytes * 8E3 / mTotalTransferTimeUs);
+                }
+                mPrevBandwidthMeasureTimeUs = timeNowUs;
+            }
+        }
+    } else {
+        mNumBandwidthHistoryItems++;
+
+        mBandwidthHistory.push_back(entry);
+
+        if (mBandwidthHistory.size() > 8) {
+            while (mTotalTransferTimeUs > 5000000 && mBandwidthHistory.size() > 8) {
+                ALOGV("erase bandwidth item");
+                BandwidthEntry *entry = &*mBandwidthHistory.begin();
+                mTotalTransferTimeUs -= entry->mDelayUs;
+                mTotalTransferBytes -= entry->mNumBytes;
+                mBandwidthHistory.erase(mBandwidthHistory.begin());
+                --mNumBandwidthHistoryItems;
+            }
+        }
         int64_t timeNowUs = ALooper::GetNowUs();
         if (timeNowUs - mPrevBandwidthMeasureTimeUs >=
                 mBandWidthCollectFreqMs * 1000LL) {
@@ -79,6 +107,18 @@ bool HTTPBase::estimateBandwidth(int32_t *bandwidth_bps) {
         return false;
     }
 
+    if (mCustomBwEstimate) {
+        if (mTotalTransferTimeUs > 5000000) {
+            ALOGV("keep the latest 3 items when the total time is greater than 5s");
+            while (mNumBandwidthHistoryItems > 3) {
+                List<BandwidthEntry>::iterator it = mBandwidthHistory.begin();
+                mTotalTransferTimeUs -= it->mDelayUs;
+                mTotalTransferBytes -= it->mNumBytes;
+                it = mBandwidthHistory.erase(it);
+                mNumBandwidthHistoryItems--;
+            }
+        }
+    }
     *bandwidth_bps = ((double)mTotalTransferBytes * 8E6 / mTotalTransferTimeUs);
 
     return true;
@@ -103,6 +143,10 @@ status_t HTTPBase::setBandwidthStatCollectFreq(int32_t freqMs) {
     ALOGI("frequency set to %d ms", freqMs);
     mBandWidthCollectFreqMs = freqMs;
     return OK;
+}
+
+void HTTPBase::setCustomBwEstimate(bool flag) {
+   mCustomBwEstimate = flag;
 }
 
 void HTTPBase::setBandwidthHistorySize(size_t numHistoryItems) {
