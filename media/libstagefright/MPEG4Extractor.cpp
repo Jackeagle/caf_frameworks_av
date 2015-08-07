@@ -2077,6 +2077,9 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 size = 0;
             }
 
+            if (SIZE_MAX - chunk_size <= size)
+                return ERROR_MALFORMED;
+
             uint8_t *buffer = new (std::nothrow) uint8_t[size + chunk_size];
             if (buffer == NULL) {
                 return ERROR_MALFORMED;
@@ -2112,12 +2115,20 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             if (mFileMetaData != NULL) {
                 ALOGV("chunk_data_size = %lld and data_offset = %lld",
                         chunk_data_size, data_offset);
+
+                if (chunk_data_size >= SIZE_MAX - 1) {
+                    return ERROR_MALFORMED;
+                }
                 sp<ABuffer> buffer = new ABuffer(chunk_data_size + 1);
                 if (mDataSource->readAt(
                     data_offset, buffer->data(), chunk_data_size) != (ssize_t)chunk_data_size) {
                     return ERROR_IO;
                 }
                 const int kSkipBytesOfDataBox = 16;
+                if (chunk_data_size <= kSkipBytesOfDataBox) {
+                    return ERROR_MALFORMED;
+                }
+
                 mFileMetaData->setData(
                     kKeyAlbumArt, MetaData::TYPE_NONE,
                     buffer->data() + kSkipBytesOfDataBox, chunk_data_size - kSkipBytesOfDataBox);
@@ -2582,11 +2593,11 @@ status_t MPEG4Extractor::parseITunesMetaData(off64_t offset, size_t size) {
 }
 
 status_t MPEG4Extractor::parse3GPPMetaData(off64_t offset, size_t size, int depth) {
-    if (size < 4) {
+    if (size < 4 || size == SIZE_MAX) {
         return ERROR_MALFORMED;
     }
 
-    uint8_t *buffer = new (std::nothrow) uint8_t[size];
+    uint8_t *buffer = new (std::nothrow) uint8_t[size + 1];
     if (buffer == NULL) {
         return ERROR_MALFORMED;
     }
@@ -2682,6 +2693,7 @@ status_t MPEG4Extractor::parse3GPPMetaData(off64_t offset, size_t size, int dept
         }
 
         if (isUTF8) {
+            buffer[size] = 0;
             mFileMetaData->setCString(metadataKey, (const char *)buffer + 6);
         } else {
             // Convert from UTF-16 string to UTF-8 string.
