@@ -2588,11 +2588,11 @@ status_t MPEG4Extractor::parseITunesMetaData(off64_t offset, size_t size) {
 }
 
 status_t MPEG4Extractor::parse3GPPMetaData(off64_t offset, size_t size, int depth) {
-    if (size < 4) {
+    if (size < 4 || size == SIZE_MAX) {
         return ERROR_MALFORMED;
     }
 
-    uint8_t *buffer = new (std::nothrow) uint8_t[size];
+    uint8_t *buffer = new (std::nothrow) uint8_t[size + 1];
     if (buffer == NULL) {
         return ERROR_MALFORMED;
     }
@@ -2661,6 +2661,10 @@ status_t MPEG4Extractor::parse3GPPMetaData(off64_t offset, size_t size, int dept
         int len16 = 0; // Number of UTF-16 characters
 
         // smallest possible valid UTF-16 string w BOM: 0xfe 0xff 0x00 0x00
+        if (size < 6) {
+            return ERROR_MALFORMED;
+        }
+
         if (size - 6 >= 4) {
             len16 = ((size - 6) / 2) - 1; // don't include 0x0000 terminator
             framedata = (char16_t *)(buffer + 6);
@@ -2684,6 +2688,7 @@ status_t MPEG4Extractor::parse3GPPMetaData(off64_t offset, size_t size, int dept
         }
 
         if (isUTF8) {
+            buffer[size] = 0;
             mFileMetaData->setCString(metadataKey, (const char *)buffer + 6);
         } else {
             // Convert from UTF-16 string to UTF-8 string.
