@@ -168,6 +168,10 @@ struct ExtendedCodec {
             const sp<AMessage> &msg, const sp<IOMX> OMXhandle,
             IOMX::node_id nodeID);
 
+    static void setIntraPeriod(
+            int nPFrames, int nBFrames, const sp<IOMX> OMXhandle,
+            IOMX::node_id nodeID);
+
 private:
     static const char* getMsgKey(int key );
 
