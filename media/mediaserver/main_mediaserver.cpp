@@ -25,6 +25,7 @@
 #include <binder/ProcessState.h>
 #include <binder/IServiceManager.h>
 #include <cutils/properties.h>
+#include <cutils/klog.h>
 #include <utils/Log.h>
 #include "RegisterExtensions.h"
 
@@ -48,6 +49,8 @@ int main(int argc __unused, char** argv)
     char value[PROPERTY_VALUE_MAX];
     bool doLog = (property_get("ro.test_harness", value, "0") > 0) && (atoi(value) == 1);
     pid_t childPid;
+
+    printMarker("MediaServer - Start");
     // FIXME The advantage of making the process containing media.log service the parent process of
     // the process that contains all the other real services, is that it allows us to collect more
     // detailed information such as signal numbers, stop and continue, resource usage, etc.
