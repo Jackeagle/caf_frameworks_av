@@ -51,6 +51,8 @@ public:
                                     // (See setPositionUpdatePeriod()).
         EVENT_NEW_IAUDIORECORD = 4, // IAudioRecord was re-created, either due to re-routing and
                                     // voluntary invalidation by mediaserver, or mediaserver crash.
+        EVENT_STREAM_END = 5,       // Sent when no more frames can be got from AF and will never
+                                    // try to get the frames again
     };
 
     /* Client should declare Buffer on the stack and pass address to obtainBuffer()

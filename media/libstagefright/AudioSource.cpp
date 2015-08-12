@@ -371,6 +371,12 @@ status_t AudioSource::read(
     }
     MediaBuffer *buffer = *mBuffersReceived.begin();
     mBuffersReceived.erase(mBuffersReceived.begin());
+
+    if (buffer->size() == 0) {
+        buffer->release();
+        return ERROR_END_OF_STREAM;
+    }
+
     ++mNumClientOwnedBuffers;
     buffer->setObserver(this);
     buffer->add_ref();
@@ -531,6 +537,13 @@ void AudioSource::onEvent(int event, void* info) {
         }
         case AudioRecord::EVENT_OVERRUN: {
             ALOGW("AudioRecord reported overrun!");
+            break;
+        }
+        case AudioRecord::EVENT_STREAM_END: {
+            ALOGD("AudioRecord end of stream received");
+            MediaBuffer *buffer = new MediaBuffer(0);
+            mBuffersReceived.push_back(buffer);
+            mFrameAvailableCondition.signal();
             break;
         }
         default:

@@ -920,6 +920,7 @@ nsecs_t AudioRecord::processAudioBuffer()
                 break;
             }
             ALOGE("Error %d obtaining an audio buffer, giving up.", err);
+            mCbf(EVENT_STREAM_END, mUserData, NULL);
             return NS_NEVER;
         }
 
