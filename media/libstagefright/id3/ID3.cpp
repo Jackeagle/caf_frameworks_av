@@ -344,7 +344,7 @@ bool ID3::removeUnsynchronizationV2_4(bool iTunesHack) {
     size_t oldSize = mSize;
 
     size_t offset = 0;
-    while (offset + 10 <= mSize) {
+    while (mSize >= 10 && offset <= mSize - 10) {
         if (!memcmp(&mData[offset], "\0\0\0\0", 4)) {
             break;
         }
@@ -356,7 +356,7 @@ bool ID3::removeUnsynchronizationV2_4(bool iTunesHack) {
             return false;
         }
 
-        if (offset + dataSize + 10 > mSize) {
+        if (dataSize > mSize - 10 - offset) {
             return false;
         }
 
@@ -366,6 +366,9 @@ bool ID3::removeUnsynchronizationV2_4(bool iTunesHack) {
         if (flags & 1) {
             // Strip data length indicator
 
+            if (mSize < 14 || mSize - 14 < offset) {
+                return false;
+            }
             memmove(&mData[offset + 10], &mData[offset + 14], mSize - offset - 14);
             mSize -= 4;
             dataSize -= 4;
