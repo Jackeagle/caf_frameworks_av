@@ -31,7 +31,9 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/ExtendedCodec.h>
-
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include <QCMediaDefs.h>
+#endif
 
 namespace android {
 
@@ -52,6 +54,7 @@ NuPlayer::Decoder::Decoder(
     mCodecLooper = new ALooper;
     mCodecLooper->setName("NPDecoder-CL");
     mCodecLooper->start(false, false, ANDROID_PRIORITY_AUDIO);
+    mAudioBitWidth = 16;
 }
 
 NuPlayer::Decoder::~Decoder() {
@@ -167,6 +170,18 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
 
     // the following should work in configured state
     CHECK_EQ((status_t)OK, mCodec->getInputFormat(&mInputFormat));
+    mAudioBitWidth = 16;
+    if (mInputFormat != NULL) {
+        if (!mInputFormat->findString("mime", &mAudioMime))
+            ALOGE("onConfigure: input mime not found");
+        bool audio = !strncasecmp(mAudioMime.c_str(), "audio/", strlen("audio/"));
+        if (audio) {
+            mCodec->getOutputFormat(&mOutputFormat);
+            if (mOutputFormat != NULL)
+                mOutputFormat->findInt32("bit-width", &mAudioBitWidth);
+            ALOGV("onConfigure: output bit width %u", mAudioBitWidth);
+        }
+    }
 
     err = mCodec->start();
     if (err != OK) {
@@ -362,7 +377,6 @@ bool android::NuPlayer::Decoder::onInputBufferFilled(const sp<AMessage> &msg) {
     }
 
 
-
     if (buffer == NULL /* includes !hasBuffer */) {
         int32_t streamErr = ERROR_END_OF_STREAM;
         CHECK(msg->findInt32("err", &streamErr) || !hasBuffer);
@@ -495,6 +509,29 @@ bool NuPlayer::Decoder::handleAnOutputBuffer() {
     CHECK_LT(bufferIx, mOutputBuffers.size());
     sp<ABuffer> buffer = mOutputBuffers[bufferIx];
     buffer->setRange(offset, size);
+#ifdef DTS_CODEC_M_
+    // Padding to make 24 packed to 24_8 unpacked only for DTS 24-bit audio
+    if ((mAudioMime.c_str() != NULL) &&
+        (!strncasecmp(mAudioMime.c_str(), MEDIA_MIMETYPE_AUDIO_DTS, 9)) &&
+        (mAudioBitWidth == 24)) {
+        uint32_t capacity = buffer->capacity();
+        uint32_t ip_bytes_ps = audio_bytes_per_sample(AUDIO_FORMAT_PCM_24_BIT_PACKED);
+        uint32_t op_bytes_ps = audio_bytes_per_sample(AUDIO_FORMAT_PCM_8_24_BIT);
+        const uint8_t *src =
+              (const uint8_t *)buffer->data();
+        sp<ABuffer> tmp = new ABuffer((capacity*op_bytes_ps)/ip_bytes_ps);
+        tmp->setRange(offset, (size*op_bytes_ps)/ip_bytes_ps);
+        int32_t *dst = (int32_t *)tmp->data();
+        size_t num_samples = buffer->size()/ip_bytes_ps;
+        for (size_t i = 0; i < num_samples; ++i) {
+           *dst++ = (int32_t)(src[0] << 8 | src[1] << 16 | src[2] << 24);
+           src += ip_bytes_ps;
+        }
+        buffer = tmp;
+        ALOGV("DTS 24-bit after padding, offset %u size %u capacity %u",
+               offset, size, buffer->capacity());
+    }
+#endif //DTS_CODEC_M_
     buffer->meta()->clear();
     buffer->meta()->setInt64("timeUs", timeUs);
     if (flags & MediaCodec::BUFFER_FLAG_EOS) {

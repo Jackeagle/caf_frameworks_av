@@ -1515,12 +1515,17 @@ status_t ACodec::configureCodec(
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTS)) {
         ALOGV(" (DTS) mime == MEDIA_MIMETYPE_AUDIO_DTS");
         int32_t numChannels, sampleRate;
+        int32_t bitWidth = 16;
         if (!msg->findInt32("channel-count", &numChannels)
                 || !msg->findInt32("sample-rate", &sampleRate)) {
             ALOGE("missing channel count or sample rate for DTS decoder");
             err = INVALID_OPERATION;
         } else {
-            err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate);
+            if (!msg->findInt32("bit-width", &bitWidth))
+                ALOGI(" (DTS) bit width not found, defaulting to 16");
+            err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate, bitWidth);
+            // Also update output format bit-width so ACodec client too gets to know
+            outputFormat->setInt32("bit-width", bitWidth);
         }
         if (err != OK) {
             return err;
@@ -3502,7 +3507,7 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
 
                     CHECK_GT(params.nChannels, 0);
                     CHECK(params.nChannels == 1 || params.bInterleaved);
-                    CHECK_EQ(params.nBitPerSample, 16u);
+                    ALOGV("PCM bit width: nBitPerSample %d", params.nBitPerSample);
 
                     CHECK_EQ((int)params.eNumData,
                              (int)OMX_NumericalDataSigned);

@@ -54,6 +54,8 @@ struct NuPlayer::Renderer : public AHandler {
 
     void signalDisableOffloadAudio();
 
+    void signalEnableOffloadAudio();
+
     void pause();
     void resume();
 
@@ -115,6 +117,7 @@ private:
         kWhatStopAudioSink       = 'stpA',
         kWhatDisableOffloadAudio = 'noOA',
         kWhatSetVideoFrameRate   = 'sVFR',
+        kWhatEnableOffloadAudio  = 'enOA',
     };
 
     struct QueueEntry {
@@ -201,6 +204,7 @@ private:
     void onFlush(const sp<AMessage> &msg);
     void onAudioSinkChanged();
     void onDisableOffloadAudio();
+    void onEnableOffloadAudio();
     void onPause();
     void onResume();
     void onSetVideoFrameRate(float fps);

@@ -29,6 +29,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include <media/stagefright/MediaDefs.h>
 
 #include <VideoFrameScheduler.h>
 
@@ -39,7 +40,7 @@ namespace android {
 
 // Maximum time in paused state when offloading audio decompression. When elapsed, the AudioSink
 // is closed to allow the audio DSP to power down.
-static const int64_t kOffloadPauseMaxUs = 60000000ll;
+static const int64_t kOffloadPauseMaxUs = 10000000ll;
 
 // static
 const int64_t NuPlayer::Renderer::kMinPositionUpdateDelayUs = 100000ll;
@@ -158,6 +159,10 @@ void NuPlayer::Renderer::signalAudioSinkChanged() {
 
 void NuPlayer::Renderer::signalDisableOffloadAudio() {
     (new AMessage(kWhatDisableOffloadAudio, id()))->post();
+}
+
+void NuPlayer::Renderer::signalEnableOffloadAudio() {
+    (new AMessage(kWhatEnableOffloadAudio, id()))->post();
 }
 
 void NuPlayer::Renderer::pause() {
@@ -424,6 +429,12 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatDisableOffloadAudio:
         {
             onDisableOffloadAudio();
+            break;
+        }
+
+        case kWhatEnableOffloadAudio:
+        {
+            onEnableOffloadAudio();
             break;
         }
 
@@ -1062,7 +1073,7 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
     {
          Mutex::Autolock autoLock(mLock);
          syncQueuesDone_l();
-         if (!(offloadingAudio() && mPaused)) {
+         if (!(offloadingAudio()) && !(mPaused)) {
              setPauseStartedTimeRealUs(-1);
          }
     }
@@ -1166,6 +1177,12 @@ void NuPlayer::Renderer::onAudioSinkChanged() {
 void NuPlayer::Renderer::onDisableOffloadAudio() {
     Mutex::Autolock autoLock(mLock);
     mFlags &= ~FLAG_OFFLOAD_AUDIO;
+    ++mAudioQueueGeneration;
+}
+
+void NuPlayer::Renderer::onEnableOffloadAudio() {
+    Mutex::Autolock autoLock(mLock);
+    mFlags |= FLAG_OFFLOAD_AUDIO;
     ++mAudioQueueGeneration;
 }
 
@@ -1377,15 +1394,15 @@ bool NuPlayer::Renderer::onOpenAudioSink(
             // AUDIO_FORMAT_PCM_16_BIT.
             // Update source format as per bit-width (sample and offload)
             if (AUDIO_FORMAT_PCM_16_BIT == audioFormat) {
-                if ((ExtendedUtils::getPcmSampleBits(format) == 24) &&
+                if (format->findInt32("bit-width", &bitWidth))
+                    ALOGI("onOpenAudioSink: format bit-width %d", bitWidth);
+                if ((bitWidth == 24) &&
                     ExtendedUtils::is24bitPCMOffloadEnabled()) {
-                    bitWidth = 24;
                     audioFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
                     if (AUDIO_FORMAT_PCM_16_BIT == sourceFormat) {
                         sourceFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
                     }
                 } else if (ExtendedUtils::is16bitPCMOffloadEnabled()) {
-                    bitWidth = 16;
                     audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
                     if (AUDIO_FORMAT_PCM_16_BIT == sourceFormat) {
                         sourceFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
@@ -1419,8 +1436,11 @@ bool NuPlayer::Renderer::onOpenAudioSink(
             offloadInfo.bit_rate = avgBitRate;
             offloadInfo.has_video = hasVideo;
             offloadInfo.is_streaming = true;
-            offloadInfo.use_small_bufs =
-                (audioFormat == AUDIO_FORMAT_PCM_16_BIT_OFFLOAD);
+            if ((audioFormat == AUDIO_FORMAT_PCM_16_BIT_OFFLOAD) ||
+                (audioFormat == AUDIO_FORMAT_PCM_24_BIT_OFFLOAD))
+                offloadInfo.use_small_bufs = true;
+            else
+                offloadInfo.use_small_bufs = false;
             offloadInfo.bit_width = bitWidth;
 
             if (memcmp(&mCurrentOffloadInfo, &offloadInfo, sizeof(offloadInfo)) == 0) {
@@ -1492,6 +1512,9 @@ bool NuPlayer::Renderer::onOpenAudioSink(
 
 void NuPlayer::Renderer::onCloseAudioSink() {
     mAudioSink->close();
+    if (offloadingAudio() && mAudioOffloadTornDown) {
+        mAudioOffloadTornDown = false;
+    }
     mCurrentOffloadInfo = AUDIO_INFO_INITIALIZER;
 }
 

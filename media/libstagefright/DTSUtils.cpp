@@ -25,7 +25,7 @@
 
 namespace android {
 
-status_t DTSUtils::setupDecoder(sp<IOMX> omx, IOMX::node_id node, int32_t sampleRate)
+status_t DTSUtils::setupDecoder(sp<IOMX> omx, IOMX::node_id node, int32_t sampleRate, int32_t bitWidth)
 {
     ALOGV("(DTS) +setupDecoder()");
 
@@ -42,6 +42,8 @@ status_t DTSUtils::setupDecoder(sp<IOMX> omx, IOMX::node_id node, int32_t sample
 
     if (result == OK)
     {
+        myDtsDecParam.nOutputBitWidth = bitWidth;
+        ALOGV("(DTS) nOutputBitWidth = %d", myDtsDecParam.nOutputBitWidth);
         // Set 7.1 channel speaker mask for M8: 0x84B (2123) == C-LR-LFE1-LssRss-LsrRsr
         // M6 will internally set speaker mask to 0xF (15) == C-LR-LsRs-LFE1
         myDtsDecParam.nSpkrOut = OMX_AUDIO_DTS_SPKROUTTYPE(  OMX_AUDIO_DTSSPKROUT_MASK_C

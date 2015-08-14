@@ -64,7 +64,6 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
-#include <QCMediaDefs.h>
 #include <QCMetaData.h>
 
 #include "include/avc_utils.h"
@@ -97,7 +96,7 @@ void ElementaryStreamQueue::clear(bool clearFormat) {
 }
 
 // Parse AC3 header assuming the current ptr is start position of syncframe,
-// update metadata only when applicable, and return the payload size
+// update metadata only applicable, and return the payload size
 static unsigned parseAC3SyncFrame(
         const uint8_t *ptr, size_t size, sp<MetaData> *metaData) {
     static const unsigned channelCountTable[] = {2, 1, 2, 3, 3, 4, 4, 5};
@@ -211,166 +210,6 @@ static unsigned parseAC3SyncFrame(
 static bool IsSeeminglyValidAC3Header(const uint8_t *ptr, size_t size) {
     return parseAC3SyncFrame(ptr, size, NULL) > 0;
 }
-
-#ifdef DTS_CODEC_M_
-// Parse DTS header assuming the current ptr is start position of syncframe,
-// update metadata only applicable, and return the payload size
-static size_t parseDTSSyncFrame(
-        const uint8_t *ptr, size_t size, sp<MetaData> *metaData) {
-
-    #define DTS_SYNCWORD_CORE       0x7FFE8001
-    #define DTS_SYNCWORD_SUBSTREAM  0x64582025
-    #define DTS_SYNCWORD_LBR        0x0a801921
-
-    ABitReader bits(ptr, size);
-    unsigned syncValue = 0;
-    static unsigned dtsChannelCount = 0;
-    static unsigned dtsSamplingRate = 0;
-    unsigned payloadSize = 0;
-
-    // Check for DTS core or substream sync
-    if (bits.numBitsLeft() < 32) {
-        return 0;
-    }
-
-    // Get the sync value
-    syncValue = bits.getBits(32);
-    if (!((syncValue == DTS_SYNCWORD_CORE) ||
-        (syncValue == DTS_SYNCWORD_SUBSTREAM))) {
-        return 0;
-    }
-
-    if (syncValue == DTS_SYNCWORD_CORE) {
-        // Stream with a core
-        if (bits.numBitsLeft() < 1 + 5 + 1 + 7 + 14 + 6 + 4) { //FTYPE(1) + SHORT(5) + CRC(1) + NBLKS(7) + FSIZE(14) + AMODE(6) + SFREQ(4)
-            ALOGV("Not enough bits left for further parsing");
-            return 0;
-        }
-
-        bits.skipBits(14);  //FTYPE(1) + SHORT(5) + CRC(1) + NBLKS(7)
-
-        // Get frame size
-        unsigned frameByteSize = bits.getBits(14) + 1;
-        payloadSize = frameByteSize;
-        ALOGV("DTSHD core sub stream frame size = %u", frameByteSize);
-
-        // Get channel count
-        static const unsigned dtsChannelCountTable[] = { 1, 2, 2, 2, 2, 3, 3, 4, 4, 5, 6, 6, 6, 7, 8, 8 };
-        unsigned aMode = bits.getBits(6);
-        dtsChannelCount = (aMode < 16) ? dtsChannelCountTable[aMode] : 0;
-
-        // Get sampling freq
-        static const unsigned samplingRateTable[] = {   0, 8000, 16000, 32000, 0,
-                                                        0, 11025, 22050, 44100, 0,
-                                                        0, 12000, 24000, 48000, 0, 0};
-        unsigned srIndex = bits.getBits(4);
-        dtsSamplingRate = samplingRateTable[srIndex];
-
-    } else {
-        // Stream with extension substream
-        if (bits.numBitsLeft() < 2 + 2 + 1) { //UserDefinedBits(2) + nExtSSIndex(2) + bHeaderSizeType(1)
-            ALOGV("Not enough bits left for further parsing DTSHD");
-            return 0;
-        }
-
-        bits.skipBits(4); //UserDefinedBits(2) + nExtSSIndex(2)
-
-        unsigned bHeaderSizeType = bits.getBits(1);
-        unsigned numBits4Header = 0;
-        unsigned numBits4ExSSFsize = 0;
-
-        if (bHeaderSizeType == 0) {
-            numBits4Header = 8;
-            numBits4ExSSFsize = 16;
-        } else {
-            numBits4Header = 12;
-            numBits4ExSSFsize = 20;
-        }
-
-        if (bits.numBitsLeft() < numBits4Header + numBits4ExSSFsize) {
-            ALOGV("Not enough bits left for further parsing");
-            return 0;
-        }
-
-        // Get substream header size
-        unsigned numExtSSHeaderSize = bits.getBits(numBits4Header) + 1;
-
-        // Get substream frame size
-        unsigned numExtSSFsize = bits.getBits(numBits4ExSSFsize) + 1;
-        unsigned frameByteSize = numExtSSFsize;
-        payloadSize = frameByteSize;
-        ALOGV("DTSHD extension sub stream info: frame size = %u", frameByteSize);
-
-        // Scroll through to find the LBR header
-        // Skip to nearest DWORD
-        if (bHeaderSizeType == 0) {
-            // 4 + 1 + 8 + 16 = 29
-            bits.skipBits(3); //32-29
-        }
-        else {
-            // 4 + 1 + 12 + 20 = 37
-            bits.skipBits(27); //64-37
-        }
-
-        while (bits.numBitsLeft() >= 32) {
-            // Big endian DWORD aligned sync
-            if (bits.getBits(32) == DTS_SYNCWORD_LBR) {
-                ALOGV("DTSHD extension sub stream info: LBR coding component syncword found");
-
-                if (bits.numBitsLeft() < (8 + 8 + 16)) {
-                    ALOGV("Not enough bits left for further lbr stream parsing");
-                    return 0;
-                }
-
-                unsigned lbrHdrType = bits.getBits(8);
-                if (lbrHdrType == 2) {
-                    ALOGV("DTSHD extension sub stream info: LBR decoder init header code found");
-
-                    unsigned lbrSampleRateCode = bits.getBits(8);
-                    uint16_t lbrChannelMask = bits.getBits(16);
-
-                    static const unsigned lbrSamplingRateTable[] = {    8000, 16000, 32000, 0, 0,
-                                                                        22050, 44100, 0, 0, 0,
-                                                                        12000, 24000, 48000, 0, 0, 0};
-                    dtsSamplingRate = lbrSamplingRateTable[lbrSampleRateCode];
-
-                    static const unsigned lbrChannelCountTable[] = {    1, 2, 2, 1,
-                                                                        1, 2, 2,
-                                                                        1, 1, 2,
-                                                                        2, 2, 1,
-                                                                        2, 1, 2};
-
-                    // Spkr mask in big endian format
-                    lbrChannelMask = ((lbrChannelMask >> 8) | (lbrChannelMask << 8));
-                    ALOGV("DTSHD extension sub stream info: lbrChannelMask=%04x", (unsigned)lbrChannelMask);
-                    dtsChannelCount = 0;
-                    for (unsigned i = 0; i < 16; i++) {
-                        if (lbrChannelMask & 1) {
-                            dtsChannelCount += lbrChannelCountTable[i];
-                        }
-                        lbrChannelMask >>= 1;
-                    }
-                    ALOGV("DTSHD extension sub stream info: dtsSamplingRate=%u, dtsChannelCount=%u",
-                            dtsSamplingRate, dtsChannelCount);
-                    break;
-                }
-            }
-        }
-    }
-
-    if (metaData != NULL) {
-        (*metaData)->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_DTS);
-        (*metaData)->setInt32(kKeyChannelCount, dtsChannelCount);
-        (*metaData)->setInt32(kKeySampleRate, dtsSamplingRate);
-    }
-
-    return payloadSize;
-}
-
-static bool IsSeeminglyValidDTSHeader(const uint8_t *ptr, size_t size) {
-    return parseDTSSyncFrame(ptr, size, NULL) > 0;
-}
-#endif
 
 static bool IsSeeminglyValidADTSHeader(const uint8_t *ptr, size_t size) {
     if (size < 3) {
@@ -615,7 +454,7 @@ status_t ElementaryStreamQueue::appendData(
 
                 ssize_t startOffset = -1;
                 for (size_t i = 0; i < size; ++i) {
-                    if (IsSeeminglyValidDTSHeader(&ptr[i], size - i)) {
+                    if (ExtendedUtils::DTS::IsSeeminglyValidDTSHeader(&ptr[i], size - i)) {
                         startOffset = i;
                         break;
                     }
@@ -766,8 +605,8 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnit() {
 }
 
 sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitAC3() {
-    size_t syncStartPos = 0;  // in bytes
-    size_t payloadSize = 0;
+    unsigned syncStartPos = 0;  // in bytes
+    unsigned payloadSize = 0;
     sp<MetaData> format = new MetaData;
     while (true) {
         if (syncStartPos + 2 >= mBuffer->size()) {
@@ -820,7 +659,7 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitDTS() {
             return NULL;
         }
 
-        payloadSize = parseDTSSyncFrame(
+        payloadSize = ExtendedUtils::DTS::parseDTSSyncFrame(
                 mBuffer->data() + syncStartPos,
                 mBuffer->size() - syncStartPos,
                 &format);

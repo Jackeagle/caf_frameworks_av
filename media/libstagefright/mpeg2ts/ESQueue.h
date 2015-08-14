@@ -120,6 +120,7 @@ private:
 #if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
     sp<ABuffer> dequeueAccessUnitDDP();
 #endif // DOLBY_END
+
 #ifdef DTS_CODEC_M_
     sp<ABuffer> dequeueAccessUnitDTS();
 #endif

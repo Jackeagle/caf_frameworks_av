@@ -1267,6 +1267,10 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
                 TRESPASS();
         }
 
+        if (lastIDRTime >= 0) {
+            ALOGI("Adjusting seek time to IDR %lld from %lld", lastIDRTime, mStartTimeUs);
+            mStartTimeUs = lastIDRTime;
+        }
         sp<AnotherPacketSource> source =
             static_cast<AnotherPacketSource *>(
                     mTSParser->getSource(type).get());
@@ -1275,10 +1279,6 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
             continue;
         }
 
-        if (lastIDRTime >= 0) {
-            ALOGI("Adjusting seek time to IDR %lld from %lld", lastIDRTime, mStartTimeUs);
-            mStartTimeUs = lastIDRTime;
-        }
         int64_t timeUs;
         sp<ABuffer> accessUnit;
         status_t finalResult;

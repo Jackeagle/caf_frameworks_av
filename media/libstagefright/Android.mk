@@ -158,6 +158,10 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
        LOCAL_SRC_FILES  += ExtendedMediaDefs.cpp
        LOCAL_SRC_FILES  += ExtendedWriter.cpp
        LOCAL_SRC_FILES  += FMA2DPWriter.cpp
+ifeq ($(DTS_CODEC_M_), true)
+       LOCAL_SRC_FILES+= DTSUtils.cpp
+       LOCAL_CFLAGS += -DDTS_CODEC_M_
+endif
 endif #TARGET_ENABLE_AV_ENHANCEMENTS
 
 ifeq ($(call is-vendor-board-platform,QCOM),true)
@@ -184,11 +188,6 @@ LOCAL_SHARED_LIBRARIES += \
         libdl
 
 LOCAL_CFLAGS += -Wno-multichar
-
-ifeq ($(DTS_CODEC_M_), true)
-  LOCAL_SRC_FILES+= DTSUtils.cpp
-  LOCAL_CFLAGS += -DDTS_CODEC_M_
-endif
 
 LOCAL_MODULE:= libstagefright
 

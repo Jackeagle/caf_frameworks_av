@@ -32,7 +32,7 @@ struct DTSUtils
         params->nVersion.s.nStep = 0;
     }
 
-    static status_t setupDecoder(sp<IOMX> omx, IOMX::node_id node, int32_t sampleRate);
+    static status_t setupDecoder(sp<IOMX> omx, IOMX::node_id node, int32_t sampleRate, int32_t bitWidth);
 };
 
 } // namespace android

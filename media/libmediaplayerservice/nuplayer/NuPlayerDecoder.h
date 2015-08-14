@@ -75,10 +75,13 @@ private:
     sp<NativeWindowWrapper> mNativeWindow;
 
     sp<AMessage> mInputFormat;
+    sp<AMessage> mOutputFormat;
     sp<MediaCodec> mCodec;
     sp<ALooper> mCodecLooper;
     sp<ALooper> mDecoderLooper;
     sp<PlayerExtendedStats> mPlayerExtendedStats;
+    AString mAudioMime;
+    int32_t mAudioBitWidth;
 
     List<sp<AMessage> > mPendingInputMessages;
 

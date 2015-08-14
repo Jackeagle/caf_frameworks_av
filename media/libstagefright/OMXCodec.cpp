@@ -856,8 +856,8 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         int32_t numChannels, sampleRate;
         CHECK(meta->findInt32(kKeyChannelCount, &numChannels));
         CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-
-        status_t err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate);
+        //TODO: fix finding bit width from meta
+        status_t err = DTSUtils::setupDecoder(mOMX, mNode, sampleRate, 16);
 
         if (err != OK) {
             return err;
