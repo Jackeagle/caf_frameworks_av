@@ -71,6 +71,7 @@ struct NuPlayer::Renderer : public AHandler {
     void setVideoLateByUs(int64_t lateUs);
     int64_t getVideoLateByUs();
     void setPauseStartedTimeRealUs(int64_t realUs);
+    void waitVideoSyncFrame();
 
     status_t openAudioSink(
             const sp<AMessage> &format,
@@ -90,6 +91,7 @@ struct NuPlayer::Renderer : public AHandler {
         kWhatMediaRenderingStart = 'mdrd',
         kWhatAudioOffloadTearDown = 'aOTD',
         kWhatAudioOffloadPauseTimeout = 'aOPT',
+        kWhatWaitVideoSyncFrame = 'wVSF',
     };
 
     enum AudioOffloadTearDownReason {
@@ -202,6 +204,9 @@ private:
     sp<AWakeLock> mWakeLock;
 
     List<sp<AMessage> > mPendingInputMessages;
+
+    bool mIsWaitVideoSyncFrame;
+    bool mIsDropAudio;
 
     status_t getCurrentPositionOnLooper(int64_t *mediaUs);
     status_t getCurrentPositionOnLooper(
