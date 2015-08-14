@@ -824,9 +824,11 @@ void ExtendedCodec::configureVideoDecoder(
     // type, and hevc content in the ts container
     bool tsReorder = false;
     const char* roleVC1 = "OMX.qcom.video.decoder.vc1";
+    const char* roleWMV = "OMX.qcom.video.decoder.wmv";
     const char* roleMPEG4 = "OMX.qcom.video.decoder.mpeg4";
     const char* roleHEVC = "OMX.qcom.video.decoder.hevc";
     if (!strncmp(componentName, roleVC1, strlen(roleVC1)) ||
+            !strncmp(componentName, roleWMV, strlen(roleWMV)) ||
             !strncmp(componentName, roleMPEG4, strlen(roleMPEG4))) {
         // The codec requires timestamp reordering
         tsReorder = true;
