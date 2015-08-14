@@ -217,7 +217,8 @@ private:
     bool mReconfigurationInProgress;
     bool mSwitchInProgress;
     bool mFetchInProgress;
-    bool mSwitchUpRequested;
+    bool mSwapInProgress;
+    bool mSwitchRequested;
     uint32_t mDisconnectReplyID;
     uint32_t mSeekReplyID;
 
@@ -235,6 +236,7 @@ private:
 
     int64_t mPrevBufferSize;
     bool mIsFirstSwitch;
+    sp<ABuffer> mDownloadBuffer;
 
     sp<PlaylistFetcher> addFetcher(const char *uri);
 
