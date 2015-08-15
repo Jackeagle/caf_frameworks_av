@@ -212,7 +212,8 @@ NuPlayer::NuPlayer()
       mDProxy(NULL),
       mPaused(false),
       mPausedByClient(false),
-      mOffloadAudioTornDown(false) {
+      mOffloadAudioTornDown(false),
+      isRTSPSource(false) {
     clearFlushComplete();
     mPlayerExtendedStats = (PlayerExtendedStats *)ExtendedStats::Create(
             ExtendedStats::PLAYER, "NuPlayer", gettid());
@@ -276,12 +277,14 @@ void NuPlayer::setDataSourceAsync(
     } else if (!strncasecmp(url, "rtsp://", 7)) {
         source = new RTSPSource(
                 notify, httpService, url, headers, mUIDValid, mUID);
+        isRTSPSource = true;
     } else if ((!strncasecmp(url, "http://", 7)
                 || !strncasecmp(url, "https://", 8))
                     && ((len >= 4 && !strcasecmp(".sdp", &url[len - 4]))
                     || strstr(url, ".sdp?"))) {
         source = new RTSPSource(
                 notify, httpService, url, headers, mUIDValid, mUID, true);
+        isRTSPSource = true;
     } else {
         sp<GenericSource> genericSource =
                 new GenericSource(notify, mUIDValid, mUID);
@@ -1784,6 +1787,13 @@ void NuPlayer::performSeek(int64_t seekTimeUs, bool needNotify) {
                 "mSource is NULL and decoders not NULL audio(%p) video(%p)",
                 mAudioDecoder.get(), mVideoDecoder.get());
         return;
+    }
+    if (isRTSPSource && mVideoDecoder != NULL && mRenderer != NULL) {
+        char value[PROPERTY_VALUE_MAX];
+        if (property_get("rtsp.video.syncframe", value, NULL) &&
+                    (!strcmp("1", value) || !strcasecmp("true", value))) {
+            mRenderer->waitVideoSyncFrame();
+        }
     }
     mSource->seekTo(seekTimeUs);
     ++mTimedTextGeneration;
