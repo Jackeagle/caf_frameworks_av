@@ -268,6 +268,10 @@ OMX_ERRORTYPE SoftAVCEncoder::initEncParams() {
 
     int32_t nMacroBlocks = divUp(mWidth, 16) * divUp(mHeight, 16);
     CHECK(mSliceGroup == NULL);
+    if ((size_t)nMacroBlocks > SIZE_MAX / sizeof(uint32_t)) {
+        ALOGE("requested memory size is too big.");
+        return OMX_ErrorUndefined;
+    }
     mSliceGroup = (uint32_t *) malloc(sizeof(uint32_t) * nMacroBlocks);
     CHECK(mSliceGroup != NULL);
     for (int ii = 0, idx = 0; ii < nMacroBlocks; ++ii) {
