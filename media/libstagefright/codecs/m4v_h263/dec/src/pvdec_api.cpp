@@ -323,6 +323,9 @@ Bool PVAllocVideoData(VideoDecControls *decCtrl, int width, int height, int nLay
     video->prevVop->uChan = video->prevVop->yChan + size;
     video->prevVop->vChan = video->prevVop->uChan + (size >> 2);
 #else
+    if (size > INT32_MAX / 3) {
+        return PV_FALSE;
+    }
     video->currVop->yChan = (PIXEL *) oscl_malloc(size * 3 / 2); /* Allocate memory for all VOP OKA 3/2/1*/
     if (video->currVop->yChan == NULL) status = PV_FALSE;
 
@@ -350,6 +353,10 @@ Bool PVAllocVideoData(VideoDecControls *decCtrl, int width, int height, int nLay
         {
             oscl_memset(video->prevEnhcVop, 0, sizeof(Vop));
 #ifndef PV_MEMORY_POOL
+            if (size > INT32_MAX / 3) {
+                return PV_FALSE;
+            }
+
             video->prevEnhcVop->yChan = (PIXEL *) oscl_malloc(size * 3 / 2); /* Allocate memory for all VOP OKA 3/2/1*/
             if (video->prevEnhcVop->yChan == NULL) status = PV_FALSE;
             video->prevEnhcVop->uChan = video->prevEnhcVop->yChan + size;
