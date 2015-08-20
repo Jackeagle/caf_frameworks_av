@@ -1653,7 +1653,9 @@ void NuPlayer::GenericSource::readBuffer(
             break;
         case MEDIA_TRACK_TYPE_AUDIO:
             track = &mAudioTrack;
-            if (mIsWidevine || (mHttpSource != NULL)) {
+            if (mHttpSource != NULL && getTrackCount() == 1) {
+                maxBuffers = 16;
+            } else if (mIsWidevine || (mHttpSource != NULL)) {
                 maxBuffers = 8;
             } else {
                 maxBuffers = 64;
