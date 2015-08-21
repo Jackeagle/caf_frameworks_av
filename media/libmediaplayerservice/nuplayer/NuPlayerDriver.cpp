@@ -654,6 +654,8 @@ void NuPlayerDriver::notifyListener(
 
 void NuPlayerDriver::notifyListener_l(
         int msg, int ext1, int ext2, const Parcel *in) {
+    bool needNotify = true;
+
     switch (msg) {
         case MEDIA_PLAYBACK_COMPLETE:
         {
@@ -674,6 +676,8 @@ void NuPlayerDriver::notifyListener_l(
                     // The renderer has stopped the sink at the end in order to play out
                     // the last little bit of audio. If we're looping, we need to restart it.
                     mPlayer->startAudioSink();
+                    // Don't report playback complete to app if in loop.
+                    needNotify = false;
                     break;
                 }
 
@@ -693,9 +697,11 @@ void NuPlayerDriver::notifyListener_l(
             break;
     }
 
-    mLock.unlock();
-    sendEvent(msg, ext1, ext2, in);
-    mLock.lock();
+    if (needNotify) {
+        mLock.unlock();
+        sendEvent(msg, ext1, ext2, in);
+        mLock.lock();
+    }
 }
 
 void NuPlayerDriver::notifySetDataSourceCompleted(status_t err) {
