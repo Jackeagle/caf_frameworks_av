@@ -387,6 +387,10 @@ status_t AudioTrackClientProxy::waitStreamEndDone(const struct timespec *request
     total.tv_nsec = 0;
     audio_track_cblk_t* cblk = mCblk;
     status_t status;
+    bool beforeIsValid = false;
+    struct timespec before;
+    struct timespec after;
+    long deltaNs;
     enum {
         TIMEOUT_ZERO,       // requested == NULL || *requested == 0
         TIMEOUT_INFINITE,   // *requested == infinity
@@ -463,9 +467,26 @@ status_t AudioTrackClientProxy::waitStreamEndDone(const struct timespec *request
         }
         int32_t old = android_atomic_and(~CBLK_FUTEX_WAKE, &cblk->mFutex);
         if (!(old & CBLK_FUTEX_WAKE)) {
+            if (!beforeIsValid) {
+                clock_gettime(CLOCK_MONOTONIC, &before);
+                beforeIsValid = true;
+            }
             errno = 0;
             (void) syscall(__NR_futex, &cblk->mFutex,
                     mClientInServer ? FUTEX_WAIT_PRIVATE : FUTEX_WAIT, old & ~CBLK_FUTEX_WAKE, ts);
+            // update total elapsed time spent waiting
+            clock_gettime(CLOCK_MONOTONIC, &after);
+            total.tv_sec += after.tv_sec - before.tv_sec;
+            deltaNs = after.tv_nsec - before.tv_nsec;
+            if (deltaNs < 0) {
+                deltaNs += 1000000000;
+                total.tv_sec--;
+            }
+            if ((total.tv_nsec += deltaNs) >= 1000000000) {
+                total.tv_nsec -= 1000000000;
+                total.tv_sec++;
+            }
+            before = after;
             switch (errno) {
             case 0:            // normal wakeup by server, or by binderDied()
             case EWOULDBLOCK:  // benign race condition with server
