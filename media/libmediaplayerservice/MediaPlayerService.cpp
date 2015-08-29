@@ -83,6 +83,8 @@
 #include "HTTPBase.h"
 #include "RemoteDisplay.h"
 
+#include "QIPCamService.h"
+
 namespace {
 using android::media::Metadata;
 using android::status_t;
@@ -265,6 +267,10 @@ static bool checkPermission(const char* permissionString) {
 void MediaPlayerService::instantiate() {
     defaultServiceManager()->addService(
             String16("media.player"), new MediaPlayerService());
+
+    ALOGD("%s:QIPCam Add Service %s: ",__func__,QIPCAM_SERVICE_NAME);
+    defaultServiceManager()->addService(
+            String16(QIPCAM_SERVICE_NAME), new qipcam::QIPCamService(), false);
 }
 
 MediaPlayerService::MediaPlayerService()

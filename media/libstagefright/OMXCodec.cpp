@@ -1002,6 +1002,7 @@ static size_t getFrameSize(
 
         case OMX_COLOR_FormatYUV420Planar:
         case OMX_COLOR_FormatYUV420SemiPlanar:
+        case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
         case OMX_TI_COLOR_FormatYUV420PackedSemiPlanar:
         /*
         * FIXME: For the Opaque color format, the frame size does not
