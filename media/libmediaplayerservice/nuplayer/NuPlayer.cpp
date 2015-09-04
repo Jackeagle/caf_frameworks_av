@@ -1900,9 +1900,6 @@ void NuPlayer::performSuspend() {
     ++mScanSourcesGeneration;
     mScanSourcesPending = false;
 
-    if (mRenderer != NULL) {
-        mRenderer->pause();
-    }
     if (mRendererLooper != NULL) {
         if (mRenderer != NULL) {
             mRendererLooper->unregisterHandler(mRenderer->id());
@@ -1910,6 +1907,8 @@ void NuPlayer::performSuspend() {
         mRendererLooper->stop();
         mRendererLooper.clear();
     }
+    mRenderer.clear();
+    ++mRendererGeneration;
 
     status_t err;
     if (mSource == NULL) {
@@ -1927,6 +1926,7 @@ void NuPlayer::performSuspend() {
     }
 
     mStarted = false;
+    mPlaying = false;
 }
 
 void NuPlayer::performResumeFromSuspended() {
@@ -1935,6 +1935,7 @@ void NuPlayer::performResumeFromSuspended() {
     CHECK(mAudioDecoder == NULL);
     CHECK(mVideoDecoder == NULL);
     CHECK(mRendererLooper == NULL);
+    CHECK(mRenderer== NULL);
 
     status_t err;
     if (mSource == NULL) {
@@ -1945,11 +1946,6 @@ void NuPlayer::performResumeFromSuspended() {
     }
 
     if (err == OK) {
-        mRendererLooper = new ALooper;
-        mRendererLooper->setName("NuPlayerRenderer");
-        mRendererLooper->start(false, false, ANDROID_PRIORITY_AUDIO);
-        mRendererLooper->registerHandler(mRenderer);
-        mRenderer->resume();
         mSkipAudioFlushAfterSuspend = true;
         mSkipVideoFlushAfterSuspend = true;
     }
