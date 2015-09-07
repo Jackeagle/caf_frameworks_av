@@ -2599,6 +2599,13 @@ void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
         buf = NULL;
         return;
     }
+    ALOGV("native window buffer width = %d, height = %d, stride = %d",
+            buf->width, buf->height, buf->stride);
+    if (bufwidth * bufheight * 2 > outBuffer->size()) {
+        ALOGE("out of buffer size");
+        buf = NULL;
+        return;
+    }
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     Rect bounds(bufwidth, bufheight);
 
@@ -2609,8 +2616,13 @@ void ExtendedUtils::showImageInNativeWindow(const sp<AMessage> &msg,
         buf = NULL;
         return;
     }
-
-    memcpy((uint8_t*)dst, outBuffer->data(), dataSize);
+    uint8_t *dst_y = (uint8_t *)dst;
+    const uint8_t *src_y = (const uint8_t *)(outBuffer->data());
+    for (int i = 0; i < bufheight; i++) {
+        memcpy(dst_y, src_y, bufwidth * 2);
+        src_y += bufwidth * 2;
+        dst_y += buf->stride * 2;
+    }
 
     if ((err = mapper.unlock(buf->handle)) != 0) {
         ALOGE("mapper.unlock failed %d", err);
