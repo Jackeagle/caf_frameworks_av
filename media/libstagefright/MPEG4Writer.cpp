@@ -857,8 +857,10 @@ void MPEG4Writer::release() {
     mFd = -1;
     mInitCheck = NO_INIT;
     mStarted = false;
-    free(mMoovBoxBuffer);
-    mMoovBoxBuffer = NULL;
+    if (mMoovBoxBuffer != NULL) {
+        free(mMoovBoxBuffer);
+        mMoovBoxBuffer = NULL;
+    }
 }
 
 status_t MPEG4Writer::reset() {
