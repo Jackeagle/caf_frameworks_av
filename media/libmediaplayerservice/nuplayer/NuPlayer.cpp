@@ -596,7 +596,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     new SetSurfaceAction(
                         static_cast<NativeWindowWrapper *>(obj.get())));
 
-            if (obj != NULL) {
+            if (obj != NULL || mPlaying) {
                 if (mStarted) {
                     // Issue a seek to refresh the video screen only if started otherwise
                     // the extractor may not yet be started and will assert.
