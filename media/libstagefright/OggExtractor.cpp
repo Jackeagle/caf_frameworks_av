@@ -21,6 +21,7 @@
 #include "include/OggExtractor.h"
 
 #include <cutils/properties.h>
+#include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaBuffer.h>
