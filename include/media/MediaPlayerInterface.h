@@ -119,7 +119,7 @@ public:
         virtual status_t    start() = 0;
         virtual ssize_t     write(const void* buffer, size_t size) = 0;
         virtual void        stop() = 0;
-        virtual void        flush() = 0;
+        virtual void        flush(bool partial = false) = 0;
         virtual void        pause() = 0;
         virtual void        close() = 0;
 

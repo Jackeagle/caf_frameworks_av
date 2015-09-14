@@ -361,15 +361,13 @@ size_t ClientProxy::getFramesFilled() {
 
 // ---------------------------------------------------------------------------
 
-void AudioTrackClientProxy::flush()
+void AudioTrackClientProxy::flush(bool partial)
 {
-    // This works for mFrameCountP2 <= 2^30
-    size_t increment = mFrameCountP2 << 1;
-    size_t mask = increment - 1;
-    audio_track_cblk_t* cblk = mCblk;
-    int32_t newFlush = (cblk->u.mStreaming.mRear & mask) |
-                        ((cblk->u.mStreaming.mFlush & ~mask) + increment);
-    android_atomic_release_store(newFlush, &cblk->u.mStreaming.mFlush);
+    mCblk->u.mStreaming.mFlush++;
+    mCblk->u.mStreaming.mOldRear = mCblk->u.mStreaming.mRear;
+    if (partial) {
+        mCblk->u.mStreaming.mPartialFlush = true;
+    }
 }
 
 bool AudioTrackClientProxy::clearStreamEndDone() {
@@ -561,27 +559,33 @@ status_t ServerProxy::obtainBuffer(Buffer* buffer, bool ackFlush)
         rear = android_atomic_acquire_load(&cblk->u.mStreaming.mRear);
         front = cblk->u.mStreaming.mFront;
         if (flush != mFlush) {
-            // effectively obtain then release whatever is in the buffer
-            size_t mask = (mFrameCountP2 << 1) - 1;
-            int32_t newFront = (front & ~mask) | (flush & mask);
-            ssize_t filled = rear - newFront;
-            // Rather than shutting down on a corrupt flush, just treat it as a full flush
-            if (!(0 <= filled && (size_t) filled <= mFrameCount)) {
-                ALOGE("mFlush %#x -> %#x, front %#x, rear %#x, mask %#x, newFront %#x, filled %d=%#x",
-                        mFlush, flush, front, rear, mask, newFront, filled, filled);
-                newFront = rear;
+            bool needFlush = true;
+            // if it's a parial flush, one more chance to pump up stale buffer before flush happens
+            int32_t old_rear = cblk->u.mStreaming.mOldRear;
+            if (cblk->u.mStreaming.mPartialFlush) {
+                cblk->u.mStreaming.mPartialFlush = false;
+                rear = old_rear;
+                needFlush = (front == old_rear) ? true: false;
+                cblk->u.mStreaming.mFlushPending = true;
             }
-            mFlush = flush;
-            android_atomic_release_store(newFront, &cblk->u.mStreaming.mFront);
-            // There is no danger from a false positive, so err on the side of caution
-            if (true /*front != newFront*/) {
-                int32_t old = android_atomic_or(CBLK_FUTEX_WAKE, &cblk->mFutex);
-                if (!(old & CBLK_FUTEX_WAKE)) {
-                    (void) syscall(__NR_futex, &cblk->mFutex,
-                            mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE, 1);
+            if (needFlush) {
+                mFlush = flush;
+                // effectively obtain then release whatever is in the buffer
+                android_atomic_release_store(old_rear, &cblk->u.mStreaming.mFront);
+                if (front != old_rear) {
+                    int32_t old = android_atomic_or(CBLK_FUTEX_WAKE, &cblk->mFutex);
+                    if (!(old & CBLK_FUTEX_WAKE)) {
+                        (void) syscall(__NR_futex, &cblk->mFutex,
+                                mClientInServer ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE, 1);
+                    }
+                }
+                front = old_rear;
+                if (cblk->u.mStreaming.mFlushPending) {
+                    cblk->u.mStreaming.mFlushPending = false;
+                    // trick to force the 2nd obtain operation after flush returns nothing.
+                    front = rear;
                 }
             }
-            front = newFront;
         }
     } else {
         front = android_atomic_acquire_load(&cblk->u.mStreaming.mFront);
