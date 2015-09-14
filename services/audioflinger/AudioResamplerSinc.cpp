@@ -509,7 +509,7 @@ void AudioResamplerSinc::setVolume(float left, float right) {
     mVolumeSIMD[1] = u4_28_from_float(clampFloatVol(right));
 }
 
-void AudioResamplerSinc::resample(int32_t* out, size_t outFrameCount,
+size_t AudioResamplerSinc::resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider)
 {
     // FIXME store current state (up or down sample) and only load the coefs when the state
@@ -530,11 +530,12 @@ void AudioResamplerSinc::resample(int32_t* out, size_t outFrameCount,
         resample<2>(out, outFrameCount, provider);
         break;
     }
+    return outFrameCount;
 }
 
 
 template<int CHANNELS>
-void AudioResamplerSinc::resample(int32_t* out, size_t outFrameCount,
+size_t AudioResamplerSinc::resample(int32_t* out, size_t outFrameCount,
         AudioBufferProvider* provider)
 {
     const Constants& c(*mConstants);
@@ -609,6 +610,7 @@ resample_exit:
     mImpulse = impulse;
     mInputIndex = inputIndex;
     mPhaseFraction = phaseFraction;
+    return outFrameCount;
 }
 
 template<int CHANNELS>
