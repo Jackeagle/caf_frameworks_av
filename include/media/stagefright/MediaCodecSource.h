@@ -42,6 +42,7 @@ struct MediaCodecSource : public MediaSource,
     enum FlagBits {
         FLAG_USE_SURFACE_INPUT      = 1,
         FLAG_USE_METADATA_INPUT     = 2,
+        FLAG_USE_CODEC_BYNAME       = 4,
     };
 
     static sp<MediaCodecSource> Create(
