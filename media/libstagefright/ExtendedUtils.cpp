@@ -2312,25 +2312,29 @@ int32_t ExtendedUtils::getEncoderTypeFlags() {
 
 void ExtendedUtils::cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder) {
     if (camera != NULL) {
-        char mDeviceName[PROPERTY_VALUE_MAX];
-        property_get("ro.board.platform", mDeviceName, "0");
-        if (!strncmp(mDeviceName, "msm8909", 7)) {
-            int64_t token = IPCThreadState::self()->clearCallingIdentity();
-            String8 s = camera->getParameters();
-            CameraParameters params(s);
-            const char *enable;
+        char propertyValue[PROPERTY_VALUE_MAX];
+        const char *enable = "disable";
+        property_get("ro.board.platform", propertyValue, "0");
+        if (!strncmp(propertyValue, "msm8909", 7)) {
             if (encoder == VIDEO_ENCODER_H263 ||
                 encoder == VIDEO_ENCODER_MPEG_4_SP) {
-                enable = "1";
-            } else {
-                enable = "0";
+                enable = "enable";
             }
-            params.set("cache-video-buffers", enable);
-            if (camera->setParameters(params.flatten()) != OK) {
-                ALOGE("Failed to enabled cached camera buffers");
-            }
-            IPCThreadState::self()->restoreCallingIdentity(token);
+        } else if (property_get("media.msm8956hw", propertyValue, "0") &&
+                atoi(propertyValue)) {
+            if (encoder == VIDEO_ENCODER_MPEG_4_SP)
+                enable = "enable";
         }
+
+        int64_t token = IPCThreadState::self()->clearCallingIdentity();
+        String8 s = camera->getParameters();
+        CameraParameters params(s);
+        ALOGV("%s: caching %s", __func__, enable);
+        params.set("cache-video-buffers", enable);
+        if (camera->setParameters(params.flatten()) != OK) {
+            ALOGE("Failed to enabled cached camera buffers");
+        }
+        IPCThreadState::self()->restoreCallingIdentity(token);
     }
 }
 //return true if mime type is not support for pcm offload
