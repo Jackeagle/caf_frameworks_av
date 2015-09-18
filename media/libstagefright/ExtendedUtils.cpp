@@ -1193,8 +1193,9 @@ status_t ExtendedUtils::convertToSinkFormat(const sp<ABuffer> &buffer, sp<ABuffe
                 return INVALID_OPERATION;
         }
     } else {
-        if (pcmFormat == AUDIO_FORMAT_DEFAULT) {
-            return NO_INIT;
+        if (pcmFormat == AUDIO_FORMAT_INVALID) {
+            ALOGD("PCM Info not yet initialized, drop buffer");
+            return INVALID_OPERATION;
         }
 
         dstFormat = pcmFormat;
