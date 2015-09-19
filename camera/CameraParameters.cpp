@@ -16,11 +16,14 @@
 */
 
 #define LOG_TAG "CameraParams"
-#include <utils/Log.h>
+
+#include <stdio.h>
+#include <unistd.h>
 
 #include <string.h>
 #include <stdlib.h>
-#include <camera/CameraParameters.h>
+#include "camera/CameraParameters.h"
+#include "android_adapter.h"
 
 namespace android {
 // Parameter keys to communicate between camera application and driver.
@@ -183,29 +186,32 @@ CameraParameters::~CameraParameters()
 {
 }
 
-String8 CameraParameters::flatten() const
+string CameraParameters::flatten() const
 {
-    String8 flattened("");
+    string flattened("");
     size_t size = mMap.size();
 
-    for (size_t i = 0; i < size; i++) {
-        String8 k, v;
-        k = mMap.keyAt(i);
-        v = mMap.valueAt(i);
+    map<string, string>::const_iterator iter;
+    for (iter = mMap.begin(); iter != mMap.end(); iter ++) {
+        string k, v;
+        k = iter->first;
+        v = iter->second;
 
         flattened += k;
         flattened += "=";
         flattened += v;
-        if (i != size-1)
-            flattened += ";";
+        /* put a semicolon for every element other than the last one*/
+        flattened += ";";
     }
 
+    // remove last semicolon
+   flattened = flattened.substr(0, flattened.size()-1);
     return flattened;
 }
 
-void CameraParameters::unflatten(const String8 &params)
+void CameraParameters::unflatten(const string &params)
 {
-    const char *a = params.string();
+    const char *a = params.c_str();
     const char *b;
 
     mMap.clear();
@@ -217,20 +223,20 @@ void CameraParameters::unflatten(const String8 &params)
             break;
 
         // Create the key string.
-        String8 k(a, (size_t)(b-a));
+        string k(a, (size_t)(b-a));
 
         // Find the value.
         a = b+1;
         b = strchr(a, ';');
         if (b == 0) {
             // If there's no semicolon, this is the last item.
-            String8 v(a);
-            mMap.add(k, v);
+            string v(a);
+            mMap[k] = v;
             break;
         }
 
-        String8 v(a, (size_t)(b-a));
-        mMap.add(k, v);
+        string v(a, (size_t)(b-a));
+        mMap[k] = v;
         a = b+1;
     }
 }
@@ -248,8 +254,18 @@ void CameraParameters::set(const char *key, const char *value)
         //XXX ALOGE("Value \"%s\"contains invalid character (= or ;)", value);
         return;
     }
+    mMap[string(key)] = string(value);
+}
 
-    mMap.replaceValueFor(String8(key), String8(value));
+
+void CameraParameters::set(const char *key, string value)
+{
+  set(key, value.c_str());
+}
+
+void CameraParameters::set(string& key, string& value)
+{
+  set(key.c_str(), value.c_str());
 }
 
 void CameraParameters::set(const char *key, int value)
@@ -268,10 +284,17 @@ void CameraParameters::setFloat(const char *key, float value)
 
 const char *CameraParameters::get(const char *key) const
 {
-    String8 v = mMap.valueFor(String8(key));
+    string k(key);
+    //string v = mMap[k];
+    /* find the given key in map, if not found, return NULL */
+    map<string, string>::const_iterator it = mMap.find(k);
+    if (it == mMap.end()) {
+        return NULL;
+    }
+    const string &  v = it->second;
     if (v.length() == 0)
         return 0;
-    return v.string();
+    return v.c_str();
 }
 
 int CameraParameters::getInt(const char *key) const
@@ -291,7 +314,8 @@ float CameraParameters::getFloat(const char *key) const
 
 void CameraParameters::remove(const char *key)
 {
-    mMap.removeItem(String8(key));
+    //mMap.removeItem(string(key));
+    mMap.erase(string(key));
 }
 
 // Parse string like "640x480" or "10000,20000"
@@ -320,7 +344,7 @@ static int parse_pair(const char *str, int *first, int *second, char delim,
     return 0;
 }
 
-static void parseSizesList(const char *sizesStr, Vector<Size> &sizes)
+static void parseSizesList(const char *sizesStr, vector<Size> &sizes)
 {
     if (sizesStr == 0) {
         return;
@@ -336,7 +360,7 @@ static void parseSizesList(const char *sizesStr, Vector<Size> &sizes)
             ALOGE("Picture sizes string \"%s\" contains invalid character.", sizesStr);
             return;
         }
-        sizes.push(Size(width, height));
+        sizes.push_back(Size(width, height));
 
         if (*sizeStartPtr == '\0') {
             return;
@@ -369,7 +393,7 @@ void CameraParameters::getPreferredPreviewSizeForVideo(int *width, int *height) 
     parse_pair(p, width, height, 'x');
 }
 
-void CameraParameters::getSupportedPreviewSizes(Vector<Size> &sizes) const
+void CameraParameters::getSupportedPreviewSizes(vector<Size> &sizes) const
 {
     const char *previewSizesStr = get(KEY_SUPPORTED_PREVIEW_SIZES);
     parseSizesList(previewSizesStr, sizes);
@@ -390,7 +414,7 @@ void CameraParameters::getVideoSize(int *width, int *height) const
     parse_pair(p, width, height, 'x');
 }
 
-void CameraParameters::getSupportedVideoSizes(Vector<Size> &sizes) const
+void CameraParameters::getSupportedVideoSizes(vector<Size> &sizes) const
 {
     const char *videoSizesStr = get(KEY_SUPPORTED_VIDEO_SIZES);
     parseSizesList(videoSizesStr, sizes);
@@ -440,7 +464,7 @@ void CameraParameters::getPictureSize(int *width, int *height) const
     parse_pair(p, width, height, 'x');
 }
 
-void CameraParameters::getSupportedPictureSizes(Vector<Size> &sizes) const
+void CameraParameters::getSupportedPictureSizes(vector<Size> &sizes) const
 {
     const char *pictureSizesStr = get(KEY_SUPPORTED_PICTURE_SIZES);
     parseSizesList(pictureSizesStr, sizes);
@@ -459,30 +483,12 @@ const char *CameraParameters::getPictureFormat() const
 void CameraParameters::dump() const
 {
     ALOGD("dump: mMap.size = %d", mMap.size());
-    for (size_t i = 0; i < mMap.size(); i++) {
-        String8 k, v;
-        k = mMap.keyAt(i);
-        v = mMap.valueAt(i);
-        ALOGD("%s: %s\n", k.string(), v.string());
+    map<string, string>::const_iterator iter;
+    for (iter = mMap.begin(); iter != mMap.end(); iter ++) {
+        string k, v;
+        k = iter->first;
+        v = iter->second;
+        ALOGD("%s: %s\n", k.c_str(), v.c_str());
     }
 }
-
-status_t CameraParameters::dump(int fd, const Vector<String16>& args) const
-{
-    const size_t SIZE = 256;
-    char buffer[SIZE];
-    String8 result;
-    snprintf(buffer, 255, "CameraParameters::dump: mMap.size = %d\n", mMap.size());
-    result.append(buffer);
-    for (size_t i = 0; i < mMap.size(); i++) {
-        String8 k, v;
-        k = mMap.keyAt(i);
-        v = mMap.valueAt(i);
-        snprintf(buffer, 255, "\t%s: %s\n", k.string(), v.string());
-        result.append(buffer);
-    }
-    write(fd, result.string(), result.size());
-    return NO_ERROR;
-}
-
 }; // namespace android

@@ -17,8 +17,10 @@
 #ifndef ANDROID_HARDWARE_CAMERA_PARAMETERS_H
 #define ANDROID_HARDWARE_CAMERA_PARAMETERS_H
 
-#include <utils/KeyedVector.h>
-#include <utils/String8.h>
+#include <string>
+#include <map>
+#include <vector>
+using namespace std;
 
 namespace android {
 
@@ -41,14 +43,16 @@ class CameraParameters
 {
 public:
     CameraParameters();
-    CameraParameters(const String8 &params) { unflatten(params); }
+    CameraParameters(const string &params) { unflatten(params); }
     ~CameraParameters();
 
-    String8 flatten() const;
-    void unflatten(const String8 &params);
+    string flatten() const;
+    void unflatten(const string &params);
 
+    void set(string& key, string& value);
     void set(const char *key, const char *value);
     void set(const char *key, int value);
+    void set(const char *key, string value);
     void setFloat(const char *key, float value);
     const char *get(const char *key) const;
     int getInt(const char *key) const;
@@ -58,7 +62,7 @@ public:
 
     void setPreviewSize(int width, int height);
     void getPreviewSize(int *width, int *height) const;
-    void getSupportedPreviewSizes(Vector<Size> &sizes) const;
+    void getSupportedPreviewSizes(vector<Size> &sizes) const;
 
     // Set the dimensions in pixels to the given width and height
     // for video frames. The given width and height must be one
@@ -78,7 +82,7 @@ public:
     // or getVideoSize(). In adddition, it also indicates that
     // the camera only has a single output, and does not have
     // separate output for video frames and preview frame.
-    void getSupportedVideoSizes(Vector<Size> &sizes) const;
+    void getSupportedVideoSizes(vector<Size> &sizes) const;
     // Retrieve the preferred preview size (width and height) in pixels
     // for video recording. The given width and height must be one of
     // supported preview sizes returned from getSupportedPreviewSizes().
@@ -95,12 +99,11 @@ public:
     const char *getPreviewFormat() const;
     void setPictureSize(int width, int height);
     void getPictureSize(int *width, int *height) const;
-    void getSupportedPictureSizes(Vector<Size> &sizes) const;
+    void getSupportedPictureSizes(vector<Size> &sizes) const;
     void setPictureFormat(const char *format);
     const char *getPictureFormat() const;
 
     void dump() const;
-    status_t dump(int fd, const Vector<String16>& args) const;
 
     // Parameter keys to communicate between camera application and driver.
     // The access (read/write, read only, or write only) is viewed from the
@@ -678,7 +681,7 @@ public:
     static const char LIGHTFX_HDR[];
 
 private:
-    DefaultKeyedVector<String8,String8>    mMap;
+    map<string, string> mMap;
 };
 
 }; // namespace android
