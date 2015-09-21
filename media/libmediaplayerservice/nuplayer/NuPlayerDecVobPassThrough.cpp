@@ -114,9 +114,11 @@ sp<ABuffer> NuPlayer::VorbisDecoderPassThrough::aggregateBuffer(
             mPendingAudioErr = OK;
             mPendingAudioAccessUnit = accessUnit;
 
+            aggregate = mAnchorBuffer;
+            mAnchorBuffer.clear();
             mAggregateBuffer.clear();
             mVorbisHdrBuffer.clear();
-            return mAnchorBuffer;
+            return aggregate;
         }
 
         // Should we save this small buffer for the next big buffer?
@@ -163,6 +165,7 @@ sp<ABuffer> NuPlayer::VorbisDecoderPassThrough::aggregateBuffer(
         // decided not to aggregate
         if (mAnchorBuffer != NULL) {
             aggregate = mAnchorBuffer;
+            mAnchorBuffer.clear();
             mVorbisHdrBuffer.clear();
         } else {
             sp<ABuffer> transBuffer = new ABuffer(smallSize);
