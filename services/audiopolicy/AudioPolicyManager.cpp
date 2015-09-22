@@ -5717,7 +5717,7 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
         }
         if ((device2 == AUDIO_DEVICE_NONE) &&
                 (mForceUse[AUDIO_POLICY_FORCE_FOR_MEDIA] != AUDIO_POLICY_FORCE_NO_BT_A2DP) &&
-                (getA2dpOutput() != 0)) {
+                (getA2dpOutput() != 0) && !mA2dpSuspended) {
             device2 = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP;
             if (device2 == AUDIO_DEVICE_NONE) {
                 device2 = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES;
