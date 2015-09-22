@@ -66,6 +66,9 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
     LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
 endif
 
+LOCAL_CFLAGS += -std=c++11
+include external/libcxx/libcxx.mk
+
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
