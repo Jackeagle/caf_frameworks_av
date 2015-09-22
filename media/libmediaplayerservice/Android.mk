@@ -40,6 +40,7 @@ LOCAL_SHARED_LIBRARIES :=       \
     libstagefright_wfd          \
     libutils                    \
     libvorbisidec               \
+    libipcam_service            \
 
 LOCAL_STATIC_LIBRARIES :=       \
     libstagefright_nuplayer     \
@@ -56,6 +57,10 @@ LOCAL_C_INCLUDES :=                                                 \
     $(TOP)/frameworks/native/include/media/openmax                  \
     $(TOP)/external/tremolo/Tremolo                                 \
     $(TOP)/frameworks/av/media/libavextensions                      \
+    $(TOP)/frameworks/av/include/media/stagefright/                 \
+    $(TOP)/vendor/qcom/proprietary/QualcommIPCam/src/service/       \
+    $(TOP)/vendor/qcom/proprietary/QualcommIPCam/src/client/        \
+    $(TOP)/vendor/qcom/proprietary/QualcommIPCam/inc        \
 
 LOCAL_CFLAGS += -Werror -Wno-error=deprecated-declarations -Wall
 LOCAL_CLANG := true
