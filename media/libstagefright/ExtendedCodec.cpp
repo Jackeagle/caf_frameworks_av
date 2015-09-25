@@ -1523,31 +1523,54 @@ void ExtendedCodec::setParameters(
         return;
     }
 
-    int32_t value;
+    status_t err = OK;
+    bool paramsSet = false;
+    QOMX_VPP_HQVCONTROL mHqvCtrl;
+    int32_t value = 0;
 
-    if (msg->findInt32("vpp-algo-level", &value)) {
-        QOMX_VPP_HQVCONTROL vppHqvCtrl;
-        ALOGI("vpp-algo-level is %d\n", value);
+    paramsSet = msg->findInt32("vpp-mode", (int32_t *)&value);
+    mHqvCtrl.mode = (paramsSet) ? (QOMX_VPP_HQV_MODE)value : mHqvCtrl.mode;
 
-        /* First get the algorithm type and then set the level*/
-        status_t err = OMXhandle->getParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamVppHqvControl,
-                &vppHqvCtrl, sizeof(vppHqvCtrl));
+    paramsSet &= msg->findInt32("vpp-ctrl-type", (int32_t *)&value);
+    mHqvCtrl.ctrl_type = (paramsSet) ? (QOMX_VPP_HQVCONTROLTYPE)value : mHqvCtrl.ctrl_type;
 
-        if (err != OK) {
-            ALOGW("Failed to get vpp control parameters");
-            return;
-        }
+    if (mHqvCtrl.ctrl_type == VPP_HQV_CONTROL_GLOBAL_DEMO) {
+        paramsSet &= msg->findInt32("vpp-demo-percent", (int32_t *)&value);
+        mHqvCtrl.global_demo.process_percent =
+            (paramsSet) ? value : mHqvCtrl.global_demo.process_percent;
+    } else {
+        paramsSet &= msg->findInt32("vpp-algo-mode", (int32_t *)&value);
+        mHqvCtrl.aie.mode = (paramsSet) ? (QOMX_VPP_HQV_MODE)value : mHqvCtrl.aie.mode;
+    }
 
-        //Change the level depending on the algorithm
-        if (vppHqvCtrl.ctrl_type == VPP_HQV_CONTROL_AIE) {
-            vppHqvCtrl.aie.cade_level = value;
-        } else {
-            vppHqvCtrl.cnr.level = value;
-        }
+    if (mHqvCtrl.ctrl_type == VPP_HQV_CONTROL_AIE) {
+        paramsSet &= msg->findInt32("vpp-hue-mode", (int32_t *)&value);
+        mHqvCtrl.aie.hue_mode = (paramsSet) ? (QOMX_VPP_HQV_HUE_MODE)value : mHqvCtrl.aie.hue_mode;
 
+        paramsSet &= msg->findInt32("vpp-algo-level", (int32_t *)&value);
+        mHqvCtrl.aie.cade_level = (paramsSet) ? value : mHqvCtrl.aie.cade_level;
+
+        paramsSet &= msg->findInt32("vpp-ltm-level", (int32_t *)&value);
+        mHqvCtrl.aie.ltm_level = (paramsSet) ? value : mHqvCtrl.aie.ltm_level;
+
+    } else if (mHqvCtrl.ctrl_type == VPP_HQV_CONTROL_CADE) {
+        paramsSet &= msg->findInt32("vpp-algo-level", (int32_t *)&value);
+        mHqvCtrl.cade.level = (paramsSet) ? value : mHqvCtrl.cade.level;
+
+        paramsSet &= msg->findInt32("vpp-cade-contrast", (int32_t *)&value);
+        mHqvCtrl.cade.contrast = (paramsSet) ? value : mHqvCtrl.cade.contrast;
+
+        paramsSet &= msg->findInt32("vpp-cade-saturation", (int32_t *)&value);
+        mHqvCtrl.cade.saturation = (paramsSet) ? value : mHqvCtrl.cade.saturation;
+
+    } else if (mHqvCtrl.ctrl_type == VPP_HQV_CONTROL_CNR) {
+        paramsSet &= msg->findInt32("vpp-algo-level", (int32_t *)&value);
+        mHqvCtrl.cnr.level = (paramsSet) ? value : mHqvCtrl.cnr.level;
+    }
+
+    if (paramsSet) {
         err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamVppHqvControl,
-                (void *)&vppHqvCtrl, sizeof(vppHqvCtrl));
-
+                (void *)&mHqvCtrl, sizeof(mHqvCtrl));
         if (err != OK) {
             ALOGW("Failed to set vpp control parameters");
         }
@@ -1556,7 +1579,9 @@ void ExtendedCodec::setParameters(
 
 void ExtendedCodec::configureVPP(
     const sp<AMessage> &msg, sp<IOMX> OMXhandle,
-    IOMX::node_id nodeID ){
+    IOMX::node_id nodeID ) {
+
+    status_t err = OK;
 
     /* VPP Stuff */
     ALOGI("Setting of vpp-enable");
@@ -1569,7 +1594,7 @@ void ExtendedCodec::configureVPP(
         /*Pass the vpp-enable flag to the OMX component */
         QOMX_VPP_ENABLE vppEnableCtrl;
         vppEnableCtrl.enable_vpp = (OMX_BOOL)value;
-        status_t err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamEnableVpp,
+        err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamEnableVpp,
                    (void *)&vppEnableCtrl, sizeof(vppEnableCtrl));
 
         if (err != OK) {
@@ -1577,35 +1602,65 @@ void ExtendedCodec::configureVPP(
         }
     }
 
+    err = parseVPPConfig(msg, "vpp-config", OMXhandle, nodeID);
+    if (err != OK) {
+        ALOGW("Failed to set vpp-config.");
+    }
+}
 
+status_t ExtendedCodec::parseVPPConfig(
+        const sp<AMessage> &msg, const char* key,
+        sp<IOMX> OMXhandle, IOMX::node_id nodeID) {
+
+    bool paramsSet = false;
+    status_t err = OK;
     /* VPP Algo*/
-    sp<ABuffer> cfg_buf;
-    paramsSet = msg->findBuffer("vpp-config", &cfg_buf);
-    ALOGI("vpp-config search is %d ", paramsSet);
-    if (paramsSet && cfg_buf->size() > 0) {
-        ALOGI("vpp-config buffer size is %d\n", cfg_buf->size());
-        QOMX_VPP_HQVCONTROL mhQvCtrl;
-        if(cfg_buf->size() > sizeof(QOMX_VPP_HQVCONTROL)) {
-            ALOGW("Size of the buffer larger than expected.Failed to set vpp-config params");
-            return;
+    sp<ABuffer> configBuffer;
+    paramsSet = msg->findBuffer(key, &configBuffer);
+    ALOGI("%s search is %d ", key, paramsSet);
+
+    if (paramsSet && configBuffer->size() > 0) {
+        ALOGI("%s buffer size is %d\n", key, configBuffer->size());
+        uint8_t* vppStructBase = configBuffer->data();
+        size_t total_size = 0;
+
+        if  (!vppStructBase) {
+            ALOGE("vpp setting parameter ptr is NULL");
+            return BAD_VALUE;
         }
 
-        memcpy((void*)&mhQvCtrl, cfg_buf->data(), cfg_buf->size());
-        ALOGI("VPP config params received");
-        ALOGI("Top level mode: %d", mhQvCtrl.mode);
-        ALOGI("Algo type: %d", mhQvCtrl.ctrl_type);
-        ALOGI("CADE: mode=%d level=%d", mhQvCtrl.cade.mode, mhQvCtrl.cade.level);
-        ALOGI("AIE: mode=%d level=%d", mhQvCtrl.aie.mode, mhQvCtrl.aie.cade_level);
-        ALOGI("AIE HUE: mode=%d level=%d", mhQvCtrl.aie.hue_mode, mhQvCtrl.aie.ltm_level);
-        ALOGI("CNR: mode=%d level=%d", mhQvCtrl.cnr.mode, mhQvCtrl.cnr.level);
+        int32_t numAlgorithms = *((int32_t*)vppStructBase);
+        if (numAlgorithms<=0 || numAlgorithms>10) {
+            ALOGW("Unexpected setting of number of algorithms");
+            return BAD_VALUE;
+        }
 
-        status_t err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamVppHqvControl,
-               (void *)&mhQvCtrl, sizeof(mhQvCtrl));
+        QOMX_VPP_HQVCONTROL mHqvCtrl;
+        /* configBuffer contains data in the format
+           [numAlgos(int), hqvControl1, hqvControl2...]   */
+        total_size = (numAlgorithms * sizeof(mHqvCtrl)) + sizeof(int32_t);
 
-        if (err != OK) {
-            ALOGW("Failed to set vpp-config params");
+        vppStructBase += sizeof(int32_t);
+
+        if (configBuffer->size() > total_size) {
+            ALOGW("Size of the buffer larger than expected.Failed to set vpp-config params");
+            return NO_MEMORY;
+        }
+
+        for (int i=0;i<numAlgorithms;i++) {
+            memcpy((void*)&mHqvCtrl, vppStructBase + i*sizeof(QOMX_VPP_HQVCONTROL),
+                    sizeof(QOMX_VPP_HQVCONTROL));
+
+            err = OMXhandle->setParameter(nodeID, (OMX_INDEXTYPE)OMX_QcomIndexParamVppHqvControl,
+                   (void *)&mHqvCtrl, sizeof(mHqvCtrl));
+
+            if (err != OK) {
+                ALOGW("Failed to set %s params", key);
+            }
         }
     }
+
+    return err;
 }
 
 void ExtendedCodec::setIntraPeriod(
@@ -1977,6 +2032,16 @@ namespace android {
         ARG_TOUCH(msg);
         ARG_TOUCH(OMXhandle);
         ARG_TOUCH(nodeID);
+    }
+
+    status_t ExtendedCodec::parseVPPConfig(
+        const sp<AMessage> &msg, const char* key,
+        sp<IOMX> OMXhandle, IOMX::node_id nodeID) {
+        ARG_TOUCH(msg);
+        ARG_TOUCH(key);
+        ARG_TOUCH(OMXhandle);
+        ARG_TOUCH(nodeID);
+        return OK;
     }
 
     void ExtendedCodec::setIntraPeriod(
