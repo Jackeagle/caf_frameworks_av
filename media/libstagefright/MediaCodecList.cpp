@@ -103,7 +103,13 @@ MediaCodecList::MediaCodecList()
         parseTopLevelXMLFile("/etc/media_codecs_8939.xml");
     } else if (property_get("media.msm8956hw", value, "0") &&
                atoi(value)) {
-        parseTopLevelXMLFile("/etc/media_codecs_8956.xml");
+        // for msm8956 version v1 parse 8956_v1.xml which has vp9 decoder
+        if (property_get("media.msm8956.version", value, "0") &&
+               (atoi(value) == 1)) {
+            parseTopLevelXMLFile("/etc/media_codecs_8956_v1.xml");
+        } else {
+            parseTopLevelXMLFile("/etc/media_codecs_8956.xml");
+        }
     } else {
         parseTopLevelXMLFile("/etc/media_codecs.xml");
     }
