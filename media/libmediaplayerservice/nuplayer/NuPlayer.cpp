@@ -369,7 +369,6 @@ void NuPlayer::setAudioSink(const sp<MediaPlayerBase::AudioSink> &sink) {
 }
 
 void NuPlayer::start() {
-    PLAYER_STATS(notifyPlaying, true);
     if (mStarted) {
         PLAYER_STATS(profileStart, STATS_PROFILE_RESUME);
     }
@@ -956,6 +955,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 PLAYER_STATS(profileStop, STATS_PROFILE_START_LATENCY);
                 notifyListener(MEDIA_INFO, MEDIA_INFO_RENDERING_START, 0);
             } else if (what == Renderer::kWhatMediaRenderingStart) {
+                PLAYER_STATS(notifyPlaying, true);
                 PLAYER_STATS(profileStop, STATS_PROFILE_RESUME);
                 ALOGV("media rendering started");
                 notifyListener(MEDIA_STARTED, 0, 0);
