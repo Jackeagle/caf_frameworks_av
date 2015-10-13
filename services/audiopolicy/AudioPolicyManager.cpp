@@ -8698,7 +8698,7 @@ sp<AudioPolicyManager::DeviceDescriptor> AudioPolicyManager::DeviceVector::getDe
 {
     sp<DeviceDescriptor> device;
     for (size_t i = 0; i < size(); i++) {
-        if (itemAt(i)->mDeviceType == type) {
+        if ((itemAt(i)->mDeviceType) & type) {
             if (address == "" || itemAt(i)->mAddress == address) {
                 device = itemAt(i);
                 if (itemAt(i)->mAddress == address) {
