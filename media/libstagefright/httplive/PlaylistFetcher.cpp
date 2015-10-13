@@ -71,6 +71,7 @@ PlaylistFetcher::PlaylistFetcher(
       mDiscontinuitySeq(-1ll),
       mStartTimeUsRelative(false),
       mLastPlaylistFetchTimeUs(-1ll),
+      mPlaylist(NULL),
       mSeqNumber(-1),
       mLastSeqNumber(-1),
       mNumRetries(0),
@@ -952,7 +953,7 @@ void PlaylistFetcher::onDownloadNext() {
             ALOGE("Cannot find sequence number %d in playlist "
                  "(contains %d - %d)",
                  mSeqNumber, firstSeqNumberInPlaylist,
-                  firstSeqNumberInPlaylist + (int32_t)mPlaylist->size() - 1);
+                  lastSeqNumberInPlaylist);
 
             notifyError(ERROR_END_OF_STREAM);
             return;
