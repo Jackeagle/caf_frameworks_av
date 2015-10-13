@@ -1319,7 +1319,10 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<DecoderBase> *decoder) {
     if (audio && ExtendedUtils::ShellProp::isAudioDisabled(false)) {
         return OK;
     }
-
+    if (mSource == NULL) {
+        ALOGD("%s Ignore instantiate decoder after clearing source", __func__);
+        return INVALID_OPERATION;
+    }
     sp<AMessage> format = mSource->getFormat(audio);
 
     if (format == NULL) {
