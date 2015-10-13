@@ -2664,8 +2664,8 @@ void AudioPolicyManager::releaseInput(audio_io_handle_t input,
 void AudioPolicyManager::closeAllInputs() {
     bool patchRemoved = false;
 
-    for(size_t input_index = 0; input_index < mInputs.size(); input_index++) {
-        sp<AudioInputDescriptor> inputDesc = mInputs.valueAt(input_index);
+    for(size_t input_index = mInputs.size(); input_index > 0; input_index--) {
+        sp<AudioInputDescriptor> inputDesc = mInputs.valueAt(input_index-1);
         ssize_t patch_index = mAudioPatches.indexOfKey(inputDesc->mPatchHandle);
         if (patch_index >= 0) {
             sp<AudioPatch> patchDesc = mAudioPatches.valueAt(patch_index);
@@ -2676,8 +2676,8 @@ void AudioPolicyManager::closeAllInputs() {
         if ((inputDesc->mIsSoundTrigger) && (mInputs.size() == 1)) {
             ALOGD("Do not close sound trigger input handle");
         } else {
-            mpClientInterface->closeInput(mInputs.keyAt(input_index));
-            mInputs.removeItem(mInputs.keyAt(input_index));
+            mpClientInterface->closeInput(mInputs.keyAt(input_index-1));
+            mInputs.removeItem(mInputs.keyAt(input_index-1));
         }
     }
     nextAudioPortGeneration();
