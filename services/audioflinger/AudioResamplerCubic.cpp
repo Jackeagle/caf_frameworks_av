@@ -32,7 +32,7 @@ void AudioResamplerCubic::init() {
     memset(&right, 0, sizeof(state));
 }
 
-void AudioResamplerCubic::resample(int32_t* out, size_t outFrameCount,
+size_t AudioResamplerCubic::resample(int32_t* out, size_t outFrameCount,
         AudioBufferProvider* provider) {
 
     // should never happen, but we overflow if it does
@@ -47,6 +47,7 @@ void AudioResamplerCubic::resample(int32_t* out, size_t outFrameCount,
         resampleStereo16(out, outFrameCount, provider);
         break;
     }
+    return outFrameCount;
 }
 
 void AudioResamplerCubic::resampleStereo16(int32_t* out, size_t outFrameCount,

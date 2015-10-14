@@ -477,15 +477,16 @@ void AudioResamplerDyn<TC, TI, TO>::setSampleRate(int32_t inSampleRate)
 }
 
 template<typename TC, typename TI, typename TO>
-void AudioResamplerDyn<TC, TI, TO>::resample(int32_t* out, size_t outFrameCount,
+size_t AudioResamplerDyn<TC, TI, TO>::resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider)
 {
     (this->*mResampleFunc)(reinterpret_cast<TO*>(out), outFrameCount, provider);
+    return outFrameCount;
 }
 
 template<typename TC, typename TI, typename TO>
 template<int CHANNELS, bool LOCKED, int STRIDE>
-void AudioResamplerDyn<TC, TI, TO>::resample(TO* out, size_t outFrameCount,
+size_t AudioResamplerDyn<TC, TI, TO>::resample(TO* out, size_t outFrameCount,
         AudioBufferProvider* provider)
 {
     // TODO Mono -> Mono is not supported. OUTPUT_CHANNELS reflects minimum of stereo out.
@@ -610,6 +611,7 @@ resample_exit:
     ALOG_ASSERT(mBuffer.frameCount == 0); // there must be no frames in the buffer
     mInBuffer.setImpulse(impulse);
     mPhaseFraction = phaseFraction;
+    return outFrameCount;
 }
 
 /* instantiate templates used by AudioResampler::create */

@@ -102,6 +102,8 @@ protected:
     bool isResumePending();
     void resumeAck();
     void signalError();
+    bool isRamping() const { return mIsRamping; }
+    void setRamping(bool val) { mIsRamping = val; }
 
     bool isOutputTrack() const {
         return (mStreamType == AUDIO_STREAM_CNT);
@@ -160,6 +162,7 @@ private:
     AudioTrackServerProxy*  mAudioTrackServerProxy;
     bool                mResumeToStopping; // track was paused in stopping state.
     bool                mFlushHwPending; // track requests for thread flush
+    bool                mIsRamping;;
 
     // for last call to getTimestamp
     bool                mPreviousValid;
