@@ -1152,6 +1152,9 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
          Mutex::Autolock autoLock(mLock);
          syncQueuesDone_l();
          setPauseStartedTimeRealUs(-1);
+         mPausePositionMediaTimeUs = -1;
+         mNumFramesWritten = 0;
+         mAnchorNumFramesWritten = -1;
          setAnchorTime(-1, -1);
     }
 
@@ -1171,11 +1174,10 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
 
         mDrainAudioQueuePending = false;
 
-        if (offloadingAudio()) {
-            mAudioSink->pause();
-            mAudioSink->flush();
-            mAudioSink->start();
-        }
+        mAudioSink->pause();
+        mAudioSink->flush();
+        mAudioSink->start();
+
     } else {
         flushQueue(&mVideoQueue);
 
