@@ -172,7 +172,7 @@ status_t LiveSession::dequeueAccessUnit(
     if (mBuffering[idx]) {
         if (mSwitchInProgress
                 || packetSource->isFinished(0)
-                || packetSource->getEstimatedDurationUs() > targetDurationUs) {
+                || packetSource->getEstimatedDurationUs() >= targetDurationUs) {
             mBuffering[idx] = false;
         }
     }
