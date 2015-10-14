@@ -221,7 +221,7 @@ status_t LiveSession::dequeueAccessUnit(
     if (mBuffering[idx]) {
         if (mSwitchInProgress
                 || packetSource->isFinished(0)
-                || packetSource->getEstimatedDurationUs() > targetDurationUs) {
+                || packetSource->getEstimatedDurationUs() >= targetDurationUs) {
 
             if ((mHLSExtStats != NULL) && (STREAMTYPE_VIDEO == stream))  {
                 mHLSExtStats->updateBufferingStats(false, (int64_t)ALooper::GetNowUs());
