@@ -406,6 +406,7 @@ private:
 
     mutable     Mutex                       mLock;
                 SortedVector< wp<Client> >  mClients;
+                SortedVector< wp<Client> >  mCacheClients;
                 SortedVector< wp<MediaRecorderClient> > mMediaRecorderClients;
                 int32_t                     mNextConnId;
                 sp<IOMX>                    mOMX;

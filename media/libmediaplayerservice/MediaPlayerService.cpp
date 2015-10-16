@@ -331,6 +331,7 @@ sp<IMediaPlayer> MediaPlayerService::create(const sp<IMediaPlayerClient>& client
 {
     pid_t pid = IPCThreadState::self()->getCallingPid();
     int32_t connId = android_atomic_inc(&mNextConnId);
+    char propValue[PROP_VALUE_MAX];
 
     sp<Client> c = new Client(
             this, pid, connId, client, audioSessionId,
@@ -338,6 +339,47 @@ sp<IMediaPlayer> MediaPlayerService::create(const sp<IMediaPlayerClient>& client
 
     ALOGV("Create new client(%d) from pid %d, uid %d, ", connId, pid,
          IPCThreadState::self()->getCallingUid());
+
+    property_get("early.audio.start",propValue,"0");
+
+    if (atoi(propValue) == 1) {
+        // handle earlyaudio takeover
+        property_get("early.audionative.id",propValue,"0");
+        int earlyAudioNativeId = atoi(propValue);
+        property_get("early.audioapp.id",propValue,"0");
+        int earlyAudioAppId = atoi(propValue);
+
+        // earlyaudio native app - create client object & save
+        if (audioSessionId == earlyAudioNativeId) {
+            ALOGV("early audio Native app cache %d", audioSessionId);
+            // saving native app client object to cache
+            wp<Client> w = c;
+            {
+                mCacheClients.clear();
+                mCacheClients.add(w);
+            }
+        }
+
+        // earlyaudio java app takeover - get the native app client object from cache
+        if (audioSessionId == earlyAudioAppId) {
+            ALOGV("earlyaudio java app returning cache %d", audioSessionId);
+            int n = mCacheClients.size();
+
+            sp < Client > c;
+            for (int i = 0; i < n; i++) {
+                c = mCacheClients[i].promote();
+            }
+            wp<Client> w = c;
+            {
+                mCacheClients.add(w);
+            }
+            Parcel* obj;
+            // notify to earlyaudio Native App to exit.
+            c->mClient->notify(MEDIA_ERROR,MEDIA_ERROR_NOT_VALID_FOR_PROGRESSIVE_PLAYBACK, 0, obj);
+            c->mClient = client;
+            return c;
+        }
+    }
 
     wp<Client> w = c;
     {
