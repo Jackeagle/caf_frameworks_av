@@ -684,6 +684,8 @@ private:
     map<string, string> mMap;
 };
 
+void parseSizesList(const char *sizesStr, vector<Size> &sizes);
+
 }; // namespace android
 
 #endif

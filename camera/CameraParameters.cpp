@@ -319,8 +319,8 @@ void CameraParameters::remove(const char *key)
 }
 
 // Parse string like "640x480" or "10000,20000"
-static int parse_pair(const char *str, int *first, int *second, char delim,
-                      char **endptr = NULL)
+int parse_pair(const char *str, int *first, int *second, char delim,
+                      char **endptr=NULL)
 {
     // Find the first integer.
     char *end;
@@ -344,7 +344,7 @@ static int parse_pair(const char *str, int *first, int *second, char delim,
     return 0;
 }
 
-static void parseSizesList(const char *sizesStr, vector<Size> &sizes)
+void parseSizesList(const char *sizesStr, vector<Size> &sizes)
 {
     if (sizesStr == 0) {
         return;
