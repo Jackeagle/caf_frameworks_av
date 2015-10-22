@@ -30,7 +30,7 @@
 #include <binder/IPCThreadState.h>
 
 #include <gui/Surface.h>
-
+#include <cutils/properties.h>
 #include <media/mediaplayer.h>
 #include <media/AudioResamplerPublic.h>
 #include <media/AudioSystem.h>
@@ -71,7 +71,15 @@ MediaPlayer::MediaPlayer()
 
 MediaPlayer::~MediaPlayer()
 {
+    char propValue[PROP_VALUE_MAX];
     ALOGV("destructor");
+
+    property_get("early.audionative.id",propValue,"0");
+    // Do not delete early audio native app object
+    if (mAudioSessionId == atoi(propValue)) {
+       return;
+    }
+
     if (mAudioAttributesParcel != NULL) {
         delete mAudioAttributesParcel;
         mAudioAttributesParcel = NULL;
@@ -170,13 +178,28 @@ status_t MediaPlayer::setDataSource(int fd, int64_t offset, int64_t length)
     ALOGV("setDataSource(%d, %" PRId64 ", %" PRId64 ")", fd, offset, length);
     status_t err = UNKNOWN_ERROR;
     const sp<IMediaPlayerService>& service(getMediaPlayerService());
-    if (service != 0) {
+    int earlyAudioAppId = 0;
+    char propValue[PROP_VALUE_MAX];
+
+    property_get("early.audioapp.id",propValue,"0");
+    earlyAudioAppId = atoi(propValue);
+    property_get("early.audio.start",propValue,"0");
+
+    if ((atoi(propValue) == 1) && (mAudioSessionId == earlyAudioAppId)) {
         sp<IMediaPlayer> player(service->create(this, mAudioSessionId));
-        if ((NO_ERROR != doSetRetransmitEndpoint(player)) ||
-            (NO_ERROR != player->setDataSource(fd, offset, length))) {
-            player.clear();
+        mCurrentState = MEDIA_PLAYER_STARTED;
+        mPlayer = player;
+        err = NO_ERROR;
+        ALOGV("setDataSource returning NO_ERROR");
+    } else {
+        if (service != 0) {
+            sp<IMediaPlayer> player(service->create(this, mAudioSessionId));
+            if ((NO_ERROR != doSetRetransmitEndpoint(player)) ||
+                (NO_ERROR != player->setDataSource(fd, offset, length))) {
+                player.clear();
+            }
+            err = attachNewPlayer(player);
         }
-        err = attachNewPlayer(player);
     }
     return err;
 }

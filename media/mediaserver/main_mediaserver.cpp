@@ -38,6 +38,7 @@
 #include "service/AudioPolicyService.h"
 #include "SoundTriggerHwService.h"
 #include "RadioService.h"
+#define PROP_NAME "sys.mediaserver.ready"
 
 using namespace android;
 
@@ -131,6 +132,8 @@ int main(int argc __unused, char** argv)
         ALOGI("ServiceManager: %p", sm.get());
         AudioFlinger::instantiate();
         MediaPlayerService::instantiate();
+        // notify earlyaudio native app
+        property_set(PROP_NAME, "1");
         ResourceManagerService::instantiate();
         CameraService::instantiate();
         AudioPolicyService::instantiate();
