@@ -28,6 +28,7 @@
 #include <../libstagefright/include/WVMExtractor.h>
 
 #include "MediaPlayerFactory.h"
+#include "FLACExtractor.h"
 
 #include "MidiFile.h"
 #include "TestPlayerStub.h"
@@ -185,31 +186,21 @@ class StagefrightPlayerFactory :
                                int64_t offset,
                                int64_t length,
                                float /*curScore*/) {
+        sp<DataSource> source;
+        String8 mimeType;
+        float confidence;
 
 #ifdef QTI_FLAC_DECODER
         // Flac playback forced to Awesomeplayer
         if (fd) {
-            char symName[40] = {0};
-            char fileName[256] = {0};
-            snprintf(symName, sizeof(symName), "/proc/%d/fd/%d", getpid(), fd);
-
-            if (readlink(symName, fileName, (sizeof(fileName) - 1)) != -1 ) {
-                static const char* extn = ".flac";
-                uint32_t lenExtn = strlen(extn);
-                uint32_t lenFileName = strlen(fileName);
-                uint32_t start = lenFileName - lenExtn;
-                if (start > 0) {
-                    if (!strncasecmp(fileName + start, extn, lenExtn)) {
-                        return 1.0;
-                    }
-                }
+            source = new FileSource(dup(fd), offset, length);
+            if (SniffFLAC(source, &mimeType, &confidence, NULL)) {
+                return 1.0;
             }
         }
 #endif
         if (legacyDrm()) {
-            sp<DataSource> source = new FileSource(dup(fd), offset, length);
-            String8 mimeType;
-            float confidence;
+            source = new FileSource(dup(fd), offset, length);
             if (SniffWVM(source, &mimeType, &confidence, NULL /* format */)) {
                 return 1.0;
             }
