@@ -1634,15 +1634,27 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 // each chunk originally prefixed with a 2 byte length will
                 // have a 4 byte header (0x00 0x00 0x00 0x01) after conversion,
                 // and thus will grow by 2 bytes per chunk.
+                if (max_size > SIZE_MAX - 10 * 2) {
+                    ALOGE("max sample size too big: %zu", max_size);
+                    return ERROR_MALFORMED;
+                }
                 mLastTrack->meta->setInt32(kKeyMaxInputSize, max_size + 10 * 2);
             } else {
                 // No size was specified. Pick a conservatively large size.
-                int32_t width, height;
-                if (!mLastTrack->meta->findInt32(kKeyWidth, &width) ||
-                    !mLastTrack->meta->findInt32(kKeyHeight, &height)) {
+                uint32_t width, height;
+                if (!mLastTrack->meta->findInt32(kKeyWidth, (int32_t*)&width) ||
+                    !mLastTrack->meta->findInt32(kKeyHeight,(int32_t*) &height)) {
                     ALOGE("No width or height, assuming worst case 1080p");
                     width = 1920;
                     height = 1080;
+                } else {
+                    // A resolution was specified, check that it's not too big. The values below
+                    // were chosen so that the calculations below don't cause overflows, they're
+                    // not indicating that resolutions up to 32kx32k are actually supported.
+                    if (width > 32768 || height > 32768) {
+                        ALOGE("can't support %u x %u video", width, height);
+                        return ERROR_MALFORMED;
+                    }
                 }
 
                 const char *mime;
@@ -2143,7 +2155,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 ALOGV("chunk_data_size = %lld and data_offset = %lld",
                         chunk_data_size, data_offset);
 
-                if (chunk_data_size >= SIZE_MAX - 1) {
+                if (chunk_data_size < 0 || static_cast<uint64_t>(chunk_data_size) >= SIZE_MAX - 1) {
                     return ERROR_MALFORMED;
                 }
                 sp<ABuffer> buffer = new ABuffer(chunk_data_size + 1);
@@ -2430,7 +2442,7 @@ status_t MPEG4Extractor::parseTrackHeader(
 }
 
 status_t MPEG4Extractor::parseITunesMetaData(off64_t offset, size_t size) {
-    if (size < 4) {
+    if (size < 4 || size == SIZE_MAX) {
         return ERROR_MALFORMED;
     }
 
@@ -3566,8 +3578,17 @@ status_t MPEG4Source::parseSampleAuxiliaryInformationOffsets(
     int ivlength;
     CHECK(mFormat->findInt32(kKeyCryptoDefaultIVSize, &ivlength));
 
+    // only 0, 8 and 16 byte initialization vectors are supported
+    if (ivlength != 0 && ivlength != 8 && ivlength != 16) {
+        ALOGW("unsupported IV length: %d", ivlength);
+        return ERROR_MALFORMED;
+    }
     // read CencSampleAuxiliaryDataFormats
     for (size_t i = 0; i < mCurrentSampleInfoCount; i++) {
+        if (i >= mCurrentSamples.size()) {
+            ALOGW("too few samples");
+            break;
+        }
         Sample *smpl = &mCurrentSamples.editItemAt(i);
 
         memset(smpl->iv, 0, 16);
@@ -4013,6 +4034,10 @@ status_t MPEG4Source::read(
             CHECK(mBuffer == NULL);
             return err;
         }
+        if (size > mBuffer->size()) {
+            ALOGE("buffer too small: %zu > %zu", size, mBuffer->size());
+            return ERROR_BUFFER_TOO_SMALL;
+        }
     }
 
     if ((!mIsAVC && !mIsHEVC) || mWantsNALFragments) {
@@ -4273,6 +4298,10 @@ status_t MPEG4Source::fragmentedRead(
             ALOGV("acquire_buffer returned %d", err);
             return err;
         }
+        if (size > mBuffer->size()) {
+            ALOGE("buffer too small: %zu > %zu", size, mBuffer->size());
+            return ERROR_BUFFER_TOO_SMALL;
+        }
     }
 
     const Sample *smpl = &mCurrentSamples[mCurrentSampleIndex];
@@ -4292,6 +4321,14 @@ status_t MPEG4Source::fragmentedRead(
 
     if ((!mIsAVC && !mIsHEVC)|| mWantsNALFragments) {
         if (newBuffer) {
+            if (!isInRange((size_t)0u, mBuffer->size(), size)) {
+                mBuffer->release();
+                mBuffer = NULL;
+
+                ALOGE("fragmentedRead ERROR_MALFORMED size %zu", size);
+                return ERROR_MALFORMED;
+            }
+
             ssize_t num_bytes_read =
                 mDataSource->readAt(offset, (uint8_t *)mBuffer->data(), size);
 
@@ -4299,7 +4336,7 @@ status_t MPEG4Source::fragmentedRead(
                 mBuffer->release();
                 mBuffer = NULL;
 
-                ALOGV("i/o error");
+                ALOGE("i/o error");
                 return ERROR_IO;
             }
 
@@ -4371,18 +4408,40 @@ status_t MPEG4Source::fragmentedRead(
         ssize_t num_bytes_read = 0;
         int32_t drm = 0;
         bool usesDRM = (mFormat->findInt32(kKeyIsDRM, &drm) && drm != 0);
+        void *data = NULL;
+        bool isMalFormed = false;
         if (usesDRM) {
-            num_bytes_read =
-                mDataSource->readAt(offset, (uint8_t*)mBuffer->data(), size);
+            if (mBuffer == NULL || !isInRange((size_t)0u, mBuffer->size(), size)) {
+                isMalFormed = true;
+            } else {
+                data = mBuffer->data();
+            }
         } else {
-            num_bytes_read = mDataSource->readAt(offset, mSrcBuffer, size);
+            int32_t max_size;
+            if (mFormat == NULL
+                    || !mFormat->findInt32(kKeyMaxInputSize, &max_size)
+                    || !isInRange((size_t)0u, (size_t)max_size, size)) {
+                isMalFormed = true;
+            } else {
+                data = mSrcBuffer;
+            }
         }
+
+        if (isMalFormed || data == NULL) {
+            ALOGE("isMalFormed size %zu", size);
+            if (mBuffer != NULL) {
+                mBuffer->release();
+                mBuffer = NULL;
+            }
+            return ERROR_MALFORMED;
+        }
+        num_bytes_read = mDataSource->readAt(offset, data, size);
 
         if (num_bytes_read < (ssize_t)size) {
             mBuffer->release();
             mBuffer = NULL;
 
-            ALOGV("i/o error");
+            ALOGE("i/o error");
             return ERROR_IO;
         }
 
@@ -4405,7 +4464,7 @@ status_t MPEG4Source::fragmentedRead(
                 }
 
                 if (isMalFormed) {
-                    ALOGE("Video is malformed");
+                    ALOGE("Video is malformed; nalLength %zu", nalLength);
                     mBuffer->release();
                     mBuffer = NULL;
                     return ERROR_MALFORMED;
