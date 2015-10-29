@@ -1844,18 +1844,20 @@ ssize_t MediaPlayerService::AudioOutput::write(const void* buffer, size_t size)
 void MediaPlayerService::AudioOutput::stop()
 {
     ALOGV("stop");
+    mBytesWritten = 0;
     if (mTrack != 0) mTrack->stop();
 }
 
-void MediaPlayerService::AudioOutput::flush()
+void MediaPlayerService::AudioOutput::flush(bool partial)
 {
     ALOGV("flush");
-    if (mTrack != 0) mTrack->flush();
+    if (mTrack != 0) mTrack->flush(partial);
 }
 
 void MediaPlayerService::AudioOutput::pause()
 {
     ALOGV("pause");
+    mBytesWritten = 0;
     if (mTrack != 0) mTrack->pause();
 }
 

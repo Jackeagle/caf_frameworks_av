@@ -59,6 +59,11 @@ struct AudioTrackSharedStreaming {
     volatile int32_t mRear;     // write by client
     volatile int32_t mFlush;    // incremented by client to indicate a request to flush;
                                 // server notices and discards all data between mFront and mRear
+    volatile bool mPartialFlush;    // set by client to indicate a request to flush partially;
+                                    // server allows one more chance to obtainBuffer() and
+                                    // then discard all data remaining.
+    volatile bool mFlushPending;    // hints partial flush is still pending.
+    volatile int32_t mOldRear;
     volatile uint32_t mUnderrunFrames;  // server increments for each unavailable but desired frame
 };
 
@@ -292,7 +297,7 @@ public:
         mCblk->mSampleRate = sampleRate;
     }
 
-    virtual void flush();
+    virtual void flush(bool partial = false);
 
     virtual uint32_t    getUnderrunFrames() const {
         return mCblk->u.mStreaming.mUnderrunFrames;

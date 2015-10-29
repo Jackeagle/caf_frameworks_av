@@ -48,7 +48,7 @@ public:
     AudioResamplerOrder1(int inChannelCount, int32_t sampleRate) :
         AudioResampler(inChannelCount, sampleRate, LOW_QUALITY), mX0L(0), mX0R(0) {
     }
-    virtual void resample(int32_t* out, size_t outFrameCount,
+    virtual size_t resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider);
 private:
     // number of bits used in interpolation multiply - 15 bits avoids overflow
@@ -357,7 +357,7 @@ void AudioResampler::reset() {
 
 // ----------------------------------------------------------------------------
 
-void AudioResamplerOrder1::resample(int32_t* out, size_t outFrameCount,
+size_t AudioResamplerOrder1::resample(int32_t* out, size_t outFrameCount,
         AudioBufferProvider* provider) {
 
     // should never happen, but we overflow if it does
@@ -372,6 +372,7 @@ void AudioResamplerOrder1::resample(int32_t* out, size_t outFrameCount,
         resampleStereo16(out, outFrameCount, provider);
         break;
     }
+    return outFrameCount;
 }
 
 void AudioResamplerOrder1::resampleStereo16(int32_t* out, size_t outFrameCount,

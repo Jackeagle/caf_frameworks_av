@@ -1175,9 +1175,8 @@ void NuPlayer::Renderer::onFlush(const sp<AMessage> &msg) {
         mDrainAudioQueuePending = false;
 
         mAudioSink->pause();
-        mAudioSink->flush();
+        mAudioSink->flush(offloadingAudio() ? false : true /* partial flush */);
         mAudioSink->start();
-
     } else {
         flushQueue(&mVideoQueue);
 

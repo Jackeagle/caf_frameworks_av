@@ -313,7 +313,7 @@ public:
      * Flush is intended for streaming mode, for example before switching to non-contiguous content.
      * This function is a no-op if the track is not stopped or paused, or uses a static buffer.
      */
-            void        flush();
+            void        flush(bool partial = true);
 
     /* Pause a track. After pause, the callback will cease being called and
      * obtainBuffer returns WOULD_BLOCK. Note that obtainBuffer() still works
@@ -650,7 +650,7 @@ protected:
             status_t createTrack_l();
 
             // can only be called when mState != STATE_ACTIVE
-            void flush_l();
+            void flush_l(bool partial);
 
             void setLoop_l(uint32_t loopStart, uint32_t loopEnd, int loopCount);
 
