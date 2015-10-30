@@ -598,6 +598,8 @@ status_t MediaCodec::getBufferAndFormat(
             }
             *format = info.mFormat;
         }
+    } else {
+        return BAD_INDEX;
     }
     return OK;
 }
