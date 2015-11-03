@@ -243,7 +243,7 @@ bool NuPlayer::IsHTTPLiveURL(const char *url) {
             return true;
         }
 
-        if (strstr(url,".m3u8")) {
+        if (strstr(url,"m3u8")) {
             return true;
         }
     }
@@ -1167,6 +1167,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     new FlushDecoderAction(
                         FLUSH_CMD_SHUTDOWN /* audio */,
                         FLUSH_CMD_SHUTDOWN /* video */));
+
+            mDeferredActions.push_back(
+                    new SimpleAction(&NuPlayer::closeAudioSink));
 
             mDeferredActions.push_back(
                     new SimpleAction(&NuPlayer::performReset));
