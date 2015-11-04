@@ -538,6 +538,7 @@ int MidiFile::render() {
             case EAS_STATE_STOPPED:
             {
                 ALOGV("MidiFile::render - stopped");
+                getDuration((int *)&mDuration);
                 mPlayTime = mDuration;
                 sendEvent(MEDIA_PLAYBACK_COMPLETE);
                 break;
