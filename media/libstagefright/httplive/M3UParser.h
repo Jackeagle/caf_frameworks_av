@@ -21,6 +21,7 @@
 #include <media/stagefright/foundation/ABase.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AString.h>
+#include <media/mediaplayer.h>
 #include <utils/Vector.h>
 
 namespace android {
@@ -35,6 +36,9 @@ struct M3UParser : public RefBase {
     bool isComplete() const;
     bool isEvent() const;
     size_t getDiscontinuitySeq() const;
+    int64_t getTargetDuration() const;
+    int32_t getFirstSeqNumber() const;
+    void getSeqNumberRange(int32_t *firstSeq, int32_t *lastSeq) const;
 
     sp<AMessage> meta();
 
@@ -46,8 +50,10 @@ struct M3UParser : public RefBase {
     size_t getTrackCount() const;
     sp<AMessage> getTrackInfo(size_t index) const;
     ssize_t getSelectedIndex() const;
+    ssize_t getSelectedTrack(media_track_type /* type */) const;
 
     bool getTypeURI(size_t index, const char *key, AString *uri) const;
+    bool hasType(size_t index, const char *key) const;
 
 protected:
     virtual ~M3UParser();
@@ -67,7 +73,11 @@ private:
     bool mIsVariantPlaylist;
     bool mIsComplete;
     bool mIsEvent;
+    int32_t mFirstSeqNumber;
+    int32_t mLastSeqNumber;
+    int64_t mTargetDurationUs;
     size_t mDiscontinuitySeq;
+    int32_t mDiscontinuityCount;
 
     sp<AMessage> mMeta;
     Vector<Item> mItems;

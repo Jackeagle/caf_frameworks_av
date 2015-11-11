@@ -13,25 +13,6 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
- *
- * This file was modified by Dolby Laboratories, Inc. The portions of the
- * code that are surrounded by "DOLBY..." are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2014 Dolby Laboratories, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
 */
 
 
@@ -39,9 +20,11 @@
 //#define LOG_NDEBUG 0
 
 #include "Configuration.h"
+#include <linux/futex.h>
 #include <math.h>
 #include <sys/syscall.h>
 #include <utils/Log.h>
+#include <media/stagefright/foundation/ADebug.h>
 
 #include <private/media/AudioTrackShared.h>
 
@@ -55,9 +38,6 @@
 #include <media/nbaio/Pipe.h>
 #include <media/nbaio/PipeReader.h>
 #include <audio_utils/minifloat.h>
-#ifdef DOLBY_UDC
-#include <media/AudioParameter.h>
-#endif // DOLBY_UDC
 
 // ----------------------------------------------------------------------------
 
@@ -135,7 +115,7 @@ AudioFlinger::ThreadBase::TrackBase::TrackBase(
 
     // ALOGD("Creating track with %d buffers @ %d bytes", bufferCount, bufferSize);
     size_t size = sizeof(audio_track_cblk_t);
-    size_t bufferSize = (((buffer == NULL) && audio_is_linear_pcm(format)) ? roundup(frameCount) : frameCount) * mFrameSize;
+    size_t bufferSize = (buffer == NULL ? roundup(frameCount) : frameCount) * mFrameSize;
     if (buffer == NULL && alloc == ALLOC_CBLK) {
         size += bufferSize;
     }
@@ -425,10 +405,7 @@ AudioFlinger::PlaybackThread::Track::Track(
     mIsInvalid(false),
     mAudioTrackServerProxy(NULL),
     mResumeToStopping(false),
-    mFlushHwPending(false),
-    mPreviousValid(false),
-    mPreviousFramesWritten(0)
-    // mPreviousTimestamp
+    mFlushHwPending(false)
 {
     // client == 0 implies sharedBuffer == 0
     ALOG_ASSERT(!(client == 0 && sharedBuffer != 0));
@@ -465,8 +442,6 @@ AudioFlinger::PlaybackThread::Track::Track(
         //       this means we are potentially denying other more important fast tracks from
         //       being created.  It would be better to allocate the index dynamically.
         mFastIndex = i;
-        // Read the initial underruns because this field is never cleared by the fast mixer
-        mObservedUnderruns = thread->getFastTrackUnderruns(i);
         thread->mFastTrackAvailMask &= ~(1 << i);
     }
 }
@@ -513,12 +488,8 @@ void AudioFlinger::PlaybackThread::Track::destroy()
             wasActive = playbackThread->destroyTrack_l(this);
         }
         if (isExternalTrack() && !wasActive) {
-            AudioSystem::releaseOutput(mThreadIoHandle);
+            AudioSystem::releaseOutput(mThreadIoHandle, mStreamType, (audio_session_t)mSessionId);
         }
-#ifdef DOLBY_UDC
-        // Notify effect DAP controller that processed audio is no longer available
-        EffectDapController::instance()->setProcessedAudioState(mId, false);
-#endif // DOLBY_END
     }
 }
 
@@ -637,15 +608,16 @@ status_t AudioFlinger::PlaybackThread::Track::getNextBuffer(
 
 // ExtendedAudioBufferProvider interface
 
-// Note that framesReady() takes a mutex on the control block using tryLock().
-// This could result in priority inversion if framesReady() is called by the normal mixer,
-// as the normal mixer thread runs at lower
-// priority than the client's callback thread:  there is a short window within framesReady()
-// during which the normal mixer could be preempted, and the client callback would block.
-// Another problem can occur if framesReady() is called by the fast mixer:
-// the tryLock() could block for up to 1 ms, and a sequence of these could delay fast mixer.
-// FIXME Replace AudioTrackShared control block implementation by a non-blocking FIFO queue.
+// framesReady() may return an approximation of the number of frames if called
+// from a different thread than the one calling Proxy->obtainBuffer() and
+// Proxy->releaseBuffer(). Also note there is no mutual exclusion in the
+// AudioTrackServerProxy so be especially careful calling with FastTracks.
 size_t AudioFlinger::PlaybackThread::Track::framesReady() const {
+    if (mSharedBuffer != 0 && (isStopped() || isStopping())) {
+        // Static tracks return zero frames immediately upon stopping (for FastTracks).
+        // The remainder of the buffer is not drained.
+        return 0;
+    }
     return mAudioTrackServerProxy->framesReady();
 }
 
@@ -656,7 +628,7 @@ size_t AudioFlinger::PlaybackThread::Track::framesReleased() const
 
 // Don't call for fast tracks; the framesReady() could result in priority inversion
 bool AudioFlinger::PlaybackThread::Track::isReady() const {
-    if (mFillingUpStatus != FS_FILLING || isStopped() || isPausing() || isStopping()) {
+    if (mFillingUpStatus != FS_FILLING || isStopped() || isPausing()) {
         return true;
     }
 
@@ -718,6 +690,12 @@ status_t AudioFlinger::PlaybackThread::Track::start(AudioSystem::sync_event_t ev
         }
 
         PlaybackThread *playbackThread = (PlaybackThread *)thread.get();
+        if (isFastTrack()) {
+            // refresh fast track underruns on start because that field is never cleared
+            // by the fast mixer; furthermore, the same track can be recycled, i.e. start
+            // after stop.
+            mObservedUnderruns = playbackThread->getFastTrackUnderruns(mFastIndex);
+        }
         status = playbackThread->addTrack_l(this);
         if (status == INVALID_OPERATION || status == PERMISSION_DENIED) {
             triggerEvents(AudioSystem::SYNC_EVENT_PRESENTATION_COMPLETE);
@@ -767,6 +745,7 @@ void AudioFlinger::PlaybackThread::Track::stop()
                 // move to STOPPING_2 when drain completes and then STOPPED
                 mState = STOPPING_1;
             }
+            playbackThread->broadcast_l();
             ALOGV("not stopping/stopped => stopping/stopped (%d) on thread %p", mName,
                     playbackThread);
         }
@@ -848,12 +827,11 @@ void AudioFlinger::PlaybackThread::Track::flush()
             // this will be done by prepareTracks_l() when the track is stopped.
             // prepareTracks_l() will see mState == FLUSHED, then
             // remove from active track list, reset(), and trigger presentation complete
+            if (isDirect()) {
+                mFlushHwPending = true;
+            }
             if (playbackThread->mActiveTracks.indexOf(this) < 0) {
                 reset();
-                if (thread->type() == ThreadBase::DIRECT) {
-                    DirectOutputThread *t = (DirectOutputThread *)playbackThread;
-                    t->flushHw_l();
-                }
             }
         }
         // Prevent flush being lost if the track is flushed and then resumed
@@ -866,24 +844,10 @@ void AudioFlinger::PlaybackThread::Track::flush()
 // must be called with thread lock held
 void AudioFlinger::PlaybackThread::Track::flushAck()
 {
-    if (!isOffloaded())
+    if (!isOffloaded() && !isDirect())
         return;
 
     mFlushHwPending = false;
-}
-
-void AudioFlinger::PlaybackThread::Track::signalError()
-{
-    // TBD, is this needed for pcm too?
-    if (!isOffloaded())
-        return;
-
-    // FIXME should use proxy, and needs work
-    audio_track_cblk_t* cblk = mCblk;
-    android_atomic_or(CBLK_STREAM_FATAL_ERROR, &cblk->mFlags);
-    android_atomic_release_store(0x40000000, &cblk->mFutex);
-    // client is not in server, so FUTEX_WAKE is needed instead of FUTEX_WAKE_PRIVATE
-    (void) syscall(__NR_futex, &cblk->mFutex, FUTEX_WAKE, INT_MAX);
 }
 
 void AudioFlinger::PlaybackThread::Track::reset()
@@ -904,14 +868,6 @@ void AudioFlinger::PlaybackThread::Track::reset()
 
 status_t AudioFlinger::PlaybackThread::Track::setParameters(const String8& keyValuePairs)
 {
-#ifdef DOLBY_UDC
-    AudioParameter ap(keyValuePairs);
-    int value = 0;
-    // Bypass DAP if processed audio is flowing through this track.
-    if (ap.getInt(String8(DOLBY_PARAM_PROCESSED_AUDIO), value) == NO_ERROR) {
-        return EffectDapController::instance()->setProcessedAudioState(mId, value);
-    }
-#endif // DOLBY_END
     sp<ThreadBase> thread = mThread.promote();
     if (thread == 0) {
         ALOGE("thread is dead");
@@ -928,24 +884,27 @@ status_t AudioFlinger::PlaybackThread::Track::getTimestamp(AudioTimestamp& times
 {
     // Client should implement this using SSQ; the unpresented frame count in latch is irrelevant
     if (isFastTrack()) {
-        // FIXME no lock held to set mPreviousValid = false
         return INVALID_OPERATION;
     }
     sp<ThreadBase> thread = mThread.promote();
     if (thread == 0) {
-        // FIXME no lock held to set mPreviousValid = false
         return INVALID_OPERATION;
     }
+
     Mutex::Autolock _l(thread->mLock);
     PlaybackThread *playbackThread = (PlaybackThread *)thread.get();
+
+    status_t result = INVALID_OPERATION;
     if (!isOffloaded() && !isDirect()) {
         if (!playbackThread->mLatchQValid) {
-            mPreviousValid = false;
             return INVALID_OPERATION;
         }
-        uint32_t unpresentedFrames =
-                ((int64_t) playbackThread->mLatchQ.mUnpresentedFrames * mSampleRate) /
-                playbackThread->mSampleRate;
+        // FIXME Not accurate under dynamic changes of sample rate and speed.
+        // Do not use track's mSampleRate as it is not current for mixer tracks.
+        uint32_t sampleRate = mAudioTrackServerProxy->getSampleRate();
+        AudioPlaybackRate playbackRate = mAudioTrackServerProxy->getPlaybackRate();
+        uint32_t unpresentedFrames = ((double) playbackThread->mLatchQ.mUnpresentedFrames *
+                sampleRate * playbackRate.mSpeed)/ playbackThread->mSampleRate;
         // FIXME Since we're using a raw pointer as the key, it is theoretically possible
         //       for a brand new track to share the same address as a recently destroyed
         //       track, and thus for us to get the frames released of the wrong track.
@@ -956,36 +915,16 @@ status_t AudioFlinger::PlaybackThread::Track::getTimestamp(AudioTimestamp& times
         uint32_t framesWritten = i >= 0 ?
                 playbackThread->mLatchQ.mFramesReleased[i] :
                 mAudioTrackServerProxy->framesReleased();
-        bool checkPreviousTimestamp = mPreviousValid && framesWritten >= mPreviousFramesWritten;
-        if (framesWritten < unpresentedFrames) {
-            mPreviousValid = false;
-            return INVALID_OPERATION;
+        if (framesWritten >= unpresentedFrames) {
+            timestamp.mPosition = framesWritten - unpresentedFrames;
+            timestamp.mTime = playbackThread->mLatchQ.mTimestamp.mTime;
+            result = NO_ERROR;
         }
-        mPreviousFramesWritten = framesWritten;
-        uint32_t position = framesWritten - unpresentedFrames;
-        struct timespec time = playbackThread->mLatchQ.mTimestamp.mTime;
-        if (checkPreviousTimestamp) {
-            if (time.tv_sec < mPreviousTimestamp.mTime.tv_sec ||
-                    (time.tv_sec == mPreviousTimestamp.mTime.tv_sec &&
-                    time.tv_nsec < mPreviousTimestamp.mTime.tv_nsec)) {
-                ALOGW("Time is going backwards");
-            }
-            // position can bobble slightly as an artifact; this hides the bobble
-            static const uint32_t MINIMUM_POSITION_DELTA = 8u;
-            if ((position <= mPreviousTimestamp.mPosition) ||
-                    (position - mPreviousTimestamp.mPosition) < MINIMUM_POSITION_DELTA) {
-                position = mPreviousTimestamp.mPosition;
-                time = mPreviousTimestamp.mTime;
-            }
-        }
-        timestamp.mPosition = position;
-        timestamp.mTime = time;
-        mPreviousTimestamp = timestamp;
-        mPreviousValid = true;
-        return NO_ERROR;
+    } else { // offloaded or direct
+        result = playbackThread->getTimestamp_l(timestamp);
     }
 
-    return playbackThread->getTimestamp_l(timestamp);
+    return result;
 }
 
 status_t AudioFlinger::PlaybackThread::Track::attachAuxEffect(int EffectId)
@@ -1704,8 +1643,9 @@ AudioFlinger::PlaybackThread::OutputTrack::OutputTrack(
             audio_channel_mask_t channelMask,
             size_t frameCount,
             int uid)
-    :   Track(playbackThread, NULL, AUDIO_STREAM_CNT, sampleRate, format, channelMask, frameCount,
-                NULL, 0, 0, uid, IAudioFlinger::TRACK_DEFAULT, TYPE_OUTPUT),
+    :   Track(playbackThread, NULL, AUDIO_STREAM_PATCH,
+              sampleRate, format, channelMask, frameCount,
+              NULL, 0, 0, uid, IAudioFlinger::TRACK_DEFAULT, TYPE_OUTPUT),
     mActive(false), mSourceThread(sourceThread), mClientProxy(NULL)
 {
 
@@ -1756,36 +1696,18 @@ void AudioFlinger::PlaybackThread::OutputTrack::stop()
     mActive = false;
 }
 
-bool AudioFlinger::PlaybackThread::OutputTrack::write(int16_t* data, uint32_t frames)
+bool AudioFlinger::PlaybackThread::OutputTrack::write(void* data, uint32_t frames)
 {
     Buffer *pInBuffer;
     Buffer inBuffer;
-    uint32_t channelCount = mChannelCount;
     bool outputBufferFull = false;
     inBuffer.frameCount = frames;
-    inBuffer.i16 = data;
+    inBuffer.raw = data;
 
     uint32_t waitTimeLeftMs = mSourceThread->waitTimeMs();
 
     if (!mActive && frames != 0) {
-        start();
-        sp<ThreadBase> thread = mThread.promote();
-        if (thread != 0) {
-            MixerThread *mixerThread = (MixerThread *)thread.get();
-            if (mFrameCount > frames) {
-                if (mBufferQueue.size() < kMaxOverFlowBuffers) {
-                    uint32_t startFrames = (mFrameCount - frames);
-                    pInBuffer = new Buffer;
-                    pInBuffer->mBuffer = new int16_t[startFrames * channelCount];
-                    pInBuffer->frameCount = startFrames;
-                    pInBuffer->i16 = pInBuffer->mBuffer;
-                    memset(pInBuffer->raw, 0, startFrames * channelCount * sizeof(int16_t));
-                    mBufferQueue.add(pInBuffer);
-                } else {
-                    ALOGW("OutputTrack::write() %p no more buffers in queue", this);
-                }
-            }
-        }
+        (void) start();
     }
 
     while (waitTimeLeftMs) {
@@ -1820,20 +1742,20 @@ bool AudioFlinger::PlaybackThread::OutputTrack::write(int16_t* data, uint32_t fr
 
         uint32_t outFrames = pInBuffer->frameCount > mOutBuffer.frameCount ? mOutBuffer.frameCount :
                 pInBuffer->frameCount;
-        memcpy(mOutBuffer.raw, pInBuffer->raw, outFrames * channelCount * sizeof(int16_t));
+        memcpy(mOutBuffer.raw, pInBuffer->raw, outFrames * mFrameSize);
         Proxy::Buffer buf;
         buf.mFrameCount = outFrames;
         buf.mRaw = NULL;
         mClientProxy->releaseBuffer(&buf);
         pInBuffer->frameCount -= outFrames;
-        pInBuffer->i16 += outFrames * channelCount;
+        pInBuffer->raw = (int8_t *)pInBuffer->raw + outFrames * mFrameSize;
         mOutBuffer.frameCount -= outFrames;
-        mOutBuffer.i16 += outFrames * channelCount;
+        mOutBuffer.raw = (int8_t *)mOutBuffer.raw + outFrames * mFrameSize;
 
         if (pInBuffer->frameCount == 0) {
             if (mBufferQueue.size()) {
                 mBufferQueue.removeAt(0);
-                delete [] pInBuffer->mBuffer;
+                free(pInBuffer->mBuffer);
                 delete pInBuffer;
                 ALOGV("OutputTrack::write() %p thread %p released overflow buffer %d", this,
                         mThread.unsafe_get(), mBufferQueue.size());
@@ -1849,11 +1771,11 @@ bool AudioFlinger::PlaybackThread::OutputTrack::write(int16_t* data, uint32_t fr
         if (thread != 0 && !thread->standby()) {
             if (mBufferQueue.size() < kMaxOverFlowBuffers) {
                 pInBuffer = new Buffer;
-                pInBuffer->mBuffer = new int16_t[inBuffer.frameCount * channelCount];
+                pInBuffer->mBuffer = malloc(inBuffer.frameCount * mFrameSize);
+                CHECK(pInBuffer->mBuffer != NULL);
                 pInBuffer->frameCount = inBuffer.frameCount;
-                pInBuffer->i16 = pInBuffer->mBuffer;
-                memcpy(pInBuffer->raw, inBuffer.raw, inBuffer.frameCount * channelCount *
-                        sizeof(int16_t));
+                pInBuffer->raw = pInBuffer->mBuffer;
+                memcpy(pInBuffer->raw, inBuffer.raw, inBuffer.frameCount * mFrameSize);
                 mBufferQueue.add(pInBuffer);
                 ALOGV("OutputTrack::write() %p thread %p adding overflow buffer %d", this,
                         mThread.unsafe_get(), mBufferQueue.size());
@@ -1864,23 +1786,10 @@ bool AudioFlinger::PlaybackThread::OutputTrack::write(int16_t* data, uint32_t fr
         }
     }
 
-    // Calling write() with a 0 length buffer, means that no more data will be written:
-    // If no more buffers are pending, fill output track buffer to make sure it is started
-    // by output mixer.
-    if (frames == 0 && mBufferQueue.size() == 0) {
-        // FIXME borken, replace by getting framesReady() from proxy
-        size_t user = 0;    // was mCblk->user
-        if (user < mFrameCount) {
-            frames = mFrameCount - user;
-            pInBuffer = new Buffer;
-            pInBuffer->mBuffer = new int16_t[frames * channelCount];
-            pInBuffer->frameCount = frames;
-            pInBuffer->i16 = pInBuffer->mBuffer;
-            memset(pInBuffer->raw, 0, frames * channelCount * sizeof(int16_t));
-            mBufferQueue.add(pInBuffer);
-        } else if (mActive) {
-            stop();
-        }
+    // Calling write() with a 0 length buffer means that no more data will be written:
+    // We rely on stop() to set the appropriate flags to allow the remaining frames to play out.
+    if (frames == 0 && mBufferQueue.size() == 0 && mActive) {
+        stop();
     }
 
     return outputBufferFull;
@@ -1906,7 +1815,7 @@ void AudioFlinger::PlaybackThread::OutputTrack::clearBufferQueue()
 
     for (size_t i = 0; i < size; i++) {
         Buffer *pBuffer = mBufferQueue.itemAt(i);
-        delete [] pBuffer->mBuffer;
+        free(pBuffer->mBuffer);
         delete pBuffer;
     }
     mBufferQueue.clear();
@@ -1914,13 +1823,15 @@ void AudioFlinger::PlaybackThread::OutputTrack::clearBufferQueue()
 
 
 AudioFlinger::PlaybackThread::PatchTrack::PatchTrack(PlaybackThread *playbackThread,
+                                                     audio_stream_type_t streamType,
                                                      uint32_t sampleRate,
                                                      audio_channel_mask_t channelMask,
                                                      audio_format_t format,
                                                      size_t frameCount,
                                                      void *buffer,
                                                      IAudioFlinger::track_flags_t flags)
-    :   Track(playbackThread, NULL, AUDIO_STREAM_CNT, sampleRate, format, channelMask, frameCount,
+    :   Track(playbackThread, NULL, streamType,
+              sampleRate, format, channelMask, frameCount,
               buffer, 0, 0, getuid(), flags, TYPE_PATCH),
               mProxy(new ClientProxy(mCblk, mBuffer, frameCount, mFrameSize, true, true))
 {
@@ -2041,29 +1952,32 @@ AudioFlinger::RecordThread::RecordTrack::RecordTrack(
                           ((flags & IAudioFlinger::TRACK_FAST) ? ALLOC_PIPE : ALLOC_CBLK) :
                           ((buffer == NULL) ? ALLOC_LOCAL : ALLOC_NONE),
                   type),
-        mOverflow(false), mResampler(NULL), mRsmpOutBuffer(NULL), mRsmpOutFrameCount(0),
-        // See real initialization of mRsmpInFront at RecordThread::start()
-        mRsmpInUnrel(0), mRsmpInFront(0), mFramesToDrop(0), mResamplerBufferProvider(NULL)
+        mOverflow(false),
+        mFramesToDrop(0),
+        mResamplerBufferProvider(NULL), // initialize in case of early constructor exit
+        mRecordBufferConverter(NULL)
 {
     if (mCblk == NULL) {
         return;
     }
 
+    mRecordBufferConverter = new RecordBufferConverter(
+            thread->mChannelMask, thread->mFormat, thread->mSampleRate,
+            channelMask, format, sampleRate);
+    // Check if the RecordBufferConverter construction was successful.
+    // If not, don't continue with construction.
+    //
+    // NOTE: It would be extremely rare that the record track cannot be created
+    // for the current device, but a pending or future device change would make
+    // the record track configuration valid.
+    if (mRecordBufferConverter->initCheck() != NO_ERROR) {
+        ALOGE("RecordTrack unable to create record buffer converter");
+        return;
+    }
+
     mServerProxy = new AudioRecordServerProxy(mCblk, mBuffer, frameCount,
                                               mFrameSize, !isExternalTrack());
-
-    uint32_t channelCount = audio_channel_count_from_in_mask(channelMask);
-    // FIXME I don't understand either of the channel count checks
-    if (thread->mSampleRate != sampleRate && thread->mChannelCount <= FCC_2 &&
-            channelCount <= FCC_2) {
-        // sink SR
-        mResampler = AudioResampler::create(AUDIO_FORMAT_PCM_16_BIT,
-                thread->mChannelCount, sampleRate);
-        // source SR
-        mResampler->setSampleRate(thread->mSampleRate);
-        mResampler->setVolume(AudioMixer::UNITY_GAIN_FLOAT, AudioMixer::UNITY_GAIN_FLOAT);
-        mResamplerBufferProvider = new ResamplerBufferProvider(this);
-    }
+    mResamplerBufferProvider = new ResamplerBufferProvider(this);
 
     if (flags & IAudioFlinger::TRACK_FAST) {
         ALOG_ASSERT(thread->mFastTrackAvail);
@@ -2074,9 +1988,17 @@ AudioFlinger::RecordThread::RecordTrack::RecordTrack(
 AudioFlinger::RecordThread::RecordTrack::~RecordTrack()
 {
     ALOGV("%s", __func__);
-    delete mResampler;
-    delete[] mRsmpOutBuffer;
+    delete mRecordBufferConverter;
     delete mResamplerBufferProvider;
+}
+
+status_t AudioFlinger::RecordThread::RecordTrack::initCheck() const
+{
+    status_t status = TrackBase::initCheck();
+    if (status == NO_ERROR && mServerProxy == 0) {
+        status = BAD_VALUE;
+    }
+    return status;
 }
 
 // AudioBufferProvider interface
@@ -2258,4 +2180,4 @@ void AudioFlinger::RecordThread::PatchRecord::releaseBuffer(Proxy::Buffer* buffe
     mProxy->releaseBuffer(buffer);
 }
 
-}; // namespace android
+} // namespace android

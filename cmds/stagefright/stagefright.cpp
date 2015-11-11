@@ -12,25 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This file was modified by Dolby Laboratories, Inc. The portions of the
- * code that are surrounded by "DOLBY..." are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2011-2014 Dolby Laboratories, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
  */
 
 #include <inttypes.h>
@@ -38,6 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "stagefright"
@@ -525,8 +508,13 @@ static void writeSourcesToMP4(
     sp<MPEG4Writer> writer =
         new MPEG4Writer(gWriteMP4Filename.string());
 #else
+    int fd = open(gWriteMP4Filename.string(), O_CREAT | O_LARGEFILE | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR);
+    if (fd < 0) {
+        fprintf(stderr, "couldn't open file");
+        return;
+    }
     sp<MPEG2TSWriter> writer =
-        new MPEG2TSWriter(gWriteMP4Filename.string());
+        new MPEG2TSWriter(fd);
 #endif
 
     // at most one minute.
@@ -638,11 +626,6 @@ static void dumpCodecProfiles(const sp<IOMX>& omx, bool queryDecoders) {
         MEDIA_MIMETYPE_AUDIO_MPEG, MEDIA_MIMETYPE_AUDIO_G711_MLAW,
         MEDIA_MIMETYPE_AUDIO_G711_ALAW, MEDIA_MIMETYPE_AUDIO_VORBIS,
         MEDIA_MIMETYPE_VIDEO_VP8, MEDIA_MIMETYPE_VIDEO_VP9
-#ifdef DOLBY_UDC
-        ,
-        MEDIA_MIMETYPE_AUDIO_AC3,
-        MEDIA_MIMETYPE_AUDIO_EAC3
-#endif // DOLBY_END
     };
 
     const char *codecType = queryDecoders? "decoder" : "encoder";
@@ -982,7 +965,7 @@ int main(int argc, char **argv) {
     OMXClient client;
     status_t err = client.connect();
 
-    for (int k = 0; k < argc; ++k) {
+    for (int k = 0; k < argc && err == OK; ++k) {
         bool syncInfoPresent = true;
 
         const char *filename = argv[k];

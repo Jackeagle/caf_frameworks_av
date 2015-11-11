@@ -18,7 +18,6 @@
 #define ATRACE_TAG ATRACE_TAG_CAMERA
 //#define LOG_NDEBUG 0
 //#define LOG_NNDEBUG 0
-#define AVERAGE_PIPELINE_DEPTH 4
 
 #ifdef LOG_NNDEBUG
 #define ALOGVV(...) ALOGV(__VA_ARGS__)
@@ -80,14 +79,11 @@ ZslProcessor3::ZslProcessor3(
 
     ALOGV("%s: Initialize buffer queue and frame list depth based on max pipeline depth (%d)",
           __FUNCTION__, pipelineMaxDepth);
-
-    // Optimized the buffer queue depth based on the average pipeline depth to reduce memory
-    // consumption
     // Need to keep buffer queue longer than metadata queue because sometimes buffer arrives
     // earlier than metadata which causes the buffer corresponding to oldest metadata being
     // removed.
-    mBufferQueueDepth = AVERAGE_PIPELINE_DEPTH;
-    mFrameListDepth = mBufferQueueDepth - 1;
+    mFrameListDepth = pipelineMaxDepth;
+    mBufferQueueDepth = mFrameListDepth + 1;
 
 
     mZslQueue.insertAt(0, mBufferQueueDepth);
@@ -154,7 +150,7 @@ status_t ZslProcessor3::updateStream(const Parameters &params) {
         // Check if stream parameters have to change
         uint32_t currentWidth, currentHeight;
         res = device->getStreamInfo(mZslStreamId,
-                &currentWidth, &currentHeight, 0);
+                &currentWidth, &currentHeight, 0, 0);
         if (res != OK) {
             ALOGE("%s: Camera %d: Error querying capture output stream info: "
                     "%s (%d)", __FUNCTION__,
@@ -596,7 +592,7 @@ nsecs_t ZslProcessor3::getCandidateTimestampLocked(size_t* metadataIdx) const {
                     if (afState != ANDROID_CONTROL_AF_STATE_PASSIVE_FOCUSED &&
                             afState != ANDROID_CONTROL_AF_STATE_FOCUSED_LOCKED &&
                             afState != ANDROID_CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
-                        ALOGW("%s: ZSL queue frame AF state is %d is not good for capture, skip it",
+                        ALOGVV("%s: ZSL queue frame AF state is %d is not good for capture, skip it",
                                 __FUNCTION__, afState);
                         continue;
                     }

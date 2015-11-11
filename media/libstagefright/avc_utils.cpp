@@ -25,7 +25,9 @@
 #include <media/stagefright/foundation/hexdump.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
+#include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MetaData.h>
+#include <utils/misc.h>
 
 namespace android {
 
@@ -186,17 +188,31 @@ void FindAVCDimensions(
             if (aspect_ratio_idc == 255 /* extendedSAR */) {
                 sar_width = br.getBits(16);
                 sar_height = br.getBits(16);
-            } else if (aspect_ratio_idc > 0 && aspect_ratio_idc < 14) {
-                static const int32_t kFixedSARWidth[] = {
-                    1, 12, 10, 16, 40, 24, 20, 32, 80, 18, 15, 64, 160
+            } else {
+                static const struct { unsigned width, height; } kFixedSARs[] = {
+                        {   0,  0 }, // Invalid
+                        {   1,  1 },
+                        {  12, 11 },
+                        {  10, 11 },
+                        {  16, 11 },
+                        {  40, 33 },
+                        {  24, 11 },
+                        {  20, 11 },
+                        {  32, 11 },
+                        {  80, 33 },
+                        {  18, 11 },
+                        {  15, 11 },
+                        {  64, 33 },
+                        { 160, 99 },
+                        {   4,  3 },
+                        {   3,  2 },
+                        {   2,  1 },
                 };
 
-                static const int32_t kFixedSARHeight[] = {
-                    1, 11, 11, 11, 33, 11, 11, 11, 33, 11, 11, 33, 99
-                };
-
-                sar_width = kFixedSARWidth[aspect_ratio_idc - 1];
-                sar_height = kFixedSARHeight[aspect_ratio_idc - 1];
+                if (aspect_ratio_idc > 0 && aspect_ratio_idc < NELEM(kFixedSARs)) {
+                    sar_width = kFixedSARs[aspect_ratio_idc].width;
+                    sar_height = kFixedSARs[aspect_ratio_idc].height;
+                }
             }
         }
 
@@ -222,28 +238,25 @@ status_t getNextNALUnit(
     *nalStart = NULL;
     *nalSize = 0;
 
-    if (size == 0) {
+    if (size < 3) {
         return -EAGAIN;
     }
-
-    // Skip any number of leading 0x00.
 
     size_t offset = 0;
-    while (offset < size && data[offset] == 0x00) {
-        ++offset;
-    }
-
-    if (offset == size) {
-        return -EAGAIN;
-    }
 
     // A valid startcode consists of at least two 0x00 bytes followed by 0x01.
-
-    if (offset < 2 || data[offset] != 0x01) {
-        return ERROR_MALFORMED;
+    for (; offset + 2 < size; ++offset) {
+        if (data[offset + 2] == 0x01 && data[offset] == 0x00
+                && data[offset + 1] == 0x00) {
+            break;
+        }
     }
-
-    ++offset;
+    if (offset + 2 >= size) {
+        *_data = &data[offset];
+        *_size = 2;
+        return -EAGAIN;
+    }
+    offset += 3;
 
     size_t startOffset = offset;
 
@@ -431,25 +444,34 @@ bool IsIDR(const sp<ABuffer> &buffer) {
 }
 
 bool IsAVCReferenceFrame(const sp<ABuffer> &accessUnit) {
-    const uint8_t *data = accessUnit->data();
+    MediaBuffer *mediaBuffer =
+        (MediaBuffer *)(accessUnit->getMediaBufferBase());
+    const uint8_t *data =
+        (mediaBuffer != NULL) ? (uint8_t *) mediaBuffer->data() : accessUnit->data();
     size_t size = accessUnit->size();
 
     const uint8_t *nalStart;
     size_t nalSize;
+    bool bIsReferenceFrame = true;
     while (getNextNALUnit(&data, &size, &nalStart, &nalSize, true) == OK) {
         CHECK_GT(nalSize, 0u);
 
         unsigned nalType = nalStart[0] & 0x1f;
 
         if (nalType == 5) {
-            return true;
+            bIsReferenceFrame = true;
+            break;
         } else if (nalType == 1) {
             unsigned nal_ref_idc = (nalStart[0] >> 5) & 3;
-            return nal_ref_idc != 0;
+            bIsReferenceFrame = (nal_ref_idc != 0);
+            break;
         }
     }
 
-    return true;
+    if (mediaBuffer != NULL) {
+        mediaBuffer->release();
+    }
+    return bIsReferenceFrame;
 }
 
 sp<MetaData> MakeAACCodecSpecificData(
@@ -508,8 +530,8 @@ bool ExtractDimensionsFromVOLHeader(
     CHECK_NE(video_object_type_indication,
              0x21u /* Fine Granularity Scalable */);
 
-    unsigned video_object_layer_verid;
-    unsigned video_object_layer_priority;
+    unsigned video_object_layer_verid __unused;
+    unsigned video_object_layer_priority __unused;
     if (br.getBits(1)) {
         video_object_layer_verid = br.getBits(4);
         video_object_layer_priority = br.getBits(3);
@@ -571,7 +593,7 @@ bool ExtractDimensionsFromVOLHeader(
     unsigned video_object_layer_height = br.getBits(13);
     CHECK(br.getBits(1));  // marker_bit
 
-    unsigned interlaced = br.getBits(1);
+    unsigned interlaced __unused = br.getBits(1);
 
     *width = video_object_layer_width;
     *height = video_object_layer_height;
@@ -617,7 +639,7 @@ bool GetMPEGAudioFrameSize(
         return false;
     }
 
-    unsigned protection = (header >> 16) & 1;
+    unsigned protection __unused = (header >> 16) & 1;
 
     unsigned bitrate_index = (header >> 12) & 0x0f;
 

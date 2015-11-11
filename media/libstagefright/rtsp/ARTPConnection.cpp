@@ -31,12 +31,7 @@
 #include <media/stagefright/foundation/hexdump.h>
 
 #include <arpa/inet.h>
-#include <fcntl.h>
-#include <netdb.h>
-
 #include <sys/socket.h>
-
-#include "include/ExtendedUtils.h"
 
 namespace android {
 
@@ -75,8 +70,7 @@ struct ARTPConnection::StreamInfo {
 ARTPConnection::ARTPConnection(uint32_t flags)
     : mFlags(flags),
       mPollEventPending(false),
-      mLastReceiverReportTimeUs(-1),
-      mIPVersion(IPV4) {
+      mLastReceiverReportTimeUs(-1) {
 }
 
 ARTPConnection::~ARTPConnection() {
@@ -87,21 +81,21 @@ void ARTPConnection::addStream(
         const sp<ASessionDescription> &sessionDesc,
         size_t index,
         const sp<AMessage> &notify,
-        bool injected) {
-        ALOGV("addStream() rtpSocket:%d rtcpSocket:%d index:%zu injected:%d", rtpSocket, rtcpSocket, index, (int)injected);
-    sp<AMessage> msg = new AMessage(kWhatAddStream, id());
+        bool injected,
+        bool isIPV6) {
+    sp<AMessage> msg = new AMessage(kWhatAddStream, this);
     msg->setInt32("rtp-socket", rtpSocket);
     msg->setInt32("rtcp-socket", rtcpSocket);
     msg->setObject("session-desc", sessionDesc);
     msg->setSize("index", index);
     msg->setMessage("notify", notify);
     msg->setInt32("injected", injected);
+    msg->setInt32("isIPV6", isIPV6);
     msg->post();
 }
 
 void ARTPConnection::removeStream(int rtpSocket, int rtcpSocket) {
-    ALOGV("removeStream() rtpSocket:%d rtcpSocket:%d ", rtpSocket, rtcpSocket);
-    sp<AMessage> msg = new AMessage(kWhatRemoveStream, id());
+    sp<AMessage> msg = new AMessage(kWhatRemoveStream, this);
     msg->setInt32("rtp-socket", rtpSocket);
     msg->setInt32("rtcp-socket", rtcpSocket);
     msg->post();
@@ -112,12 +106,7 @@ static void bumpSocketBufferSize(int s) {
     CHECK_EQ(setsockopt(s, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)), 0);
 }
 
-void ARTPConnection::setIPVersion(int ipVersion) {
-    mIPVersion = ipVersion;
-    ALOGI("IP Version:%d", mIPVersion);
-}
-
-//static
+// static
 void ARTPConnection::MakePortPair(
         int *rtpSocket, int *rtcpSocket, unsigned *rtpPort) {
     *rtpSocket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -130,20 +119,11 @@ void ARTPConnection::MakePortPair(
 
     bumpSocketBufferSize(*rtcpSocket);
 
-    unsigned portRangeStart = 0;
-    unsigned portRangeEnd = 0;
-    ExtendedUtils::ShellProp::getRtpPortRange(&portRangeStart, &portRangeEnd);
-
-    // choose a random start port from range of [portRangeStart, portRangeEnd)
-    unsigned start = (unsigned)((random() % (portRangeEnd - portRangeStart))
-            + portRangeStart);
+    /* rand() * 1000 may overflow int type, use long long */
+    unsigned start = (unsigned)((rand()* 1000ll)/RAND_MAX) + 15550;
     start &= ~1;
-    if (start < portRangeStart) {
-        start += 2;
-    }
-    ALOGV("Test rtp port in range [%u, %u]", start, portRangeEnd);
 
-    for (unsigned port = start; port <= portRangeEnd; port += 2) {
+    for (unsigned port = start; port < 65536; port += 2) {
         struct sockaddr_in addr;
         memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
         addr.sin_family = AF_INET;
@@ -159,13 +139,16 @@ void ARTPConnection::MakePortPair(
 
         if (bind(*rtcpSocket,
                  (const struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            ALOGV("RTCP port: %u", port + 1);
             *rtpPort = port;
             return;
         }
     }
 
     TRESPASS();
+}
+
+size_t ARTPConnection::sockAddrSize() {
+    return sizeof(struct sockaddr_in);
 }
 
 void ARTPConnection::onMessageReceived(const sp<AMessage> &msg) {
@@ -256,7 +239,7 @@ void ARTPConnection::postPollEvent() {
         return;
     }
 
-    sp<AMessage> msg = new AMessage(kWhatPollStreams, id());
+    sp<AMessage> msg = new AMessage(kWhatPollStreams, this);
     msg->post();
 
     mPollEventPending = true;
@@ -363,21 +346,12 @@ void ARTPConnection::onPollStreams() {
             if (buffer->size() > 0) {
                 ALOGV("Sending RR...");
 
-                ssize_t n = 0;
+                ssize_t n;
                 do {
-                    if(mIPVersion == IPV4) {
-                        n = sendto(
-                            s->mRTCPSocket, buffer->data(), buffer->size(), 0,
-                            (const struct sockaddr *)&s->mRemoteRTCPAddr,
-                            sizeof(s->mRemoteRTCPAddr));
-                    } else if (mIPVersion == IPV6) {
-                        n = sendto(
-                            s->mRTCPSocket, buffer->data(), buffer->size(), 0,
-                            (const struct sockaddr *)&s->mRemoteRTCPAddr,
-                            sizeof(struct sockaddr_in6));
-                    } else {
-                        TRESPASS();
-                    }
+                    n = sendto(
+                        s->mRTCPSocket, buffer->data(), buffer->size(), 0,
+                        (const struct sockaddr *)&s->mRemoteRTCPAddr,
+                        sockAddrSize());
                 } while (n < 0 && errno == EINTR);
 
                 if (n <= 0) {
@@ -671,7 +645,7 @@ sp<ARTPSource> ARTPConnection::findSource(StreamInfo *info, uint32_t srcId) {
 }
 
 void ARTPConnection::injectPacket(int index, const sp<ABuffer> &buffer) {
-    sp<AMessage> msg = new AMessage(kWhatInjectPacket, id());
+    sp<AMessage> msg = new AMessage(kWhatInjectPacket, this);
     msg->setInt32("index", index);
     msg->setBuffer("buffer", buffer);
     msg->post();
@@ -696,11 +670,10 @@ void ARTPConnection::onInjectPacket(const sp<AMessage> &msg) {
 
     StreamInfo *s = &*it;
 
-    status_t err;
     if (it->mRTPSocket == index) {
-        err = parseRTP(s, buffer);
+        parseRTP(s, buffer);
     } else {
-        err = parseRTCP(s, buffer);
+        parseRTCP(s, buffer);
     }
 }
 

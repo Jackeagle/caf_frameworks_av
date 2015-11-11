@@ -21,20 +21,14 @@
 #include <media/stagefright/foundation/AHandlerReflector.h>
 #include <media/stagefright/MediaSource.h>
 
-#include <media/stagefright/ExtendedStats.h>
-#define RECORDER_STATS(func, ...) \
-    do { \
-        if(mRecorderExtendedStats != NULL) { \
-            mRecorderExtendedStats->func(__VA_ARGS__);} \
-    } \
-    while(0)
-
 namespace android {
 
-class ALooper;
+struct ALooper;
 class AMessage;
+struct AReplyToken;
 class IGraphicBufferProducer;
-class MediaCodec;
+class IGraphicBufferConsumer;
+struct MediaCodec;
 class MetaData;
 
 struct MediaCodecSource : public MediaSource,
@@ -48,6 +42,7 @@ struct MediaCodecSource : public MediaSource,
             const sp<ALooper> &looper,
             const sp<AMessage> &format,
             const sp<MediaSource> &source,
+            const sp<IGraphicBufferConsumer> &consumer = NULL,
             uint32_t flags = 0);
 
     bool isVideo() const { return mIsVideo; }
@@ -86,6 +81,7 @@ private:
             const sp<ALooper> &looper,
             const sp<AMessage> &outputFormat,
             const sp<MediaSource> &source,
+            const sp<IGraphicBufferConsumer> &consumer,
             uint32_t flags = 0);
 
     status_t onStart(MetaData *params);
@@ -99,7 +95,6 @@ private:
     bool reachedEOS();
     status_t postSynchronouslyAndReturnError(const sp<AMessage> &msg);
 
-    sp<RecorderExtendedStats> mRecorderExtendedStats;
     sp<ALooper> mLooper;
     sp<ALooper> mCodecLooper;
     sp<AHandlerReflector<MediaCodecSource> > mReflector;
@@ -108,15 +103,17 @@ private:
     sp<Puller> mPuller;
     sp<MediaCodec> mEncoder;
     uint32_t mFlags;
-    List<uint32_t> mStopReplyIDQueue;
+    List<sp<AReplyToken>> mStopReplyIDQueue;
     bool mIsVideo;
     bool mStarted;
     bool mStopping;
     bool mDoMoreWorkPending;
+    bool mSetEncoderFormat;
+    int mEncoderFormat;
+    int mEncoderDataSpace;
     sp<AMessage> mEncoderActivityNotify;
     sp<IGraphicBufferProducer> mGraphicBufferProducer;
-    Vector<sp<ABuffer> > mEncoderInputBuffers;
-    Vector<sp<ABuffer> > mEncoderOutputBuffers;
+    sp<IGraphicBufferConsumer> mGraphicBufferConsumer;
     List<MediaBuffer *> mInputBufferQueue;
     List<size_t> mAvailEncoderInputIndices;
     List<int64_t> mDecodingTimeQueue; // decoding time (us) for video

@@ -27,7 +27,9 @@
 
 #include <cutils/log.h>
 #include "EffectBundle.h"
+#include "math.h"
 
+#include <media/stagefright/foundation/ADebug.h>
 
 // effect_handle_t interface implementation for bass boost
 extern "C" const struct effect_interface_s gLvmEffectInterface;
@@ -562,6 +564,7 @@ int LvmBundle_init(EffectContext *pContext){
     for (int i=0; i<LVM_NR_MEMORY_REGIONS; i++){
         if (MemTab.Region[i].Size != 0){
             MemTab.Region[i].pBaseAddress = malloc(MemTab.Region[i].Size);
+            CHECK(MemTab.Region[i].pBaseAddress != NULL);
 
             if (MemTab.Region[i].pBaseAddress == LVM_NULL){
                 ALOGV("\tLVM_ERROR :LvmBundle_init CreateInstance Failed to allocate %" PRIu32
@@ -728,6 +731,7 @@ int LvmBundle_process(LVM_INT16        *pIn,
             }
             pContext->pBundledContext->workBuffer =
                     (LVM_INT16 *)malloc(frameCount * sizeof(LVM_INT16) * 2);
+            CHECK(pContext->pBundledContext->workBuffer != NULL);
             pContext->pBundledContext->frameCount = frameCount;
         }
         pOutTmp = pContext->pBundledContext->workBuffer;
@@ -765,6 +769,159 @@ int LvmBundle_process(LVM_INT16        *pIn,
     }
     return 0;
 }    /* end LvmBundle_process */
+
+
+//----------------------------------------------------------------------------
+// EqualizerUpdateActiveParams()
+//----------------------------------------------------------------------------
+// Purpose: Update ActiveParams for Equalizer
+//
+// Inputs:
+//  pContext:   effect engine context
+//
+// Outputs:
+//
+//----------------------------------------------------------------------------
+void EqualizerUpdateActiveParams(EffectContext *pContext) {
+    LVM_ControlParams_t     ActiveParams;              /* Current control Parameters */
+    LVM_ReturnStatus_en     LvmStatus=LVM_SUCCESS;     /* Function call status */
+
+    /* Get the current settings */
+    LvmStatus = LVM_GetControlParameters(pContext->pBundledContext->hInstance, &ActiveParams);
+    LVM_ERROR_CHECK(LvmStatus, "LVM_GetControlParameters", "EqualizerUpdateActiveParams")
+    //ALOGV("\tEqualizerUpdateActiveParams Succesfully returned from LVM_GetControlParameters\n");
+    //ALOGV("\tEqualizerUpdateActiveParams just Got -> %d\n",
+    //          ActiveParams.pEQNB_BandDefinition[band].Gain);
+
+
+    for (int i = 0; i < FIVEBAND_NUMBANDS; i++) {
+           ActiveParams.pEQNB_BandDefinition[i].Frequency = EQNB_5BandPresetsFrequencies[i];
+           ActiveParams.pEQNB_BandDefinition[i].QFactor   = EQNB_5BandPresetsQFactors[i];
+           ActiveParams.pEQNB_BandDefinition[i].Gain = pContext->pBundledContext->bandGaindB[i];
+       }
+
+    /* Activate the initial settings */
+    LvmStatus = LVM_SetControlParameters(pContext->pBundledContext->hInstance, &ActiveParams);
+    LVM_ERROR_CHECK(LvmStatus, "LVM_SetControlParameters", "EqualizerUpdateActiveParams")
+    //ALOGV("\tEqualizerUpdateActiveParams just Set -> %d\n",
+    //          ActiveParams.pEQNB_BandDefinition[band].Gain);
+
+}
+
+//----------------------------------------------------------------------------
+// LvmEffect_limitLevel()
+//----------------------------------------------------------------------------
+// Purpose: limit the overall level to a value less than 0 dB preserving
+//          the overall EQ band gain and BassBoost relative levels.
+//
+// Inputs:
+//  pContext:   effect engine context
+//
+// Outputs:
+//
+//----------------------------------------------------------------------------
+void LvmEffect_limitLevel(EffectContext *pContext) {
+    LVM_ControlParams_t     ActiveParams;              /* Current control Parameters */
+    LVM_ReturnStatus_en     LvmStatus=LVM_SUCCESS;     /* Function call status */
+
+    /* Get the current settings */
+    LvmStatus = LVM_GetControlParameters(pContext->pBundledContext->hInstance, &ActiveParams);
+    LVM_ERROR_CHECK(LvmStatus, "LVM_GetControlParameters", "LvmEffect_limitLevel")
+    //ALOGV("\tLvmEffect_limitLevel Succesfully returned from LVM_GetControlParameters\n");
+    //ALOGV("\tLvmEffect_limitLevel just Got -> %d\n",
+    //          ActiveParams.pEQNB_BandDefinition[band].Gain);
+
+    int gainCorrection = 0;
+    //Count the energy contribution per band for EQ and BassBoost only if they are active.
+    float energyContribution = 0;
+    float energyCross = 0;
+    float energyBassBoost = 0;
+    float crossCorrection = 0;
+
+    //EQ contribution
+    if (pContext->pBundledContext->bEqualizerEnabled == LVM_TRUE) {
+        for (int i = 0; i < FIVEBAND_NUMBANDS; i++) {
+            float bandFactor = pContext->pBundledContext->bandGaindB[i]/15.0;
+            float bandCoefficient = LimitLevel_bandEnergyCoefficient[i];
+            float bandEnergy = bandFactor * bandCoefficient * bandCoefficient;
+            if (bandEnergy > 0)
+                energyContribution += bandEnergy;
+        }
+
+        //cross EQ coefficients
+        float bandFactorSum = 0;
+        for (int i = 0; i < FIVEBAND_NUMBANDS-1; i++) {
+            float bandFactor1 = pContext->pBundledContext->bandGaindB[i]/15.0;
+            float bandFactor2 = pContext->pBundledContext->bandGaindB[i+1]/15.0;
+
+            if (bandFactor1 > 0 && bandFactor2 > 0) {
+                float crossEnergy = bandFactor1 * bandFactor2 *
+                        LimitLevel_bandEnergyCrossCoefficient[i];
+                bandFactorSum += bandFactor1 * bandFactor2;
+
+                if (crossEnergy > 0)
+                    energyCross += crossEnergy;
+            }
+        }
+        bandFactorSum -= 1.0;
+        if (bandFactorSum > 0)
+            crossCorrection = bandFactorSum * 0.7;
+    }
+
+    //BassBoost contribution
+    if (pContext->pBundledContext->bBassEnabled == LVM_TRUE) {
+        float boostFactor = (pContext->pBundledContext->BassStrengthSaved)/1000.0;
+        float boostCoefficient = LimitLevel_bassBoostEnergyCoefficient;
+
+        energyContribution += boostFactor * boostCoefficient * boostCoefficient;
+
+        for (int i = 0; i < FIVEBAND_NUMBANDS; i++) {
+            float bandFactor = pContext->pBundledContext->bandGaindB[i]/15.0;
+            float bandCrossCoefficient = LimitLevel_bassBoostEnergyCrossCoefficient[i];
+            float bandEnergy = boostFactor * bandFactor *
+                    bandCrossCoefficient;
+            if (bandEnergy > 0)
+                energyBassBoost += bandEnergy;
+        }
+    }
+
+    //Virtualizer contribution
+    if (pContext->pBundledContext->bVirtualizerEnabled == LVM_TRUE) {
+        energyContribution += LimitLevel_virtualizerContribution *
+                LimitLevel_virtualizerContribution;
+    }
+
+    double totalEnergyEstimation = sqrt(energyContribution + energyCross + energyBassBoost) -
+            crossCorrection;
+    ALOGV(" TOTAL energy estimation: %0.2f", totalEnergyEstimation);
+
+    //roundoff
+    int maxLevelRound = (int)(totalEnergyEstimation + 0.99);
+    if (maxLevelRound + pContext->pBundledContext->volume > 0) {
+        gainCorrection = maxLevelRound + pContext->pBundledContext->volume;
+    }
+
+    ActiveParams.VC_EffectLevel  = pContext->pBundledContext->volume - gainCorrection;
+    if (ActiveParams.VC_EffectLevel < -96) {
+        ActiveParams.VC_EffectLevel = -96;
+    }
+    ALOGV("\tVol:%d, GainCorrection: %d, Actual vol: %d", pContext->pBundledContext->volume,
+            gainCorrection, ActiveParams.VC_EffectLevel);
+
+    /* Activate the initial settings */
+    LvmStatus = LVM_SetControlParameters(pContext->pBundledContext->hInstance, &ActiveParams);
+    LVM_ERROR_CHECK(LvmStatus, "LVM_SetControlParameters", "LvmEffect_limitLevel")
+    //ALOGV("\tLvmEffect_limitLevel just Set -> %d\n",
+    //          ActiveParams.pEQNB_BandDefinition[band].Gain);
+
+    //ALOGV("\tLvmEffect_limitLevel just set (-96dB -> 0dB) -> %d\n",ActiveParams.VC_EffectLevel );
+    if (pContext->pBundledContext->firstVolume == LVM_TRUE){
+        LvmStatus = LVM_SetVolumeNoSmoothing(pContext->pBundledContext->hInstance, &ActiveParams);
+        LVM_ERROR_CHECK(LvmStatus, "LVM_SetVolumeNoSmoothing", "LvmBundle_process")
+        ALOGV("\tLVM_VOLUME: Disabling Smoothing for first volume change to remove spikes/clicks");
+        pContext->pBundledContext->firstVolume = LVM_FALSE;
+    }
+}
 
 //----------------------------------------------------------------------------
 // LvmEffect_enable()
@@ -814,6 +971,7 @@ int LvmEffect_enable(EffectContext *pContext){
 
     //ALOGV("\tLvmEffect_enable Succesfully called LVM_SetControlParameters\n");
     //ALOGV("\tLvmEffect_enable end");
+    LvmEffect_limitLevel(pContext);
     return 0;
 }
 
@@ -864,6 +1022,7 @@ int LvmEffect_disable(EffectContext *pContext){
 
     //ALOGV("\tLvmEffect_disable Succesfully called LVM_SetControlParameters\n");
     //ALOGV("\tLvmEffect_disable end");
+    LvmEffect_limitLevel(pContext);
     return 0;
 }
 
@@ -1099,6 +1258,8 @@ void BassSetStrength(EffectContext *pContext, uint32_t strength){
 
     LVM_ERROR_CHECK(LvmStatus, "LVM_SetControlParameters", "BassSetStrength")
     //ALOGV("\tBassSetStrength Succesfully called LVM_SetControlParameters\n");
+
+    LvmEffect_limitLevel(pContext);
 }    /* end BassSetStrength */
 
 //----------------------------------------------------------------------------
@@ -1159,13 +1320,14 @@ void VirtualizerSetStrength(EffectContext *pContext, uint32_t strength){
     /* Virtualizer parameters */
     ActiveParams.CS_EffectLevel             = (int)((strength*32767)/1000);
 
-    //ALOGV("\tVirtualizerSetStrength() (0-1000)   -> %d\n", strength );
-    //ALOGV("\tVirtualizerSetStrength() (0- 100)   -> %d\n", ActiveParams.CS_EffectLevel );
+    ALOGV("\tVirtualizerSetStrength() (0-1000)   -> %d\n", strength );
+    ALOGV("\tVirtualizerSetStrength() (0- 100)   -> %d\n", ActiveParams.CS_EffectLevel );
 
     /* Activate the initial settings */
     LvmStatus = LVM_SetControlParameters(pContext->pBundledContext->hInstance, &ActiveParams);
     LVM_ERROR_CHECK(LvmStatus, "LVM_SetControlParameters", "VirtualizerSetStrength")
     //ALOGV("\tVirtualizerSetStrength Succesfully called LVM_SetControlParameters\n\n");
+    LvmEffect_limitLevel(pContext);
 }    /* end setStrength */
 
 //----------------------------------------------------------------------------
@@ -1236,10 +1398,12 @@ int VirtualizerForceVirtualizationMode(EffectContext *pContext, audio_devices_t 
     bool useVirtualizer = false;
 
     if (VirtualizerIsDeviceSupported(forcedDevice) != 0) {
-        // forced device is not supported, make it behave as a reset of forced mode
-        forcedDevice = AUDIO_DEVICE_NONE;
-        // but return an error
-        status = -EINVAL;
+        if (forcedDevice != AUDIO_DEVICE_NONE) {
+            //forced device is not supported, make it behave as a reset of forced mode
+            forcedDevice = AUDIO_DEVICE_NONE;
+            // but return an error
+            status = -EINVAL;
+        }
     }
 
     if (forcedDevice == AUDIO_DEVICE_NONE) {
@@ -1341,104 +1505,6 @@ audio_devices_t VirtualizerGetVirtualizationMode(EffectContext *pContext) {
 }
 
 //----------------------------------------------------------------------------
-// EqualizerLimitBandLevels()
-//----------------------------------------------------------------------------
-// Purpose: limit all EQ band gains to a value less than 0 dB while
-//          preserving the relative band levels.
-//
-// Inputs:
-//  pContext:   effect engine context
-//
-// Outputs:
-//
-//----------------------------------------------------------------------------
-void EqualizerLimitBandLevels(EffectContext *pContext) {
-    LVM_ControlParams_t     ActiveParams;              /* Current control Parameters */
-    LVM_ReturnStatus_en     LvmStatus=LVM_SUCCESS;     /* Function call status */
-
-    /* Get the current settings */
-    LvmStatus = LVM_GetControlParameters(pContext->pBundledContext->hInstance, &ActiveParams);
-    LVM_ERROR_CHECK(LvmStatus, "LVM_GetControlParameters", "EqualizerLimitBandLevels")
-    //ALOGV("\tEqualizerLimitBandLevels Succesfully returned from LVM_GetControlParameters\n");
-    //ALOGV("\tEqualizerLimitBandLevels just Got -> %d\n",
-    //          ActiveParams.pEQNB_BandDefinition[band].Gain);
-
-    // Apply a volume correction to avoid clipping in the EQ based on 2 factors:
-    // - the maximum EQ band gain: the volume correction is such that the total of volume + max
-    // band gain is <= 0 dB
-    // - the average gain in all bands weighted by their proximity to max gain band.
-    int maxGain = 0;
-    int avgGain = 0;
-    int avgCount = 0;
-    for (int i = 0; i < FIVEBAND_NUMBANDS; i++) {
-        if (pContext->pBundledContext->bandGaindB[i] >= maxGain) {
-            int tmpMaxGain = pContext->pBundledContext->bandGaindB[i];
-            int tmpAvgGain = 0;
-            int tmpAvgCount = 0;
-            for (int j = 0; j < FIVEBAND_NUMBANDS; j++) {
-                int gain = pContext->pBundledContext->bandGaindB[j];
-                // skip current band and gains < 0 dB
-                if (j == i || gain < 0)
-                    continue;
-                // no need to continue if one band not processed yet has a higher gain than current
-                // max
-                if (gain > tmpMaxGain) {
-                    // force skipping "if (tmpAvgGain >= avgGain)" below as tmpAvgGain is not
-                    // meaningful in this case
-                    tmpAvgGain = -1;
-                    break;
-                }
-
-                int weight = 1;
-                if (j < (i + 2) && j > (i - 2))
-                    weight = 4;
-                tmpAvgGain += weight * gain;
-                tmpAvgCount += weight;
-            }
-            if (tmpAvgGain >= avgGain) {
-                maxGain = tmpMaxGain;
-                avgGain = tmpAvgGain;
-                avgCount = tmpAvgCount;
-            }
-        }
-        ActiveParams.pEQNB_BandDefinition[i].Frequency = EQNB_5BandPresetsFrequencies[i];
-        ActiveParams.pEQNB_BandDefinition[i].QFactor   = EQNB_5BandPresetsQFactors[i];
-        ActiveParams.pEQNB_BandDefinition[i].Gain = pContext->pBundledContext->bandGaindB[i];
-    }
-
-    int gainCorrection = 0;
-    if (maxGain + pContext->pBundledContext->volume > 0) {
-        gainCorrection = maxGain + pContext->pBundledContext->volume;
-    }
-    if (avgCount) {
-        gainCorrection += avgGain/avgCount;
-    }
-
-    ALOGV("EqualizerLimitBandLevels() gainCorrection %d maxGain %d avgGain %d avgCount %d",
-            gainCorrection, maxGain, avgGain, avgCount);
-
-    ActiveParams.VC_EffectLevel  = pContext->pBundledContext->volume - gainCorrection;
-    if (ActiveParams.VC_EffectLevel < -96) {
-        ActiveParams.VC_EffectLevel = -96;
-    }
-
-    /* Activate the initial settings */
-    LvmStatus = LVM_SetControlParameters(pContext->pBundledContext->hInstance, &ActiveParams);
-    LVM_ERROR_CHECK(LvmStatus, "LVM_SetControlParameters", "EqualizerLimitBandLevels")
-    //ALOGV("\tEqualizerLimitBandLevels just Set -> %d\n",
-    //          ActiveParams.pEQNB_BandDefinition[band].Gain);
-
-    //ALOGV("\tEqualizerLimitBandLevels just set (-96dB -> 0dB)   -> %d\n",ActiveParams.VC_EffectLevel );
-    if(pContext->pBundledContext->firstVolume == LVM_TRUE){
-        LvmStatus = LVM_SetVolumeNoSmoothing(pContext->pBundledContext->hInstance, &ActiveParams);
-        LVM_ERROR_CHECK(LvmStatus, "LVM_SetVolumeNoSmoothing", "LvmBundle_process")
-        ALOGV("\tLVM_VOLUME: Disabling Smoothing for first volume change to remove spikes/clicks");
-        pContext->pBundledContext->firstVolume = LVM_FALSE;
-    }
-}
-
-
-//----------------------------------------------------------------------------
 // EqualizerGetBandLevel()
 //----------------------------------------------------------------------------
 // Purpose: Retrieve the gain currently being used for the band passed in
@@ -1480,7 +1546,8 @@ void EqualizerSetBandLevel(EffectContext *pContext, int band, short Gain){
     pContext->pBundledContext->bandGaindB[band] = gainRounded;
     pContext->pBundledContext->CurPreset = PRESET_CUSTOM;
 
-    EqualizerLimitBandLevels(pContext);
+    EqualizerUpdateActiveParams(pContext);
+    LvmEffect_limitLevel(pContext);
 }
 
 //----------------------------------------------------------------------------
@@ -1615,7 +1682,8 @@ void EqualizerSetPreset(EffectContext *pContext, int preset){
                 EQNB_5BandSoftPresets[i + preset * FIVEBAND_NUMBANDS];
     }
 
-    EqualizerLimitBandLevels(pContext);
+    EqualizerUpdateActiveParams(pContext);
+    LvmEffect_limitLevel(pContext);
 
     //ALOGV("\tEqualizerSetPreset Succesfully called LVM_SetControlParameters\n");
     return;
@@ -1670,7 +1738,7 @@ int VolumeSetVolumeLevel(EffectContext *pContext, int16_t level){
         pContext->pBundledContext->volume = level / 100;
     }
 
-    EqualizerLimitBandLevels(pContext);
+    LvmEffect_limitLevel(pContext);
 
     return 0;
 }    /* end VolumeSetVolumeLevel */
@@ -1719,7 +1787,7 @@ int32_t VolumeSetMute(EffectContext *pContext, uint32_t mute){
         pContext->pBundledContext->volume = pContext->pBundledContext->levelSaved;
     }
 
-    EqualizerLimitBandLevels(pContext);
+    LvmEffect_limitLevel(pContext);
 
     return 0;
 }    /* end setMute */
@@ -2979,7 +3047,7 @@ int Effect_command(effect_handle_t  self,
 
     switch (cmdCode){
         case EFFECT_CMD_INIT:
-            if (pReplyData == NULL || *replySize != sizeof(int)){
+            if (pReplyData == NULL || replySize == NULL || *replySize != sizeof(int)){
                 ALOGV("\tLVM_ERROR, EFFECT_CMD_INIT: ERROR for effect type %d",
                         pContext->EffectType);
                 return -EINVAL;
@@ -3006,10 +3074,8 @@ int Effect_command(effect_handle_t  self,
 
         case EFFECT_CMD_SET_CONFIG:
             //ALOGV("\tEffect_command cmdCode Case: EFFECT_CMD_SET_CONFIG start");
-            if (pCmdData    == NULL||
-                cmdSize     != sizeof(effect_config_t)||
-                pReplyData  == NULL||
-                *replySize  != sizeof(int)){
+            if (pCmdData    == NULL || cmdSize     != sizeof(effect_config_t) ||
+                    pReplyData  == NULL || replySize == NULL || *replySize  != sizeof(int)) {
                 ALOGV("\tLVM_ERROR : Effect_command cmdCode Case: "
                         "EFFECT_CMD_SET_CONFIG: ERROR");
                 return -EINVAL;
@@ -3019,8 +3085,7 @@ int Effect_command(effect_handle_t  self,
             break;
 
         case EFFECT_CMD_GET_CONFIG:
-            if (pReplyData == NULL ||
-                *replySize != sizeof(effect_config_t)) {
+            if (pReplyData == NULL || replySize == NULL || *replySize != sizeof(effect_config_t)) {
                 ALOGV("\tLVM_ERROR : Effect_command cmdCode Case: "
                         "EFFECT_CMD_GET_CONFIG: ERROR");
                 return -EINVAL;
@@ -3038,30 +3103,27 @@ int Effect_command(effect_handle_t  self,
         case EFFECT_CMD_GET_PARAM:{
             //ALOGV("\tEffect_command cmdCode Case: EFFECT_CMD_GET_PARAM start");
 
+            effect_param_t *p = (effect_param_t *)pCmdData;
+
+            if (pCmdData == NULL || cmdSize < sizeof(effect_param_t) ||
+                    cmdSize < (sizeof(effect_param_t) + p->psize) ||
+                    pReplyData == NULL || replySize == NULL ||
+                    *replySize < (sizeof(effect_param_t) + p->psize)) {
+                ALOGV("\tLVM_ERROR : EFFECT_CMD_GET_PARAM: ERROR");
+                return -EINVAL;
+            }
+
+            memcpy(pReplyData, pCmdData, sizeof(effect_param_t) + p->psize);
+
+            p = (effect_param_t *)pReplyData;
+
+            int voffset = ((p->psize - 1) / sizeof(int32_t) + 1) * sizeof(int32_t);
+
             if(pContext->EffectType == LVM_BASS_BOOST){
-                if (pCmdData == NULL ||
-                        cmdSize < (sizeof(effect_param_t) + sizeof(int32_t)) ||
-                        pReplyData == NULL ||
-                        *replySize < (sizeof(effect_param_t) + sizeof(int32_t))){
-                    ALOGV("\tLVM_ERROR : BassBoost_command cmdCode Case: "
-                            "EFFECT_CMD_GET_PARAM: ERROR");
-                    return -EINVAL;
-                }
-                effect_param_t *p = (effect_param_t *)pCmdData;
-
-                memcpy(pReplyData, pCmdData, sizeof(effect_param_t) + p->psize);
-
-                p = (effect_param_t *)pReplyData;
-
-                int voffset = ((p->psize - 1) / sizeof(int32_t) + 1) * sizeof(int32_t);
-
                 p->status = android::BassBoost_getParameter(pContext,
                                                             p->data,
                                                             &p->vsize,
                                                             p->data + voffset);
-
-                *replySize = sizeof(effect_param_t) + voffset + p->vsize;
-
                 //ALOGV("\tBassBoost_command EFFECT_CMD_GET_PARAM "
                 //        "*pCmdData %d, *replySize %d, *pReplyData %d ",
                 //        *(int32_t *)((char *)pCmdData + sizeof(effect_param_t)),
@@ -3070,27 +3132,10 @@ int Effect_command(effect_handle_t  self,
             }
 
             if(pContext->EffectType == LVM_VIRTUALIZER){
-                if (pCmdData == NULL ||
-                        cmdSize < (sizeof(effect_param_t) + sizeof(int32_t)) ||
-                        pReplyData == NULL ||
-                        *replySize < (sizeof(effect_param_t) + sizeof(int32_t))){
-                    ALOGV("\tLVM_ERROR : Virtualizer_command cmdCode Case: "
-                            "EFFECT_CMD_GET_PARAM: ERROR");
-                    return -EINVAL;
-                }
-                effect_param_t *p = (effect_param_t *)pCmdData;
-
-                memcpy(pReplyData, pCmdData, sizeof(effect_param_t) + p->psize);
-
-                p = (effect_param_t *)pReplyData;
-
-                int voffset = ((p->psize - 1) / sizeof(int32_t) + 1) * sizeof(int32_t);
-
                 p->status = android::Virtualizer_getParameter(pContext,
                                                               (void *)p->data,
                                                               &p->vsize,
                                                               p->data + voffset);
-                *replySize = sizeof(effect_param_t) + voffset + p->vsize;
 
                 //ALOGV("\tVirtualizer_command EFFECT_CMD_GET_PARAM "
                 //        "*pCmdData %d, *replySize %d, *pReplyData %d ",
@@ -3101,28 +3146,10 @@ int Effect_command(effect_handle_t  self,
             if(pContext->EffectType == LVM_EQUALIZER){
                 //ALOGV("\tEqualizer_command cmdCode Case: "
                 //        "EFFECT_CMD_GET_PARAM start");
-                if (pCmdData == NULL ||
-                    cmdSize < (sizeof(effect_param_t) + sizeof(int32_t)) ||
-                    pReplyData == NULL ||
-                    *replySize < (int) (sizeof(effect_param_t) + sizeof(int32_t))) {
-                    ALOGV("\tLVM_ERROR : Equalizer_command cmdCode Case: "
-                            "EFFECT_CMD_GET_PARAM");
-                    return -EINVAL;
-                }
-                effect_param_t *p = (effect_param_t *)pCmdData;
-
-                memcpy(pReplyData, pCmdData, sizeof(effect_param_t) + p->psize);
-
-                p = (effect_param_t *)pReplyData;
-
-                int voffset = ((p->psize - 1) / sizeof(int32_t) + 1) * sizeof(int32_t);
-
                 p->status = android::Equalizer_getParameter(pContext,
                                                             p->data,
                                                             &p->vsize,
                                                             p->data + voffset);
-
-                *replySize = sizeof(effect_param_t) + voffset + p->vsize;
 
                 //ALOGV("\tEqualizer_command EFFECT_CMD_GET_PARAM *pCmdData %d, *replySize %d, "
                 //       "*pReplyData %08x %08x",
@@ -3133,28 +3160,10 @@ int Effect_command(effect_handle_t  self,
             }
             if(pContext->EffectType == LVM_VOLUME){
                 //ALOGV("\tVolume_command cmdCode Case: EFFECT_CMD_GET_PARAM start");
-                if (pCmdData == NULL ||
-                        cmdSize < (sizeof(effect_param_t) + sizeof(int32_t)) ||
-                        pReplyData == NULL ||
-                        *replySize < (int) (sizeof(effect_param_t) + sizeof(int32_t))){
-                    ALOGV("\tLVM_ERROR : Volume_command cmdCode Case: "
-                            "EFFECT_CMD_GET_PARAM: ERROR");
-                    return -EINVAL;
-                }
-                effect_param_t *p = (effect_param_t *)pCmdData;
-
-                memcpy(pReplyData, pCmdData, sizeof(effect_param_t) + p->psize);
-
-                p = (effect_param_t *)pReplyData;
-
-                int voffset = ((p->psize - 1) / sizeof(int32_t) + 1) * sizeof(int32_t);
-
                 p->status = android::Volume_getParameter(pContext,
                                                          (void *)p->data,
                                                          &p->vsize,
                                                          p->data + voffset);
-
-                *replySize = sizeof(effect_param_t) + voffset + p->vsize;
 
                 //ALOGV("\tVolume_command EFFECT_CMD_GET_PARAM "
                 //        "*pCmdData %d, *replySize %d, *pReplyData %d ",
@@ -3162,6 +3171,8 @@ int Effect_command(effect_handle_t  self,
                 //        *replySize,
                 //        *(int16_t *)((char *)pReplyData + sizeof(effect_param_t) + voffset));
             }
+            *replySize = sizeof(effect_param_t) + voffset + p->vsize;
+
             //ALOGV("\tEffect_command cmdCode Case: EFFECT_CMD_GET_PARAM end");
         } break;
         case EFFECT_CMD_SET_PARAM:{
@@ -3172,10 +3183,9 @@ int Effect_command(effect_handle_t  self,
                 //       *replySize,
                 //       *(int16_t *)((char *)pCmdData + sizeof(effect_param_t) + sizeof(int32_t)));
 
-                if (pCmdData   == NULL||
-                    cmdSize    != (sizeof(effect_param_t) + sizeof(int32_t) +sizeof(int16_t))||
-                    pReplyData == NULL||
-                    *replySize != sizeof(int32_t)){
+                if (pCmdData   == NULL ||
+                        cmdSize    != (sizeof(effect_param_t) + sizeof(int32_t) +sizeof(int16_t)) ||
+                        pReplyData == NULL || replySize == NULL || *replySize != sizeof(int32_t)) {
                     ALOGV("\tLVM_ERROR : BassBoost_command cmdCode Case: "
                             "EFFECT_CMD_SET_PARAM: ERROR");
                     return -EINVAL;
@@ -3207,11 +3217,10 @@ int Effect_command(effect_handle_t  self,
               //        *(int16_t *)((char *)pCmdData + sizeof(effect_param_t) + sizeof(int32_t)));
 
                 if (pCmdData   == NULL ||
-                    // legal parameters are int16_t or int32_t
-                    cmdSize    > (sizeof(effect_param_t) + sizeof(int32_t) +sizeof(int32_t)) ||
-                    cmdSize    < (sizeof(effect_param_t) + sizeof(int32_t) +sizeof(int16_t)) ||
-                    pReplyData == NULL ||
-                    *replySize != sizeof(int32_t)){
+                        // legal parameters are int16_t or int32_t
+                        cmdSize    > (sizeof(effect_param_t) + sizeof(int32_t) +sizeof(int32_t)) ||
+                        cmdSize    < (sizeof(effect_param_t) + sizeof(int32_t) +sizeof(int16_t)) ||
+                        pReplyData == NULL || replySize == NULL || *replySize != sizeof(int32_t)) {
                     ALOGV("\tLVM_ERROR : Virtualizer_command cmdCode Case: "
                             "EFFECT_CMD_SET_PARAM: ERROR");
                     return -EINVAL;
@@ -3244,7 +3253,7 @@ int Effect_command(effect_handle_t  self,
                //        *(int16_t *)((char *)pCmdData + sizeof(effect_param_t) + sizeof(int32_t)));
 
                 if (pCmdData == NULL || cmdSize < (sizeof(effect_param_t) + sizeof(int32_t)) ||
-                    pReplyData == NULL || *replySize != sizeof(int32_t)) {
+                        pReplyData == NULL || replySize == NULL || *replySize != sizeof(int32_t)) {
                     ALOGV("\tLVM_ERROR : Equalizer_command cmdCode Case: "
                             "EFFECT_CMD_SET_PARAM: ERROR");
                     return -EINVAL;
@@ -3262,10 +3271,10 @@ int Effect_command(effect_handle_t  self,
                 //        *replySize,
                 //        *(int16_t *)((char *)pCmdData + sizeof(effect_param_t) +sizeof(int32_t)));
 
-                if (    pCmdData   == NULL||
-                        cmdSize    < (sizeof(effect_param_t) + sizeof(int32_t))||
-                        pReplyData == NULL||
-                        *replySize != sizeof(int32_t)){
+                if (pCmdData   == NULL ||
+                        cmdSize    < (sizeof(effect_param_t) + sizeof(int32_t)) ||
+                        pReplyData == NULL || replySize == NULL ||
+                        *replySize != sizeof(int32_t)) {
                     ALOGV("\tLVM_ERROR : Volume_command cmdCode Case: "
                             "EFFECT_CMD_SET_PARAM: ERROR");
                     return -EINVAL;
@@ -3281,7 +3290,7 @@ int Effect_command(effect_handle_t  self,
 
         case EFFECT_CMD_ENABLE:
             ALOGV("\tEffect_command cmdCode Case: EFFECT_CMD_ENABLE start");
-            if (pReplyData == NULL || *replySize != sizeof(int)){
+            if (pReplyData == NULL || replySize == NULL || *replySize != sizeof(int)) {
                 ALOGV("\tLVM_ERROR : Effect_command cmdCode Case: EFFECT_CMD_ENABLE: ERROR");
                 return -EINVAL;
             }
@@ -3291,7 +3300,7 @@ int Effect_command(effect_handle_t  self,
 
         case EFFECT_CMD_DISABLE:
             //ALOGV("\tEffect_command cmdCode Case: EFFECT_CMD_DISABLE start");
-            if (pReplyData == NULL || *replySize != sizeof(int)){
+            if (pReplyData == NULL || replySize == NULL || *replySize != sizeof(int)) {
                 ALOGV("\tLVM_ERROR : Effect_command cmdCode Case: EFFECT_CMD_DISABLE: ERROR");
                 return -EINVAL;
             }
@@ -3301,6 +3310,11 @@ int Effect_command(effect_handle_t  self,
         case EFFECT_CMD_SET_DEVICE:
         {
             ALOGV("\tEffect_command cmdCode Case: EFFECT_CMD_SET_DEVICE start");
+            if (pCmdData   == NULL){
+                ALOGV("\tLVM_ERROR : Effect_command cmdCode Case: EFFECT_CMD_SET_DEVICE: ERROR");
+                return -EINVAL;
+            }
+
             uint32_t device = *(uint32_t *)pCmdData;
             pContext->pBundledContext->nOutputDevice = (audio_devices_t) device;
 
@@ -3389,8 +3403,8 @@ int Effect_command(effect_handle_t  self,
                 break;
             }
 
-            if (pCmdData == NULL ||
-                cmdSize != 2 * sizeof(uint32_t)) {
+            if (pCmdData == NULL || cmdSize != 2 * sizeof(uint32_t) || pReplyData == NULL ||
+                    replySize == NULL || *replySize < 2*sizeof(int32_t)) {
                 ALOGV("\tLVM_ERROR : Effect_command cmdCode Case: "
                         "EFFECT_CMD_SET_VOLUME: ERROR");
                 return -EINVAL;

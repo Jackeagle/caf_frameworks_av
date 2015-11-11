@@ -12,25 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This file was modified by Dolby Laboratories, Inc. The portions of the
- * code that are surrounded by "DOLBY..." are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2014 Dolby Laboratories, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
  */
 
 #ifndef AUDIO_PLAYER_H_
@@ -44,9 +25,10 @@
 
 namespace android {
 
-class MediaSource;
+struct AudioPlaybackRate;
 class AudioTrack;
-class AwesomePlayer;
+struct AwesomePlayer;
+class MediaSource;
 
 class AudioPlayer : public TimeSource {
 public:
@@ -92,7 +74,8 @@ public:
     bool isSeeking();
     bool reachedEOS(status_t *finalStatus);
 
-    status_t setPlaybackRatePermille(int32_t ratePermille);
+    status_t setPlaybackRate(const AudioPlaybackRate &rate);
+    status_t getPlaybackRate(AudioPlaybackRate *rate /* nonnull */);
 
     void notifyAudioEOS();
 
@@ -113,7 +96,6 @@ private:
 
     int64_t mPositionTimeMediaUs;
     int64_t mPositionTimeRealUs;
-    int64_t mDurationUs;
 
     bool mSeeking;
     bool mReachedEOS;
@@ -121,7 +103,6 @@ private:
     int64_t mSeekTimeUs;
 
     bool mStarted;
-    bool mSourcePaused;
 
     bool mIsFirstBuffer;
     status_t mFirstBufferResult;
@@ -133,15 +114,8 @@ private:
 
     bool mPlaying;
     int64_t mStartPosUs;
-#ifdef DOLBY_UDC
-    bool mDolbyProcessedAudio;
-    void updateDolbyProcessedAudioState();
-    void setDolbyProcessedAudioState(bool processed);
-#endif // DOLBY_END
     const uint32_t mCreateFlags;
-    bool mPauseRequired;
 
-    bool mUseSmallBufs;
     static void AudioCallback(int event, void *user, void *info);
     void AudioCallback(int event, void *info);
 

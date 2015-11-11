@@ -28,8 +28,7 @@
 namespace android {
 
 struct ABuffer;
-struct MetaData;
-struct MediaBuffer;
+class MediaBuffer;
 
 struct NuPlayer::Source : public AHandler {
     enum Flags {
@@ -39,6 +38,8 @@ struct NuPlayer::Source : public AHandler {
         FLAG_CAN_SEEK           = 8,  // the "seek bar"
         FLAG_DYNAMIC_DURATION   = 16,
         FLAG_SECURE             = 32,
+        FLAG_PROTECTED          = 64,
+        FLAG_USE_SET_BUFFERS    = 128,
     };
 
     enum {
@@ -48,10 +49,16 @@ struct NuPlayer::Source : public AHandler {
         kWhatBufferingUpdate,
         kWhatBufferingStart,
         kWhatBufferingEnd,
+        kWhatPauseOnBufferingStart,
+        kWhatResumeOnBufferingEnd,
+        kWhatCacheStats,
         kWhatSubtitleData,
         kWhatTimedTextData,
+        kWhatTimedMetaData,
         kWhatQueueDecoderShutdown,
         kWhatDrmNoLicense,
+        kWhatInstantiateSecureDecoders,
+        kWhatRTCPByeReceived,
     };
 
     // The provides message is used to notify the player about various
@@ -97,7 +104,7 @@ struct NuPlayer::Source : public AHandler {
         return INVALID_OPERATION;
     }
 
-    virtual status_t selectTrack(size_t /* trackIndex */, bool /* select */) {
+    virtual status_t selectTrack(size_t /* trackIndex */, bool /* select */, int64_t /* timeUs*/) {
         return INVALID_OPERATION;
     }
 
@@ -113,7 +120,9 @@ struct NuPlayer::Source : public AHandler {
         return false;
     }
 
-    virtual int64_t getServerTimeoutUs();
+    virtual bool isStreaming() const {
+        return true;
+    }
 
 protected:
     virtual ~Source() {}
@@ -124,10 +133,11 @@ protected:
 
     void notifyFlagsChanged(uint32_t flags);
     void notifyVideoSizeChanged(const sp<AMessage> &format = NULL);
-    void notifyPrepared(status_t err = OK);
+    void notifyInstantiateSecureDecoders(const sp<AMessage> &reply);
+    virtual void notifyPrepared(status_t err = OK);
 
-private:
     sp<AMessage> mNotify;
+private:
 
     DISALLOW_EVIL_CONSTRUCTORS(Source);
 };

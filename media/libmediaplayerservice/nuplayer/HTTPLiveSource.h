@@ -21,6 +21,8 @@
 #include "NuPlayer.h"
 #include "NuPlayerSource.h"
 
+#include "LiveSession.h"
+
 namespace android {
 
 struct LiveSession;
@@ -43,7 +45,8 @@ struct NuPlayer::HTTPLiveSource : public NuPlayer::Source {
     virtual status_t getDuration(int64_t *durationUs);
     virtual size_t getTrackCount() const;
     virtual sp<AMessage> getTrackInfo(size_t trackIndex) const;
-    virtual status_t selectTrack(size_t trackIndex, bool select);
+    virtual ssize_t getSelectedTrack(media_track_type /* type */) const;
+    virtual status_t selectTrack(size_t trackIndex, bool select, int64_t timeUs);
     virtual status_t seekTo(int64_t seekTimeUs);
 
 protected:
@@ -51,7 +54,6 @@ protected:
 
     virtual void onMessageReceived(const sp<AMessage> &msg);
 
-private:
     enum Flags {
         // Don't log any URLs.
         kFlagIncognito = 1,
@@ -60,6 +62,7 @@ private:
     enum {
         kWhatSessionNotify,
         kWhatFetchSubtitleData,
+        kWhatFetchMetaData,
     };
 
     sp<IMediaHTTPService> mHTTPService;
@@ -71,8 +74,14 @@ private:
     sp<ALooper> mLiveLooper;
     sp<LiveSession> mLiveSession;
     int32_t mFetchSubtitleDataGeneration;
+    int32_t mFetchMetaDataGeneration;
+    bool mHasMetadata;
+    bool mMetadataSelected;
 
-    void onSessionNotify(const sp<AMessage> &msg);
+    virtual void onSessionNotify(const sp<AMessage> &msg);
+    void pollForRawData(
+            const sp<AMessage> &msg, int32_t currentGeneration,
+            LiveSession::StreamType fetchType, int32_t pushWhat);
 
     DISALLOW_EVIL_CONSTRUCTORS(HTTPLiveSource);
 };

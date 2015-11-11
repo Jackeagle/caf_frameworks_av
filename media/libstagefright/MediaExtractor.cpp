@@ -29,6 +29,7 @@
 #include "include/WVMExtractor.h"
 #include "include/FLACExtractor.h"
 #include "include/AACExtractor.h"
+#include "include/MidiExtractor.h"
 
 #include "matroska/MatroskaExtractor.h"
 
@@ -39,7 +40,7 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
 
-#include "include/ExtendedUtils.h"
+#include <stagefright/AVExtensions.h>
 
 namespace android {
 
@@ -53,7 +54,8 @@ uint32_t MediaExtractor::flags() const {
 
 // static
 sp<MediaExtractor> MediaExtractor::Create(
-        const sp<DataSource> &source, const char *mime) {
+        const sp<DataSource> &source, const char *mime,
+        const uint32_t flags) {
     sp<AMessage> meta;
 
     String8 tmp;
@@ -92,8 +94,9 @@ sp<MediaExtractor> MediaExtractor::Create(
         }
     }
 
-    MediaExtractor *ret = NULL;
-    if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
+    sp<MediaExtractor> ret = NULL;
+    if ((ret = AVFactory::get()->createExtendedExtractor(source, mime, meta, flags)) != NULL) {
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
             || !strcasecmp(mime, "audio/mp4")) {
         ret = new MPEG4Extractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
@@ -118,8 +121,11 @@ sp<MediaExtractor> MediaExtractor::Create(
         ret = new AACExtractor(source, meta);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2PS)) {
         ret = new MPEG2PSExtractor(source);
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MIDI)) {
+        ret = new MidiExtractor(source);
     }
 
+    ret = AVFactory::get()->updateExtractor(ret, source, mime, meta, flags);
     if (ret != NULL) {
        if (isDrm) {
            ret->setDrmFlag(true);
@@ -128,7 +134,7 @@ sp<MediaExtractor> MediaExtractor::Create(
        }
     }
 
-    return ExtendedUtils::MediaExtractor_CreateIfNeeded(ret, source, mime);
+    return ret;
 }
 
 }  // namespace android

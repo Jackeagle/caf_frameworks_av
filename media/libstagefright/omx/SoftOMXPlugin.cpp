@@ -12,43 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This file was modified by Dolby Laboratories, Inc. The portions of the
- * code that are surrounded by "DOLBY..." are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2011-2014 Dolby Laboratories, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- **
- ** This file was modified by DTS, Inc. The portions of the
- ** code that are surrounded by "DTS..." are copyrighted and
- ** licensed separately, as follows:
- **
- **  (C) 2014 DTS, Inc.
- **
- ** Licensed under the Apache License, Version 2.0 (the "License");
- ** you may not use this file except in compliance with the License.
- ** You may obtain a copy of the License at
- **
- **    http://www.apache.org/licenses/LICENSE-2.0
- **
- ** Unless required by applicable law or agreed to in writing, software
- ** distributed under the License is distributed on an "AS IS" BASIS,
- ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- ** See the License for the specific language governing permissions and
- ** limitations under the License
  */
 
 //#define LOG_NDEBUG 0
@@ -77,11 +40,12 @@ static const struct {
     { "OMX.google.amrnb.encoder", "amrnbenc", "audio_encoder.amrnb" },
     { "OMX.google.amrwb.decoder", "amrdec", "audio_decoder.amrwb" },
     { "OMX.google.amrwb.encoder", "amrwbenc", "audio_encoder.amrwb" },
-    { "OMX.google.h264.decoder", "h264dec", "video_decoder.avc" },
-    { "OMX.google.h264.encoder", "h264enc", "video_encoder.avc" },
+    { "OMX.google.h264.decoder", "avcdec", "video_decoder.avc" },
+    { "OMX.google.h264.encoder", "avcenc", "video_encoder.avc" },
     { "OMX.google.hevc.decoder", "hevcdec", "video_decoder.hevc" },
     { "OMX.google.g711.alaw.decoder", "g711dec", "audio_decoder.g711alaw" },
     { "OMX.google.g711.mlaw.decoder", "g711dec", "audio_decoder.g711mlaw" },
+    { "OMX.google.mpeg2.decoder", "mpeg2dec", "video_decoder.mpeg2" },
     { "OMX.google.h263.decoder", "mpeg4dec", "video_decoder.h263" },
     { "OMX.google.h263.encoder", "mpeg4enc", "video_encoder.h263" },
     { "OMX.google.mpeg4.decoder", "mpeg4dec", "video_decoder.mpeg4" },
@@ -95,13 +59,8 @@ static const struct {
     { "OMX.google.raw.decoder", "rawdec", "audio_decoder.raw" },
     { "OMX.google.flac.encoder", "flacenc", "audio_encoder.flac" },
     { "OMX.google.gsm.decoder", "gsmdec", "audio_decoder.gsm" },
-#ifdef DOLBY_UDC
-    { "OMX.dolby.ac3.decoder", "ddpdec", "audio_decoder.ac3" },
-    { "OMX.dolby.ec3.decoder", "ddpdec", "audio_decoder.ec3" },
-    { "OMX.dolby.ec3_joc.decoder", "ddpdec", "audio_decoder.ec3_joc" },
-#endif // DOLBY_END
-#ifdef DTS_CODEC_M_
-    { "OMX.DTS.audio_decoder.dts", "dtsdec", "audio_decoder.dts" },
+#ifdef QTI_FLAC_DECODER
+    { "OMX.qti.audio.decoder.flac", "flacdec", "audio_decoder.flac" },
 #endif
 };
 
@@ -130,7 +89,7 @@ OMX_ERRORTYPE SoftOMXPlugin::makeComponentInstance(
         void *libHandle = dlopen(libName.c_str(), RTLD_NOW);
 
         if (libHandle == NULL) {
-            ALOGE("unable to dlopen %s", libName.c_str());
+            ALOGE("unable to dlopen %s: %s", libName.c_str(), dlerror());
 
             return OMX_ErrorComponentNotFound;
         }

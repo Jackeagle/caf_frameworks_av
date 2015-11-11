@@ -68,7 +68,7 @@ public:
             bool legacyMode = false);
     ~CameraClient();
 
-    status_t initialize(camera_module_t *module);
+    status_t initialize(CameraModule *module);
 
     status_t dump(int fd, const Vector<String16>& args);
 
@@ -162,6 +162,9 @@ private:
     // This function keeps trying to grab mLock, or give up if the message
     // is found to be disabled. It returns true if mLock is grabbed.
     bool                    lockIfMessageWanted(int32_t msgType);
+
+    bool                 mLongshotEnabled;
+    int                  mBurstCnt;
 };
 
 }

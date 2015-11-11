@@ -27,6 +27,7 @@
 #include <media/IMediaHTTPService.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaData.h>
+#include <mediaplayerservice/AVMediaServiceExtensions.h>
 
 namespace android {
 
@@ -50,7 +51,7 @@ NuPlayer::RTSPSource::RTSPSource(
       mState(DISCONNECTED),
       mFinalResult(OK),
       mDisconnectReplyID(0),
-      mBuffering(true),
+      mBuffering(false),
       mSeekGeneration(0),
       mEOSTimeoutAudio(0),
       mEOSTimeoutVideo(0) {
@@ -87,7 +88,7 @@ void NuPlayer::RTSPSource::prepareAsync() {
     CHECK(mHandler == NULL);
     CHECK(mSDPLoader == NULL);
 
-    sp<AMessage> notify = new AMessage(kWhatNotify, id());
+    sp<AMessage> notify = new AMessage(kWhatNotify, this);
 
     CHECK_EQ(mState, (int)DISCONNECTED);
     mState = CONNECTING;
@@ -106,9 +107,7 @@ void NuPlayer::RTSPSource::prepareAsync() {
         mHandler->connect();
     }
 
-    sp<AMessage> notifyStart = dupNotify();
-    notifyStart->setInt32("what", kWhatBufferingStart);
-    notifyStart->post();
+    startBufferingIfNecessary();
 }
 
 void NuPlayer::RTSPSource::start() {
@@ -118,7 +117,7 @@ void NuPlayer::RTSPSource::stop() {
     if (mLooper == NULL) {
         return;
     }
-    sp<AMessage> msg = new AMessage(kWhatDisconnect, id());
+    sp<AMessage> msg = new AMessage(kWhatDisconnect, this);
 
     sp<AMessage> dummy;
     msg->postAndAwaitResponse(&dummy);
@@ -133,8 +132,10 @@ void NuPlayer::RTSPSource::pause() {
 
         // Check if EOS or ERROR is received
         if (source != NULL && source->isFinished(mediaDurationUs)) {
-            ALOGI("Nearing EOS...No Pause is issued");
-            mHandler->setAUTimeoutCheck(false);
+            if (mHandler != NULL) {
+                ALOGI("Nearing EOS...No Pause is issued");
+                mHandler->cancelTimeoutCheck();
+            }
             return;
         }
     }
@@ -142,10 +143,13 @@ void NuPlayer::RTSPSource::pause() {
 }
 
 void NuPlayer::RTSPSource::resume() {
-    mHandler->resume();
+    if (mHandler != NULL) {
+        mHandler->resume();
+    }
 }
 
 status_t NuPlayer::RTSPSource::feedMoreTSData() {
+    Mutex::Autolock _l(mBufferingLock);
     return mFinalResult;
 }
 
@@ -197,16 +201,8 @@ bool NuPlayer::RTSPSource::haveSufficientDataOnAllTracks() {
 
 status_t NuPlayer::RTSPSource::dequeueAccessUnit(
         bool audio, sp<ABuffer> *accessUnit) {
-    if (mBuffering) {
-        if (!haveSufficientDataOnAllTracks()) {
-            return -EWOULDBLOCK;
-        }
-
-        mBuffering = false;
-
-        sp<AMessage> notify = dupNotify();
-        notify->setInt32("what", kWhatBufferingEnd);
-        notify->post();
+    if (!stopBufferingIfNecessary()) {
+        return -EWOULDBLOCK;
     }
 
     sp<AnotherPacketSource> source = getSource(audio);
@@ -248,11 +244,7 @@ status_t NuPlayer::RTSPSource::dequeueAccessUnit(
             if (!(otherSource != NULL && otherSource->isFinished(mediaDurationUs))) {
                 // We should not enter buffering mode
                 // if any of the sources already have detected EOS.
-                mBuffering = true;
-
-                sp<AMessage> notify = dupNotify();
-                notify->setInt32("what", kWhatBufferingStart);
-                notify->post();
+                startBufferingIfNecessary();
             }
 
             return -EWOULDBLOCK;
@@ -307,43 +299,32 @@ status_t NuPlayer::RTSPSource::getDuration(int64_t *durationUs) {
 }
 
 status_t NuPlayer::RTSPSource::seekTo(int64_t seekTimeUs) {
-    sp<AMessage> msg = new AMessage(kWhatPerformSeek, id());
+    sp<AMessage> msg = new AMessage(kWhatPerformSeek, this);
     msg->setInt32("generation", ++mSeekGeneration);
     msg->setInt64("timeUs", seekTimeUs);
-    msg->post(200000ll);
 
-    return OK;
+    sp<AMessage> response;
+    status_t err = msg->postAndAwaitResponse(&response);
+    if (err == OK && response != NULL) {
+        CHECK(response->findInt32("err", &err));
+    }
+
+    return err;
 }
 
 void NuPlayer::RTSPSource::performSeek(int64_t seekTimeUs) {
     if (mState != CONNECTED) {
+        finishSeek(INVALID_OPERATION);
         return;
     }
 
     mState = SEEKING;
     mHandler->seek(seekTimeUs);
-
-    // After seek, the previous packets in the source are obsolete, so clear them
-    for (size_t index = 0; index < mTracks.size(); index++) {
-        TrackInfo *info = &mTracks.editItemAt(index);
-        sp<AnotherPacketSource> source = info->mSource;
-        if (source != NULL) {
-            source->queueDiscontinuity(ATSParser::DISCONTINUITY_SEEK, NULL, true);
-        }
-    }
-}
-
-int64_t NuPlayer::RTSPSource::getServerTimeoutUs() {
-    if (mHandler != NULL) {
-        return mHandler->getServerTimeoutUs();
-    } else {
-        return 0;
-    }
 }
 
 void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
     if (msg->what() == kWhatDisconnect) {
-        uint32_t replyID;
+        sp<AReplyToken> replyID;
         CHECK(msg->senderAwaitsResponse(&replyID));
 
         mDisconnectReplyID = replyID;
@@ -352,9 +333,11 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
     } else if (msg->what() == kWhatPerformSeek) {
         int32_t generation;
         CHECK(msg->findInt32("generation", &generation));
+        CHECK(msg->senderAwaitsResponse(&mSeekReplyID));
 
         if (generation != mSeekGeneration) {
             // obsolete.
+            finishSeek(OK);
             return;
         }
 
@@ -400,16 +383,42 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
         case MyHandler::kWhatSeekDone:
         {
             mState = CONNECTED;
+            if (mSeekReplyID != NULL) {
+                // Unblock seekTo here in case we attempted to seek in a live stream
+                finishSeek(OK);
+            }
+            break;
+        }
+
+        case MyHandler::kWhatSeekPaused:
+        {
+            sp<AnotherPacketSource> source = getSource(true /* audio */);
+            if (source != NULL) {
+                source->queueDiscontinuity(ATSParser::DISCONTINUITY_NONE,
+                        /* extra */ NULL,
+                        /* discard */ true);
+            }
+            source = getSource(false /* video */);
+            if (source != NULL) {
+                source->queueDiscontinuity(ATSParser::DISCONTINUITY_NONE,
+                        /* extra */ NULL,
+                        /* discard */ true);
+            };
+
+            status_t err = OK;
+            msg->findInt32("err", &err);
+            finishSeek(err);
+
+            if (err == OK) {
+                int64_t timeUs;
+                CHECK(msg->findInt64("time", &timeUs));
+                mHandler->continueSeekAfterPause(timeUs);
+            }
             break;
         }
 
         case MyHandler::kWhatAccessUnit:
         {
-            // While seeking, stop queueing the units which are already obsolete to the source
-            if (mState == SEEKING) {
-                break;
-            }
-
             size_t trackIndex;
             CHECK(msg->findSize("trackIndex", &trackIndex));
 
@@ -470,8 +479,11 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
                 if (!info->mNPTMappingValid) {
                     // This is a live stream, we didn't receive any normal
                     // playtime mapping. We won't map to npt time.
-                    source->queueAccessUnit(accessUnit);
-                    break;
+                    if (!AVMediaServiceUtils::get()->checkNPTMapping(&info->mRTPTime,
+                            &info->mNormalPlaytimeUs, &info->mNPTMappingValid, rtpTime)) {
+                        source->queueAccessUnit(accessUnit);
+                        break;
+                    }
                 }
 
                 int64_t nptUs =
@@ -530,7 +542,7 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
             sp<AnotherPacketSource> source = info->mSource;
             if (source != NULL) {
                 source->queueDiscontinuity(
-                        ATSParser::DISCONTINUITY_SEEK,
+                        ATSParser::DISCONTINUITY_TIME,
                         NULL,
                         true /* discard */);
             }
@@ -554,6 +566,14 @@ void NuPlayer::RTSPSource::onMessageReceived(const sp<AMessage> &msg) {
             info->mRTPTime = rtpTime;
             info->mNormalPlaytimeUs = nptUs;
             info->mNPTMappingValid = true;
+            break;
+        }
+
+        case MyHandler::kWhatByeReceived:
+        {
+            sp<AMessage> msg = dupNotify();
+            msg->setInt32("what", kWhatRTCPByeReceived);
+            msg->post();
             break;
         }
 
@@ -637,7 +657,7 @@ void NuPlayer::RTSPSource::onSDPLoaded(const sp<AMessage> &msg) {
             ALOGE("Unable to find url in SDP");
             err = UNKNOWN_ERROR;
         } else {
-            sp<AMessage> notify = new AMessage(kWhatNotify, id());
+            sp<AMessage> notify = new AMessage(kWhatNotify, this);
 
             mHandler = new MyHandler(rtspUri.c_str(), notify, mUIDValid, mUID);
             mLooper->registerHandler(mHandler);
@@ -654,7 +674,7 @@ void NuPlayer::RTSPSource::onSDPLoaded(const sp<AMessage> &msg) {
         }
 
         mState = DISCONNECTED;
-        mFinalResult = err;
+        setError(err);
 
         if (mDisconnectReplyID != 0) {
             finishDisconnectIfPossible();
@@ -681,7 +701,7 @@ void NuPlayer::RTSPSource::onDisconnected(const sp<AMessage> &msg) {
     }
 
     mState = DISCONNECTED;
-    mFinalResult = err;
+    setError(err);
 
     if (mDisconnectReplyID != 0) {
         finishDisconnectIfPossible();
@@ -700,6 +720,49 @@ void NuPlayer::RTSPSource::finishDisconnectIfPossible() {
 
     (new AMessage)->postReply(mDisconnectReplyID);
     mDisconnectReplyID = 0;
+}
+
+void NuPlayer::RTSPSource::setError(status_t err) {
+    Mutex::Autolock _l(mBufferingLock);
+    mFinalResult = err;
+}
+
+void NuPlayer::RTSPSource::startBufferingIfNecessary() {
+    Mutex::Autolock _l(mBufferingLock);
+
+    if (!mBuffering) {
+        mBuffering = true;
+
+        sp<AMessage> notify = dupNotify();
+        notify->setInt32("what", kWhatBufferingStart);
+        notify->post();
+    }
+}
+
+bool NuPlayer::RTSPSource::stopBufferingIfNecessary() {
+    Mutex::Autolock _l(mBufferingLock);
+
+    if (mBuffering) {
+        if (!haveSufficientDataOnAllTracks()) {
+            return false;
+        }
+
+        mBuffering = false;
+
+        sp<AMessage> notify = dupNotify();
+        notify->setInt32("what", kWhatBufferingEnd);
+        notify->post();
+    }
+
+    return true;
+}
+
+void NuPlayer::RTSPSource::finishSeek(status_t err) {
+    CHECK(mSeekReplyID != NULL);
+    sp<AMessage> seekReply = new AMessage;
+    seekReply->setInt32("err", err);
+    seekReply->postReply(mSeekReplyID);
+    mSeekReplyID = NULL;
 }
 
 }  // namespace android

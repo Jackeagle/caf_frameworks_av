@@ -32,40 +32,10 @@ namespace android {
 
 struct AMessage;
 struct AString;
+class  IDataSource;
 struct IMediaHTTPService;
 class String8;
 struct HTTPBase;
-class DataSource;
-
-class Sniffer : public RefBase {
-public:
-    Sniffer();
-
-    ////////////////////////////////////////////////////////////////////////////
-
-    bool sniff(DataSource *source, String8 *mimeType, float *confidence, sp<AMessage> *meta);
-
-    // The sniffer can optionally fill in "meta" with an AMessage containing
-    // a dictionary of values that helps the corresponding extractor initialize
-    // its state without duplicating effort already exerted by the sniffer.
-    typedef bool (*SnifferFunc)(
-            const sp<DataSource> &source, String8 *mimeType,
-            float *confidence, sp<AMessage> *meta);
-
-    //if isExtendedExtractor = true, store the location of the sniffer to register
-    void registerSniffer_l(SnifferFunc func);
-    void registerDefaultSniffers();
-
-    virtual ~Sniffer() {}
-
-private:
-    Mutex mSnifferMutex;
-    List<SnifferFunc> mSniffers;
-    List<SnifferFunc>::iterator extendedSnifferPosition;
-
-    Sniffer(const Sniffer &);
-    Sniffer &operator=(const Sniffer &);
-};
 
 class DataSource : public RefBase {
 public:
@@ -81,14 +51,19 @@ public:
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL,
             String8 *contentType = NULL,
-            HTTPBase *httpSource = NULL);
+            HTTPBase *httpSource = NULL,
+            bool useExtendedCache = false);
 
     static sp<DataSource> CreateMediaHTTP(const sp<IMediaHTTPService> &httpService);
+    static sp<DataSource> CreateFromIDataSource(const sp<IDataSource> &source);
 
-    DataSource() : mSniffer(new Sniffer()) {}
+    DataSource() {}
 
     virtual status_t initCheck() const = 0;
 
+    // Returns the number of bytes read, or -1 on failure. It's not an error if
+    // this returns zero; it just means the given offset is equal to, or
+    // beyond, the end of the source.
     virtual ssize_t readAt(off64_t offset, void *data, size_t size) = 0;
 
     // Convenience methods:
@@ -136,7 +111,10 @@ public:
 protected:
     virtual ~DataSource() {}
 
-    sp<Sniffer> mSniffer;
+private:
+    static Mutex gSnifferMutex;
+    static List<SnifferFunc> gSniffers;
+    static bool gSniffersRegistered;
 
     static void RegisterSniffer_l(SnifferFunc func);
 

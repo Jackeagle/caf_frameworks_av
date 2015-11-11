@@ -45,7 +45,7 @@ LOCAL_C_INCLUDES := \
         $(LOCAL_PATH)/../common/include
 
 LOCAL_CFLAGS := \
-        -DOSCL_UNUSED_ARG= -DOSCL_IMPORT_REF=
+        -D"OSCL_UNUSED_ARG(x)=(void)(x)" -DOSCL_IMPORT_REF=
 
 LOCAL_CFLAGS += -Werror
 
@@ -80,6 +80,28 @@ LOCAL_SHARED_LIBRARIES := \
         libstagefright_amrnb_common
 
 LOCAL_MODULE := libstagefright_soft_amrdec
+LOCAL_CLANG := false
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
+
+################################################################################
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES := \
+        test/amrnbdec_test.cpp
+
+LOCAL_C_INCLUDES := \
+        $(LOCAL_PATH)/src \
+        $(LOCAL_PATH)/../common/include \
+        $(call include-path-for, audio-utils)
+
+LOCAL_STATIC_LIBRARIES := \
+        libstagefright_amrnbdec libsndfile
+
+LOCAL_SHARED_LIBRARIES := \
+        libstagefright_amrnb_common libaudioutils
+
+LOCAL_MODULE := libstagefright_amrnbdec_test
+LOCAL_MODULE_TAGS := optional
+
+include $(BUILD_EXECUTABLE)

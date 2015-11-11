@@ -12,25 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This file was modified by Dolby Laboratories, Inc. The portions of the
- * code that are surrounded by "DOLBY..." are copyrighted and
- * licensed separately, as follows:
- *
- *  (C) 2011-2012 Dolby Laboratories, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
  */
 
 //#define LOG_NDEBUG 0
@@ -284,7 +265,10 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
     }
 
     unsigned PES_packet_length = U16_AT(mBuffer->data() + 4);
-    CHECK_NE(PES_packet_length, 0u);
+    if (PES_packet_length == 0u) {
+        ALOGE("PES_packet_length is 0");
+        return -EAGAIN;
+    }
 
     size_t n = PES_packet_length + 6;
 
@@ -305,7 +289,10 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
         return ERROR_MALFORMED;
     }
 
-    CHECK_EQ(packet_startcode_prefix, 0x000001u);
+    if (packet_startcode_prefix != 0x000001u) {
+        ALOGE("Wrong PES prefix");
+        return ERROR_MALFORMED;
+    }
 
     unsigned stream_id = br.getBits(8);
     ALOGV("stream_id = 0x%02x", stream_id);
@@ -385,8 +372,7 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             && stream_id != 0xff  // program_stream_directory
             && stream_id != 0xf2  // DSMCC
             && stream_id != 0xf8) {  // H.222.1 type E
-        CHECK_EQ(br.getBits(2), 2u);
-
+        /* unsigned PES_marker_bits = */br.getBits(2);  // should be 0x2(hex)
         /* unsigned PES_scrambling_control = */br.getBits(2);
         /* unsigned PES_priority = */br.getBits(1);
         /* unsigned data_alignment_indicator = */br.getBits(1);
@@ -419,16 +405,26 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
         uint64_t PTS = 0, DTS = 0;
 
         if (PTS_DTS_flags == 2 || PTS_DTS_flags == 3) {
-            CHECK_GE(optional_bytes_remaining, 5u);
+            if (optional_bytes_remaining < 5u) {
+                return ERROR_MALFORMED;
+            }
 
-            CHECK_EQ(br.getBits(4), PTS_DTS_flags);
+            if (br.getBits(4) != PTS_DTS_flags) {
+                return ERROR_MALFORMED;
+            }
 
             PTS = ((uint64_t)br.getBits(3)) << 30;
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
             PTS |= ((uint64_t)br.getBits(15)) << 15;
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
             PTS |= br.getBits(15);
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
 
             ALOGV("PTS = %" PRIu64, PTS);
             // ALOGI("PTS = %.2f secs", PTS / 90000.0f);
@@ -436,16 +432,26 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             optional_bytes_remaining -= 5;
 
             if (PTS_DTS_flags == 3) {
-                CHECK_GE(optional_bytes_remaining, 5u);
+                if (optional_bytes_remaining < 5u) {
+                    return ERROR_MALFORMED;
+                }
 
-                CHECK_EQ(br.getBits(4), 1u);
+                if (br.getBits(4) != 1u) {
+                    return ERROR_MALFORMED;
+                }
 
                 DTS = ((uint64_t)br.getBits(3)) << 30;
-                CHECK_EQ(br.getBits(1), 1u);
+                if (br.getBits(1) != 1u) {
+                    return ERROR_MALFORMED;
+                }
                 DTS |= ((uint64_t)br.getBits(15)) << 15;
-                CHECK_EQ(br.getBits(1), 1u);
+                if (br.getBits(1) != 1u) {
+                    return ERROR_MALFORMED;
+                }
                 DTS |= br.getBits(15);
-                CHECK_EQ(br.getBits(1), 1u);
+                if (br.getBits(1) != 1u) {
+                    return ERROR_MALFORMED;
+                }
 
                 ALOGV("DTS = %" PRIu64, DTS);
 
@@ -454,40 +460,62 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
         }
 
         if (ESCR_flag) {
-            CHECK_GE(optional_bytes_remaining, 6u);
+            if (optional_bytes_remaining < 6u) {
+                return ERROR_MALFORMED;
+            }
 
             br.getBits(2);
 
             uint64_t ESCR = ((uint64_t)br.getBits(3)) << 30;
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
             ESCR |= ((uint64_t)br.getBits(15)) << 15;
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
             ESCR |= br.getBits(15);
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
 
             ALOGV("ESCR = %" PRIu64, ESCR);
             /* unsigned ESCR_extension = */br.getBits(9);
 
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
 
             optional_bytes_remaining -= 6;
         }
 
         if (ES_rate_flag) {
-            CHECK_GE(optional_bytes_remaining, 3u);
+            if (optional_bytes_remaining < 3u) {
+                return ERROR_MALFORMED;
+            }
 
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
             /* unsigned ES_rate = */br.getBits(22);
-            CHECK_EQ(br.getBits(1), 1u);
+            if (br.getBits(1) != 1u) {
+                return ERROR_MALFORMED;
+            }
 
             optional_bytes_remaining -= 3;
+        }
+
+        if (br.numBitsLeft() < optional_bytes_remaining * 8) {
+            return ERROR_MALFORMED;
         }
 
         br.skipBits(optional_bytes_remaining * 8);
 
         // ES data follows.
 
-        CHECK_GE(PES_packet_length, PES_header_data_length + 3);
+        if (PES_packet_length < PES_header_data_length + 3) {
+            return ERROR_MALFORMED;
+        }
 
         unsigned dataLength =
             PES_packet_length - 3 - PES_header_data_length;
@@ -500,7 +528,9 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             return ERROR_MALFORMED;
         }
 
-        CHECK_GE(br.numBitsLeft(), dataLength * 8);
+        if (br.numBitsLeft() < dataLength * 8) {
+            return ERROR_MALFORMED;
+        }
 
         ssize_t index = mTracks.indexOfKey(stream_id);
         if (index < 0 && mScanning) {
@@ -540,10 +570,14 @@ ssize_t MPEG2PSExtractor::dequeuePES() {
             return err;
         }
     } else if (stream_id == 0xbe) {  // padding_stream
-        CHECK_NE(PES_packet_length, 0u);
+        if (PES_packet_length == 0u) {
+            return ERROR_MALFORMED;
+        }
         br.skipBits(PES_packet_length * 8);
     } else {
-        CHECK_NE(PES_packet_length, 0u);
+        if (PES_packet_length == 0u) {
+            return ERROR_MALFORMED;
+        }
         br.skipBits(PES_packet_length * 8);
     }
 
@@ -573,14 +607,6 @@ MPEG2PSExtractor::Track::Track(
             mode = ElementaryStreamQueue::MPEG_AUDIO;
             break;
 
-#if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
-        case ATSParser::STREAMTYPE_AC3:
-            mode = ElementaryStreamQueue::AC3;
-            break;
-        case ATSParser::STREAMTYPE_DDP_EC3_AUDIO:
-            mode = ElementaryStreamQueue::DDP_EC3_AUDIO;
-            break;
-#endif // DOLBY_END
         case ATSParser::STREAMTYPE_MPEG1_VIDEO:
         case ATSParser::STREAMTYPE_MPEG2_VIDEO:
             mode = ElementaryStreamQueue::MPEG_VIDEO;

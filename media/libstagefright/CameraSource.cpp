@@ -32,7 +32,8 @@
 #include <gui/Surface.h>
 #include <utils/String8.h>
 #include <cutils/properties.h>
-#include "include/ExtendedUtils.h"
+
+#include <stagefright/AVExtensions.h>
 
 #if LOG_NDEBUG
 #define UNUSED_UNLESS_VERBOSE(x) (void)(x)
@@ -99,6 +100,11 @@ void CameraSourceListener::postDataTimestamp(
 }
 
 static int32_t getColorFormat(const char* colorFormat) {
+    if (!colorFormat) {
+        ALOGE("Invalid color format");
+        return -1;
+    }
+
     if (!strcmp(colorFormat, CameraParameters::PIXEL_FORMAT_YUV420P)) {
        return OMX_COLOR_FormatYUV420Planar;
     }
@@ -131,6 +137,7 @@ static int32_t getColorFormat(const char* colorFormat) {
          "CameraSource::getColorFormat", colorFormat);
 
     CHECK(!"Unknown color format");
+    return -1;
 }
 
 CameraSource *CameraSource::Create(const String16 &clientName) {
@@ -185,11 +192,7 @@ CameraSource::CameraSource(
       mNumFramesDropped(0),
       mNumGlitches(0),
       mGlitchDurationThresholdUs(200000),
-      mCollectStats(false),
-      mRecPause(false),
-      mPauseAdjTimeUs(0),
-      mPauseStartTimeUs(0),
-      mPauseEndTimeUs(0) {
+      mCollectStats(false) {
     mVideoSize.width  = -1;
     mVideoSize.height = -1;
 
@@ -223,7 +226,7 @@ status_t CameraSource::isCameraAvailable(
         mCameraFlags |= FLAGS_HOT_CAMERA;
         mDeathNotifier = new DeathNotifier();
         // isBinderAlive needs linkToDeath to work.
-        mCameraRecordingProxy->asBinder()->linkToDeath(mDeathNotifier);
+        IInterface::asBinder(mCameraRecordingProxy)->linkToDeath(mDeathNotifier);
     }
 
     mCamera->lock();
@@ -302,6 +305,12 @@ status_t CameraSource::isCameraColorFormatSupported(
     return OK;
 }
 
+static int32_t getHighSpeedFrameRate(const CameraParameters& params) {
+    const char* hsr = params.get("video-hsr");
+    int32_t rate = (hsr != NULL && strncmp(hsr, "off", 3)) ? atoi(hsr) : 0;
+    return rate > 240 ? 240 : rate;
+}
+
 /*
  * Configure the camera to use the requested video size
  * (width and height) and/or frame rate. If both width and
@@ -354,6 +363,10 @@ status_t CameraSource::configureCamera(
                 params->get(CameraParameters::KEY_SUPPORTED_PREVIEW_FRAME_RATES);
         CHECK(supportedFrameRates != NULL);
         ALOGV("Supported frame rates: %s", supportedFrameRates);
+        if (getHighSpeedFrameRate(*params)) {
+            ALOGI("Use default 30fps for HighSpeed %dfps", frameRate);
+            frameRate = 30;
+        }
         char buf[4];
         snprintf(buf, 4, "%d", frameRate);
         if (strstr(supportedFrameRates, buf) == NULL) {
@@ -455,6 +468,8 @@ status_t CameraSource::checkFrameRate(
         ALOGE("Failed to retrieve preview frame rate (%d)", frameRateActual);
         return UNKNOWN_ERROR;
     }
+    int32_t highSpeedRate = getHighSpeedFrameRate(params);
+    frameRateActual = highSpeedRate ? highSpeedRate : frameRateActual;
 
     // Check the actual video frame rate against the target/requested
     // video frame rate.
@@ -579,9 +594,7 @@ status_t CameraSource::initWithCameraAccess(
     mMeta->setInt32(kKeyStride,      mVideoSize.width);
     mMeta->setInt32(kKeySliceHeight, mVideoSize.height);
     mMeta->setInt32(kKeyFrameRate,   mVideoFrameRate);
-
-    ExtendedUtils::HFR::setHFRIfEnabled(params, mMeta);
-    ExtendedUtils::applyPreRotation(params, mMeta);
+    AVUtils::get()->extractCustomCameraKeys(params, mMeta);
 
     return OK;
 }
@@ -616,6 +629,16 @@ status_t CameraSource::startCameraRecording() {
         }
     }
 
+    err = mCamera->sendCommand(
+        CAMERA_CMD_SET_VIDEO_FORMAT, mEncoderFormat, mEncoderDataSpace);
+
+    // This could happen for CameraHAL1 clients; thus the failure is
+    // not a fatal error
+    if (err != OK) {
+        ALOGW("Failed to set video encoder format/dataspace to %d, %d due to %d",
+                mEncoderFormat, mEncoderDataSpace, err);
+    }
+
     err = OK;
     if (mCameraFlags & FLAGS_HOT_CAMERA) {
         mCamera->unlock();
@@ -639,21 +662,6 @@ status_t CameraSource::startCameraRecording() {
 
 status_t CameraSource::start(MetaData *meta) {
     ALOGV("start");
-    if(mRecPause) {
-        mRecPause = false;
-        mPauseAdjTimeUs = mPauseEndTimeUs - mPauseStartTimeUs;
-        ALOGV("resume : mPause Adj / End / Start : %lld / %lld / %lld us",
-            mPauseAdjTimeUs, mPauseEndTimeUs, mPauseStartTimeUs);
-        return OK;
-    }
-
-    if (mRecorderExtendedStats == NULL && meta != NULL) {
-        RecorderExtendedStats* rStats = NULL;
-        meta->findPointer(ExtendedStats::MEDIA_STATS_FLAG, (void**) &rStats);
-        mRecorderExtendedStats = rStats;
-    }
-
-    RECORDER_STATS(profileStart, STATS_PROFILE_CAMERA_SOURCE_START_LATENCY);
     CHECK(!mStarted);
     if (mInitCheck != OK) {
         ALOGE("CameraSource is not initialized yet");
@@ -667,11 +675,10 @@ status_t CameraSource::start(MetaData *meta) {
     }
 
     mStartTimeUs = 0;
-    mRecPause = false;
-    mPauseAdjTimeUs = 0;
-    mPauseStartTimeUs = 0;
-    mPauseEndTimeUs = 0;
     mNumInputBuffers = 0;
+    mEncoderFormat = HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED;
+    mEncoderDataSpace = HAL_DATASPACE_BT709;
+
     if (meta) {
         int64_t startTimeUs;
         if (meta->findInt64(kKeyTime, &startTimeUs)) {
@@ -683,6 +690,14 @@ status_t CameraSource::start(MetaData *meta) {
             CHECK_GT(nBuffers, 0);
             mNumInputBuffers = nBuffers;
         }
+
+        // apply encoder color format if specified
+        if (meta->findInt32(kKeyPixelFormat, &mEncoderFormat)) {
+            ALOGV("Using encoder format: %#x", mEncoderFormat);
+        }
+        if (meta->findInt32(kKeyColorSpace, &mEncoderDataSpace)) {
+            ALOGV("Using encoder data space: %#x", mEncoderDataSpace);
+        }
     }
 
     status_t err;
@@ -691,15 +706,6 @@ status_t CameraSource::start(MetaData *meta) {
     }
 
     return err;
-}
-
-status_t CameraSource::pause() {
-    mRecPause = true;
-    mPauseStartTimeUs = mLastFrameTimestampUs;
-    RECORDER_STATS(notifyPause, mPauseStartTimeUs);
-    ALOGV("pause : mPauseStart %lld us, #Queued Frames : %d",
-        mPauseStartTimeUs, mFramesReceived.size());
-    return OK;
 }
 
 void CameraSource::stopCameraRecording() {
@@ -738,7 +744,7 @@ void CameraSource::releaseCamera() {
     {
         Mutex::Autolock autoLock(mLock);
         if (mCameraRecordingProxy != 0) {
-            mCameraRecordingProxy->asBinder()->unlinkToDeath(mDeathNotifier);
+            IInterface::asBinder(mCameraRecordingProxy)->unlinkToDeath(mDeathNotifier);
             mCameraRecordingProxy.clear();
         }
         mCameraFlags = 0;
@@ -778,7 +784,6 @@ status_t CameraSource::reset() {
                     mNumFramesReceived, mNumFramesEncoded, mNumFramesDropped,
                     mLastFrameTimestampUs - mFirstFrameTimeUs);
         }
-        RECORDER_STATS(logRecordingDuration, mLastFrameTimestampUs - mFirstFrameTimeUs);
 
         if (mNumGlitches > 0) {
             ALOGW("%d long delays between neighboring video frames", mNumGlitches);
@@ -811,7 +816,6 @@ void CameraSource::releaseQueuedFrames() {
         releaseRecordingFrame(*it);
         mFramesReceived.erase(it);
         ++mNumFramesDropped;
-        RECORDER_STATS(logFrameDropped);
     }
 }
 
@@ -832,7 +836,6 @@ void CameraSource::signalBufferReturned(MediaBuffer *buffer) {
             releaseOneRecordingFrame((*it));
             mFramesBeingEncoded.erase(it);
             ++mNumFramesEncoded;
-            RECORDER_STATS(logFrameEncoded);
             buffer->setObserver(0);
             buffer->release();
             mFrameCompleteCondition.signal();
@@ -864,7 +867,7 @@ status_t CameraSource::read(
                 mFrameAvailableCondition.waitRelative(mLock,
                     mTimeBetweenFrameCaptureUs * 1000LL + CAMERA_SOURCE_TIMEOUT_NS)) {
                 if (mCameraRecordingProxy != 0 &&
-                    !mCameraRecordingProxy->asBinder()->isBinderAlive()) {
+                    !IInterface::asBinder(mCameraRecordingProxy)->isBinderAlive()) {
                     ALOGW("camera recording proxy is gone");
                     return ERROR_END_OF_STREAM;
                 }
@@ -890,33 +893,13 @@ status_t CameraSource::read(
 }
 
 void CameraSource::dataCallbackTimestamp(int64_t timestampUs,
-        int32_t msgType, const sp<IMemory> &data) {
-    ALOGV("dataCallbackTimestamp: timestamp %" PRId64 " us", timestampUs);
+        int32_t msgType __unused, const sp<IMemory> &data) {
+    ALOGV("dataCallbackTimestamp: timestamp %lld us", (long long)timestampUs);
     Mutex::Autolock autoLock(mLock);
     if (!mStarted || (mNumFramesReceived == 0 && timestampUs < mStartTimeUs)) {
-        ALOGV("Drop frame at %" PRId64 "/%" PRId64 " us", timestampUs, mStartTimeUs);
+        ALOGV("Drop frame at %lld/%lld us", (long long)timestampUs, (long long)mStartTimeUs);
         releaseOneRecordingFrame(data);
         return;
-    }
-
-    if (mRecPause == true) {
-        if(!mFramesReceived.empty()) {
-            ALOGV("releaseQueuedFrames - #Queued Frames : %d", mFramesReceived.size());
-            releaseQueuedFrames();
-        }
-        ALOGV("release One Video Frame for Pause : %lld us", timestampUs);
-        releaseOneRecordingFrame(data);
-        mPauseEndTimeUs = timestampUs;
-        return;
-    }
-    timestampUs -= mPauseAdjTimeUs;
-    ALOGV("dataCallbackTimestamp: AdjTimestamp %lld us", timestampUs);
-
-    if (mNumFramesReceived > 0) {
-        CHECK(timestampUs > mLastFrameTimestampUs);
-        if (timestampUs - mLastFrameTimestampUs > mGlitchDurationThresholdUs) {
-            ++mNumGlitches;
-        }
     }
 
     // May need to skip frame or modify timestamp. Currently implemented
@@ -926,10 +909,20 @@ void CameraSource::dataCallbackTimestamp(int64_t timestampUs,
         return;
     }
 
+    if (mNumFramesReceived > 0) {
+        if (timestampUs <= mLastFrameTimestampUs) {
+            ALOGW("Dropping frame with backward timestamp %lld (last %lld)",
+                    (long long)timestampUs, (long long)mLastFrameTimestampUs);
+            releaseOneRecordingFrame(data);
+            return;
+        }
+        if (timestampUs - mLastFrameTimestampUs > mGlitchDurationThresholdUs) {
+            ++mNumGlitches;
+        }
+    }
+
     mLastFrameTimestampUs = timestampUs;
     if (mNumFramesReceived == 0) {
-        RECORDER_STATS(profileStop, STATS_PROFILE_CAMERA_SOURCE_START_LATENCY);
-        RECORDER_STATS(profileStop, STATS_PROFILE_START_LATENCY);
         mFirstFrameTimeUs = timestampUs;
         // Initial delay
         if (mStartTimeUs > 0) {
@@ -967,7 +960,7 @@ void CameraSource::ProxyListener::dataCallbackTimestamp(
     mSource->dataCallbackTimestamp(timestamp / 1000, msgType, dataPtr);
 }
 
-void CameraSource::DeathNotifier::binderDied(const wp<IBinder>& who) {
+void CameraSource::DeathNotifier::binderDied(const wp<IBinder>& who __unused) {
     ALOGI("Camera recording proxy died");
 }
 

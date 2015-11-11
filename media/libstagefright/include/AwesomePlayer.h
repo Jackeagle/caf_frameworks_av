@@ -21,6 +21,7 @@
 #include "HTTPBase.h"
 #include "TimedEventQueue.h"
 
+#include <media/AudioResamplerPublic.h>
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/OMXClient.h>
@@ -28,30 +29,23 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/threads.h>
 #include <drm/DrmManagerClient.h>
-#include <media/stagefright/ExtendedStats.h>
-
-#define PLAYER_STATS(func, ...) \
-    do { \
-        if(mPlayerExtendedStats != NULL) { \
-            mPlayerExtendedStats->func(__VA_ARGS__);} \
-    } \
-    while(0)
 
 namespace android {
 
-struct AudioPlayer;
-struct DataSource;
-struct MediaBuffer;
+class AudioPlayer;
+struct ClockEstimator;
+class IDataSource;
+class MediaBuffer;
 struct MediaExtractor;
 struct MediaSource;
 struct NuCachedSource2;
-struct IGraphicBufferProducer;
+class IGraphicBufferProducer;
 
 class DrmManagerClinet;
 class DecryptHandle;
 
 class TimedTextDriver;
-struct WVMExtractor;
+class WVMExtractor;
 
 struct AwesomeRenderer : public RefBase {
     AwesomeRenderer() {}
@@ -100,6 +94,8 @@ struct AwesomePlayer {
 
     status_t setParameter(int key, const Parcel &request);
     status_t getParameter(int key, Parcel *reply);
+    status_t setPlaybackSettings(const AudioPlaybackRate &rate);
+    status_t getPlaybackSettings(AudioPlaybackRate *rate /* nonnull */);
     status_t invoke(const Parcel &request, Parcel *reply);
     status_t setCacheStatCollectFreq(const Parcel &request);
 
@@ -113,14 +109,9 @@ struct AwesomePlayer {
     void postAudioTearDown();
     status_t dump(int fd, const Vector<String16> &args) const;
 
-    status_t suspend();
-    status_t resume();
-
 private:
     friend struct AwesomeEvent;
     friend struct PreviewPlayer;
-
-    sp<PlayerExtendedStats> mPlayerExtendedStats;
 
     enum {
         PLAYING             = 0x01,
@@ -186,13 +177,13 @@ private:
     bool mVideoRendererIsPreview;
     int32_t mMediaRenderingStartGeneration;
     int32_t mStartGeneration;
-    ssize_t mActiveVideoTrackIndex;
 
     ssize_t mActiveAudioTrackIndex;
     sp<MediaSource> mAudioTrack;
     sp<MediaSource> mOmxSource;
     sp<MediaSource> mAudioSource;
     AudioPlayer *mAudioPlayer;
+    AudioPlaybackRate mPlaybackSettings;
     int64_t mDurationUs;
 
     int32_t mDisplayWidth;
@@ -205,7 +196,6 @@ private:
 
     int64_t mTimeSourceDeltaUs;
     int64_t mVideoTimeUs;
-    int64_t mVideoFrameDeltaUs;
 
     enum SeekType {
         NO_SEEK,
@@ -221,8 +211,6 @@ private:
 
     bool mWatchForAudioSeekComplete;
     bool mWatchForAudioEOS;
-
-    bool mIsFirstFrameAfterResume;
 
     sp<TimedEventQueue::Event> mVideoEvent;
     bool mVideoEventPending;
@@ -250,10 +238,10 @@ private:
     void postAudioTearDownEvent(int64_t delayUs);
 
     status_t play_l();
-    status_t fallbackToSWDecoder();
 
     MediaBuffer *mVideoBuffer;
 
+    sp<ClockEstimator> mClockEstimator;
     sp<HTTPBase> mConnectingDataSource;
     sp<NuCachedSource2> mCachedSource;
 
@@ -262,7 +250,6 @@ private:
 
     int64_t mLastVideoTimeUs;
     TimedTextDriver *mTextDriver;
-    ssize_t mActiveTextTrackIndex;
 
     sp<WVMExtractor> mWVMExtractor;
     sp<MediaExtractor> mExtractor;
@@ -315,6 +302,7 @@ private:
 
     bool getBitrate(int64_t *bitrate);
 
+    int64_t estimateRealTimeUs(TimeSource *ts, int64_t systemTimeUs);
     void finishSeekIfNecessary(int64_t videoTimeUs);
     void ensureCacheIsFetching_l();
 
@@ -335,13 +323,6 @@ private:
         ASSIGN
     };
     void modifyFlags(unsigned value, FlagMode mode);
-    void logFirstFrame();
-    void logCatchUp(int64_t ts, int64_t clock, int64_t delta);
-    void logLate(int64_t ts, int64_t clock, int64_t delta);
-    void logOnTime(int64_t ts, int64_t clock, int64_t delta);
-    void printStats();
-    int64_t getTimeOfDayUs();
-    bool mStatistics;
 
     struct TrackStat {
         String8 mMIME;
@@ -367,23 +348,6 @@ private:
         int32_t mVideoHeight;
         uint32_t mFlags;
         Vector<TrackStat> mTracks;
-
-        int64_t mConsecutiveFramesDropped;
-        uint32_t mCatchupTimeStart;
-        uint32_t mNumTimesSyncLoss;
-        uint32_t mMaxEarlyDelta;
-        uint32_t mMaxLateDelta;
-        uint32_t mMaxTimeSyncLoss;
-        uint64_t mTotalFrames;
-        int64_t mFirstFrameLatencyStartUs; //first frame latency start
-        int64_t mFirstFrameLatencyUs;
-        int64_t mLastFrameUs;
-        bool mVeryFirstFrame;
-        int64_t mTotalTimeUs;
-        int64_t mLastPausedTimeMs;
-        int64_t mLastSeekToTimeMs;
-        int64_t mResumeDelayStartUs;
-        int64_t mSeekDelayStartUs;
     } mStats;
 
     bool    mOffloadAudio;
@@ -402,7 +366,6 @@ private:
     status_t selectTrack(size_t trackIndex, bool select);
 
     size_t countTracks() const;
-    bool isWidevineContent() const;
 
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);

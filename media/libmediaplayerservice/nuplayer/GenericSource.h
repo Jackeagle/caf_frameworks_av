@@ -31,22 +31,25 @@ class DecryptHandle;
 class DrmManagerClient;
 struct AnotherPacketSource;
 struct ARTSPController;
-struct DataSource;
+class DataSource;
+class IDataSource;
 struct IMediaHTTPService;
 struct MediaSource;
 class MediaBuffer;
 struct NuCachedSource2;
-struct WVMExtractor;
+class WVMExtractor;
 
 struct NuPlayer::GenericSource : public NuPlayer::Source {
     GenericSource(const sp<AMessage> &notify, bool uidValid, uid_t uid);
 
-    status_t setDataSource(
+    virtual status_t setDataSource(
             const sp<IMediaHTTPService> &httpService,
             const char *url,
             const KeyedVector<String8, String8> *headers);
 
     status_t setDataSource(int fd, int64_t offset, int64_t length);
+
+    status_t setDataSource(const sp<DataSource>& dataSource);
 
     virtual void prepareAsync();
 
@@ -67,10 +70,12 @@ struct NuPlayer::GenericSource : public NuPlayer::Source {
     virtual size_t getTrackCount() const;
     virtual sp<AMessage> getTrackInfo(size_t trackIndex) const;
     virtual ssize_t getSelectedTrack(media_track_type type) const;
-    virtual status_t selectTrack(size_t trackIndex, bool select);
+    virtual status_t selectTrack(size_t trackIndex, bool select, int64_t timeUs);
     virtual status_t seekTo(int64_t seekTimeUs);
 
     virtual status_t setBuffers(bool audio, Vector<MediaBuffer *> &buffers);
+
+    virtual bool isStreaming() const;
 
 protected:
     virtual ~GenericSource();
@@ -79,7 +84,7 @@ protected:
 
     virtual sp<MetaData> getFormatMeta(bool audio);
 
-private:
+protected:
     enum {
         kWhatPrepareAsync,
         kWhatFetchSubtitleData,
@@ -94,9 +99,10 @@ private:
         kWhatSeek,
         kWhatReadBuffer,
         kWhatStopWidevine,
+        kWhatStart,
+        kWhatResume,
+        kWhatSecureDecodersInstantiated,
     };
-
-    Vector<sp<MediaSource> > mSources;
 
     struct Track {
         size_t mIndex;
@@ -104,10 +110,13 @@ private:
         sp<AnotherPacketSource> mPackets;
     };
 
+    Vector<sp<MediaSource> > mSources;
     Track mAudioTrack;
     int64_t mAudioTimeUs;
+    int64_t mAudioLastDequeueTimeUs;
     Track mVideoTrack;
     int64_t mVideoTimeUs;
+    int64_t mVideoLastDequeueTimeUs;
     Track mSubtitleTrack;
     Track mTimedTextTrack;
 
@@ -116,6 +125,9 @@ private:
     int64_t mDurationUs;
     bool mAudioIsVorbis;
     bool mIsWidevine;
+    bool mIsSecure;
+    bool mUseSetBuffers;
+    bool mIsStreaming;
     bool mUIDValid;
     uid_t mUID;
     sp<IMediaHTTPService> mHTTPService;
@@ -134,12 +146,13 @@ private:
     sp<DecryptHandle> mDecryptHandle;
     bool mStarted;
     bool mStopRead;
-    String8 mContentType;
-    AString mSniffedMIME;
-    off64_t mMetaDataSize;
     int64_t mBitrate;
     int32_t mPollBufferingGeneration;
     uint32_t mPendingReadBufferTypes;
+    bool mBuffering;
+    bool mPrepareBuffering;
+    int32_t mPrevBufferPercentage;
+
     mutable Mutex mReadBufferLock;
 
     sp<ALooper> mLooper;
@@ -151,9 +164,10 @@ private:
     int64_t getLastReadPosition();
     void setDrmPlaybackStatusIfNeeded(int playbackStatus, int64_t position);
 
-    status_t prefillCacheIfNecessary();
-
-    void notifyPreparedAndCleanup(status_t err);
+    virtual void notifyPreparedAndCleanup(status_t err);
+    void onSecureDecodersInstantiated(status_t err);
+    void finishPrepareAsync();
+    status_t startSources();
 
     void onGetFormatMeta(sp<AMessage> msg) const;
     sp<MetaData> doGetFormatMeta(bool audio) const;
@@ -162,12 +176,12 @@ private:
     ssize_t doGetSelectedTrack(media_track_type type) const;
 
     void onSelectTrack(sp<AMessage> msg);
-    status_t doSelectTrack(size_t trackIndex, bool select);
+    status_t doSelectTrack(size_t trackIndex, bool select, int64_t timeUs);
 
     void onSeek(sp<AMessage> msg);
     status_t doSeek(int64_t seekTimeUs);
 
-    void onPrepareAsync();
+    virtual void onPrepareAsync();
 
     void fetchTextData(
             uint32_t what, media_track_type type,
@@ -180,6 +194,7 @@ private:
     sp<ABuffer> mediaBufferToABuffer(
             MediaBuffer *mbuf,
             media_track_type trackType,
+            int64_t seekTimeUs,
             int64_t *actualTimeUs = NULL);
 
     void postReadBuffer(media_track_type trackType);
@@ -188,10 +203,18 @@ private:
             media_track_type trackType,
             int64_t seekTimeUs = -1ll, int64_t *actualTimeUs = NULL, bool formatChange = false);
 
+    void queueDiscontinuityIfNeeded(
+            bool seeking, bool formatChange, media_track_type trackType, Track *track);
+
     void schedulePollBuffering();
     void cancelPollBuffering();
+    void restartPollBuffering();
     void onPollBuffering();
-    void notifyBufferingUpdate(int percentage, int64_t durationUs);
+    void notifyBufferingUpdate(int32_t percentage);
+    void startBufferingIfNecessary();
+    void stopBufferingIfNecessary();
+    void sendCacheStats();
+    void ensureCacheIsFetching();
 
     DISALLOW_EVIL_CONSTRUCTORS(GenericSource);
 };

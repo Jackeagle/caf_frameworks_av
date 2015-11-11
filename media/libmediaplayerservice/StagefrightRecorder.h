@@ -23,16 +23,6 @@
 #include <utils/String8.h>
 
 #include <system/audio.h>
-#include <binder/AppOpsManager.h>
-
-#include <media/stagefright/ExtendedStats.h>
-
-#define RECORDER_STATS(func, ...) \
-    do { \
-        if(mRecorderExtendedStats != NULL) { \
-            mRecorderExtendedStats->func(__VA_ARGS__);} \
-    } \
-    while(0)
 
 namespace android {
 
@@ -45,12 +35,14 @@ struct MediaWriter;
 class MetaData;
 struct AudioSource;
 class MediaProfiles;
+class IGraphicBufferConsumer;
 class IGraphicBufferProducer;
 class SurfaceMediaSource;
-class ALooper;
+struct ALooper;
+struct AMessage;
 
 struct StagefrightRecorder : public MediaRecorderBase {
-    StagefrightRecorder();
+    StagefrightRecorder(const String16 &opPackageName);
     virtual ~StagefrightRecorder();
 
     virtual status_t init();
@@ -63,12 +55,11 @@ struct StagefrightRecorder : public MediaRecorderBase {
     virtual status_t setVideoFrameRate(int frames_per_second);
     virtual status_t setCamera(const sp<ICamera>& camera, const sp<ICameraRecordingProxy>& proxy);
     virtual status_t setPreviewSurface(const sp<IGraphicBufferProducer>& surface);
-    virtual status_t setOutputFile(const char *path);
+    virtual status_t setInputSurface(const sp<IGraphicBufferConsumer>& surface);
     virtual status_t setOutputFile(int fd, int64_t offset, int64_t length);
     virtual status_t setParameters(const String8& params);
     virtual status_t setListener(const sp<IMediaRecorderClient>& listener);
     virtual status_t setClientName(const String16& clientName);
-    virtual status_t setSourcePause(bool pause);
     virtual status_t prepare();
     virtual status_t start();
     virtual status_t pause();
@@ -80,18 +71,15 @@ struct StagefrightRecorder : public MediaRecorderBase {
     // Querying a SurfaceMediaSourcer
     virtual sp<IGraphicBufferProducer> querySurfaceMediaSource() const;
 
-private:
-    AppOpsManager mAppOpsManager;
+protected:
     sp<ICamera> mCamera;
     sp<ICameraRecordingProxy> mCameraProxy;
     sp<IGraphicBufferProducer> mPreviewSurface;
+    sp<IGraphicBufferConsumer> mPersistentSurface;
     sp<IMediaRecorderClient> mListener;
     String16 mClientName;
     uid_t mClientUid;
     sp<MediaWriter> mWriter;
-    sp<MediaSource> mVideoEncoderOMX;
-    sp<MediaSource> mAudioEncoderOMX;
-    sp<MediaSource> mVideoSourceNode;
     int mOutputFd;
     sp<AudioSource> mAudioSourceNode;
 
@@ -124,10 +112,10 @@ private:
     int32_t mStartTimeOffsetMs;
     int32_t mTotalBitRate;
 
-    bool mCaptureTimeLapse;
-    int64_t mTimeBetweenTimeLapseFrameCaptureUs;
+    bool mCaptureFpsEnable;
+    float mCaptureFps;
+    int64_t mTimeBetweenCaptureUs;
     sp<CameraSourceTimeLapse> mCameraSourceTimeLapse;
-
 
     String8 mParams;
 
@@ -135,7 +123,6 @@ private:
     MediaProfiles *mEncoderProfiles;
 
     bool mStarted;
-    bool mRecPaused;
     // Needed when GLFrames are encoded.
     // An <IGraphicBufferProducer> pointer
     // will be sent to the client side using which the
@@ -143,9 +130,9 @@ private:
     sp<IGraphicBufferProducer> mGraphicBufferProducer;
     sp<ALooper> mLooper;
 
-    sp<RecorderExtendedStats> mRecorderExtendedStats;
+    static const int kMaxHighSpeedFps = 1000;
 
-    status_t prepareInternal();
+    virtual status_t prepareInternal();
     status_t setupMPEG4orWEBMRecording();
     void setupMPEG4orWEBMMetaData(sp<MetaData> *meta);
     status_t setupAMRRecording();
@@ -153,9 +140,8 @@ private:
     status_t setupRawAudioRecording();
     status_t setupRTPRecording();
     status_t setupMPEG2TSRecording();
-    sp<MediaSource> createAudioSource();
-    status_t checkVideoEncoderCapabilities(
-            bool *supportsCameraSourceMetaDataMode);
+    virtual sp<MediaSource> createAudioSource();
+    virtual status_t checkVideoEncoderCapabilities();
     status_t checkAudioEncoderCapabilities();
     // Generic MediaSource set-up. Returns the appropriate
     // source (CameraSource or SurfaceMediaSource)
@@ -163,16 +149,19 @@ private:
     status_t setupMediaSource(sp<MediaSource> *mediaSource);
     status_t setupCameraSource(sp<CameraSource> *cameraSource);
     status_t setupAudioEncoder(const sp<MediaWriter>& writer);
-    status_t setupVideoEncoder(sp<MediaSource> cameraSource, sp<MediaSource> *source);
+    virtual status_t setupVideoEncoder(sp<MediaSource> cameraSource, sp<MediaSource> *source);
+    virtual void setupCustomVideoEncoderParams(sp<MediaSource> /*cameraSource*/,
+            sp<AMessage> &/*format*/) {}
+    virtual bool setCustomVideoEncoderMime(const video_encoder videoEncoder, sp<AMessage> format);
 
     // Encoding parameter handling utilities
-    status_t setParameter(const String8 &key, const String8 &value);
+    virtual status_t setParameter(const String8 &key, const String8 &value);
     status_t setParamAudioEncodingBitRate(int32_t bitRate);
     status_t setParamAudioNumberOfChannels(int32_t channles);
     status_t setParamAudioSamplingRate(int32_t sampleRate);
     status_t setParamAudioTimeScale(int32_t timeScale);
-    status_t setParamTimeLapseEnable(int32_t timeLapseEnable);
-    status_t setParamTimeBetweenTimeLapseFrameCapture(int64_t timeUs);
+    status_t setParamCaptureFpsEnable(int32_t timeLapseEnable);
+    status_t setParamCaptureFps(float fps);
     status_t setParamVideoEncodingBitRate(int32_t bitRate);
     status_t setParamVideoIFramesInterval(int32_t seconds);
     status_t setParamVideoEncoderProfile(int32_t profile);
@@ -196,18 +185,15 @@ private:
     void clipAudioSampleRate();
     void clipNumberOfAudioChannels();
     void setDefaultProfileIfNecessary();
-    void setDefaultVideoEncoderIfNecessary();
+    virtual void setDefaultVideoEncoderIfNecessary();
+    virtual status_t handleCustomOutputFormats() {return UNKNOWN_ERROR;}
+    virtual status_t handleCustomRecording() {return UNKNOWN_ERROR;}
+    virtual status_t handleCustomAudioSource(sp<AMessage> /*format*/) {return UNKNOWN_ERROR;}
+    virtual status_t handleCustomAudioEncoder() {return UNKNOWN_ERROR;}
 
 
     StagefrightRecorder(const StagefrightRecorder &);
     StagefrightRecorder &operator=(const StagefrightRecorder &);
-
-    /* extension */
-#ifdef ENABLE_AV_ENHANCEMENTS
-    status_t setupFMA2DPWriter();
-    status_t setupWAVERecording();
-    status_t setupExtendedRecording();
-#endif
 };
 
 }  // namespace android

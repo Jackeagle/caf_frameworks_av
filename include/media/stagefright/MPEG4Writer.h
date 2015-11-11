@@ -23,17 +23,16 @@
 #include <media/stagefright/MediaWriter.h>
 #include <utils/List.h>
 #include <utils/threads.h>
-#include <media/stagefright/ExtendedStats.h>
 
 namespace android {
 
+class AMessage;
 class MediaBuffer;
 class MediaSource;
 class MetaData;
 
 class MPEG4Writer : public MediaWriter {
 public:
-    MPEG4Writer(const char *filename);
     MPEG4Writer(int fd);
 
     // Limitations
@@ -50,6 +49,7 @@ public:
     virtual status_t dump(int fd, const Vector<String16>& args);
 
     void beginBox(const char *fourcc);
+    void beginBox(uint32_t id);
     void writeInt8(int8_t x);
     void writeInt16(int16_t x);
     void writeInt32(int32_t x);
@@ -64,6 +64,7 @@ public:
     int32_t getTimeScale() const { return mTimeScale; }
 
     status_t setGeoData(int latitudex10000, int longitudex10000);
+    status_t setCaptureRate(float captureFps);
     virtual void setStartTimeOffsetMs(int ms) { mStartTimeOffsetMs = ms; }
     virtual int32_t getStartTimeOffsetMs() const { return mStartTimeOffsetMs; }
 
@@ -90,6 +91,7 @@ private:
     off64_t mFreeBoxOffset;
     bool mStreamableFile;
     off64_t mEstimatedMoovBoxSize;
+    off64_t mMoovExtraSize;
     uint32_t mInterleaveDurationUs;
     int32_t mTimeScale;
     int64_t mStartTimestampUs;
@@ -97,13 +99,16 @@ private:
     int mLongitudex10000;
     bool mAreGeoTagsAvailable;
     int32_t mStartTimeOffsetMs;
-    int mHFRRatio;
 
     Mutex mLock;
 
     List<Track *> mTracks;
 
     List<off64_t> mBoxes;
+
+    sp<AMessage> mMetaKeys;
+
+    bool mIsVideoHEVC;
 
     void setStartTimestampUs(int64_t timeUs);
     int64_t getStartTimestampUs();  // Not const
@@ -178,6 +183,9 @@ private:
     // By default, real time recording is on.
     bool isRealTimeRecording() const;
 
+    // To use 3gp4 box for clips with AMR audio
+    bool mIsAudioAMR;
+
     void lock();
     void unlock();
 
@@ -198,6 +206,12 @@ private:
     void writeGeoDataBox();
     void writeLatitude(int degreex10000);
     void writeLongitude(int degreex10000);
+
+    void addDeviceMeta();
+    void writeHdlr();
+    void writeKeys();
+    void writeIlst();
+    void writeMetaBox();
     void sendSessionSummary();
     void release();
     status_t reset();
@@ -206,9 +220,6 @@ private:
 
     MPEG4Writer(const MPEG4Writer &);
     MPEG4Writer &operator=(const MPEG4Writer &);
-
-    bool mIsVideoHEVC;
-    bool mIsAudioAMR;
 };
 
 }  // namespace android

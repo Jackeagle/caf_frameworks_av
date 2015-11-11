@@ -56,10 +56,13 @@ CameraClient::CameraClient(const sp<CameraService>& cameraService,
     mOrientation = getOrientation(0, mCameraFacing == CAMERA_FACING_FRONT);
     mLegacyMode = legacyMode;
     mPlayShutterSound = true;
+
+    mLongshotEnabled = false;
+    mBurstCnt = 0;
     LOG1("CameraClient::CameraClient X (pid %d, id %d)", callingPid, cameraId);
 }
 
-status_t CameraClient::initialize(camera_module_t *module) {
+status_t CameraClient::initialize(CameraModule *module) {
     int callingPid = getCallingPid();
     status_t res;
 
@@ -75,7 +78,7 @@ status_t CameraClient::initialize(camera_module_t *module) {
     snprintf(camera_device_name, sizeof(camera_device_name), "%d", mCameraId);
 
     mHardware = new CameraHardwareInterface(camera_device_name);
-    res = mHardware->initialize(&module->common);
+    res = mHardware->initialize(module);
     if (res != OK) {
         ALOGE("%s: Camera %d: unable to initialize device: %s (%d)",
                 __FUNCTION__, mCameraId, strerror(-res), res);
@@ -99,12 +102,7 @@ status_t CameraClient::initialize(camera_module_t *module) {
 
 // tear down the client
 CameraClient::~CameraClient() {
-    // this lock should never be NULL
-    Mutex* lock = mCameraService->getClientLockById(mCameraId);
-    lock->lock();
     mDestructionStarted = true;
-    // client will not be accessed from callback. should unlock to prevent dead-lock in disconnect
-    lock->unlock();
     int callingPid = getCallingPid();
     LOG1("CameraClient::~CameraClient E (pid %d, this %p)", callingPid, this);
 
@@ -115,11 +113,12 @@ CameraClient::~CameraClient() {
 status_t CameraClient::dump(int fd, const Vector<String16>& args) {
     const size_t SIZE = 256;
     char buffer[SIZE];
-    status_t rc = INVALID_OPERATION;
-    size_t len = snprintf(buffer, SIZE, "Client[%d] (%p) PID: %d\n",
+
+    size_t len = snprintf(buffer, SIZE, "Client[%d] (%p) with UID %d\n",
             mCameraId,
-            getRemoteCallback()->asBinder().get(),
-            mClientPid);
+            (getRemoteCallback() != NULL ?
+                    IInterface::asBinder(getRemoteCallback()).get() : NULL),
+            mClientUid);
     len = (len > SIZE - 1) ? SIZE - 1 : len;
     write(fd, buffer, len);
 
@@ -132,10 +131,7 @@ status_t CameraClient::dump(int fd, const Vector<String16>& args) {
     const char *enddump = "\n\n";
     write(fd, enddump, strlen(enddump));
 
-    if (mHardware != NULL) {
-        rc =  mHardware->dump(fd, args);
-    }
-    return rc;
+    return mHardware->dump(fd, args);
 }
 
 // ----------------------------------------------------------------------------
@@ -208,7 +204,7 @@ status_t CameraClient::connect(const sp<ICameraClient>& client) {
     }
 
     if (mRemoteCallback != 0 &&
-        (client->asBinder() == mRemoteCallback->asBinder())) {
+        (IInterface::asBinder(client) == IInterface::asBinder(mRemoteCallback))) {
         LOG1("Connect to the same client");
         return NO_ERROR;
     }
@@ -331,7 +327,7 @@ status_t CameraClient::setPreviewTarget(
     sp<IBinder> binder;
     sp<ANativeWindow> window;
     if (bufferProducer != 0) {
-        binder = bufferProducer->asBinder();
+        binder = IInterface::asBinder(bufferProducer);
         // Using controlledByApp flag to ensure that the buffer queue remains in
         // async mode for the old camera API, where many applications depend
         // on that behavior.
@@ -455,15 +451,6 @@ void CameraClient::stopPreview() {
 
 
     disableMsgType(CAMERA_MSG_PREVIEW_FRAME);
-    //Disable picture related message types
-    ALOGI("stopPreview: Disable picture related messages ");
-    int picMsgType = 0;
-    picMsgType = (CAMERA_MSG_SHUTTER |
-                  CAMERA_MSG_POSTVIEW_FRAME |
-                  CAMERA_MSG_RAW_IMAGE |
-                  CAMERA_MSG_RAW_IMAGE_NOTIFY |
-                  CAMERA_MSG_COMPRESSED_IMAGE);
-    disableMsgType(picMsgType);
     mHardware->stopPreview();
 
     mPreviewBuffer.clear();
@@ -476,15 +463,6 @@ void CameraClient::stopRecording() {
     if (checkPidAndHardware() != NO_ERROR) return;
 
     disableMsgType(CAMERA_MSG_VIDEO_FRAME);
-    //Disable picture related message types
-    ALOGI("stopRecording: Disable picture related messages");
-    int picMsgType = 0;
-    picMsgType = (CAMERA_MSG_SHUTTER |
-                  CAMERA_MSG_POSTVIEW_FRAME |
-                  CAMERA_MSG_RAW_IMAGE |
-                  CAMERA_MSG_RAW_IMAGE_NOTIFY |
-                  CAMERA_MSG_COMPRESSED_IMAGE);
-    disableMsgType(picMsgType);
     mHardware->stopRecording();
     mCameraService->playSound(CameraService::SOUND_RECORDING);
 
@@ -710,17 +688,18 @@ void CameraClient::disableMsgType(int32_t msgType) {
 bool CameraClient::lockIfMessageWanted(int32_t msgType) {
     int sleepCount = 0;
     while (mMsgEnabled & msgType) {
-        if ((msgType == CAMERA_MSG_PREVIEW_FRAME) &&
-              (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE)) {
-           LOG1("lockIfMessageWanted(%d): Don't try to acquire mlock if "
-                "both Preview and Compressed are enabled", msgType);
-           return false;
-        }
         if (mLock.tryLock() == NO_ERROR) {
             if (sleepCount > 0) {
                 LOG1("lockIfMessageWanted(%d): waited for %d ms",
                     msgType, sleepCount * CHECK_MESSAGE_INTERVAL);
             }
+
+            // If messages are no longer enabled after acquiring lock, release and drop message
+            if ((mMsgEnabled & msgType) == 0) {
+                mLock.unlock();
+                break;
+            }
+
             return true;
         }
         if (sleepCount++ == 0) {
@@ -746,26 +725,13 @@ bool CameraClient::lockIfMessageWanted(int32_t msgType) {
 //      (others)                        c->dataCallback
 // dataCallbackTimestamp
 //      (others)                        c->dataCallbackTimestamp
-//
-// NOTE: the *Callback functions grab mLock of the client before passing
-// control to handle* functions. So the handle* functions must release the
-// lock before calling the ICameraClient's callbacks, so those callbacks can
-// invoke methods in the Client class again (For example, the preview frame
-// callback may want to releaseRecordingFrame). The handle* functions must
-// release the lock after all accesses to member variables, so it must be
-// handled very carefully.
 
 void CameraClient::notifyCallback(int32_t msgType, int32_t ext1,
         int32_t ext2, void* user) {
     LOG2("notifyCallback(%d)", msgType);
 
-    Mutex* lock = getClientLockFromCookie(user);
-    if (lock == NULL) return;
-    Mutex::Autolock alock(*lock);
-
-    CameraClient* client =
-            static_cast<CameraClient*>(getClientFromCookie(user));
-    if (client == NULL) return;
+    sp<CameraClient> client = static_cast<CameraClient*>(getClientFromCookie(user).get());
+    if (client.get() == nullptr) return;
 
     if (!client->lockIfMessageWanted(msgType)) return;
 
@@ -784,13 +750,8 @@ void CameraClient::dataCallback(int32_t msgType,
         const sp<IMemory>& dataPtr, camera_frame_metadata_t *metadata, void* user) {
     LOG2("dataCallback(%d)", msgType);
 
-    Mutex* lock = getClientLockFromCookie(user);
-    if (lock == NULL) return;
-    Mutex::Autolock alock(*lock);
-
-    CameraClient* client =
-            static_cast<CameraClient*>(getClientFromCookie(user));
-    if (client == NULL) return;
+    sp<CameraClient> client = static_cast<CameraClient*>(getClientFromCookie(user).get());
+    if (client.get() == nullptr) return;
 
     if (!client->lockIfMessageWanted(msgType)) return;
     if (dataPtr == 0 && metadata == NULL) {
@@ -822,13 +783,8 @@ void CameraClient::dataCallbackTimestamp(nsecs_t timestamp,
         int32_t msgType, const sp<IMemory>& dataPtr, void* user) {
     LOG2("dataCallbackTimestamp(%d)", msgType);
 
-    Mutex* lock = getClientLockFromCookie(user);
-    if (lock == NULL) return;
-    Mutex::Autolock alock(*lock);
-
-    CameraClient* client =
-            static_cast<CameraClient*>(getClientFromCookie(user));
-    if (client == NULL) return;
+    sp<CameraClient> client = static_cast<CameraClient*>(getClientFromCookie(user).get());
+    if (client.get() == nullptr) return;
 
     if (!client->lockIfMessageWanted(msgType)) return;
 

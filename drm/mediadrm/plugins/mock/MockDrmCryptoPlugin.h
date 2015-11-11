@@ -62,7 +62,8 @@ namespace android {
                                Vector<uint8_t> const &initData,
                                String8 const &mimeType, KeyType keyType,
                                KeyedVector<String8, String8> const &optionalParameters,
-                               Vector<uint8_t> &request, String8 &defaultUrl);
+                               Vector<uint8_t> &request, String8 &defaultUrl,
+                               KeyRequestType *keyRequestType);
 
         status_t provideKeyResponse(Vector<uint8_t> const &sessionId,
                                     Vector<uint8_t> const &response,
@@ -88,7 +89,9 @@ namespace android {
         status_t unprovisionDevice();
 
         status_t getSecureStops(List<Vector<uint8_t> > &secureStops);
+        status_t getSecureStop(Vector<uint8_t> const &ssid, Vector<uint8_t> &secureStop);
         status_t releaseSecureStops(Vector<uint8_t> const &ssRelease);
+        status_t releaseAllSecureStops();
 
         status_t getPropertyString(String8 const &name, String8 &value ) const;
         status_t getPropertyByteArray(String8 const &name,

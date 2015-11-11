@@ -20,6 +20,7 @@
 
 #include <inttypes.h>
 
+#include <gui/IGraphicBufferConsumer.h>
 #include <gui/IGraphicBufferProducer.h>
 #include <gui/Surface.h>
 #include <media/ICrypto.h>
@@ -29,20 +30,19 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaCodec.h>
-#include <media/stagefright/MetaData.h>
+#include <media/stagefright/MediaCodecSource.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MediaSource.h>
-#include <media/stagefright/MediaCodecSource.h>
+#include <media/stagefright/MetaData.h>
+#include <media/stagefright/PersistentSurface.h>
 #include <media/stagefright/Utils.h>
-#include "include/ExtendedUtils.h"
-
-#ifdef ENABLE_AV_ENHANCEMENTS
-#include <media/stagefright/MediaDefs.h>
-#include <media/stagefright/OMXCodec.h>
-#include <ExtendedUtils.h>
-#endif
+#include <OMX_Core.h>
+#include <stagefright/AVExtensions.h>
 
 namespace android {
+
+const int kDefaultSwVideoEncoderFormat = HAL_PIXEL_FORMAT_YCbCr_420_888;
+const int kDefaultSwVideoEncoderDataSpace = HAL_DATASPACE_BT709;
 
 struct MediaCodecSource::Puller : public AHandler {
     Puller(const sp<MediaSource> &source);
@@ -128,7 +128,7 @@ status_t MediaCodecSource::Puller::start(const sp<MetaData> &meta,
     mLooper->registerHandler(this);
     mNotify = notify;
 
-    sp<AMessage> msg = new AMessage(kWhatStart, id());
+    sp<AMessage> msg = new AMessage(kWhatStart, this);
     msg->setObject("meta", meta);
     return postSynchronouslyAndReturnError(msg);
 }
@@ -144,19 +144,19 @@ void MediaCodecSource::Puller::stop() {
     mSource->stop();
     ALOGV("source (%s) stopped", mIsAudio ? "audio" : "video");
 
-    (new AMessage(kWhatStop, id()))->post();
+    (new AMessage(kWhatStop, this))->post();
 }
 
 void MediaCodecSource::Puller::pause() {
-    (new AMessage(kWhatPause, id()))->post();
+    (new AMessage(kWhatPause, this))->post();
 }
 
 void MediaCodecSource::Puller::resume() {
-    (new AMessage(kWhatResume, id()))->post();
+    (new AMessage(kWhatResume, this))->post();
 }
 
 void MediaCodecSource::Puller::schedulePull() {
-    sp<AMessage> msg = new AMessage(kWhatPull, id());
+    sp<AMessage> msg = new AMessage(kWhatPull, this);
     msg->setInt32("generation", mPullGeneration);
     msg->post();
 }
@@ -189,7 +189,7 @@ void MediaCodecSource::Puller::onMessageReceived(const sp<AMessage> &msg) {
             sp<AMessage> response = new AMessage;
             response->setInt32("err", err);
 
-            uint32_t replyID;
+            sp<AReplyToken> replyID;
             CHECK(msg->senderAwaitsResponse(&replyID));
             response->postReply(replyID);
             break;
@@ -265,9 +265,10 @@ sp<MediaCodecSource> MediaCodecSource::Create(
         const sp<ALooper> &looper,
         const sp<AMessage> &format,
         const sp<MediaSource> &source,
+        const sp<IGraphicBufferConsumer> &consumer,
         uint32_t flags) {
     sp<MediaCodecSource> mediaSource =
-            new MediaCodecSource(looper, format, source, flags);
+            new MediaCodecSource(looper, format, source, consumer, flags);
 
     if (mediaSource->init() == OK) {
         return mediaSource;
@@ -276,13 +277,13 @@ sp<MediaCodecSource> MediaCodecSource::Create(
 }
 
 status_t MediaCodecSource::start(MetaData* params) {
-    sp<AMessage> msg = new AMessage(kWhatStart, mReflector->id());
+    sp<AMessage> msg = new AMessage(kWhatStart, mReflector);
     msg->setObject("meta", params);
     return postSynchronouslyAndReturnError(msg);
 }
 
 status_t MediaCodecSource::stop() {
-    sp<AMessage> msg = new AMessage(kWhatStop, mReflector->id());
+    sp<AMessage> msg = new AMessage(kWhatStop, mReflector);
     status_t err = postSynchronouslyAndReturnError(msg);
 
     // mPuller->stop() needs to be done outside MediaCodecSource's looper,
@@ -301,7 +302,7 @@ status_t MediaCodecSource::stop() {
 }
 
 status_t MediaCodecSource::pause() {
-    (new AMessage(kWhatPause, mReflector->id()))->post();
+    (new AMessage(kWhatPause, mReflector))->post();
     return OK;
 }
 
@@ -314,10 +315,6 @@ status_t MediaCodecSource::read(
         MediaBuffer** buffer, const ReadOptions* /* options */) {
     Mutex::Autolock autolock(mOutputBufferLock);
 
-    AString outputMIME;
-    CHECK(mOutputFormat->findString("mime", &outputMIME));
-    RECORDER_STATS(profileStartOnce, STATS_PROFILE_FIRST_BUFFER(mIsVideo));
-
     *buffer = NULL;
     while (mOutputBufferQueue.size() == 0 && !mEncoderReachedEOS) {
         mOutputBufferCond.wait(mOutputBufferLock);
@@ -325,11 +322,8 @@ status_t MediaCodecSource::read(
     if (!mEncoderReachedEOS) {
         *buffer = *mOutputBufferQueue.begin();
         mOutputBufferQueue.erase(mOutputBufferQueue.begin());
-
-        RECORDER_STATS(profileStop, STATS_PROFILE_FIRST_BUFFER(mIsVideo));
         return OK;
     }
-    RECORDER_STATS(profileStop, STATS_PROFILE_FIRST_BUFFER(mIsVideo));
     return mErrorCode;
 }
 
@@ -342,6 +336,7 @@ MediaCodecSource::MediaCodecSource(
         const sp<ALooper> &looper,
         const sp<AMessage> &outputFormat,
         const sp<MediaSource> &source,
+        const sp<IGraphicBufferConsumer> &consumer,
         uint32_t flags)
     : mLooper(looper),
       mOutputFormat(outputFormat),
@@ -351,6 +346,10 @@ MediaCodecSource::MediaCodecSource(
       mStarted(false),
       mStopping(false),
       mDoMoreWorkPending(false),
+      mSetEncoderFormat(false),
+      mEncoderFormat(0),
+      mEncoderDataSpace(0),
+      mGraphicBufferConsumer(consumer),
       mFirstSampleTimeUs(-1ll),
       mEncoderReachedEOS(false),
       mErrorCode(OK) {
@@ -365,41 +364,6 @@ MediaCodecSource::MediaCodecSource(
 
     if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
         mPuller = new Puller(source);
-    }
-#ifdef ENABLE_AV_ENHANCEMENTS
-    int32_t bitRate = 0;
-    int32_t sampleRate = 0;
-    int32_t numChannels = 0;
-    int32_t aacProfile = 0;
-    audio_encoder aacEncoder;
-
-    outputFormat->findInt32("bitrate", &bitRate);
-    outputFormat->findInt32("channel-count", &numChannels);
-    outputFormat->findInt32("sample-rate", &sampleRate);
-    outputFormat->findInt32("aac-profile", &aacProfile);
-    ALOGD("bitrate:%d, samplerate:%d, channels:%d",
-                    bitRate, sampleRate, numChannels);
-    if (!strcasecmp(mime.c_str(), MEDIA_MIMETYPE_AUDIO_AAC)) {
-        switch(aacProfile) {
-        case OMX_AUDIO_AACObjectLC:
-            aacEncoder = AUDIO_ENCODER_AAC;
-            ALOGV("AUDIO_ENCODER_AAC");
-            break;
-        case OMX_AUDIO_AACObjectHE:
-            aacEncoder = AUDIO_ENCODER_HE_AAC;
-            ALOGV("AUDIO_ENCODER_HE_AAC");
-            break;
-        case OMX_AUDIO_AACObjectELD:
-            aacEncoder = AUDIO_ENCODER_AAC_ELD;
-            ALOGV("AUDIO_ENCODER_AAC_ELD");
-        }
-        ExtendedUtils::UseQCHWAACEncoder(aacEncoder, numChannels,
-                                          bitRate, sampleRate);
-    }
-#endif
-
-    if (mRecorderExtendedStats == NULL) {
-        outputFormat->findObject(MEDIA_EXTENDED_STATS, (sp<RefBase>*)&mRecorderExtendedStats);
     }
 }
 
@@ -437,21 +401,13 @@ status_t MediaCodecSource::initEncoder() {
     }
 
     AString outputMIME;
+    AString role;
     CHECK(mOutputFormat->findString("mime", &outputMIME));
-
-    int width, height;
-    mOutputFormat->findInt32("width", &width);
-    mOutputFormat->findInt32("height", &height);
-
-    if (mIsVideo)
-        RECORDER_STATS(logDimensions, width, height);
-
-    //profile allocate node
-    {
-        ExtendedStats::AutoProfile autoProfile(
-                STATS_PROFILE_ALLOCATE_NODE(mIsVideo), mRecorderExtendedStats);
+    if (AVUtils::get()->useQCHWEncoder(mOutputFormat, role)) {
+        mEncoder = MediaCodec::CreateByComponentName(mCodecLooper, role.c_str());
+    } else {
         mEncoder = MediaCodec::CreateByType(
-                mCodecLooper, outputMIME.c_str(), true /* encoder */);
+            mCodecLooper, outputMIME.c_str(), true /* encoder */);
     }
 
     if (mEncoder == NULL) {
@@ -460,9 +416,9 @@ status_t MediaCodecSource::initEncoder() {
 
     ALOGV("output format is '%s'", mOutputFormat->debugString(0).c_str());
 
-    if (mRecorderExtendedStats != NULL) {
-        mOutputFormat->setObject(MEDIA_EXTENDED_STATS, mRecorderExtendedStats);
-    }
+    mEncoderActivityNotify = new AMessage(kWhatEncoderActivity, mReflector);
+    mEncoder->setCallback(mEncoderActivityNotify);
+
     status_t err = mEncoder->configure(
                 mOutputFormat,
                 NULL /* nativeWindow */,
@@ -473,27 +429,38 @@ status_t MediaCodecSource::initEncoder() {
         return err;
     }
 
-    int32_t hfrRatio = 0;
-    mOutputFormat->findInt32("hfr-ratio", &hfrRatio);
-
     mEncoder->getOutputFormat(&mOutputFormat);
     convertMessageToMetaData(mOutputFormat, mMeta);
-
-    ExtendedUtils::HFR::setHFRRatio(mMeta, hfrRatio);
 
     if (mFlags & FLAG_USE_SURFACE_INPUT) {
         CHECK(mIsVideo);
 
-        err = mEncoder->createInputSurface(&mGraphicBufferProducer);
+        if (mGraphicBufferConsumer != NULL) {
+            // When using persistent surface, we are only interested in the
+            // consumer, but have to use PersistentSurface as a wrapper to
+            // pass consumer over messages (similar to BufferProducerWrapper)
+            err = mEncoder->setInputSurface(
+                    new PersistentSurface(NULL, mGraphicBufferConsumer));
+        } else {
+            err = mEncoder->createInputSurface(&mGraphicBufferProducer);
+        }
 
         if (err != OK) {
             return err;
         }
     }
 
-    mEncoderActivityNotify = new AMessage(
-            kWhatEncoderActivity, mReflector->id());
-    mEncoder->setCallback(mEncoderActivityNotify);
+    sp<AMessage> inputFormat;
+    int32_t usingSwReadOften;
+    mSetEncoderFormat = false;
+    if (mEncoder->getInputFormat(&inputFormat) == OK
+            && inputFormat->findInt32("using-sw-read-often", &usingSwReadOften)
+            && usingSwReadOften) {
+        // this is a SW encoder; signal source to allocate SW readable buffers
+        mSetEncoderFormat = true;
+        mEncoderFormat = kDefaultSwVideoEncoderFormat;
+        mEncoderDataSpace = kDefaultSwVideoEncoderDataSpace;
+    }
 
     err = mEncoder->start();
 
@@ -553,6 +520,9 @@ void MediaCodecSource::signalEOS(status_t err) {
             mOutputBufferQueue.clear();
             mEncoderReachedEOS = true;
             mErrorCode = err;
+            if (err == OMX_ErrorHardware) {
+                mErrorCode = ERROR_IO;
+            }
             mOutputBufferCond.signal();
         }
 
@@ -561,7 +531,7 @@ void MediaCodecSource::signalEOS(status_t err) {
     if (mStopping && mEncoderReachedEOS) {
         ALOGI("encoder (%s) stopped", mIsVideo ? "video" : "audio");
         // posting reply to everyone that's waiting
-        List<uint32_t>::iterator it;
+        List<sp<AReplyToken>>::iterator it;
         for (it = mStopReplyIDQueue.begin();
                 it != mStopReplyIDQueue.end(); it++) {
             (new AMessage)->postReply(*it);
@@ -611,6 +581,9 @@ status_t MediaCodecSource::feedEncoderInputBuffers() {
             // push decoding time for video, or drift time for audio
             if (mIsVideo) {
                 mDecodingTimeQueue.push_back(timeUs);
+                if (mFlags & FLAG_USE_METADATA_INPUT) {
+                    AVUtils::get()->addDecodingTimesFromBatch(mbuf, mDecodingTimeQueue);
+                }
             } else {
 #if DEBUG_DRIFT_TIME
                 if (mFirstSampleTimeUs < 0ll) {
@@ -630,7 +603,7 @@ status_t MediaCodecSource::feedEncoderInputBuffers() {
             status_t err = mEncoder->getInputBuffer(bufferIndex, &inbuf);
             if (err != OK || inbuf == NULL) {
                 mbuf->release();
-                signalEOS();
+                signalEOS(err);
                 break;
             }
 
@@ -692,9 +665,17 @@ status_t MediaCodecSource::onStart(MetaData *params) {
         resume(startTimeUs);
     } else {
         CHECK(mPuller != NULL);
-        sp<AMessage> notify = new AMessage(
-                kWhatPullerNotify, mReflector->id());
-        err = mPuller->start(params, notify);
+        sp<MetaData> meta = params;
+        if (mSetEncoderFormat) {
+            if (meta == NULL) {
+                meta = new MetaData;
+            }
+            meta->setInt32(kKeyPixelFormat, mEncoderFormat);
+            meta->setInt32(kKeyColorSpace, mEncoderDataSpace);
+        }
+
+        sp<AMessage> notify = new AMessage(kWhatPullerNotify, mReflector);
+        err = mPuller->start(meta.get(), notify);
         if (err != OK) {
             return err;
         }
@@ -756,7 +737,6 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
             size_t size;
             int64_t timeUs;
             int32_t flags;
-            native_handle_t* handle = NULL;
 
             CHECK(msg->findInt32("index", &index));
             CHECK(msg->findSize("offset", &offset));
@@ -773,8 +753,8 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
             sp<ABuffer> outbuf;
             status_t err = mEncoder->getOutputBuffer(index, &outbuf);
             if (err != OK || outbuf == NULL) {
-                signalEOS();
-                    break;
+                signalEOS(err);
+                break;
             }
 
             MediaBuffer *mbuf = new MediaBuffer(outbuf->size());
@@ -829,18 +809,18 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             mEncoder->releaseOutputBuffer(index);
-        } else if (cbID == MediaCodec::CB_ERROR) {
+       } else if (cbID == MediaCodec::CB_ERROR) {
             status_t err;
             CHECK(msg->findInt32("err", &err));
             ALOGE("Encoder (%s) reported error : 0x%x",
                     mIsVideo ? "video" : "audio", err);
-            signalEOS();
-        }
-        break;
+            signalEOS(err);
+       }
+       break;
     }
     case kWhatStart:
     {
-        uint32_t replyID;
+        sp<AReplyToken> replyID;
         CHECK(msg->senderAwaitsResponse(&replyID));
 
         sp<RefBase> obj;
@@ -856,7 +836,7 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
     {
         ALOGI("encoder (%s) stopping", mIsVideo ? "video" : "audio");
 
-        uint32_t replyID;
+        sp<AReplyToken> replyID;
         CHECK(msg->senderAwaitsResponse(&replyID));
 
         if (mEncoderReachedEOS) {
