@@ -143,7 +143,7 @@ status_t SoundTriggerHwService::attach(const sound_trigger_module_handle_t handl
     sp<Module> module = mModules.valueAt(index);
 
     module->setClient(client);
-    client->asBinder()->linkToDeath(module);
+    IInterface::asBinder(client)->linkToDeath(module);
     moduleInterface = module;
 
     module->setCaptureState_l(mCaptureState);
@@ -510,7 +510,7 @@ void SoundTriggerHwService::Module::detach() {
         mModels.clear();
     }
     if (mClient != 0) {
-        mClient->asBinder()->unlinkToDeath(this);
+        IInterface::asBinder(mClient)->unlinkToDeath(this);
     }
     sp<SoundTriggerHwService> service = mService.promote();
     if (service == 0) {
@@ -535,6 +535,16 @@ status_t SoundTriggerHwService::Module::loadSoundModel(const sp<IMemory>& modelM
             (struct sound_trigger_sound_model *)modelMemory->pointer();
 
     AutoMutex lock(mLock);
+
+    if (mModels.size() >= mDescriptor.properties.max_sound_models) {
+        if (mModels.size() == 0) {
+            return INVALID_OPERATION;
+        }
+        ALOGW("loadSoundModel() max number of models exceeded %d making room for a new one",
+              mDescriptor.properties.max_sound_models);
+        unloadSoundModel_l(mModels.valueAt(0)->mHandle);
+    }
+
     status_t status = mHwDevice->load_sound_model(mHwDevice,
                                                   sound_model,
                                                   SoundTriggerHwService::soundModelCallback,
@@ -566,6 +576,11 @@ status_t SoundTriggerHwService::Module::unloadSoundModel(sound_model_handle_t ha
     }
 
     AutoMutex lock(mLock);
+    return unloadSoundModel_l(handle);
+}
+
+status_t SoundTriggerHwService::Module::unloadSoundModel_l(sound_model_handle_t handle)
+{
     ssize_t index = mModels.indexOfKey(handle);
     if (index < 0) {
         return BAD_VALUE;
@@ -574,6 +589,7 @@ status_t SoundTriggerHwService::Module::unloadSoundModel(sound_model_handle_t ha
     mModels.removeItem(handle);
     if (model->mState == Model::STATE_ACTIVE) {
         mHwDevice->stop_recognition(mHwDevice, model->mHandle);
+        model->mState = Model::STATE_IDLE;
     }
     AudioSystem::releaseSoundTriggerSession(model->mCaptureSession);
     return mHwDevice->unload_sound_model(mHwDevice, handle);
@@ -771,6 +787,7 @@ void SoundTriggerHwService::Module::setCaptureState_l(bool active)
                 mHwDevice->stop_recognition(mHwDevice, model->mHandle);
                 // keep model in ACTIVE state so that event is processed by onCallbackEvent()
                 struct sound_trigger_phrase_recognition_event phraseEvent;
+                memset(&phraseEvent, 0, sizeof(struct sound_trigger_phrase_recognition_event));
                 switch (model->mType) {
                 case SOUND_MODEL_TYPE_KEYPHRASE:
                     phraseEvent.num_phrases = model->mConfig.num_phrases;

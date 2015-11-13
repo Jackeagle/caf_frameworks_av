@@ -19,6 +19,7 @@
 #define LOG_TAG "MetadataRetrieverClient"
 #include <utils/Log.h>
 
+#include <inttypes.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -34,8 +35,8 @@
 #include <media/IMediaHTTPService.h>
 #include <media/MediaMetadataRetrieverInterface.h>
 #include <media/MediaPlayerInterface.h>
+#include <media/stagefright/DataSource.h>
 #include <private/media/VideoFrame.h>
-#include "MidiMetadataRetriever.h"
 #include "MetadataRetrieverClient.h"
 #include "StagefrightMetadataRetriever.h"
 #include "MediaPlayerFactory.h"
@@ -57,7 +58,7 @@ MetadataRetrieverClient::~MetadataRetrieverClient()
     disconnect();
 }
 
-status_t MetadataRetrieverClient::dump(int fd, const Vector<String16>& /*args*/) const
+status_t MetadataRetrieverClient::dump(int fd, const Vector<String16>& /*args*/)
 {
     const size_t SIZE = 256;
     char buffer[SIZE];
@@ -84,16 +85,11 @@ static sp<MediaMetadataRetrieverBase> createRetriever(player_type playerType)
 {
     sp<MediaMetadataRetrieverBase> p;
     switch (playerType) {
-        case STAGEFRIGHT_PLAYER:
         case NU_PLAYER:
         {
             p = new StagefrightMetadataRetriever;
             break;
         }
-        case SONIVOX_PLAYER:
-            ALOGV("create midi metadata retriever");
-            p = new MidiMetadataRetriever();
-            break;
         default:
             // TODO:
             // support for TEST_PLAYER
@@ -137,7 +133,7 @@ status_t MetadataRetrieverClient::setDataSource(
 
 status_t MetadataRetrieverClient::setDataSource(int fd, int64_t offset, int64_t length)
 {
-    ALOGV("setDataSource fd=%d, offset=%lld, length=%lld", fd, offset, length);
+    ALOGV("setDataSource fd=%d, offset=%" PRId64 ", length=%" PRId64 "", fd, offset, length);
     Mutex::Autolock lock(mLock);
     struct stat sb;
     int ret = fstat(fd, &sb);
@@ -145,20 +141,20 @@ status_t MetadataRetrieverClient::setDataSource(int fd, int64_t offset, int64_t 
         ALOGE("fstat(%d) failed: %d, %s", fd, ret, strerror(errno));
         return BAD_VALUE;
     }
-    ALOGV("st_dev  = %llu", sb.st_dev);
+    ALOGV("st_dev  = %" PRIu64 "", static_cast<uint64_t>(sb.st_dev));
     ALOGV("st_mode = %u", sb.st_mode);
     ALOGV("st_uid  = %lu", static_cast<unsigned long>(sb.st_uid));
     ALOGV("st_gid  = %lu", static_cast<unsigned long>(sb.st_gid));
-    ALOGV("st_size = %llu", sb.st_size);
+    ALOGV("st_size = %" PRIu64 "", sb.st_size);
 
     if (offset >= sb.st_size) {
-        ALOGE("offset (%lld) bigger than file size (%llu)", offset, sb.st_size);
+        ALOGE("offset (%" PRId64 ") bigger than file size (%" PRIu64 ")", offset, sb.st_size);
         ::close(fd);
         return BAD_VALUE;
     }
     if (offset + length > sb.st_size) {
         length = sb.st_size - offset;
-        ALOGV("calculated length = %lld", length);
+        ALOGV("calculated length = %" PRId64 "", length);
     }
 
     player_type playerType =
@@ -178,10 +174,30 @@ status_t MetadataRetrieverClient::setDataSource(int fd, int64_t offset, int64_t 
     return status;
 }
 
+status_t MetadataRetrieverClient::setDataSource(
+        const sp<IDataSource>& source)
+{
+    ALOGV("setDataSource(IDataSource)");
+    Mutex::Autolock lock(mLock);
+
+    sp<DataSource> dataSource = DataSource::CreateFromIDataSource(source);
+    player_type playerType =
+        MediaPlayerFactory::getPlayerType(NULL /* client */, dataSource);
+    ALOGV("player type = %d", playerType);
+    sp<MediaMetadataRetrieverBase> p = createRetriever(playerType);
+    if (p == NULL) return NO_INIT;
+    status_t ret = p->setDataSource(dataSource);
+    if (ret == NO_ERROR) mRetriever = p;
+    return ret;
+}
+
+Mutex MetadataRetrieverClient::sLock;
+
 sp<IMemory> MetadataRetrieverClient::getFrameAtTime(int64_t timeUs, int option)
 {
-    ALOGV("getFrameAtTime: time(%lld us) option(%d)", timeUs, option);
+    ALOGV("getFrameAtTime: time(%" PRId64 " us) option(%d)", timeUs, option);
     Mutex::Autolock lock(mLock);
+    Mutex::Autolock glock(sLock);
     mThumbnail.clear();
     if (mRetriever == NULL) {
         ALOGE("retriever is not initialized");
@@ -201,7 +217,7 @@ sp<IMemory> MetadataRetrieverClient::getFrameAtTime(int64_t timeUs, int option)
     }
     mThumbnail = new MemoryBase(heap, 0, size);
     if (mThumbnail == NULL) {
-        ALOGE("not enough memory for VideoFrame size=%u", size);
+        ALOGE("not enough memory for VideoFrame size=%zu", size);
         delete frame;
         return NULL;
     }
@@ -242,7 +258,7 @@ sp<IMemory> MetadataRetrieverClient::extractAlbumArt()
     }
     mAlbumArt = new MemoryBase(heap, 0, size);
     if (mAlbumArt == NULL) {
-        ALOGE("not enough memory for MediaAlbumArt size=%u", size);
+        ALOGE("not enough memory for MediaAlbumArt size=%zu", size);
         delete albumArt;
         return NULL;
     }

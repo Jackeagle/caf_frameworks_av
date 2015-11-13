@@ -25,6 +25,7 @@
 #include <utils/Errors.h>
 #include <binder/IInterface.h>
 #include <media/AudioSystem.h>
+#include <media/AudioPolicy.h>
 #include <media/IAudioPolicyServiceClient.h>
 
 #include <system/audio_policy.h>
@@ -43,7 +44,8 @@ public:
     //
     virtual status_t setDeviceConnectionState(audio_devices_t device,
                                               audio_policy_dev_state_t state,
-                                              const char *device_address) = 0;
+                                              const char *device_address,
+                                              const char *device_name) = 0;
     virtual audio_policy_dev_state_t getDeviceConnectionState(audio_devices_t device,
                                                                   const char *device_address) = 0;
     virtual status_t setPhoneState(audio_mode_t state) = 0;
@@ -56,25 +58,35 @@ public:
                                         audio_channel_mask_t channelMask = 0,
                                         audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE,
                                         const audio_offload_info_t *offloadInfo = NULL) = 0;
-    virtual audio_io_handle_t getOutputForAttr(const audio_attributes_t *attr,
-                                            uint32_t samplingRate = 0,
-                                            audio_format_t format = AUDIO_FORMAT_DEFAULT,
-                                            audio_channel_mask_t channelMask = 0,
-                                            audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE,
-                                            const audio_offload_info_t *offloadInfo = NULL) = 0;
+    virtual status_t getOutputForAttr(const audio_attributes_t *attr,
+                                        audio_io_handle_t *output,
+                                        audio_session_t session,
+                                        audio_stream_type_t *stream,
+                                        uid_t uid,
+                                        uint32_t samplingRate = 0,
+                                        audio_format_t format = AUDIO_FORMAT_DEFAULT,
+                                        audio_channel_mask_t channelMask = 0,
+                                        audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE,
+                                        audio_port_handle_t selectedDeviceId = AUDIO_PORT_HANDLE_NONE,
+                                        const audio_offload_info_t *offloadInfo = NULL) = 0;
     virtual status_t startOutput(audio_io_handle_t output,
                                  audio_stream_type_t stream,
-                                 int session = 0) = 0;
+                                 audio_session_t session) = 0;
     virtual status_t stopOutput(audio_io_handle_t output,
                                 audio_stream_type_t stream,
-                                int session = 0) = 0;
-    virtual void releaseOutput(audio_io_handle_t output) = 0;
-    virtual audio_io_handle_t getInput(audio_source_t inputSource,
-                                    uint32_t samplingRate,
-                                    audio_format_t format,
-                                    audio_channel_mask_t channelMask,
-                                    int audioSession,
-                                    audio_input_flags_t flags) = 0;
+                                audio_session_t session) = 0;
+    virtual void releaseOutput(audio_io_handle_t output,
+                               audio_stream_type_t stream,
+                               audio_session_t session) = 0;
+    virtual status_t  getInputForAttr(const audio_attributes_t *attr,
+                              audio_io_handle_t *input,
+                              audio_session_t session,
+                              uid_t uid,
+                              uint32_t samplingRate,
+                              audio_format_t format,
+                              audio_channel_mask_t channelMask,
+                              audio_input_flags_t flags,
+                              audio_port_handle_t selectedDeviceId = AUDIO_PORT_HANDLE_NONE) = 0;
     virtual status_t startInput(audio_io_handle_t input,
                                 audio_session_t session) = 0;
     virtual status_t stopInput(audio_io_handle_t input,
@@ -137,6 +149,8 @@ public:
 
     virtual void registerClient(const sp<IAudioPolicyServiceClient>& client) = 0;
 
+    virtual void setAudioPortCallbacksEnabled(bool enabled) = 0;
+
     virtual status_t acquireSoundTriggerSession(audio_session_t *session,
                                            audio_io_handle_t *ioHandle,
                                            audio_devices_t *device) = 0;
@@ -144,6 +158,13 @@ public:
     virtual status_t releaseSoundTriggerSession(audio_session_t session) = 0;
 
     virtual audio_mode_t getPhoneState() = 0;
+
+    virtual status_t registerPolicyMixes(Vector<AudioMix> mixes, bool registration) = 0;
+
+    virtual status_t startAudioSource(const struct audio_port_config *source,
+                                      const audio_attributes_t *attributes,
+                                      audio_io_handle_t *handle) = 0;
+    virtual status_t stopAudioSource(audio_io_handle_t handle) = 0;
 };
 
 

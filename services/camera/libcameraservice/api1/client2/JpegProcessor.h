@@ -47,7 +47,7 @@ class JpegProcessor:
     ~JpegProcessor();
 
     // CpuConsumer listener implementation
-    void onFrameAvailable();
+    void onFrameAvailable(const BufferItem& item);
 
     status_t updateStream(const Parameters &params);
     status_t deleteStream();
@@ -70,8 +70,8 @@ class JpegProcessor:
 
     int mCaptureStreamId;
     sp<CpuConsumer>    mCaptureConsumer;
-    sp<ANativeWindow>  mCaptureWindow;
-    sp<MemoryHeapBase>    mCaptureHeap;
+    sp<Surface>        mCaptureWindow;
+    sp<MemoryHeapBase> mCaptureHeap;
 
     virtual bool threadLoop();
 

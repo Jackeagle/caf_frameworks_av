@@ -21,11 +21,11 @@
 #include "ihevc_typedefs.h"
 #include "iv.h"
 #include "ivd.h"
-#include "ithread.h"
 #include "ihevcd_cxa.h"
 #include "SoftHEVC.h"
 
 #include <media/stagefright/foundation/ADebug.h>
+#include <media/stagefright/foundation/AUtils.h>
 #include <media/stagefright/MediaDefs.h>
 #include <OMX_VideoExt.h>
 
@@ -75,9 +75,16 @@ SoftHEVC::SoftHEVC(
       mNewWidth(mWidth),
       mNewHeight(mHeight),
       mChangingResolution(false) {
-    initPorts(kNumBuffers, INPUT_BUF_SIZE, kNumBuffers,
-            CODEC_MIME_TYPE);
-    CHECK_EQ(initDecoder(), (status_t)OK);
+    const size_t kMinCompressionRatio = 4 /* compressionRatio (for Level 4+) */;
+    const size_t kMaxOutputBufferSize = 2048 * 2048 * 3 / 2;
+    // INPUT_BUF_SIZE is given by HEVC codec as minimum input size
+    initPorts(
+            kNumBuffers, max(kMaxOutputBufferSize / kMinCompressionRatio, (size_t)INPUT_BUF_SIZE),
+            kNumBuffers, CODEC_MIME_TYPE, kMinCompressionRatio);
+}
+
+status_t SoftHEVC::init() {
+    return initDecoder();
 }
 
 SoftHEVC::~SoftHEVC() {
@@ -138,7 +145,7 @@ status_t SoftHEVC::setParams(size_t stride) {
     s_ctl_ip.u4_size = sizeof(ivd_ctl_set_config_ip_t);
     s_ctl_op.u4_size = sizeof(ivd_ctl_set_config_op_t);
 
-    ALOGV("Set the run-time (dynamic) parameters stride = %u", stride);
+    ALOGV("Set the run-time (dynamic) parameters stride = %zu", stride);
     status = ivdec_api_function(mCodecCtx, (void *)&s_ctl_ip,
             (void *)&s_ctl_op);
 
@@ -403,7 +410,7 @@ status_t SoftHEVC::initDecoder() {
     uint32_t bufferSize = displaySizeY * 3 / 2;
     mFlushOutBuffer = (uint8_t *)ivd_aligned_malloc(128, bufferSize);
     if (NULL == mFlushOutBuffer) {
-        ALOGE("Could not allocate flushOutputBuffer of size %zu", bufferSize);
+        ALOGE("Could not allocate flushOutputBuffer of size %u", bufferSize);
         return NO_MEMORY;
     }
 
@@ -644,7 +651,7 @@ void SoftHEVC::onQueueFilled(OMX_U32 portIndex) {
             // The decoder should be fixed so that |u4_error_code| instead of |status| returns
             // IHEVCD_UNSUPPORTED_DIMENSIONS.
             bool unsupportedDimensions =
-                ((IHEVCD_UNSUPPORTED_DIMENSIONS == status)
+                ((IHEVCD_UNSUPPORTED_DIMENSIONS == (IHEVCD_CXA_ERROR_CODES_T)status)
                     || (IHEVCD_UNSUPPORTED_DIMENSIONS == s_dec_op.u4_error_code));
             bool resChanged = (IVD_RES_CHANGED == (s_dec_op.u4_error_code & 0xFF));
 
@@ -761,5 +768,10 @@ void SoftHEVC::onQueueFilled(OMX_U32 portIndex) {
 android::SoftOMXComponent *createSoftOMXComponent(const char *name,
         const OMX_CALLBACKTYPE *callbacks, OMX_PTR appData,
         OMX_COMPONENTTYPE **component) {
-    return new android::SoftHEVC(name, callbacks, appData, component);
+    android::SoftHEVC *codec = new android::SoftHEVC(name, callbacks, appData, component);
+    if (codec->init() != android::OK) {
+        android::sp<android::SoftOMXComponent> release = codec;
+        return NULL;
+    }
+    return codec;
 }

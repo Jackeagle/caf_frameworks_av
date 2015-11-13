@@ -12,6 +12,7 @@ LOCAL_SRC_FILES:=                         \
         AudioPlayer.cpp                   \
         AudioSource.cpp                   \
         AwesomePlayer.cpp                 \
+        CallbackDataSource.cpp            \
         CameraSource.cpp                  \
         CameraSourceTimeLapse.cpp         \
         ClockEstimator.cpp                \
@@ -22,6 +23,7 @@ LOCAL_SRC_FILES:=                         \
         ESDS.cpp                          \
         FileSource.cpp                    \
         FLACExtractor.cpp                 \
+        FrameRenderTracker.cpp            \
         HTTPBase.cpp                      \
         JPEGSource.cpp                    \
         MP3Extractor.cpp                  \
@@ -31,11 +33,15 @@ LOCAL_SRC_FILES:=                         \
         MediaAdapter.cpp                  \
         MediaBuffer.cpp                   \
         MediaBufferGroup.cpp              \
+        MediaClock.cpp                    \
         MediaCodec.cpp                    \
         MediaCodecList.cpp                \
+        MediaCodecListOverrides.cpp       \
         MediaCodecSource.cpp              \
         MediaDefs.cpp                     \
         MediaExtractor.cpp                \
+        MediaSync.cpp                     \
+        MidiExtractor.cpp                 \
         http/MediaHTTP.cpp                \
         MediaMuxer.cpp                    \
         MediaSource.cpp                   \
@@ -44,39 +50,36 @@ LOCAL_SRC_FILES:=                         \
         NuMediaExtractor.cpp              \
         OMXClient.cpp                     \
         OMXCodec.cpp                      \
-        ExtendedCodec.cpp                 \
         OggExtractor.cpp                  \
+        ProcessInfo.cpp                   \
         SampleIterator.cpp                \
         SampleTable.cpp                   \
         SkipCutBuffer.cpp                 \
         StagefrightMediaScanner.cpp       \
         StagefrightMetadataRetriever.cpp  \
         SurfaceMediaSource.cpp            \
+        SurfaceUtils.cpp                  \
         ThrottledSource.cpp               \
         TimeSource.cpp                    \
         TimedEventQueue.cpp               \
         Utils.cpp                         \
         VBRISeeker.cpp                    \
+        VideoFrameScheduler.cpp           \
         WAVExtractor.cpp                  \
-        WAVEWriter.cpp                    \
         WVMExtractor.cpp                  \
         XINGSeeker.cpp                    \
         avc_utils.cpp                     \
-        ExtendedExtractor.cpp             \
-        ExtendedUtils.cpp                 \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/ \
+        $(TOP)/frameworks/av/media/libavextensions \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
         $(TOP)/frameworks/native/include/media/openmax \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
-        $(TOP)/external/openssl/include \
         $(TOP)/external/libvpx/libwebm \
         $(TOP)/system/netd/include \
-        $(TOP)/external/icu/icu4c/source/common \
-        $(TOP)/external/icu/icu4c/source/i18n \
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -90,6 +93,7 @@ LOCAL_SHARED_LIBRARIES := \
         libicuuc \
         liblog \
         libmedia \
+        libmediautils \
         libnetd_client \
         libopus \
         libsonivox \
@@ -101,22 +105,13 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz \
-        libpowermanager
-
-#QTI FLAC Decoder
-ifeq ($(call is-vendor-board-platform,QCOM),true)
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
-LOCAL_SRC_FILES += FLACDecoder.cpp
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-flac
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio
-LOCAL_CFLAGS := -DQTI_FLAC_DECODER
-endif
-endif
+        libpowermanager \
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
         libstagefright_aacenc \
         libstagefright_matroska \
+        libstagefright_mediafilter \
         libstagefright_webm \
         libstagefright_timedtext \
         libvpx \
@@ -124,42 +119,25 @@ LOCAL_STATIC_LIBRARIES := \
         libstagefright_mpeg2ts \
         libstagefright_id3 \
         libFLAC \
-        libmedia_helper
+        libmedia_helper \
 
-ifeq ($(TARGET_USES_QCOM_BSP), true)
-    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
-    LOCAL_CFLAGS += -DQCOM_BSP
-endif
-
-ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
-       LOCAL_CFLAGS     += -DENABLE_AV_ENHANCEMENTS
-       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
-       LOCAL_C_INCLUDES += $(TOP)/frameworks/av/media/libstagefright/include
-       LOCAL_SRC_FILES  += ExtendedMediaDefs.cpp
-       LOCAL_SRC_FILES  += ExtendedWriter.cpp
-       LOCAL_SRC_FILES  += FMA2DPWriter.cpp
-endif #TARGET_ENABLE_AV_ENHANCEMENTS
-
-ifeq ($(call is-vendor-board-platform,QCOM),true)
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PCM_OFFLOAD_24)),true)
-       LOCAL_CFLAGS     += -DPCM_OFFLOAD_ENABLED_24
-       LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/media/mm-core/inc
-endif
-endif
-
-ifeq ($(call is-vendor-board-platform,QCOM),true)
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_FLAC_OFFLOAD)),true)
-       LOCAL_CFLAGS     += -DFLAC_OFFLOAD_ENABLED
-endif
-endif
+LOCAL_WHOLE_STATIC_LIBRARIES := libavextensions
 
 LOCAL_SHARED_LIBRARIES += \
         libstagefright_enc_common \
         libstagefright_avc_common \
         libstagefright_foundation \
-        libdl
+        libdl \
+        libRScpp \
 
-LOCAL_CFLAGS += -Wno-multichar
+LOCAL_CFLAGS += -Wno-multichar -Werror -Wno-error=deprecated-declarations -Wall
+
+# enable experiments only in userdebug and eng builds
+ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
+LOCAL_CFLAGS += -DENABLE_STAGEFRIGHT_EXPERIMENTS
+endif
+
+LOCAL_CLANG := true
 
 LOCAL_MODULE:= libstagefright
 

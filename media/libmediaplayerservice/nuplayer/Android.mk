@@ -5,7 +5,9 @@ LOCAL_SRC_FILES:=                       \
         GenericSource.cpp               \
         HTTPLiveSource.cpp              \
         NuPlayer.cpp                    \
+        NuPlayerCCDecoder.cpp           \
         NuPlayerDecoder.cpp             \
+        NuPlayerDecoderBase.cpp         \
         NuPlayerDecoderPassThrough.cpp  \
         NuPlayerDriver.cpp              \
         NuPlayerRenderer.cpp            \
@@ -14,22 +16,24 @@ LOCAL_SRC_FILES:=                       \
         StreamingSource.cpp             \
 
 LOCAL_C_INCLUDES := \
+	$(TOP)/frameworks/av/media/libstagefright                     \
 	$(TOP)/frameworks/av/media/libstagefright/httplive            \
 	$(TOP)/frameworks/av/media/libstagefright/include             \
 	$(TOP)/frameworks/av/media/libstagefright/mpeg2ts             \
 	$(TOP)/frameworks/av/media/libstagefright/rtsp                \
 	$(TOP)/frameworks/av/media/libstagefright/timedtext           \
 	$(TOP)/frameworks/av/media/libmediaplayerservice              \
-	$(TOP)/frameworks/native/include/media/openmax
+	$(TOP)/frameworks/native/include/media/openmax                \
+        $(TOP)/frameworks/av/media/libavextensions                    \
 
-#QTI FLAC Decoder
-ifeq ($(call is-vendor-board-platform,QCOM),true)
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-flac
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio
-LOCAL_CFLAGS := -DQTI_FLAC_DECODER
+LOCAL_CFLAGS += -Werror -Wall
+
+# enable experiments only in userdebug and eng builds
+ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
+LOCAL_CFLAGS += -DENABLE_STAGEFRIGHT_EXPERIMENTS
 endif
-endif
+
+LOCAL_CLANG := true
 
 LOCAL_MODULE:= libstagefright_nuplayer
 

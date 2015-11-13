@@ -1,11 +1,8 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-ifeq ($(TARGET_DEVICE), manta)
-    LOCAL_CFLAGS += -DSURFACE_IS_BGR32
-endif
-
 LOCAL_SRC_FILES:=                     \
+        FrameDropper.cpp              \
         GraphicBufferSource.cpp       \
         OMX.cpp                       \
         OMXMaster.cpp                 \
@@ -33,7 +30,15 @@ LOCAL_SHARED_LIBRARIES :=               \
         libstagefright_foundation       \
         libdl
 
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
+    LOCAL_CFLAGS += -DQTI_FLAC_DECODER
+endif
+endif
+
 LOCAL_MODULE:= libstagefright_omx
+LOCAL_CFLAGS += -Werror -Wall
+LOCAL_CLANG := true
 
 include $(BUILD_SHARED_LIBRARY)
 

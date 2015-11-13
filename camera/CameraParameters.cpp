@@ -106,7 +106,6 @@ const char CameraParameters::WHITE_BALANCE_DAYLIGHT[] = "daylight";
 const char CameraParameters::WHITE_BALANCE_CLOUDY_DAYLIGHT[] = "cloudy-daylight";
 const char CameraParameters::WHITE_BALANCE_TWILIGHT[] = "twilight";
 const char CameraParameters::WHITE_BALANCE_SHADE[] = "shade";
-const char CameraParameters::WHITE_BALANCE_MANUAL_CCT[] = "manual-cct";
 
 // Values for effect settings.
 const char CameraParameters::EFFECT_NONE[] = "none";
@@ -169,7 +168,6 @@ const char CameraParameters::FOCUS_MODE_FIXED[] = "fixed";
 const char CameraParameters::FOCUS_MODE_EDOF[] = "edof";
 const char CameraParameters::FOCUS_MODE_CONTINUOUS_VIDEO[] = "continuous-video";
 const char CameraParameters::FOCUS_MODE_CONTINUOUS_PICTURE[] = "continuous-picture";
-const char CameraParameters::FOCUS_MODE_MANUAL_POSITION[] = "manual";
 
 // Values for light fx settings
 const char CameraParameters::LIGHTFX_LOWLIGHT[] = "low-light";
@@ -490,6 +488,11 @@ void CameraParameters::getSupportedPreviewFormats(Vector<int>& formats) const {
     const char* supportedPreviewFormats =
           get(CameraParameters::KEY_SUPPORTED_PREVIEW_FORMATS);
 
+    if (supportedPreviewFormats == NULL) {
+        ALOGW("%s: No supported preview formats.", __FUNCTION__);
+        return;
+    }
+
     String8 fmtStr(supportedPreviewFormats);
     char* prevFmts = fmtStr.lockBuffer(fmtStr.size());
 
@@ -523,8 +526,12 @@ int CameraParameters::previewFormatToEnum(const char* format) {
         !strcmp(format, PIXEL_FORMAT_RGBA8888) ?
             HAL_PIXEL_FORMAT_RGBA_8888 :    // RGB8888
         !strcmp(format, PIXEL_FORMAT_BAYER_RGGB) ?
-            HAL_PIXEL_FORMAT_RAW_SENSOR :   // Raw sensor data
+            HAL_PIXEL_FORMAT_RAW16 :   // Raw sensor data
         -1;
+}
+
+bool CameraParameters::isEmpty() const {
+    return mMap.isEmpty();
 }
 
 }; // namespace android

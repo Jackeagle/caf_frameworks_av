@@ -25,9 +25,6 @@
 #include <utils/RefBase.h>
 #include <utils/Vector.h>
 
-#define IPV4 4
-#define IPV6 6
-
 namespace android {
 
 struct AString;

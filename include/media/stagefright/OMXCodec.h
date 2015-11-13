@@ -100,8 +100,6 @@ struct OMXCodec : public MediaSource,
         kSupportsMultipleFramesPerInputBuffer = 1024,
         kRequiresLargerEncoderOutputBuffer    = 2048,
         kOutputBuffersAreUnreadable           = 4096,
-        kRequiresGlobalFlush                  = 0x20000000, // 2^29
-        kRequiresWMAProComponent              = 0x40000000, //2^30
     };
 
     struct CodecNameAndQuirks {
@@ -120,12 +118,6 @@ struct OMXCodec : public MediaSource,
             const sp<MediaCodecInfo> &list);
 
     static bool findCodecQuirks(const char *componentName, uint32_t *quirks);
-
-    // If profile/level is set in the meta data, its value in the meta
-    // data will be used; otherwise, the default value will be used.
-    status_t getVideoProfileLevel(const sp<MetaData>& meta,
-            const CodecProfileLevel& defaultProfileLevel,
-            CodecProfileLevel& profileLevel);
 
 protected:
     virtual ~OMXCodec();
@@ -147,14 +139,10 @@ private:
         EXECUTING_TO_IDLE,
         IDLE_TO_LOADED,
         RECONFIGURING,
-        PAUSING,
-        FLUSHING,
-        PAUSED,
         ERROR
     };
 
     enum {
-        kPortIndexBoth   = -1,
         kPortIndexInput  = 0,
         kPortIndexOutput = 1
     };
@@ -181,7 +169,6 @@ private:
         size_t mSize;
         void *mData;
         MediaBuffer *mMediaBuffer;
-        bool mOutputCropChanged;
     };
 
     struct CodecSpecificData {
@@ -263,7 +250,7 @@ private:
 
     status_t setAC3Format(int32_t numChannels, int32_t sampleRate);
 
-    void setG711Format(int32_t numChannels);
+    void setG711Format(int32_t sampleRate, int32_t numChannels);
 
     status_t setVideoPortFormatType(
             OMX_U32 portIndex,
@@ -283,6 +270,12 @@ private:
 
     status_t isColorFormatSupported(
             OMX_COLOR_FORMATTYPE colorFormat, int portIndex);
+
+    // If profile/level is set in the meta data, its value in the meta
+    // data will be used; otherwise, the default value will be used.
+    status_t getVideoProfileLevel(const sp<MetaData>& meta,
+            const CodecProfileLevel& defaultProfileLevel,
+            CodecProfileLevel& profileLevel);
 
     status_t setVideoOutputFormat(
             const char *mime, const sp<MetaData>& meta);
@@ -305,7 +298,6 @@ private:
     status_t queueBufferToNativeWindow(BufferInfo *info);
     status_t cancelBufferToNativeWindow(BufferInfo *info);
     BufferInfo* dequeueBufferFromNativeWindow();
-    status_t pushBlankBuffersToNativeWindow();
 
     status_t freeBuffersOnPort(
             OMX_U32 portIndex, bool onlyThoseWeOwn = false);
@@ -354,10 +346,8 @@ private:
 
     status_t configureCodec(const sp<MetaData> &meta);
 
-    status_t applyRotation();
     status_t waitForBufferFilled_l();
 
-    status_t resumeLocked(bool drainInputBuf);
     int64_t getDecodingTimeUs();
 
     status_t parseHEVCCodecSpecificData(
@@ -371,10 +361,6 @@ private:
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
-
-    int32_t mNumBFrames;
-    bool mInSmoothStreamingMode;
-    bool mOutputCropChanged;
 };
 
 struct CodecCapabilities {

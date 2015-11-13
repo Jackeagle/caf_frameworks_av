@@ -29,13 +29,14 @@ class AudioResamplerQTI : public AudioResampler {
 public:
     AudioResamplerQTI(int format, int inChannelCount, int32_t sampleRate);
     ~AudioResamplerQTI();
-    void resample(int32_t* out, size_t outFrameCount,
+    size_t resample(int32_t* out, size_t outFrameCount,
                   AudioBufferProvider* provider);
     void setSampleRate(int32_t inSampleRate);
     size_t getNumInSample(size_t outFrameCount);
 
     int16_t *mState;
     int16_t *mTmpBuf;
+    int32_t *mResamplerOutBuf;
     size_t mFrameIndex;
     size_t stateSize;
     size_t mOutFrameCount;
@@ -43,7 +44,6 @@ public:
     static const int kNumTmpBufSize = 1024;
 
     void init();
-    void setVolume(int16_t left, int16_t right);
     void reset();
 };
 

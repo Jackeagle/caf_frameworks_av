@@ -336,13 +336,21 @@ status_t AudioFlinger::EffectModule::configure()
 
     // TODO: handle configuration of effects replacing track process
     channelMask = thread->channelMask();
+    mConfig.outputCfg.channels = channelMask;
 
     if ((mDescriptor.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_AUXILIARY) {
         mConfig.inputCfg.channels = AUDIO_CHANNEL_OUT_MONO;
     } else {
         mConfig.inputCfg.channels = channelMask;
+        // TODO: Update this logic when multichannel effects are implemented.
+        // For offloaded tracks consider mono output as stereo for proper effect initialization
+        if (channelMask == AUDIO_CHANNEL_OUT_MONO) {
+            mConfig.inputCfg.channels = AUDIO_CHANNEL_OUT_STEREO;
+            mConfig.outputCfg.channels = AUDIO_CHANNEL_OUT_STEREO;
+            ALOGV("Overriding effect input and output as STEREO");
+        }
     }
-    mConfig.outputCfg.channels = channelMask;
+
     mConfig.inputCfg.format = AUDIO_FORMAT_PCM_16_BIT;
     mConfig.outputCfg.format = AUDIO_FORMAT_PCM_16_BIT;
     mConfig.inputCfg.samplingRate = thread->sampleRate();
@@ -1105,7 +1113,8 @@ status_t AudioFlinger::EffectHandle::enable()
         mEnabled = false;
     } else {
         if (thread != 0) {
-            if (thread->type() == ThreadBase::OFFLOAD) {
+            if ((thread->type() == ThreadBase::OFFLOAD) ||
+                (thread->type() == ThreadBase::DIRECT && thread->mIsDirectPcm)) {
                 PlaybackThread *t = (PlaybackThread *)thread.get();
                 Mutex::Autolock _l(t->mLock);
                 t->broadcast_l();
@@ -1953,4 +1962,4 @@ void AudioFlinger::EffectChain::setThread(const sp<ThreadBase>& thread)
     }
 }
 
-}; // namespace android
+} // namespace android

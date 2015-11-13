@@ -25,9 +25,10 @@
 
 namespace android {
 
-class MediaSource;
+struct AudioPlaybackRate;
 class AudioTrack;
-class AwesomePlayer;
+struct AwesomePlayer;
+class MediaSource;
 
 class AudioPlayer : public TimeSource {
 public:
@@ -73,7 +74,8 @@ public:
     bool isSeeking();
     bool reachedEOS(status_t *finalStatus);
 
-    status_t setPlaybackRatePermille(int32_t ratePermille);
+    status_t setPlaybackRate(const AudioPlaybackRate &rate);
+    status_t getPlaybackRate(AudioPlaybackRate *rate /* nonnull */);
 
     void notifyAudioEOS();
 
@@ -94,7 +96,6 @@ private:
 
     int64_t mPositionTimeMediaUs;
     int64_t mPositionTimeRealUs;
-    int64_t mDurationUs;
 
     bool mSeeking;
     bool mReachedEOS;
@@ -102,7 +103,6 @@ private:
     int64_t mSeekTimeUs;
 
     bool mStarted;
-    bool mSourcePaused;
 
     bool mIsFirstBuffer;
     status_t mFirstBufferResult;
@@ -115,7 +115,6 @@ private:
     bool mPlaying;
     int64_t mStartPosUs;
     const uint32_t mCreateFlags;
-    bool mPauseRequired;
 
     static void AudioCallback(int event, void *user, void *info);
     void AudioCallback(int event, void *info);

@@ -26,6 +26,7 @@
 #include <media/hardware/MetadataBufferType.h>
 
 #include <ui/GraphicBuffer.h>
+#include <gui/BufferItem.h>
 #include <gui/ISurfaceComposer.h>
 #include <gui/IGraphicBufferAlloc.h>
 #include <OMX_Component.h>
@@ -34,9 +35,6 @@
 #include <utils/String8.h>
 
 #include <private/gui/ComposerService.h>
-#if QCOM_BSP
-#include <gralloc_priv.h>
-#endif
 
 namespace android {
 
@@ -61,12 +59,8 @@ SurfaceMediaSource::SurfaceMediaSource(uint32_t bufferWidth, uint32_t bufferHeig
 
     BufferQueue::createBufferQueue(&mProducer, &mConsumer);
     mConsumer->setDefaultBufferSize(bufferWidth, bufferHeight);
-    mConsumer->setConsumerUsageBits(GRALLOC_USAGE_HW_VIDEO_ENCODER
-            | GRALLOC_USAGE_HW_TEXTURE
-#ifdef QCOM_BSP
-            | GRALLOC_USAGE_PRIVATE_WFD
-#endif
-            );
+    mConsumer->setConsumerUsageBits(GRALLOC_USAGE_HW_VIDEO_ENCODER |
+            GRALLOC_USAGE_HW_TEXTURE);
 
     sp<ISurfaceComposer> composer(ComposerService::getComposerService());
 
@@ -297,7 +291,7 @@ status_t SurfaceMediaSource::read(
     // TODO: mCurrentSlot can be made a bufferstate since there
     // can be more than one "current" slots.
 
-    BufferQueue::BufferItem item;
+    BufferItem item;
     // If the recording has started and the queue is empty, then just
     // wait here till the frames come in from the client side
     while (mStarted) {
@@ -455,7 +449,7 @@ void SurfaceMediaSource::signalBufferReturned(MediaBuffer *buffer) {
 }
 
 // Part of the BufferQueue::ConsumerListener
-void SurfaceMediaSource::onFrameAvailable() {
+void SurfaceMediaSource::onFrameAvailable(const BufferItem& /* item */) {
     ALOGV("onFrameAvailable");
 
     sp<FrameAvailableListener> listener;

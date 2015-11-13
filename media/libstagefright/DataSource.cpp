@@ -19,9 +19,11 @@
 #include "include/AMRExtractor.h"
 
 #include "include/AACExtractor.h"
+#include "include/CallbackDataSource.h"
 #include "include/DRMExtractor.h"
 #include "include/FLACExtractor.h"
 #include "include/HTTPBase.h"
+#include "include/MidiExtractor.h"
 #include "include/MP3Extractor.h"
 #include "include/MPEG2PSExtractor.h"
 #include "include/MPEG2TSExtractor.h"
@@ -30,7 +32,6 @@
 #include "include/OggExtractor.h"
 #include "include/WAVExtractor.h"
 #include "include/WVMExtractor.h"
-#include "include/ExtendedExtractor.h"
 
 #include "matroska/MatroskaExtractor.h"
 
@@ -46,6 +47,8 @@
 #include <utils/String8.h>
 
 #include <cutils/properties.h>
+
+#include <stagefright/AVExtensions.h>
 
 namespace android {
 
@@ -173,7 +176,8 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer_l(SniffAAC);
     RegisterSniffer_l(SniffMPEG2PS);
     RegisterSniffer_l(SniffWVM);
-    RegisterSniffer_l(ExtendedExtractor::Sniff);
+    RegisterSniffer_l(SniffMidi);
+    RegisterSniffer_l(AVUtils::get()->getExtendedSniffer());
 
     char value[PROPERTY_VALUE_MAX];
     if (property_get("drm.service.enabled", value, NULL)
@@ -189,7 +193,8 @@ sp<DataSource> DataSource::CreateFromURI(
         const char *uri,
         const KeyedVector<String8, String8> *headers,
         String8 *contentType,
-        HTTPBase *httpSource) {
+        HTTPBase *httpSource,
+        bool useExtendedCache) {
     if (contentType != NULL) {
         *contentType = "";
     }
@@ -213,7 +218,7 @@ sp<DataSource> DataSource::CreateFromURI(
                 ALOGE("Failed to make http connection from http service!");
                 return NULL;
             }
-            httpSource = new MediaHTTP(conn);
+            httpSource = AVFactory::get()->createMediaHTTP(conn);
         }
 
         String8 tmp;
@@ -245,10 +250,17 @@ sp<DataSource> DataSource::CreateFromURI(
                 *contentType = httpSource->getMIMEType();
             }
 
-            source = new NuCachedSource2(
-                    httpSource,
-                    cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
-                    disconnectAtHighwatermark);
+            if (useExtendedCache) {
+                source = AVFactory::get()->createCachedSource(
+                        httpSource,
+                        cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
+                        disconnectAtHighwatermark);
+            } else {
+                source = new NuCachedSource2(
+                        httpSource,
+                        cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
+                        disconnectAtHighwatermark);
+            }
         } else {
             // We do not want that prefetching, caching, datasource wrapper
             // in the widevine:// case.
@@ -277,8 +289,12 @@ sp<DataSource> DataSource::CreateMediaHTTP(const sp<IMediaHTTPService> &httpServ
     if (conn == NULL) {
         return NULL;
     } else {
-        return new MediaHTTP(conn);
+        return AVFactory::get()->createMediaHTTP(conn);
     }
+}
+
+sp<DataSource> DataSource::CreateFromIDataSource(const sp<IDataSource> &source) {
+    return new TinyCacheSource(new CallbackDataSource(source));
 }
 
 String8 DataSource::getMIMEType() const {

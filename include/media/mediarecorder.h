@@ -1,5 +1,4 @@
 /*
- **
  ** Copyright (C) 2008 The Android Open Source Project
  **
  ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +32,7 @@ class IMediaRecorder;
 class ICamera;
 class ICameraRecordingProxy;
 class IGraphicBufferProducer;
+struct PersistentSurface;
 class Surface;
 
 typedef void (*media_completion_f)(status_t status, void *cookie);
@@ -71,11 +71,11 @@ enum output_format {
     /* H.264/AAC data encapsulated in MPEG2/TS */
     OUTPUT_FORMAT_MPEG2TS = 8,
 
-   /* VP8/VORBIS data in a WEBM container */
+    /* VP8/VORBIS data in a WEBM container */
     OUTPUT_FORMAT_WEBM = 9,
 
-    OUTPUT_FORMAT_QCP = 20, // QCP file format
-    OUTPUT_FORMAT_WAVE = 21, //WAVE file format
+    OUTPUT_FORMAT_QCP = 20,
+    OUTPUT_FORMAT_WAVE = 21,
 
     OUTPUT_FORMAT_LIST_END // must be last - used to validate format type
 };
@@ -102,8 +102,12 @@ enum video_encoder {
     VIDEO_ENCODER_H264 = 2,
     VIDEO_ENCODER_MPEG_4_SP = 3,
     VIDEO_ENCODER_VP8 = 4,
-    VIDEO_ENCODER_H265 = 5,
-    VIDEO_ENCODER_LIST_END // must be the last - used to validate the video encoder type
+
+    VIDEO_ENCODER_LIST_END, // must be the last - used to validate the video encoder type
+
+    VIDEO_ENCODER_LIST_VENDOR_START = 1000,
+    VIDEO_ENCODER_H265 = 1001,
+    VIDEO_ENCODER_LIST_VENDOR_END,
 };
 
 /*
@@ -127,9 +131,6 @@ enum media_recorder_states {
 
     // Recording is in progress.
     MEDIA_RECORDER_RECORDING             = 1 << 4,
-
-    // Recording is paused.
-    MEDIA_RECORDER_PAUSED                = 1 << 5,
 };
 
 // The "msg" code passed to the listener in notify.
@@ -220,7 +221,7 @@ class MediaRecorder : public BnMediaRecorderClient,
                       public virtual IMediaDeathNotifier
 {
 public:
-    MediaRecorder();
+    MediaRecorder(const String16& opPackageName);
     ~MediaRecorder();
 
     void        died();
@@ -232,26 +233,25 @@ public:
     status_t    setOutputFormat(int of);
     status_t    setVideoEncoder(int ve);
     status_t    setAudioEncoder(int ae);
-    status_t    setOutputFile(const char* path);
     status_t    setOutputFile(int fd, int64_t offset, int64_t length);
     status_t    setVideoSize(int width, int height);
     status_t    setVideoFrameRate(int frames_per_second);
-    status_t    setParameters(const String8& params);
+    virtual status_t    setParameters(const String8& params);
     status_t    setListener(const sp<MediaRecorderListener>& listener);
     status_t    setClientName(const String16& clientName);
     status_t    prepare();
     status_t    getMaxAmplitude(int* max);
-    status_t    start();
-    status_t    stop();
-    status_t    pause();
+    virtual status_t    start();
+    virtual status_t    stop();
     status_t    reset();
     status_t    init();
     status_t    close();
     status_t    release();
     void        notify(int msg, int ext1, int ext2);
+    status_t    setInputSurface(const sp<PersistentSurface>& surface);
     sp<IGraphicBufferProducer>     querySurfaceMediaSourceFromMediaServer();
 
-private:
+protected:
     void                    doCleanUp();
     status_t                doReset();
 

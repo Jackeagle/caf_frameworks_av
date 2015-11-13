@@ -18,19 +18,22 @@
 
 #define NU_PLAYER_H_
 
+#include <media/AudioResamplerPublic.h>
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/foundation/AHandler.h>
-#include <media/stagefright/NativeWindowWrapper.h>
 
 namespace android {
 
 struct ABuffer;
 struct AMessage;
-struct MetaData;
+struct AudioPlaybackRate;
+struct AVSyncSettings;
+class IDataSource;
+class MetaData;
 struct NuPlayerDriver;
 
 struct NuPlayer : public AHandler {
-    NuPlayer();
+    NuPlayer(pid_t pid);
 
     void setUID(uid_t uid);
 
@@ -38,12 +41,14 @@ struct NuPlayer : public AHandler {
 
     void setDataSourceAsync(const sp<IStreamSource> &source);
 
-    void setDataSourceAsync(
+    virtual void setDataSourceAsync(
             const sp<IMediaHTTPService> &httpService,
             const char *url,
             const KeyedVector<String8, String8> *headers);
 
     void setDataSourceAsync(int fd, int64_t offset, int64_t length);
+
+    void setDataSourceAsync(const sp<DataSource> &source);
 
     void prepareAsync();
 
@@ -51,10 +56,14 @@ struct NuPlayer : public AHandler {
             const sp<IGraphicBufferProducer> &bufferProducer);
 
     void setAudioSink(const sp<MediaPlayerBase::AudioSink> &sink);
+    status_t setPlaybackSettings(const AudioPlaybackRate &rate);
+    status_t getPlaybackSettings(AudioPlaybackRate *rate /* nonnull */);
+    status_t setSyncSettings(const AVSyncSettings &sync, float videoFpsHint);
+    status_t getSyncSettings(AVSyncSettings *sync /* nonnull */, float *videoFps /* nonnull */);
+
     void start();
 
     void pause();
-    void resume();
 
     // Will notify the driver through "notifyResetComplete" once finished.
     void resetAsync();
@@ -66,25 +75,28 @@ struct NuPlayer : public AHandler {
     status_t setVideoScalingMode(int32_t mode);
     status_t getTrackInfo(Parcel* reply) const;
     status_t getSelectedTrack(int32_t type, Parcel* reply) const;
-    status_t selectTrack(size_t trackIndex, bool select);
+    status_t selectTrack(size_t trackIndex, bool select, int64_t timeUs);
     status_t getCurrentPosition(int64_t *mediaUs);
-    void getStats(int64_t *mNumFramesTotal, int64_t *mNumFramesDropped);
+    void getStats(Vector<sp<AMessage> > *mTrackStats);
 
     sp<MetaData> getFileMeta();
-
-    static const size_t kAggregateBufferSizeBytes;
+    float getFrameRate();
 
 protected:
     virtual ~NuPlayer();
 
     virtual void onMessageReceived(const sp<AMessage> &msg);
-
+    virtual bool ifDecodedPCMOffload() {return false;}
+    virtual void setDecodedPcmOffload(bool /*decodePcmOffload*/) {}
+    virtual bool canOffloadDecodedPCMStream(const sp<MetaData> /*meta*/,
+            bool /*hasVideo*/, bool /*isStreaming*/, audio_stream_type_t /*streamType*/) {return false;}
+    static bool IsHTTPLiveURL(const char *url);
 public:
     struct NuPlayerStreamListener;
     struct Source;
 
-private:
     struct Decoder;
+    struct DecoderBase;
     struct DecoderPassThrough;
     struct CCDecoder;
     struct GenericSource;
@@ -95,16 +107,23 @@ private:
     struct Action;
     struct SeekAction;
     struct SetSurfaceAction;
-    struct ShutdownDecoderAction;
+    struct ResumeDecoderAction;
+    struct FlushDecoderAction;
+    struct InstantiateDecoderAction;
     struct PostMessageAction;
     struct SimpleAction;
 
+protected:
     enum {
         kWhatSetDataSource              = '=DaS',
         kWhatPrepare                    = 'prep',
-        kWhatSetVideoNativeWindow       = '=NaW',
+        kWhatSetVideoSurface            = '=VSu',
         kWhatSetAudioSink               = '=AuS',
         kWhatMoreDataQueued             = 'more',
+        kWhatConfigPlayback             = 'cfPB',
+        kWhatConfigSync                 = 'cfSy',
+        kWhatGetPlaybackSettings        = 'gPbS',
+        kWhatGetSyncSettings            = 'gSyS',
         kWhatStart                      = 'strt',
         kWhatScanSources                = 'scan',
         kWhatVideoNotify                = 'vidN',
@@ -125,21 +144,22 @@ private:
     wp<NuPlayerDriver> mDriver;
     bool mUIDValid;
     uid_t mUID;
+    pid_t mPID;
     sp<Source> mSource;
     uint32_t mSourceFlags;
-    sp<NativeWindowWrapper> mNativeWindow;
+    sp<Surface> mSurface;
     sp<MediaPlayerBase::AudioSink> mAudioSink;
-    sp<Decoder> mVideoDecoder;
-    bool mVideoIsAVC;
+    sp<DecoderBase> mVideoDecoder;
     bool mOffloadAudio;
-    bool mIsStreaming;
-    sp<Decoder> mAudioDecoder;
+    sp<DecoderBase> mAudioDecoder;
     sp<CCDecoder> mCCDecoder;
     sp<Renderer> mRenderer;
     sp<ALooper> mRendererLooper;
     int32_t mAudioDecoderGeneration;
     int32_t mVideoDecoderGeneration;
     int32_t mRendererGeneration;
+
+    int64_t mPreviousSeekTimeUs;
 
     List<sp<Action> > mDeferredActions;
 
@@ -161,32 +181,41 @@ private:
         SHUT_DOWN,
     };
 
-    // Once the current flush is complete this indicates whether the
-    // notion of time has changed.
-    bool mTimeDiscontinuityPending;
+    enum FlushCommand {
+        FLUSH_CMD_NONE,
+        FLUSH_CMD_FLUSH,
+        FLUSH_CMD_SHUTDOWN,
+    };
 
     // Status of flush responses from the decoder and renderer.
     bool mFlushComplete[2][2];
 
-    // Used by feedDecoderInputData to aggregate small buffers into
-    // one large buffer.
-    sp<ABuffer> mPendingAudioAccessUnit;
-    status_t    mPendingAudioErr;
-    sp<ABuffer> mAggregateBuffer;
-
     FlushStatus mFlushingAudio;
     FlushStatus mFlushingVideo;
 
-    int64_t mSkipRenderingAudioUntilMediaTimeUs;
-    int64_t mSkipRenderingVideoUntilMediaTimeUs;
-
-    int64_t mNumFramesTotal, mNumFramesDropped;
+    // Status of flush responses from the decoder and renderer.
+    bool mResumePending;
 
     int32_t mVideoScalingMode;
 
+    AudioPlaybackRate mPlaybackSettings;
+    AVSyncSettings mSyncSettings;
+    float mVideoFpsHint;
     bool mStarted;
+    bool mSourceStarted;
 
-    inline const sp<Decoder> &getDecoder(bool audio) {
+    // Actual pause state, either as requested by client or due to buffering.
+    bool mPaused;
+
+    // Pause state as requested by client. Note that if mPausedByClient is
+    // true, mPaused is always true; if mPausedByClient is false, mPaused could
+    // still become true, when we pause internally due to buffering.
+    bool mPausedByClient;
+
+    // Pause state as requested by source (internally) due to buffering
+    bool mPausedForBuffering;
+
+    inline const sp<DecoderBase> &getDecoder(bool audio) {
         return audio ? mAudioDecoder : mVideoDecoder;
     }
 
@@ -197,28 +226,33 @@ private:
         mFlushComplete[1][1] = false;
     }
 
-    void openAudioSink(const sp<AMessage> &format, bool offloadOnly);
+    virtual void tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVideo);
     void closeAudioSink();
+    void determineAudioModeChange();
 
-    status_t instantiateDecoder(bool audio, sp<Decoder> *decoder);
+    virtual status_t instantiateDecoder(bool audio, sp<DecoderBase> *decoder);
+
+    status_t onInstantiateSecureDecoders();
 
     void updateVideoSize(
             const sp<AMessage> &inputFormat,
             const sp<AMessage> &outputFormat = NULL);
 
-    status_t feedDecoderInputData(bool audio, const sp<AMessage> &msg);
-    void renderBuffer(bool audio, const sp<AMessage> &msg);
-
-    void notifyListener(int msg, int ext1, int ext2, const Parcel *in = NULL);
+    virtual void notifyListener(int msg, int ext1, int ext2, const Parcel *in = NULL);
 
     void handleFlushComplete(bool audio, bool isDecoder);
     void finishFlushIfPossible();
 
+    void onStart(int64_t startPositionUs = -1);
+    void onResume();
+    void onPause();
+
     bool audioDecoderStillNeeded();
 
-    void flushDecoder(
-            bool audio, bool needShutdown, const sp<AMessage> &newFormat = NULL);
-    void updateDecoderFormatWithoutFlush(bool audio, const sp<AMessage> &format);
+    void flushDecoder(bool audio, bool needShutdown);
+
+    void finishResume();
+    void notifyDriverSeekComplete();
 
     void postScanSources();
 
@@ -227,23 +261,26 @@ private:
 
     void processDeferredActions();
 
-    void performSeek(int64_t seekTimeUs, bool needNotify);
-    void performDecoderFlush();
-    void performDecoderShutdown(bool audio, bool video);
+    void performSeek(int64_t seekTimeUs);
+    void performDecoderFlush(FlushCommand audio, FlushCommand video);
     void performReset();
     void performScanSources();
-    void performSetSurface(const sp<NativeWindowWrapper> &wrapper);
+    void performSetSurface(const sp<Surface> &wrapper);
+    void performResumeDecoders(bool needNotify);
 
-    void onSourceNotify(const sp<AMessage> &msg);
+    virtual void onSourceNotify(const sp<AMessage> &msg);
     void onClosedCaptionNotify(const sp<AMessage> &msg);
 
     void queueDecoderShutdown(
             bool audio, bool video, const sp<AMessage> &reply);
 
     void sendSubtitleData(const sp<ABuffer> &buffer, int32_t baseIndex);
+    void sendTimedMetaData(const sp<ABuffer> &buffer);
     void sendTimedTextData(const sp<ABuffer> &buffer);
 
     void writeTrackInfo(Parcel* reply, const sp<AMessage> format) const;
+
+    void tearDownPCMOffload(const sp<AMessage> &msg);
 
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
 };

@@ -18,9 +18,7 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "AudioPlayer"
-#define ATRACE_TAG ATRACE_TAG_AUDIO
 #include <utils/Log.h>
-#include <utils/Trace.h>
 #include <cutils/compiler.h>
 
 #include <binder/IPCThreadState.h>
@@ -34,14 +32,8 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
-#include <media/stagefright/ExtendedCodec.h>
 
 #include "include/AwesomePlayer.h"
-
-#ifdef ENABLE_AV_ENHANCEMENTS
-#include "QCMetaData.h"
-#include "QCMediaDefs.h"
-#endif
 
 namespace android {
 
@@ -57,13 +49,11 @@ AudioPlayer::AudioPlayer(
       mNumFramesPlayedSysTimeUs(ALooper::GetNowUs()),
       mPositionTimeMediaUs(-1),
       mPositionTimeRealUs(-1),
-      mDurationUs(-1),
       mSeeking(false),
       mReachedEOS(false),
       mFinalStatus(OK),
       mSeekTimeUs(0),
       mStarted(false),
-      mSourcePaused(false),
       mIsFirstBuffer(false),
       mFirstBufferResult(OK),
       mFirstBuffer(NULL),
@@ -72,8 +62,7 @@ AudioPlayer::AudioPlayer(
       mPinnedTimeUs(-1ll),
       mPlaying(false),
       mStartPosUs(0),
-      mCreateFlags(flags),
-      mPauseRequired(false) {
+      mCreateFlags(flags) {
 }
 
 AudioPlayer::~AudioPlayer() {
@@ -93,14 +82,12 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
 
     status_t err;
     if (!sourceAlreadyStarted) {
-        mSourcePaused = false;
         err = mSource->start();
 
         if (err != OK) {
             return err;
         }
     }
-    ALOGD("start of Playback, useOffload %d",useOffload());
 
     // We allow an optional INFO_FORMAT_CHANGED at the very beginning
     // of playback, if there is one, getFormat below will retrieve the
@@ -115,10 +102,7 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
         mSeeking = false;
     }
 
-    do {
-        mFirstBufferResult = mSource->read(&mFirstBuffer, &options);
-    } while (mFirstBufferResult == -EAGAIN);
-
+    mFirstBufferResult = mSource->read(&mFirstBuffer, &options);
     if (mFirstBufferResult == INFO_FORMAT_CHANGED) {
         ALOGV("INFO_FORMAT_CHANGED!!!");
 
@@ -138,46 +122,25 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
     success = format->findInt32(kKeySampleRate, &mSampleRate);
     CHECK(success);
 
-    int32_t numChannels, channelMask = 0;
+    int32_t numChannels, channelMask;
     success = format->findInt32(kKeyChannelCount, &numChannels);
     CHECK(success);
-
-    format->findInt64(kKeyDuration, &mDurationUs);
 
     if(!format->findInt32(kKeyChannelMask, &channelMask)) {
         // log only when there's a risk of ambiguity of channel mask selection
         ALOGI_IF(numChannels > 2,
                 "source format didn't specify channel mask, using (%d) channel order", numChannels);
         channelMask = CHANNEL_MASK_USE_CHANNEL_ORDER;
-    } else if (channelMask == 0) {
-        channelMask = audio_channel_out_mask_from_count(numChannels);
-        ALOGV("channel mask is zero,update from channel count %d", channelMask);
     }
 
     audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
-    int32_t bitWidth = 16;
-#ifdef ENABLE_AV_ENHANCEMENTS
-#if defined(FLAC_OFFLOAD_ENABLED) || defined(PCM_OFFLOAD_ENABLED_24)
-    format->findInt32(kKeySampleBits, &bitWidth);
-#endif
-#endif
 
     if (useOffload()) {
         if (mapMimeToAudioFormat(audioFormat, mime) != OK) {
-            ALOGE("%s Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format",
-                  __func__, mime);
+            ALOGE("Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format", mime);
             audioFormat = AUDIO_FORMAT_INVALID;
         } else {
-            // Override audio format for PCM offload
-            if (audioFormat == AUDIO_FORMAT_PCM_16_BIT) {
-                if (16 == bitWidth)
-                    audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
-                else if (24 == bitWidth)
-                    audioFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
-            }
-
-            ALOGV("%s Mime type \"%s\" mapped to audio_format 0x%x",
-                  __func__, mime, audioFormat);
+            ALOGV("Mime type \"%s\" mapped to audio_format 0x%x", mime, audioFormat);
         }
 
         int32_t aacaot = -1;
@@ -208,7 +171,6 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
                 offloadInfo.duration_us = -1;
             }
 
-            offloadInfo.bit_width = bitWidth;
             offloadInfo.sample_rate = mSampleRate;
             offloadInfo.channel_mask = channelMask;
             offloadInfo.format = audioFormat;
@@ -295,16 +257,13 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
     mStarted = true;
     mPlaying = true;
     mPinnedTimeUs = -1ll;
-    const char *componentName;
-    if (!(format->findCString(kKeyDecoderComponent, &componentName))) {
-          componentName = "none";
-    }
-    mPauseRequired = ExtendedCodec::isSourcePauseRequired(componentName);
+
     return OK;
 }
 
 void AudioPlayer::pause(bool playPendingSamples) {
     CHECK(mStarted);
+
     if (playPendingSamples) {
         if (mAudioSink.get() != NULL) {
             mAudioSink->stop();
@@ -325,23 +284,10 @@ void AudioPlayer::pause(bool playPendingSamples) {
     }
 
     mPlaying = false;
-    CHECK(mSource != NULL);
-    if (mPauseRequired) {
-        if (mSource->pause() == OK) {
-            mSourcePaused = true;
-        }
-    }
-    ALOGD("Pause Playback at %lld",getMediaTimeUs());
 }
 
 status_t AudioPlayer::resume() {
     CHECK(mStarted);
-    CHECK(mSource != NULL);
-    ALOGD("Resume Playback at %lld",getMediaTimeUs());
-    if (mSourcePaused == true) {
-        mSourcePaused = false;
-        mSource->start();
-    }
     status_t err;
 
     if (mAudioSink.get() != NULL) {
@@ -360,7 +306,7 @@ status_t AudioPlayer::resume() {
 void AudioPlayer::reset() {
     CHECK(mStarted);
 
-    ALOGD("reset: mPlaying=%d mReachedEOS=%d useOffload=%d",
+    ALOGV("reset: mPlaying=%d mReachedEOS=%d useOffload=%d",
                                 mPlaying, mReachedEOS, useOffload() );
 
     if (mAudioSink.get() != NULL) {
@@ -403,7 +349,7 @@ void AudioPlayer::reset() {
         mInputBuffer->release();
         mInputBuffer = NULL;
     }
-    mSourcePaused = false;
+
     mSource->stop();
 
     // The following hack is necessary to ensure that the OMX
@@ -411,11 +357,7 @@ void AudioPlayer::reset() {
     // to instantiate it again.
     // When offloading, the OMX component is not used so this hack
     // is not needed
-    sp<MetaData> format = mSource->getFormat();
-    const char *mime;
-    format->findCString(kKeyMIMEType, &mime);
-    if (!useOffload() ||
-        (useOffload() && !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW))) {
+    if (!useOffload()) {
         wp<MediaSource> tmp = mSource;
         mSource.clear();
         while (tmp.promote() != NULL) {
@@ -437,7 +379,6 @@ void AudioPlayer::reset() {
     mStarted = false;
     mPlaying = false;
     mStartPosUs = 0;
-    mPauseRequired = false;
 }
 
 // static
@@ -460,21 +401,29 @@ bool AudioPlayer::reachedEOS(status_t *finalStatus) {
 
 void AudioPlayer::notifyAudioEOS() {
     ALOGV("AudioPlayer@0x%p notifyAudioEOS", this);
-    if (useOffload()) {
-        mPositionTimeRealUs = getOutputPlayPositionUs_l ();
-        ALOGV("notifyAudioEOS: mPositionTimeRealUs = %lld ",mPositionTimeRealUs);
-    }
+
     if (mObserver != NULL) {
         mObserver->postAudioEOS(0);
         ALOGV("Notified observer of EOS!");
     }
 }
 
-status_t AudioPlayer::setPlaybackRatePermille(int32_t ratePermille) {
+status_t AudioPlayer::setPlaybackRate(const AudioPlaybackRate &rate) {
     if (mAudioSink.get() != NULL) {
-        return mAudioSink->setPlaybackRatePermille(ratePermille);
+        return mAudioSink->setPlaybackRate(rate);
     } else if (mAudioTrack != 0){
-        return mAudioTrack->setSampleRate(ratePermille * mSampleRate / 1000);
+        return mAudioTrack->setPlaybackRate(rate);
+    } else {
+        return NO_INIT;
+    }
+}
+
+status_t AudioPlayer::getPlaybackRate(AudioPlaybackRate *rate /* nonnull */) {
+    if (mAudioSink.get() != NULL) {
+        return mAudioSink->getPlaybackRate(rate);
+    } else if (mAudioTrack != 0) {
+        *rate = mAudioTrack->getPlaybackRate();
+        return OK;
     } else {
         return NO_INIT;
     }
@@ -544,7 +493,6 @@ uint32_t AudioPlayer::getNumFramesPendingPlayout() const {
 }
 
 size_t AudioPlayer::fillBuffer(void *data, size_t size) {
-    ATRACE_CALL();
     if (mNumFramesPlayed == 0) {
         ALOGV("AudioCallback");
     }
@@ -601,10 +549,6 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                 mIsFirstBuffer = false;
             } else {
                 err = mSource->read(&mInputBuffer, &options);
-                if (err == OK && mInputBuffer == NULL && mSourcePaused) {
-                    ALOGV("mSourcePaused, return 0 from fillBuffer");
-                    return 0;
-                }
             }
 
             CHECK((err == OK && mInputBuffer != NULL)
@@ -612,26 +556,9 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
 
             Mutex::Autolock autoLock(mLock);
 
-            if (err != OK && err != INFO_FORMAT_CHANGED) {
+            if (err != OK) {
                 if (!mReachedEOS) {
                     if (useOffload()) {
-                        // After seek there is a possible race condition if
-                        // OffloadThread is observing state_stopping_1 before
-                        // framesReady() > 0. Ensure sink stop is called
-                        // after last buffer is released. This ensures the
-                        // partial buffer is written to the driver before
-                        // stopping one is observed.The drawback is that
-                        // there will be an unnecessary call to the parser
-                        // after parser signalled EOS.
-
-                        int64_t playPosition = 0;
-                        playPosition = getOutputPlayPositionUs_l();
-                        if ((size_done > 0) && (playPosition < mDurationUs)) {
-                             ALOGW("send Partial buffer down\n");
-                             ALOGW("skip calling stop till next fillBuffer\n");
-                             break;
-                        }
-
                         // no more buffers to push - stop() and wait for STREAM_END
                         // don't set mReachedEOS until stream end received
                         if (mAudioSink != NULL) {
@@ -822,7 +749,7 @@ int64_t AudioPlayer::getOutputPlayPositionUs_l()
     if (mAudioSink != NULL) {
         mAudioSink->getPosition(&playedSamples);
         sampleRate = mAudioSink->getSampleRate();
-    } else if (mAudioTrack != NULL) {
+    } else {
         mAudioTrack->getPosition(&playedSamples);
         sampleRate = mAudioTrack->getSampleRate();
     }
@@ -896,23 +823,6 @@ status_t AudioPlayer::seekTo(int64_t time_us) {
 
     ALOGV("seekTo( %" PRId64 " )", time_us);
 
-    if(useOffload())
-    {
-        int64_t playPosition = 0;
-        playPosition = getOutputPlayPositionUs_l();
-
-        /*Ignore the seek if seek time is same as player position.
-        Time comparisons are done in msec because when seek time
-        is past EOF, media player reset it to the clip duration
-        which is in Msec converted from Usec */
-        if((time_us/1000) == (playPosition/1000))
-        {
-            ALOGE("Ignore seek and post seek complete");
-            if(mObserver)
-                mObserver->postAudioSeekComplete();
-            return OK;
-        }
-    }
     mSeeking = true;
     mPositionTimeRealUs = mPositionTimeMediaUs = -1;
     mReachedEOS = false;

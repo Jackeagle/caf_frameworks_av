@@ -23,6 +23,7 @@
 
 #include <binder/Parcel.h>
 
+#include <media/AudioEffect.h>
 #include <media/IAudioPolicyService.h>
 
 #include <system/audio.h>
@@ -40,7 +41,7 @@ enum {
     START_OUTPUT,
     STOP_OUTPUT,
     RELEASE_OUTPUT,
-    GET_INPUT,
+    GET_INPUT_FOR_ATTR,
     START_INPUT,
     STOP_INPUT,
     RELEASE_INPUT,
@@ -68,8 +69,14 @@ enum {
     GET_OUTPUT_FOR_ATTR,
     ACQUIRE_SOUNDTRIGGER_SESSION,
     RELEASE_SOUNDTRIGGER_SESSION,
-    GET_PHONE_STATE
+    GET_PHONE_STATE,
+    REGISTER_POLICY_MIXES,
+    START_AUDIO_SOURCE,
+    STOP_AUDIO_SOURCE,
+    SET_AUDIO_PORT_CALLBACK_ENABLED,
 };
+
+#define MAX_ITEMS_PER_LIST 1024
 
 class BpAudioPolicyService : public BpInterface<IAudioPolicyService>
 {
@@ -82,13 +89,15 @@ public:
     virtual status_t setDeviceConnectionState(
                                     audio_devices_t device,
                                     audio_policy_dev_state_t state,
-                                    const char *device_address)
+                                    const char *device_address,
+                                    const char *device_name)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
         data.writeInt32(static_cast <uint32_t>(device));
         data.writeInt32(static_cast <uint32_t>(state));
         data.writeCString(device_address);
+        data.writeCString(device_name);
         remote()->transact(SET_DEVICE_CONNECTION_STATE, data, &reply);
         return static_cast <status_t> (reply.readInt32());
     }
@@ -159,25 +168,53 @@ public:
         return static_cast <audio_io_handle_t> (reply.readInt32());
     }
 
-    virtual audio_io_handle_t getOutputForAttr(
-                                            const audio_attributes_t *attr,
-                                            uint32_t samplingRate,
-                                            audio_format_t format,
-                                            audio_channel_mask_t channelMask,
-                                            audio_output_flags_t flags,
-                                            const audio_offload_info_t *offloadInfo)
+    virtual status_t getOutputForAttr(const audio_attributes_t *attr,
+                                        audio_io_handle_t *output,
+                                        audio_session_t session,
+                                        audio_stream_type_t *stream,
+                                        uid_t uid,
+                                        uint32_t samplingRate,
+                                        audio_format_t format,
+                                        audio_channel_mask_t channelMask,
+                                        audio_output_flags_t flags,
+                                        audio_port_handle_t selectedDeviceId,
+                                        const audio_offload_info_t *offloadInfo)
         {
             Parcel data, reply;
             data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
             if (attr == NULL) {
-                ALOGE("Writing NULL audio attributes - shouldn't happen");
-                return (audio_io_handle_t) 0;
+                if (stream == NULL) {
+                    ALOGE("getOutputForAttr(): NULL audio attributes and stream type");
+                    return BAD_VALUE;
+                }
+                if (*stream == AUDIO_STREAM_DEFAULT) {
+                    ALOGE("getOutputForAttr unspecified stream type");
+                    return BAD_VALUE;
+                }
             }
-            data.write(attr, sizeof(audio_attributes_t));
+            if (output == NULL) {
+                ALOGE("getOutputForAttr NULL output - shouldn't happen");
+                return BAD_VALUE;
+            }
+            if (attr == NULL) {
+                data.writeInt32(0);
+            } else {
+                data.writeInt32(1);
+                data.write(attr, sizeof(audio_attributes_t));
+            }
+            data.writeInt32(session);
+            if (stream == NULL) {
+                data.writeInt32(0);
+            } else {
+                data.writeInt32(1);
+                data.writeInt32(*stream);
+            }
+            data.writeInt32(uid);
             data.writeInt32(samplingRate);
             data.writeInt32(static_cast <uint32_t>(format));
             data.writeInt32(channelMask);
             data.writeInt32(static_cast <uint32_t>(flags));
+            data.writeInt32(selectedDeviceId);
             // hasOffloadInfo
             if (offloadInfo == NULL) {
                 data.writeInt32(0);
@@ -185,62 +222,97 @@ public:
                 data.writeInt32(1);
                 data.write(offloadInfo, sizeof(audio_offload_info_t));
             }
-            remote()->transact(GET_OUTPUT_FOR_ATTR, data, &reply);
-            return static_cast <audio_io_handle_t> (reply.readInt32());
+            status_t status = remote()->transact(GET_OUTPUT_FOR_ATTR, data, &reply);
+            if (status != NO_ERROR) {
+                return status;
+            }
+            status = (status_t)reply.readInt32();
+            if (status != NO_ERROR) {
+                return status;
+            }
+            *output = (audio_io_handle_t)reply.readInt32();
+            if (stream != NULL) {
+                *stream = (audio_stream_type_t)reply.readInt32();
+            }
+            return status;
         }
 
     virtual status_t startOutput(audio_io_handle_t output,
                                  audio_stream_type_t stream,
-                                 int session)
+                                 audio_session_t session)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
         data.writeInt32(output);
         data.writeInt32((int32_t) stream);
-        data.writeInt32(session);
+        data.writeInt32((int32_t)session);
         remote()->transact(START_OUTPUT, data, &reply);
         return static_cast <status_t> (reply.readInt32());
     }
 
     virtual status_t stopOutput(audio_io_handle_t output,
                                 audio_stream_type_t stream,
-                                int session)
+                                audio_session_t session)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
         data.writeInt32(output);
         data.writeInt32((int32_t) stream);
-        data.writeInt32(session);
+        data.writeInt32((int32_t)session);
         remote()->transact(STOP_OUTPUT, data, &reply);
         return static_cast <status_t> (reply.readInt32());
     }
 
-    virtual void releaseOutput(audio_io_handle_t output)
+    virtual void releaseOutput(audio_io_handle_t output,
+                               audio_stream_type_t stream,
+                               audio_session_t session)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
         data.writeInt32(output);
+        data.writeInt32((int32_t)stream);
+        data.writeInt32((int32_t)session);
         remote()->transact(RELEASE_OUTPUT, data, &reply);
     }
 
-    virtual audio_io_handle_t getInput(
-                                    audio_source_t inputSource,
-                                    uint32_t samplingRate,
-                                    audio_format_t format,
-                                    audio_channel_mask_t channelMask,
-                                    int audioSession,
-                                    audio_input_flags_t flags)
+    virtual status_t getInputForAttr(const audio_attributes_t *attr,
+                                     audio_io_handle_t *input,
+                                     audio_session_t session,
+                                     uid_t uid,
+                                     uint32_t samplingRate,
+                                     audio_format_t format,
+                                     audio_channel_mask_t channelMask,
+                                     audio_input_flags_t flags,
+                                     audio_port_handle_t selectedDeviceId)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
-        data.writeInt32((int32_t) inputSource);
+        if (attr == NULL) {
+            ALOGE("getInputForAttr NULL attr - shouldn't happen");
+            return BAD_VALUE;
+        }
+        if (input == NULL) {
+            ALOGE("getInputForAttr NULL input - shouldn't happen");
+            return BAD_VALUE;
+        }
+        data.write(attr, sizeof(audio_attributes_t));
+        data.writeInt32(session);
+        data.writeInt32(uid);
         data.writeInt32(samplingRate);
         data.writeInt32(static_cast <uint32_t>(format));
         data.writeInt32(channelMask);
-        data.writeInt32(audioSession);
         data.writeInt32(flags);
-        remote()->transact(GET_INPUT, data, &reply);
-        return static_cast <audio_io_handle_t> (reply.readInt32());
+        data.writeInt32(selectedDeviceId);
+        status_t status = remote()->transact(GET_INPUT_FOR_ATTR, data, &reply);
+        if (status != NO_ERROR) {
+            return status;
+        }
+        status = reply.readInt32();
+        if (status != NO_ERROR) {
+            return status;
+        }
+        *input = (audio_io_handle_t)reply.readInt32();
+        return NO_ERROR;
     }
 
     virtual status_t startInput(audio_io_handle_t input,
@@ -571,8 +643,16 @@ public:
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
-        data.writeStrongBinder(client->asBinder());
+        data.writeStrongBinder(IInterface::asBinder(client));
         remote()->transact(REGISTER_CLIENT, data, &reply);
+    }
+
+    virtual void setAudioPortCallbacksEnabled(bool enabled)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
+        data.writeInt32(enabled ? 1 : 0);
+        remote()->transact(SET_AUDIO_PORT_CALLBACK_ENABLED, data, &reply);
     }
 
     virtual status_t acquireSoundTriggerSession(audio_session_t *session,
@@ -619,6 +699,74 @@ public:
         }
         return (audio_mode_t)reply.readInt32();
     }
+
+    virtual status_t registerPolicyMixes(Vector<AudioMix> mixes, bool registration)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
+        data.writeInt32(registration ? 1 : 0);
+        size_t size = mixes.size();
+        if (size > MAX_MIXES_PER_POLICY) {
+            size = MAX_MIXES_PER_POLICY;
+        }
+        size_t sizePosition = data.dataPosition();
+        data.writeInt32(size);
+        size_t finalSize = size;
+        for (size_t i = 0; i < size; i++) {
+            size_t position = data.dataPosition();
+            if (mixes[i].writeToParcel(&data) != NO_ERROR) {
+                data.setDataPosition(position);
+                finalSize--;
+            }
+        }
+        if (size != finalSize) {
+            size_t position = data.dataPosition();
+            data.setDataPosition(sizePosition);
+            data.writeInt32(finalSize);
+            data.setDataPosition(position);
+        }
+        status_t status = remote()->transact(REGISTER_POLICY_MIXES, data, &reply);
+        if (status == NO_ERROR) {
+            status = (status_t)reply.readInt32();
+        }
+        return status;
+    }
+
+    virtual status_t startAudioSource(const struct audio_port_config *source,
+                                      const audio_attributes_t *attributes,
+                                      audio_io_handle_t *handle)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
+        if (source == NULL || attributes == NULL || handle == NULL) {
+            return BAD_VALUE;
+        }
+        data.write(source, sizeof(struct audio_port_config));
+        data.write(attributes, sizeof(audio_attributes_t));
+        status_t status = remote()->transact(START_AUDIO_SOURCE, data, &reply);
+        if (status != NO_ERROR) {
+            return status;
+        }
+        status = (status_t)reply.readInt32();
+        if (status != NO_ERROR) {
+            return status;
+        }
+        *handle = (audio_io_handle_t)reply.readInt32();
+        return status;
+    }
+
+    virtual status_t stopAudioSource(audio_io_handle_t handle)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
+        data.writeInt32(handle);
+        status_t status = remote()->transact(STOP_AUDIO_SOURCE, data, &reply);
+        if (status != NO_ERROR) {
+            return status;
+        }
+        status = (status_t)reply.readInt32();
+        return status;
+    }
 };
 
 IMPLEMENT_META_INTERFACE(AudioPolicyService, "android.media.IAudioPolicyService");
@@ -637,9 +785,11 @@ status_t BnAudioPolicyService::onTransact(
             audio_policy_dev_state_t state =
                     static_cast <audio_policy_dev_state_t>(data.readInt32());
             const char *device_address = data.readCString();
+            const char *device_name = data.readCString();
             reply->writeInt32(static_cast<uint32_t> (setDeviceConnectionState(device,
                                                                               state,
-                                                                              device_address)));
+                                                                              device_address,
+                                                                              device_name)));
             return NO_ERROR;
         } break;
 
@@ -704,25 +854,37 @@ status_t BnAudioPolicyService::onTransact(
 
         case GET_OUTPUT_FOR_ATTR: {
             CHECK_INTERFACE(IAudioPolicyService, data, reply);
-            audio_attributes_t *attr = (audio_attributes_t *) calloc(1, sizeof(audio_attributes_t));
-            data.read(attr, sizeof(audio_attributes_t));
+            audio_attributes_t attr;
+            bool hasAttributes = data.readInt32() != 0;
+            if (hasAttributes) {
+                data.read(&attr, sizeof(audio_attributes_t));
+            }
+            audio_session_t session = (audio_session_t)data.readInt32();
+            audio_stream_type_t stream = AUDIO_STREAM_DEFAULT;
+            bool hasStream = data.readInt32() != 0;
+            if (hasStream) {
+                stream = (audio_stream_type_t)data.readInt32();
+            }
+            uid_t uid = (uid_t)data.readInt32();
             uint32_t samplingRate = data.readInt32();
             audio_format_t format = (audio_format_t) data.readInt32();
             audio_channel_mask_t channelMask = data.readInt32();
             audio_output_flags_t flags =
                     static_cast <audio_output_flags_t>(data.readInt32());
+            audio_port_handle_t selectedDeviceId = data.readInt32();
             bool hasOffloadInfo = data.readInt32() != 0;
             audio_offload_info_t offloadInfo;
             if (hasOffloadInfo) {
                 data.read(&offloadInfo, sizeof(audio_offload_info_t));
             }
-            audio_io_handle_t output = getOutputForAttr(attr,
-                    samplingRate,
-                    format,
-                    channelMask,
-                    flags,
-                    hasOffloadInfo ? &offloadInfo : NULL);
-            reply->writeInt32(static_cast <int>(output));
+            audio_io_handle_t output;
+            status_t status = getOutputForAttr(hasAttributes ? &attr : NULL,
+                    &output, session, &stream, uid,
+                    samplingRate, format, channelMask,
+                    flags, selectedDeviceId, hasOffloadInfo ? &offloadInfo : NULL);
+            reply->writeInt32(status);
+            reply->writeInt32(output);
+            reply->writeInt32(stream);
             return NO_ERROR;
         } break;
 
@@ -731,7 +893,7 @@ status_t BnAudioPolicyService::onTransact(
             audio_io_handle_t output = static_cast <audio_io_handle_t>(data.readInt32());
             audio_stream_type_t stream =
                                 static_cast <audio_stream_type_t>(data.readInt32());
-            int session = data.readInt32();
+            audio_session_t session = (audio_session_t)data.readInt32();
             reply->writeInt32(static_cast <uint32_t>(startOutput(output,
                                                                  stream,
                                                                  session)));
@@ -743,7 +905,7 @@ status_t BnAudioPolicyService::onTransact(
             audio_io_handle_t output = static_cast <audio_io_handle_t>(data.readInt32());
             audio_stream_type_t stream =
                                 static_cast <audio_stream_type_t>(data.readInt32());
-            int session = data.readInt32();
+            audio_session_t session = (audio_session_t)data.readInt32();
             reply->writeInt32(static_cast <uint32_t>(stopOutput(output,
                                                                 stream,
                                                                 session)));
@@ -753,25 +915,31 @@ status_t BnAudioPolicyService::onTransact(
         case RELEASE_OUTPUT: {
             CHECK_INTERFACE(IAudioPolicyService, data, reply);
             audio_io_handle_t output = static_cast <audio_io_handle_t>(data.readInt32());
-            releaseOutput(output);
+            audio_stream_type_t stream = (audio_stream_type_t)data.readInt32();
+            audio_session_t session = (audio_session_t)data.readInt32();
+            releaseOutput(output, stream, session);
             return NO_ERROR;
         } break;
 
-        case GET_INPUT: {
+        case GET_INPUT_FOR_ATTR: {
             CHECK_INTERFACE(IAudioPolicyService, data, reply);
-            audio_source_t inputSource = (audio_source_t) data.readInt32();
+            audio_attributes_t attr;
+            data.read(&attr, sizeof(audio_attributes_t));
+            audio_session_t session = (audio_session_t)data.readInt32();
+            uid_t uid = (uid_t)data.readInt32();
             uint32_t samplingRate = data.readInt32();
             audio_format_t format = (audio_format_t) data.readInt32();
             audio_channel_mask_t channelMask = data.readInt32();
-            int audioSession = data.readInt32();
             audio_input_flags_t flags = (audio_input_flags_t) data.readInt32();
-            audio_io_handle_t input = getInput(inputSource,
-                                               samplingRate,
-                                               format,
-                                               channelMask,
-                                               audioSession,
-                                               flags);
-            reply->writeInt32(static_cast <int>(input));
+            audio_port_handle_t selectedDeviceId = (audio_port_handle_t) data.readInt32();
+            audio_io_handle_t input;
+            status_t status = getInputForAttr(&attr, &input, session, uid,
+                                              samplingRate, format, channelMask,
+                                              flags, selectedDeviceId);
+            reply->writeInt32(status);
+            if (status == NO_ERROR) {
+                reply->writeInt32(input);
+            }
             return NO_ERROR;
         } break;
 
@@ -916,16 +1084,18 @@ status_t BnAudioPolicyService::onTransact(
             CHECK_INTERFACE(IAudioPolicyService, data, reply);
             int audioSession = data.readInt32();
             uint32_t count = data.readInt32();
+            if (count > AudioEffect::kMaxPreProcessing) {
+                count = AudioEffect::kMaxPreProcessing;
+            }
             uint32_t retCount = count;
-            effect_descriptor_t *descriptors =
-                    (effect_descriptor_t *)new char[count * sizeof(effect_descriptor_t)];
+            effect_descriptor_t *descriptors = new effect_descriptor_t[count];
             status_t status = queryDefaultPreProcessing(audioSession, descriptors, &retCount);
             reply->writeInt32(status);
             if (status != NO_ERROR && status != NO_MEMORY) {
                 retCount = 0;
             }
             reply->writeInt32(retCount);
-            if (retCount) {
+            if (retCount != 0) {
                 if (retCount < count) {
                     count = retCount;
                 }
@@ -949,10 +1119,18 @@ status_t BnAudioPolicyService::onTransact(
             audio_port_role_t role = (audio_port_role_t)data.readInt32();
             audio_port_type_t type = (audio_port_type_t)data.readInt32();
             unsigned int numPortsReq = data.readInt32();
+            if (numPortsReq > MAX_ITEMS_PER_LIST) {
+                numPortsReq = MAX_ITEMS_PER_LIST;
+            }
             unsigned int numPorts = numPortsReq;
-            unsigned int generation;
             struct audio_port *ports =
                     (struct audio_port *)calloc(numPortsReq, sizeof(struct audio_port));
+            if (ports == NULL) {
+                reply->writeInt32(NO_MEMORY);
+                reply->writeInt32(0);
+                return NO_ERROR;
+            }
+            unsigned int generation;
             status_t status = listAudioPorts(role, type, &numPorts, ports, &generation);
             reply->writeInt32(status);
             reply->writeInt32(numPorts);
@@ -1006,11 +1184,19 @@ status_t BnAudioPolicyService::onTransact(
         case LIST_AUDIO_PATCHES: {
             CHECK_INTERFACE(IAudioPolicyService, data, reply);
             unsigned int numPatchesReq = data.readInt32();
+            if (numPatchesReq > MAX_ITEMS_PER_LIST) {
+                numPatchesReq = MAX_ITEMS_PER_LIST;
+            }
             unsigned int numPatches = numPatchesReq;
-            unsigned int generation;
             struct audio_patch *patches =
                     (struct audio_patch *)calloc(numPatchesReq,
                                                  sizeof(struct audio_patch));
+            if (patches == NULL) {
+                reply->writeInt32(NO_MEMORY);
+                reply->writeInt32(0);
+                return NO_ERROR;
+            }
+            unsigned int generation;
             status_t status = listAudioPatches(&numPatches, patches, &generation);
             reply->writeInt32(status);
             reply->writeInt32(numPatches);
@@ -1039,6 +1225,12 @@ status_t BnAudioPolicyService::onTransact(
             sp<IAudioPolicyServiceClient> client = interface_cast<IAudioPolicyServiceClient>(
                     data.readStrongBinder());
             registerClient(client);
+            return NO_ERROR;
+        } break;
+
+        case SET_AUDIO_PORT_CALLBACK_ENABLED: {
+            CHECK_INTERFACE(IAudioPolicyService, data, reply);
+            setAudioPortCallbacksEnabled(data.readInt32() == 1);
             return NO_ERROR;
         } break;
 
@@ -1075,6 +1267,46 @@ status_t BnAudioPolicyService::onTransact(
             return NO_ERROR;
         } break;
 
+        case REGISTER_POLICY_MIXES: {
+            CHECK_INTERFACE(IAudioPolicyService, data, reply);
+            bool registration = data.readInt32() == 1;
+            Vector<AudioMix> mixes;
+            size_t size = (size_t)data.readInt32();
+            if (size > MAX_MIXES_PER_POLICY) {
+                size = MAX_MIXES_PER_POLICY;
+            }
+            for (size_t i = 0; i < size; i++) {
+                AudioMix mix;
+                if (mix.readFromParcel((Parcel*)&data) == NO_ERROR) {
+                    mixes.add(mix);
+                }
+            }
+            status_t status = registerPolicyMixes(mixes, registration);
+            reply->writeInt32(status);
+            return NO_ERROR;
+        } break;
+
+        case START_AUDIO_SOURCE: {
+            CHECK_INTERFACE(IAudioPolicyService, data, reply);
+            struct audio_port_config source;
+            data.read(&source, sizeof(struct audio_port_config));
+            audio_attributes_t attributes;
+            data.read(&attributes, sizeof(audio_attributes_t));
+            audio_io_handle_t handle;
+            status_t status = startAudioSource(&source, &attributes, &handle);
+            reply->writeInt32(status);
+            reply->writeInt32(handle);
+            return NO_ERROR;
+        } break;
+
+        case STOP_AUDIO_SOURCE: {
+            CHECK_INTERFACE(IAudioPolicyService, data, reply);
+            audio_io_handle_t handle = (audio_io_handle_t)data.readInt32();
+            status_t status = stopAudioSource(handle);
+            reply->writeInt32(status);
+            return NO_ERROR;
+        } break;
+
         default:
             return BBinder::onTransact(code, data, reply, flags);
     }
@@ -1082,4 +1314,4 @@ status_t BnAudioPolicyService::onTransact(
 
 // ----------------------------------------------------------------------------
 
-}; // namespace android
+} // namespace android

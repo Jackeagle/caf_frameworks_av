@@ -40,6 +40,12 @@ inline static const T divUp(const T &nom, const T &den) {
     }
 }
 
+/* == ceil(nom / den) * den. T must be integer type, alignment must be positive power of 2 */
+template<class T, class U>
+inline static const T align(const T &nom, const U &den) {
+    return (nom + (T)(den - 1)) & (T)~(den - 1);
+}
+
 template<class T>
 inline static T abs(const T &a) {
     return a < 0 ? -a : a;
@@ -53,6 +59,28 @@ inline static const T &min(const T &a, const T &b) {
 template<class T>
 inline static const T &max(const T &a, const T &b) {
     return a > b ? a : b;
+}
+
+template<class T>
+void ENSURE_UNSIGNED_TYPE() {
+    T TYPE_MUST_BE_UNSIGNED[(T)-1 < 0 ? -1 : 0] __unused;
+}
+
+// needle is in range [hayStart, hayStart + haySize)
+template<class T, class U>
+inline static bool isInRange(const T &hayStart, const U &haySize, const T &needle) {
+    ENSURE_UNSIGNED_TYPE<U>();
+    return (T)(hayStart + haySize) >= hayStart && needle >= hayStart && (U)(needle - hayStart) < haySize;
+}
+
+// [needleStart, needleStart + needleSize) is in range [hayStart, hayStart + haySize)
+template<class T, class U>
+inline static bool isInRange(
+        const T &hayStart, const U &haySize, const T &needleStart, const U &needleSize) {
+    ENSURE_UNSIGNED_TYPE<U>();
+    return isInRange(hayStart, haySize, needleStart)
+            && (T)(needleStart + needleSize) >= needleStart
+            && (U)(needleStart + needleSize - hayStart) <= haySize;
 }
 
 /* T must be integer type, period must be positive */

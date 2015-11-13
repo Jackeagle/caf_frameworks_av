@@ -27,14 +27,8 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
-#include <media/stagefright/Utils.h>
 #include <utils/String8.h>
 #include <cutils/bitops.h>
-
-#ifdef ENABLE_AV_ENHANCEMENTS
-#include "QCMediaDefs.h"
-#include "QCMetaData.h"
-#endif
 
 #define CHANNEL_MASK_USE_CHANNEL_ORDER 0
 
@@ -89,7 +83,6 @@ private:
     off64_t mOffset;
     size_t mSize;
     bool mStarted;
-    int32_t mOutputFormat;
     MediaBufferGroup *mGroup;
     off64_t mCurrentPos;
 
@@ -291,11 +284,6 @@ status_t WAVExtractor::init() {
                     case WAVE_FORMAT_PCM:
                         mTrackMeta->setCString(
                                 kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_RAW);
-#ifdef ENABLE_AV_ENHANCEMENTS
-#ifdef PCM_OFFLOAD_ENABLED_24
-                        mTrackMeta->setInt32(kKeySampleBits, mBitsPerSample);
-#endif
-#endif
                         break;
                     case WAVE_FORMAT_ALAW:
                         mTrackMeta->setCString(
@@ -357,7 +345,6 @@ WAVSource::WAVSource(
       mOffset(offset),
       mSize(size),
       mStarted(false),
-      mOutputFormat(AUDIO_FORMAT_PCM_16_BIT),
       mGroup(NULL) {
     CHECK(mMeta->findInt32(kKeySampleRate, &mSampleRate));
     CHECK(mMeta->findInt32(kKeyChannelCount, &mNumChannels));
@@ -371,30 +358,16 @@ WAVSource::~WAVSource() {
     }
 }
 
-status_t WAVSource::start(MetaData *params) {
+status_t WAVSource::start(MetaData * /* params */) {
     ALOGV("WAVSource::start");
 
     CHECK(!mStarted);
 
-#ifdef ENABLE_AV_ENHANCEMENTS
-#ifdef PCM_OFFLOAD_ENABLED_24
-    if (params != NULL) {
-        if (params->findInt32(kKeyPcmFormat, &mOutputFormat)) {
-            ALOGV("%s mOutputFormat: %x", __func__, mOutputFormat);
-        } else {
-            mOutputFormat = AUDIO_FORMAT_PCM_16_BIT;
-            ALOGV("%s Couldn't find format. Setting output format to default: %x",
-               __func__, mOutputFormat);
-        }
-    }
-#endif
-#endif
-
     mGroup = new MediaBufferGroup;
     mGroup->add_buffer(new MediaBuffer(kMaxFrameSize));
 
-    if (mBitsPerSample == 8 || mBitsPerSample == 24) {
-        // As a temporary buffer for {8->16, 24->32} bit conversion.
+    if (mBitsPerSample == 8) {
+        // As a temporary buffer for 8->16 bit conversion.
         mGroup->add_buffer(new MediaBuffer(kMaxFrameSize));
     }
 
@@ -454,18 +427,9 @@ status_t WAVSource::read(
     }
 
     // make sure that maxBytesToRead is multiple of 3, in 24-bit case
-    size_t maxBytesToRead;
-    if(8 == mBitsPerSample)
-        maxBytesToRead = kMaxFrameSize / 2;
-    else if (24 == mBitsPerSample) {
-        if (AUDIO_FORMAT_PCM_8_24_BIT == mOutputFormat)
-            maxBytesToRead = 3*(kMaxFrameSize/4);
-        else
-            maxBytesToRead = kMaxFrameSize;
-    } else
-        maxBytesToRead = kMaxFrameSize;
-    ALOGV("%s mOutputFormat %x, mBitsPerSample %d, kMaxFrameSize %d, ",
-          __func__, mOutputFormat, mBitsPerSample, kMaxFrameSize);
+    size_t maxBytesToRead =
+        mBitsPerSample == 8 ? kMaxFrameSize / 2 : 
+        (mBitsPerSample == 24 ? 3*(kMaxFrameSize/3): kMaxFrameSize);
 
     size_t maxBytesAvailable =
         (mCurrentPos - mOffset >= (off64_t)mSize)
@@ -475,10 +439,6 @@ status_t WAVSource::read(
         maxBytesToRead = maxBytesAvailable;
     }
 
-    // read only integral amounts of audio unit frames.
-    const size_t inputUnitFrameSize = mNumChannels * mBitsPerSample / 8;
-    maxBytesToRead -= maxBytesToRead % inputUnitFrameSize;
-
     if (mWaveFormat == WAVE_FORMAT_MSGSM) {
         // Microsoft packs 2 frames into 65 bytes, rather than using separate 33-byte frames,
         // so read multiples of 65, and use smaller buffers to account for ~10:1 expansion ratio
@@ -486,6 +446,10 @@ status_t WAVSource::read(
             maxBytesToRead = 1024;
         }
         maxBytesToRead = (maxBytesToRead / 65) * 65;
+    } else {
+        // read only integral amounts of audio unit frames.
+        const size_t inputUnitFrameSize = mNumChannels * mBitsPerSample / 8;
+        maxBytesToRead -= maxBytesToRead % inputUnitFrameSize;
     }
 
     ssize_t n = mDataSource->readAt(
@@ -524,43 +488,23 @@ status_t WAVSource::read(
             buffer->release();
             buffer = tmp;
         } else if (mBitsPerSample == 24) {
-            if (AUDIO_FORMAT_PCM_16_BIT == mOutputFormat) {
-                // Convert 24-bit signed samples to 16-bit signed.
+            // Convert 24-bit signed samples to 16-bit signed.
 
-                const uint8_t *src =
-                    (const uint8_t *)buffer->data() + buffer->range_offset();
-                int16_t *dst = (int16_t *)src;
+            const uint8_t *src =
+                (const uint8_t *)buffer->data() + buffer->range_offset();
+            int16_t *dst = (int16_t *)src;
 
-                size_t numSamples = buffer->range_length() / 3;
-                for (size_t i = 0; i < numSamples; ++i) {
-                    int32_t x = (int32_t)(src[0] | src[1] << 8 | src[2] << 16);
-                    x = (x << 8) >> 8;  // sign extension
+            size_t numSamples = buffer->range_length() / 3;
+            for (size_t i = 0; i < numSamples; ++i) {
+                int32_t x = (int32_t)(src[0] | src[1] << 8 | src[2] << 16);
+                x = (x << 8) >> 8;  // sign extension
 
-                    x = x >> 8;
-                    *dst++ = (int16_t)x;
-                    src += 3;
-                }
-                buffer->set_range(buffer->range_offset(), 2 * numSamples);
-            } else if (AUDIO_FORMAT_PCM_8_24_BIT == mOutputFormat) {
-                // Padding done here to convert to 32-bit samples
-                MediaBuffer *tmp;
-                CHECK_EQ(mGroup->acquire_buffer(&tmp), (status_t)OK);
-                ssize_t numBytes = buffer->range_length() / 3;
-                tmp->set_range(0, 4 * numBytes);
-                int8_t *dst = (int8_t *)tmp->data();
-                const uint8_t *src = (const uint8_t *)buffer->data();
-                ALOGV("numBytes = %d", numBytes);
-                while(numBytes-- > 0) {
-                   *dst++ = 0x0;
-                   *dst++ = src[0];
-                   *dst++ = src[1];
-                   *dst++ = src[2];
-                   src += 3;
-                }
-                buffer->release();
-                buffer = tmp;
-                ALOGV("length = %d", buffer->range_length());
+                x = x >> 8;
+                *dst++ = (int16_t)x;
+                src += 3;
             }
+
+            buffer->set_range(buffer->range_offset(), 2 * numSamples);
         }
     }
 

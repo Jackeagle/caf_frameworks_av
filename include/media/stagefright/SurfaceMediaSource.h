@@ -25,6 +25,8 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MediaBuffer.h>
 
+#include "foundation/ABase.h"
+
 namespace android {
 // ----------------------------------------------------------------------------
 
@@ -124,7 +126,7 @@ protected:
     // Implementation of the BufferQueue::ConsumerListener interface.  These
     // calls are used to notify the Surface of asynchronous events in the
     // BufferQueue.
-    virtual void onFrameAvailable();
+    virtual void onFrameAvailable(const BufferItem& item);
 
     // Used as a hook to BufferQueue::disconnect()
     // This is called by the client side when it is done
@@ -233,7 +235,7 @@ private:
     Condition mMediaBuffersAvailableCondition;
 
     // Avoid copying and equating and default constructor
-    DISALLOW_IMPLICIT_CONSTRUCTORS(SurfaceMediaSource);
+    DISALLOW_EVIL_CONSTRUCTORS(SurfaceMediaSource);
 };
 
 // ----------------------------------------------------------------------------

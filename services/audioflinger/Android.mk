@@ -1,21 +1,3 @@
-#
-# This file was modified by DTS, Inc. The portions of the
-# code that are surrounded by "DTS..." are copyrighted and
-# licensed separately, as follows:
-#
-#  (C) 2014 DTS, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License
 LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -37,7 +19,13 @@ LOCAL_SRC_FILES := \
 # FIXME Move this library to frameworks/native
 LOCAL_MODULE := libserviceutility
 
-include $(BUILD_STATIC_LIBRARY)
+LOCAL_SHARED_LIBRARIES := \
+    libcutils \
+    libutils \
+    liblog \
+    libbinder
+
+include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 
@@ -45,19 +33,24 @@ LOCAL_SRC_FILES:=               \
     AudioFlinger.cpp            \
     Threads.cpp                 \
     Tracks.cpp                  \
+    AudioHwDevice.cpp           \
+    AudioStreamOut.cpp          \
+    SpdifStreamOut.cpp          \
     Effects.cpp                 \
     AudioMixer.cpp.arm          \
-    PatchPanel.cpp
-
-LOCAL_SRC_FILES += StateQueue.cpp
+    BufferProviders.cpp         \
+    PatchPanel.cpp              \
+    StateQueue.cpp
 
 LOCAL_C_INCLUDES := \
     $(TOPDIR)frameworks/av/services/audiopolicy \
+    $(TOPDIR)external/sonic \
     $(call include-path-for, audio-effects) \
     $(call include-path-for, audio-utils)
 
 LOCAL_SHARED_LIBRARIES := \
     libaudioresampler \
+    libaudiospdif \
     libaudioutils \
     libcommon_time_client \
     libcutils \
@@ -69,17 +62,18 @@ LOCAL_SHARED_LIBRARIES := \
     libhardware \
     libhardware_legacy \
     libeffects \
-    libpowermanager
+    libpowermanager \
+    libserviceutility \
+    libsonic
 
 LOCAL_STATIC_LIBRARIES := \
     libscheduling_policy \
     libcpustats \
-    libmedia_helper \
-    libserviceutility
+    libmedia_helper
 
 #QTI Resampler
-ifeq ($(call is-vendor-board-platform,QCOM),true)
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_RESAMPLER)),true)
+ifeq ($(call is-vendor-board-platform,QCOM), true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_RESAMPLER)), true)
 LOCAL_CFLAGS += -DQTI_RESAMPLER
 endif
 endif
@@ -88,25 +82,21 @@ endif
 LOCAL_MODULE:= libaudioflinger
 LOCAL_32_BIT_ONLY := true
 
-LOCAL_SRC_FILES += FastMixer.cpp FastMixerState.cpp AudioWatchdog.cpp
-LOCAL_SRC_FILES += FastThread.cpp FastThreadState.cpp
-LOCAL_SRC_FILES += FastCapture.cpp FastCaptureState.cpp
+LOCAL_SRC_FILES += \
+    AudioWatchdog.cpp        \
+    FastCapture.cpp          \
+    FastCaptureDumpState.cpp \
+    FastCaptureState.cpp     \
+    FastMixer.cpp            \
+    FastMixerDumpState.cpp   \
+    FastMixerState.cpp       \
+    FastThread.cpp           \
+    FastThreadDumpState.cpp  \
+    FastThreadState.cpp
 
 LOCAL_CFLAGS += -DSTATE_QUEUE_INSTANTIATIONS='"StateQueueInstantiations.cpp"'
 
-# Define ANDROID_SMP appropriately. Used to get inline tracing fast-path.
-ifeq ($(TARGET_CPU_SMP),true)
-    LOCAL_CFLAGS += -DANDROID_SMP=1
-else
-    LOCAL_CFLAGS += -DANDROID_SMP=0
-endif
-
 LOCAL_CFLAGS += -fvisibility=hidden
-ifeq ($(strip $(BOARD_USES_SRS_TRUEMEDIA)),true)
-LOCAL_SHARED_LIBRARIES += libsrsprocessing
-LOCAL_CFLAGS += -DSRS_PROCESSING
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-effects
-endif
 
 include $(BUILD_SHARED_LIBRARY)
 
@@ -152,22 +142,16 @@ LOCAL_C_INCLUDES := \
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libdl \
-    liblog
+    liblog \
+    libaudioutils
 
 #QTI Resampler
-ifeq ($(call is-vendor-board-platform,QCOM),true)
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_RESAMPLER)),true)
-ifdef TARGET_2ND_ARCH
+ifeq ($(call is-vendor-board-platform,QCOM), true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_RESAMPLER)), true)
 LOCAL_SRC_FILES_$(TARGET_2ND_ARCH) += AudioResamplerQTI.cpp.arm
 LOCAL_C_INCLUDES_$(TARGET_2ND_ARCH) += $(TARGET_OUT_HEADERS)/mm-audio/audio-src
 LOCAL_SHARED_LIBRARIES_$(TARGET_2ND_ARCH) += libqct_resampler
 LOCAL_CFLAGS_$(TARGET_2ND_ARCH) += -DQTI_RESAMPLER
-else
-LOCAL_SRC_FILES += AudioResamplerQTI.cpp.arm
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/audio-src
-LOCAL_SHARED_LIBRARIES += libqct_resampler
-LOCAL_CFLAGS += -DQTI_RESAMPLER
-endif
 endif
 endif
 #QTI Resampler

@@ -26,8 +26,9 @@
 
 namespace android {
 
-struct DrmFactory;
-struct DrmPlugin;
+class DrmFactory;
+class DrmPlugin;
+struct DrmSessionClientInterface;
 
 struct Drm : public BnDrm,
              public IBinder::DeathRecipient,
@@ -52,7 +53,8 @@ struct Drm : public BnDrm,
                       Vector<uint8_t> const &initData,
                       String8 const &mimeType, DrmPlugin::KeyType keyType,
                       KeyedVector<String8, String8> const &optionalParameters,
-                      Vector<uint8_t> &request, String8 &defaultUrl);
+                      Vector<uint8_t> &request, String8 &defaultUrl,
+                      DrmPlugin::KeyRequestType *keyRequestType);
 
     virtual status_t provideKeyResponse(Vector<uint8_t> const &sessionId,
                                         Vector<uint8_t> const &response,
@@ -78,8 +80,10 @@ struct Drm : public BnDrm,
     virtual status_t unprovisionDevice();
 
     virtual status_t getSecureStops(List<Vector<uint8_t> > &secureStops);
+    virtual status_t getSecureStop(Vector<uint8_t> const &ssid, Vector<uint8_t> &secureStop);
 
     virtual status_t releaseSecureStops(Vector<uint8_t> const &ssRelease);
+    virtual status_t releaseAllSecureStops();
 
     virtual status_t getPropertyString(String8 const &name, String8 &value ) const;
     virtual status_t getPropertyByteArray(String8 const &name,
@@ -129,12 +133,21 @@ struct Drm : public BnDrm,
                            Vector<uint8_t> const *sessionId,
                            Vector<uint8_t> const *data);
 
+    virtual void sendExpirationUpdate(Vector<uint8_t> const *sessionId,
+                                      int64_t expiryTimeInMS);
+
+    virtual void sendKeysChange(Vector<uint8_t> const *sessionId,
+                                Vector<DrmPlugin::KeyStatus> const *keyStatusList,
+                                bool hasNewUsableKey);
+
     virtual void binderDied(const wp<IBinder> &the_late_who);
 
 private:
-    mutable Mutex mLock;
+    static Mutex mLock;
 
     status_t mInitCheck;
+
+    sp<DrmSessionClientInterface> mDrmSessionClient;
 
     sp<IDrmClient> mListener;
     mutable Mutex mEventLock;
@@ -151,7 +164,7 @@ private:
     void findFactoryForScheme(const uint8_t uuid[16]);
     bool loadLibraryForScheme(const String8 &path, const uint8_t uuid[16]);
     void closeFactory();
-
+    void writeByteArray(Parcel &obj, Vector<uint8_t> const *array);
 
     DISALLOW_EVIL_CONSTRUCTORS(Drm);
 };

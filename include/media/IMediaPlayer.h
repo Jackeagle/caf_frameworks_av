@@ -31,9 +31,12 @@ namespace android {
 
 class Parcel;
 class Surface;
-class IStreamSource;
+class IDataSource;
+struct IStreamSource;
 class IGraphicBufferProducer;
 struct IMediaHTTPService;
+struct AudioPlaybackRate;
+struct AVSyncSettings;
 
 class IMediaPlayer: public IInterface
 {
@@ -49,6 +52,7 @@ public:
 
     virtual status_t        setDataSource(int fd, int64_t offset, int64_t length) = 0;
     virtual status_t        setDataSource(const sp<IStreamSource>& source) = 0;
+    virtual status_t        setDataSource(const sp<IDataSource>& source) = 0;
     virtual status_t        setVideoSurfaceTexture(
                                     const sp<IGraphicBufferProducer>& bufferProducer) = 0;
     virtual status_t        prepareAsync() = 0;
@@ -56,6 +60,11 @@ public:
     virtual status_t        stop() = 0;
     virtual status_t        pause() = 0;
     virtual status_t        isPlaying(bool* state) = 0;
+    virtual status_t        setPlaybackSettings(const AudioPlaybackRate& rate) = 0;
+    virtual status_t        getPlaybackSettings(AudioPlaybackRate* rate /* nonnull */) = 0;
+    virtual status_t        setSyncSettings(const AVSyncSettings& sync, float videoFpsHint) = 0;
+    virtual status_t        getSyncSettings(AVSyncSettings* sync /* nonnull */,
+                                            float* videoFps /* nonnull */) = 0;
     virtual status_t        seekTo(int msec) = 0;
     virtual status_t        getCurrentPosition(int* msec) = 0;
     virtual status_t        getDuration(int* msec) = 0;
@@ -100,16 +109,6 @@ public:
     virtual status_t        getMetadata(bool update_only,
                                         bool apply_filter,
                                         Parcel *metadata) = 0;
-
-    // Suspend the video player
-    // In other words, just release the audio decoder and the video decoder
-    // @return OK if the video player was suspended successfully
-    virtual status_t        suspend() = 0;
-
-    // Resume the video player
-    // Init the audio decoder and the video decoder
-    // @return OK if the video player was resumed successfully
-    virtual status_t        resume() = 0;
 };
 
 // ----------------------------------------------------------------------------

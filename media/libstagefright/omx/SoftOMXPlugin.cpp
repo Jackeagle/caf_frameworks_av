@@ -40,11 +40,12 @@ static const struct {
     { "OMX.google.amrnb.encoder", "amrnbenc", "audio_encoder.amrnb" },
     { "OMX.google.amrwb.decoder", "amrdec", "audio_decoder.amrwb" },
     { "OMX.google.amrwb.encoder", "amrwbenc", "audio_encoder.amrwb" },
-    { "OMX.google.h264.decoder", "h264dec", "video_decoder.avc" },
-    { "OMX.google.h264.encoder", "h264enc", "video_encoder.avc" },
+    { "OMX.google.h264.decoder", "avcdec", "video_decoder.avc" },
+    { "OMX.google.h264.encoder", "avcenc", "video_encoder.avc" },
     { "OMX.google.hevc.decoder", "hevcdec", "video_decoder.hevc" },
     { "OMX.google.g711.alaw.decoder", "g711dec", "audio_decoder.g711alaw" },
     { "OMX.google.g711.mlaw.decoder", "g711dec", "audio_decoder.g711mlaw" },
+    { "OMX.google.mpeg2.decoder", "mpeg2dec", "video_decoder.mpeg2" },
     { "OMX.google.h263.decoder", "mpeg4dec", "video_decoder.h263" },
     { "OMX.google.h263.encoder", "mpeg4enc", "video_encoder.h263" },
     { "OMX.google.mpeg4.decoder", "mpeg4dec", "video_decoder.mpeg4" },
@@ -58,6 +59,9 @@ static const struct {
     { "OMX.google.raw.decoder", "rawdec", "audio_decoder.raw" },
     { "OMX.google.flac.encoder", "flacenc", "audio_encoder.flac" },
     { "OMX.google.gsm.decoder", "gsmdec", "audio_decoder.gsm" },
+#ifdef QTI_FLAC_DECODER
+    { "OMX.qti.audio.decoder.flac", "flacdec", "audio_decoder.flac" },
+#endif
 };
 
 static const size_t kNumComponents =
@@ -85,7 +89,7 @@ OMX_ERRORTYPE SoftOMXPlugin::makeComponentInstance(
         void *libHandle = dlopen(libName.c_str(), RTLD_NOW);
 
         if (libHandle == NULL) {
-            ALOGE("unable to dlopen %s", libName.c_str());
+            ALOGE("unable to dlopen %s: %s", libName.c_str(), dlerror());
 
             return OMX_ErrorComponentNotFound;
         }

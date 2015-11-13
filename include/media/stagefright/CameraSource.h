@@ -83,15 +83,16 @@ public:
                                           Size videoSize,
                                           int32_t frameRate,
                                           const sp<IGraphicBufferProducer>& surface,
-                                          bool storeMetaDataInVideoBuffers = false);
+                                          bool storeMetaDataInVideoBuffers = true);
 
     virtual ~CameraSource();
 
     virtual status_t start(MetaData *params = NULL);
-    virtual status_t pause();
     virtual status_t stop() { return reset(); }
     virtual status_t read(
             MediaBuffer **buffer, const ReadOptions *options = NULL);
+
+    virtual status_t pause() { return ERROR_UNSUPPORTED; }
 
     /**
      * Check whether a CameraSource object is properly initialized.
@@ -150,6 +151,8 @@ protected:
     int32_t  mNumInputBuffers;
     int32_t  mVideoFrameRate;
     int32_t  mColorFormat;
+    int32_t  mEncoderFormat;
+    int32_t  mEncoderDataSpace;
     status_t mInitCheck;
 
     sp<Camera>   mCamera;
@@ -163,11 +166,6 @@ protected:
     int64_t mLastFrameTimestampUs;
     bool mStarted;
     int32_t mNumFramesEncoded;
-
-    bool mRecPause;
-    int64_t  mPauseAdjTimeUs;
-    int64_t  mPauseStartTimeUs;
-    int64_t  mPauseEndTimeUs;
 
     // Time between capture of two frames.
     int64_t mTimeBetweenFrameCaptureUs;
@@ -193,8 +191,8 @@ protected:
 
     void releaseCamera();
 
-private:
-    friend class CameraSourceListener;
+protected:
+    friend struct CameraSourceListener;
 
     Mutex mLock;
     Condition mFrameAvailableCondition;

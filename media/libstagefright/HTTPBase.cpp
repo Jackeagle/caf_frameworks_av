@@ -34,6 +34,7 @@ HTTPBase::HTTPBase()
     : mNumBandwidthHistoryItems(0),
       mTotalTransferTimeUs(0),
       mTotalTransferBytes(0),
+      mMaxBandwidthHistoryItems(100),
       mPrevBandwidthMeasureTimeUs(0),
       mPrevEstimatedBandWidthKbps(0),
       mBandWidthCollectFreqMs(5000) {
@@ -50,7 +51,7 @@ void HTTPBase::addBandwidthMeasurement(
     mTotalTransferBytes += numBytes;
 
     mBandwidthHistory.push_back(entry);
-    if (++mNumBandwidthHistoryItems > 100) {
+    if (++mNumBandwidthHistoryItems > mMaxBandwidthHistoryItems) {
         BandwidthEntry *entry = &*mBandwidthHistory.begin();
         mTotalTransferTimeUs -= entry->mDelayUs;
         mTotalTransferBytes -= entry->mNumBytes;
@@ -74,7 +75,11 @@ void HTTPBase::addBandwidthMeasurement(
 bool HTTPBase::estimateBandwidth(int32_t *bandwidth_bps) {
     Mutex::Autolock autoLock(mLock);
 
-    if (mNumBandwidthHistoryItems < 2) {
+    // Do not do bandwidth estimation if we don't have enough samples, or
+    // total bytes download are too small (<64K).
+    // Bandwidth estimation from these samples can often shoot up and cause
+    // unwanted bw adaption behaviors.
+    if (mNumBandwidthHistoryItems < 2 || mTotalTransferBytes < 65536) {
         return false;
     }
 
@@ -102,6 +107,10 @@ status_t HTTPBase::setBandwidthStatCollectFreq(int32_t freqMs) {
     ALOGI("frequency set to %d ms", freqMs);
     mBandWidthCollectFreqMs = freqMs;
     return OK;
+}
+
+void HTTPBase::setBandwidthHistorySize(size_t numHistoryItems) {
+    mMaxBandwidthHistoryItems = numHistoryItems;
 }
 
 // static

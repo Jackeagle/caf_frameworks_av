@@ -18,6 +18,7 @@
 #define ANDROID_AUDIOPOLICY_INTERFACE_H
 
 #include <media/AudioSystem.h>
+#include <media/AudioPolicy.h>
 #include <utils/String8.h>
 
 #include <hardware/audio_policy.h>
@@ -56,6 +57,17 @@ class AudioPolicyInterface
 {
 
 public:
+    typedef enum {
+        API_INPUT_INVALID = -1,
+        API_INPUT_LEGACY  = 0,// e.g. audio recording from a microphone
+        API_INPUT_MIX_CAPTURE,// used for "remote submix", capture of the media to play it remotely
+        API_INPUT_MIX_EXT_POLICY_REROUTE,// used for platform audio rerouting, where mixes are
+                                         // handled by external and dynamically installed
+                                         // policies which reroute audio mixes
+        API_INPUT_TELEPHONY_RX, // used for capture from telephony RX path
+    } input_type_t;
+
+public:
     virtual ~AudioPolicyInterface() {}
     //
     // configuration functions
@@ -64,7 +76,8 @@ public:
     // indicate a change in device connection status
     virtual status_t setDeviceConnectionState(audio_devices_t device,
                                               audio_policy_dev_state_t state,
-                                          const char *device_address) = 0;
+                                              const char *device_address,
+                                              const char *device_name) = 0;
     // retrieve a device connection status
     virtual audio_policy_dev_state_t getDeviceConnectionState(audio_devices_t device,
                                                                           const char *device_address) = 0;
@@ -90,30 +103,41 @@ public:
                                         audio_channel_mask_t channelMask,
                                         audio_output_flags_t flags,
                                         const audio_offload_info_t *offloadInfo) = 0;
-    virtual audio_io_handle_t getOutputForAttr(const audio_attributes_t *attr,
-                                                uint32_t samplingRate,
-                                                audio_format_t format,
-                                                audio_channel_mask_t channelMask,
-                                                audio_output_flags_t flags,
-                                                const audio_offload_info_t *offloadInfo) = 0;
+    virtual status_t getOutputForAttr(const audio_attributes_t *attr,
+                                        audio_io_handle_t *output,
+                                        audio_session_t session,
+                                        audio_stream_type_t *stream,
+                                        uid_t uid,
+                                        uint32_t samplingRate,
+                                        audio_format_t format,
+                                        audio_channel_mask_t channelMask,
+                                        audio_output_flags_t flags,
+                                        int selectedDeviceId,
+                                        const audio_offload_info_t *offloadInfo) = 0;
     // indicates to the audio policy manager that the output starts being used by corresponding stream.
     virtual status_t startOutput(audio_io_handle_t output,
                                  audio_stream_type_t stream,
-                                 int session = 0) = 0;
+                                 audio_session_t session) = 0;
     // indicates to the audio policy manager that the output stops being used by corresponding stream.
     virtual status_t stopOutput(audio_io_handle_t output,
                                 audio_stream_type_t stream,
-                                int session = 0) = 0;
+                                audio_session_t session) = 0;
     // releases the output.
-    virtual void releaseOutput(audio_io_handle_t output) = 0;
+    virtual void releaseOutput(audio_io_handle_t output,
+                               audio_stream_type_t stream,
+                               audio_session_t session) = 0;
 
     // request an input appropriate for record from the supplied device with supplied parameters.
-    virtual audio_io_handle_t getInput(audio_source_t inputSource,
-                                    uint32_t samplingRate,
-                                    audio_format_t format,
-                                    audio_channel_mask_t channelMask,
-                                    audio_session_t session,
-                                    audio_input_flags_t flags) = 0;
+    virtual status_t getInputForAttr(const audio_attributes_t *attr,
+                                     audio_io_handle_t *input,
+                                     audio_session_t session,
+                                     uid_t uid,
+                                     uint32_t samplingRate,
+                                     audio_format_t format,
+                                     audio_channel_mask_t channelMask,
+                                     audio_input_flags_t flags,
+                                     audio_port_handle_t selectedDeviceId,
+                                     input_type_t *inputType) = 0;
     // indicates to the audio policy manager that the input starts being used.
     virtual status_t startInput(audio_io_handle_t input,
                                 audio_session_t session) = 0;
@@ -188,13 +212,21 @@ public:
                                       struct audio_patch *patches,
                                       unsigned int *generation) = 0;
     virtual status_t setAudioPortConfig(const struct audio_port_config *config) = 0;
-    virtual void clearAudioPatches(uid_t uid) = 0;
+    virtual void releaseResourcesForUid(uid_t uid) = 0;
 
     virtual status_t acquireSoundTriggerSession(audio_session_t *session,
                                            audio_io_handle_t *ioHandle,
                                            audio_devices_t *device) = 0;
 
     virtual status_t releaseSoundTriggerSession(audio_session_t session) = 0;
+
+    virtual status_t registerPolicyMixes(Vector<AudioMix> mixes) = 0;
+    virtual status_t unregisterPolicyMixes(Vector<AudioMix> mixes) = 0;
+
+    virtual status_t startAudioSource(const struct audio_port_config *source,
+                                      const audio_attributes_t *attributes,
+                                      audio_io_handle_t *handle) = 0;
+    virtual status_t stopAudioSource(audio_io_handle_t handle) = 0;
 };
 
 
@@ -297,6 +329,8 @@ public:
     virtual void onAudioPatchListUpdate() = 0;
 
     virtual audio_unique_id_t newAudioUniqueId() = 0;
+
+    virtual void onDynamicPolicyMixStateUpdate(String8 regId, int32_t state) = 0;
 };
 
 extern "C" AudioPolicyInterface* createAudioPolicyManager(AudioPolicyClientInterface *clientInterface);

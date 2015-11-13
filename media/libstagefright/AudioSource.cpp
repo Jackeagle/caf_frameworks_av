@@ -29,7 +29,6 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <cutils/properties.h>
-#include <system/audio.h>
 
 namespace android {
 
@@ -51,18 +50,19 @@ static void AudioRecordCallbackFunction(int event, void *user, void *info) {
 }
 
 AudioSource::AudioSource(
-        audio_source_t inputSource, uint32_t sampleRate, uint32_t channelCount)
+        audio_source_t inputSource, const String16 &opPackageName,
+        uint32_t sampleRate, uint32_t channelCount, uint32_t outSampleRate)
     : mStarted(false),
       mSampleRate(sampleRate),
+      mOutSampleRate(outSampleRate > 0 ? outSampleRate : sampleRate),
       mPrevSampleTimeUs(0),
+      mFirstSampleTimeUs(-1ll),
       mNumFramesReceived(0),
-      mFormat(AUDIO_FORMAT_PCM_16_BIT),
-      mMime(MEDIA_MIMETYPE_AUDIO_RAW),
-      mMaxBufferSize(kMaxBufferSize),
-      mNumClientOwnedBuffers(0),
-      mRecPaused(false) {
-    ALOGV("sampleRate: %d, channelCount: %d", sampleRate, channelCount);
+      mNumClientOwnedBuffers(0) {
+    ALOGV("sampleRate: %u, outSampleRate: %u, channelCount: %u",
+            sampleRate, outSampleRate, channelCount);
     CHECK(channelCount == 1 || channelCount == 2 || channelCount == 6);
+    CHECK(sampleRate > 0);
 
     size_t minFrameCount;
     status_t status = AudioRecord::getMinFrameCount(&minFrameCount,
@@ -83,60 +83,18 @@ AudioSource::AudioSource(
         mRecord = new AudioRecord(
                     inputSource, sampleRate, AUDIO_FORMAT_PCM_16_BIT,
                     audio_channel_in_mask_from_count(channelCount),
+                    opPackageName,
                     (size_t) (bufCount * frameCount),
                     AudioRecordCallbackFunction,
                     this,
                     frameCount /*notificationFrames*/);
         mInitCheck = mRecord->initCheck();
-        mAutoRampStartUs = kAutoRampStartUs;
-        uint32_t playbackLatencyMs = 0;
-        if (AudioSystem::getOutputLatency(&playbackLatencyMs,
-                                          AUDIO_STREAM_DEFAULT) == OK) {
-            if (2*playbackLatencyMs*1000LL > kAutoRampStartUs) {
-                mAutoRampStartUs = 2*playbackLatencyMs*1000LL;
-            }
+        if (mInitCheck != OK) {
+            mRecord.clear();
         }
-        ALOGD("Start autoramp from %lld", mAutoRampStartUs);
     } else {
         mInitCheck = status;
     }
-}
-
-AudioSource::AudioSource( audio_source_t inputSource, const sp<MetaData>& meta )
-    : mStarted(false),
-      mPrevSampleTimeUs(0),
-      mNumFramesReceived(0),
-      mNumClientOwnedBuffers(0),
-      mFormat(AUDIO_FORMAT_PCM_16_BIT),
-      mMime(MEDIA_MIMETYPE_AUDIO_RAW),
-      mRecPaused(false) {
-
-    const char * mime;
-    ALOGV("AudioSource CTOR compress offload capture: inputSource: %d", inputSource);
-    CHECK(meta->findCString(kKeyMIMEType, &mime));
-    mMime = mime;
-    int32_t sampleRate = 0;
-    int32_t channels = 0;
-    CHECK(meta->findInt32(kKeyChannelCount, &channels));
-    CHECK(meta->findInt32(kKeySampleRate, &sampleRate));
-    mSampleRate = sampleRate;
-    if (!strcasecmp( mime, MEDIA_MIMETYPE_AUDIO_AMR_WB)) {
-        mFormat = AUDIO_FORMAT_AMR_WB;
-        mMaxBufferSize = AMR_WB_FRAMESIZE*10;
-    } else {
-        CHECK(0);
-    }
-    mAutoRampStartUs = 0;
-    CHECK(channels == 1 || channels == 2);
-
-    mRecord = new AudioRecord(
-                inputSource, sampleRate, mFormat,
-                channels > 1? AUDIO_CHANNEL_IN_STEREO:
-                AUDIO_CHANNEL_IN_MONO,
-                4* mMaxBufferSize/channels,
-                AudioRecordCallbackFunction,
-                this);
-    mInitCheck = mRecord->initCheck();
 }
 
 AudioSource::~AudioSource() {
@@ -151,11 +109,6 @@ status_t AudioSource::initCheck() const {
 
 status_t AudioSource::start(MetaData *params) {
     Mutex::Autolock autoLock(mLock);
-    if (mRecPaused) {
-        mRecPaused = false;
-        return OK;
-    }
-
     if (mStarted) {
         return UNKNOWN_ERROR;
     }
@@ -171,6 +124,8 @@ status_t AudioSource::start(MetaData *params) {
     int64_t startTimeUs;
     if (params && params->findInt64(kKeyTime, &startTimeUs)) {
         mStartTimeUs = startTimeUs;
+    } else {
+        mStartTimeUs = systemTime() / 1000ll;
     }
     status_t err = mRecord->start();
     if (err == OK) {
@@ -181,12 +136,6 @@ status_t AudioSource::start(MetaData *params) {
 
 
     return err;
-}
-
-status_t AudioSource::pause() {
-    ALOGV("AudioSource::Pause");
-    mRecPaused = true;
-    return OK;
 }
 
 void AudioSource::releaseQueuedFrames_l() {
@@ -233,10 +182,10 @@ sp<MetaData> AudioSource::getFormat() {
     }
 
     sp<MetaData> meta = new MetaData;
-    meta->setCString(kKeyMIMEType, mMime);
+    meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_RAW);
     meta->setInt32(kKeySampleRate, mSampleRate);
     meta->setInt32(kKeyChannelCount, mRecord->channelCount());
-    meta->setInt32(kKeyMaxInputSize, mMaxBufferSize);
+    meta->setInt32(kKeyMaxInputSize, kMaxBufferSize);
 
     return meta;
 }
@@ -298,26 +247,33 @@ status_t AudioSource::read(
     int64_t timeUs;
     CHECK(buffer->meta_data()->findInt64(kKeyTime, &timeUs));
     int64_t elapsedTimeUs = timeUs - mStartTimeUs;
-    if ( mFormat == AUDIO_FORMAT_PCM_16_BIT ) {
-        if (elapsedTimeUs < mAutoRampStartUs) {
-            memset((uint8_t *) buffer->data(), 0, buffer->range_length());
-        } else if (elapsedTimeUs < mAutoRampStartUs + kAutoRampDurationUs) {
-            int32_t autoRampDurationFrames =
-                    ((int64_t)kAutoRampDurationUs * mSampleRate + 500000LL) / 1000000LL;
+    if (elapsedTimeUs < kAutoRampStartUs) {
+        memset((uint8_t *) buffer->data(), 0, buffer->range_length());
+    } else if (elapsedTimeUs < kAutoRampStartUs + kAutoRampDurationUs) {
+        int32_t autoRampDurationFrames =
+                    ((int64_t)kAutoRampDurationUs * mSampleRate + 500000LL) / 1000000LL; //Need type casting
 
-            int32_t autoRampStartFrames =
-                    ((int64_t)kAutoRampStartUs * mSampleRate + 500000LL) / 1000000LL;
+        int32_t autoRampStartFrames =
+                    ((int64_t)kAutoRampStartUs * mSampleRate + 500000LL) / 1000000LL; //Need type casting
 
-            int32_t nFrames = mNumFramesReceived - autoRampStartFrames;
-            rampVolume(nFrames, autoRampDurationFrames,
-                    (uint8_t *) buffer->data(), buffer->range_length());
-        }
+        int32_t nFrames = mNumFramesReceived - autoRampStartFrames;
+        rampVolume(nFrames, autoRampDurationFrames,
+                (uint8_t *) buffer->data(), buffer->range_length());
     }
 
     // Track the max recording signal amplitude.
-    if (mTrackMaxAmplitude && ( mFormat == AUDIO_FORMAT_PCM_16_BIT)) {
+    if (mTrackMaxAmplitude) {
         trackMaxAmplitude(
             (int16_t *) buffer->data(), buffer->range_length() >> 1);
+    }
+
+    if (mSampleRate != mOutSampleRate) {
+        if (mFirstSampleTimeUs < 0) {
+            mFirstSampleTimeUs = timeUs;
+        }
+        timeUs = mFirstSampleTimeUs + (timeUs - mFirstSampleTimeUs)
+                * (int64_t)mSampleRate / (int64_t)mOutSampleRate;
+        buffer->meta_data()->setInt64(kKeyTime, timeUs);
     }
 
     *out = buffer;
@@ -372,8 +328,7 @@ status_t AudioSource::dataCallback(const AudioRecord::Buffer& audioBuffer) {
     }
 
     CHECK_EQ(numLostBytes & 1, 0u);
-    if ( mFormat == AUDIO_FORMAT_PCM_16_BIT )
-        CHECK_EQ(audioBuffer.size & 1, 0u);
+    CHECK_EQ(audioBuffer.size & 1, 0u);
     if (numLostBytes > 0) {
         // Loss of audio frames should happen rarely; thus the LOGW should
         // not cause a logging spam
@@ -409,43 +364,21 @@ status_t AudioSource::dataCallback(const AudioRecord::Buffer& audioBuffer) {
 }
 
 void AudioSource::queueInputBuffer_l(MediaBuffer *buffer, int64_t timeUs) {
-    if (mRecPaused) {
-        if (!mBuffersReceived.empty()) {
-            releaseQueuedFrames_l();
-        }
-        buffer->release();
-        return;
-    }
-
     const size_t bufferSize = buffer->range_length();
     const size_t frameSize = mRecord->frameSize();
-    int64_t timestampUs = mPrevSampleTimeUs;
-    int64_t recordDurationUs = 0;
-    if ( mFormat == AUDIO_FORMAT_PCM_16_BIT && mSampleRate){
-        recordDurationUs = ((1000000LL * (bufferSize / (2 * mRecord->channelCount()))) +
-                    (mSampleRate >> 1)) / mSampleRate;
-    } else if ( mFormat == AUDIO_FORMAT_AMR_WB) {
-       recordDurationUs = (bufferSize/AMR_WB_FRAMESIZE)*20*1000;//20ms
-    }
-    timestampUs += recordDurationUs;
+    const int64_t timestampUs =
+                mPrevSampleTimeUs +
+                    ((1000000LL * (bufferSize / frameSize)) +
+                        (mSampleRate >> 1)) / mSampleRate;
 
     if (mNumFramesReceived == 0) {
         buffer->meta_data()->setInt64(kKeyAnchorTime, mStartTimeUs);
     }
 
     buffer->meta_data()->setInt64(kKeyTime, mPrevSampleTimeUs);
-    if (mFormat == AUDIO_FORMAT_PCM_16_BIT) {
-        buffer->meta_data()->setInt64(kKeyDriftTime, timeUs - mInitialReadTimeUs);
-    } else {
-        int64_t wallClockTimeUs = timeUs - mInitialReadTimeUs;
-        int64_t mediaTimeUs = mStartTimeUs + mPrevSampleTimeUs;
-        buffer->meta_data()->setInt64(kKeyDriftTime, mediaTimeUs - wallClockTimeUs);
-    }
+    buffer->meta_data()->setInt64(kKeyDriftTime, timeUs - mInitialReadTimeUs);
     mPrevSampleTimeUs = timestampUs;
-    if (mFormat == AUDIO_FORMAT_AMR_WB)
-        mNumFramesReceived += buffer->range_length() / AMR_WB_FRAMESIZE;
-    else
-        mNumFramesReceived += buffer->range_length() / sizeof(int16_t);
+    mNumFramesReceived += bufferSize / frameSize;
     mBuffersReceived.push_back(buffer);
     mFrameAvailableCondition.signal();
 }

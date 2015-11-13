@@ -18,11 +18,16 @@
 
 #define NUPLAYER_RENDERER_H_
 
+#include <media/AudioResamplerPublic.h>
+#include <media/AVSyncSettings.h>
+
 #include "NuPlayer.h"
 
 namespace android {
 
 struct ABuffer;
+class  AWakeLock;
+struct MediaClock;
 struct VideoFrameScheduler;
 
 struct NuPlayer::Renderer : public AHandler {
@@ -46,50 +51,50 @@ struct NuPlayer::Renderer : public AHandler {
 
     void queueEOS(bool audio, status_t finalResult);
 
-    void flush(bool audio);
+    status_t setPlaybackSettings(const AudioPlaybackRate &rate /* sanitized */);
+    status_t getPlaybackSettings(AudioPlaybackRate *rate /* nonnull */);
+    status_t setSyncSettings(const AVSyncSettings &sync, float videoFpsHint);
+    status_t getSyncSettings(AVSyncSettings *sync /* nonnull */, float *videoFps /* nonnull */);
+
+    void flush(bool audio, bool notifyComplete);
 
     void signalTimeDiscontinuity();
 
     void signalAudioSinkChanged();
 
     void signalDisableOffloadAudio();
+    void signalEnableOffloadAudio();
 
     void pause();
     void resume();
 
     void setVideoFrameRate(float fps);
 
-    // Following setters and getters are protected by mTimeLock.
     status_t getCurrentPosition(int64_t *mediaUs);
-    status_t getCurrentPosition(
-            int64_t *mediaUs, int64_t nowUs, bool allowPastQueuedVideo = false);
-    void setHasMedia(bool audio);
-    void setAudioFirstAnchorTime(int64_t mediaUs);
-    void setAudioFirstAnchorTimeIfNeeded(int64_t mediaUs);
-    void setAnchorTime(
-            int64_t mediaUs, int64_t realUs, int64_t numFramesWritten = -1, bool resume = false);
-    void setVideoLateByUs(int64_t lateUs);
     int64_t getVideoLateByUs();
-    void setPauseStartedTimeRealUs(int64_t realUs);
 
-    bool openAudioSink(
+    virtual audio_stream_type_t getAudioStreamType(){return AUDIO_STREAM_DEFAULT;}
+
+    status_t openAudioSink(
             const sp<AMessage> &format,
             bool offloadOnly,
             bool hasVideo,
-            uint32_t flags);
+            uint32_t flags,
+            bool *isOffloaded,
+            bool isStreaming);
     void closeAudioSink();
 
     enum {
-        kWhatEOS                 = 'eos ',
-        kWhatFlushComplete       = 'fluC',
-        kWhatPosition            = 'posi',
-        kWhatVideoRenderingStart = 'vdrd',
-        kWhatMediaRenderingStart = 'mdrd',
-        kWhatAudioOffloadTearDown = 'aOTD',
+        kWhatEOS                      = 'eos ',
+        kWhatFlushComplete            = 'fluC',
+        kWhatPosition                 = 'posi',
+        kWhatVideoRenderingStart      = 'vdrd',
+        kWhatMediaRenderingStart      = 'mdrd',
+        kWhatAudioTearDown            = 'adTD',
         kWhatAudioOffloadPauseTimeout = 'aOPT',
     };
 
-    enum AudioOffloadTearDownReason {
+    enum AudioTearDownReason {
         kDueToError = 0,
         kDueToTimeout,
     };
@@ -99,21 +104,24 @@ protected:
 
     virtual void onMessageReceived(const sp<AMessage> &msg);
 
-private:
     enum {
         kWhatDrainAudioQueue     = 'draA',
         kWhatDrainVideoQueue     = 'draV',
         kWhatPostDrainVideoQueue = 'pDVQ',
         kWhatQueueBuffer         = 'queB',
         kWhatQueueEOS            = 'qEOS',
+        kWhatConfigPlayback      = 'cfPB',
+        kWhatConfigSync          = 'cfSy',
+        kWhatGetPlaybackSettings = 'gPbS',
+        kWhatGetSyncSettings     = 'gSyS',
         kWhatFlush               = 'flus',
-        kWhatAudioSinkChanged    = 'auSC',
         kWhatPause               = 'paus',
         kWhatResume              = 'resm',
         kWhatOpenAudioSink       = 'opnA',
         kWhatCloseAudioSink      = 'clsA',
         kWhatStopAudioSink       = 'stpA',
         kWhatDisableOffloadAudio = 'noOA',
+        kWhatEnableOffloadAudio  = 'enOA',
         kWhatSetVideoFrameRate   = 'sVFR',
     };
 
@@ -140,30 +148,32 @@ private:
     bool mDrainVideoQueuePending;
     int32_t mAudioQueueGeneration;
     int32_t mVideoQueueGeneration;
+    int32_t mAudioDrainGeneration;
+    int32_t mVideoDrainGeneration;
 
-    Mutex mTimeLock;
-    // |mTimeLock| protects the following 7 member vars that are related to time.
-    // Note: those members are only written on Renderer thread, so reading on Renderer thread
-    // doesn't need to be protected. Otherwise accessing those members must be protected by
-    // |mTimeLock|.
-    // TODO: move those members to a seperated media clock class.
+    sp<MediaClock> mMediaClock;
+    float mPlaybackRate; // audio track rate
+
+    AudioPlaybackRate mPlaybackSettings;
+    AVSyncSettings mSyncSettings;
+    float mVideoFpsHint;
+
     int64_t mAudioFirstAnchorTimeMediaUs;
     int64_t mAnchorTimeMediaUs;
-    int64_t mAnchorTimeRealUs;
     int64_t mAnchorNumFramesWritten;
-    int64_t mAnchorMaxMediaUs;
     int64_t mVideoLateByUs;
     bool mHasAudio;
     bool mHasVideo;
-    int64_t mPauseStartedTimeRealUs;
+    bool mFoundAudioEOS;
 
-    Mutex mFlushLock;  // protects the following 2 member vars.
-    bool mFlushingAudio;
-    bool mFlushingVideo;
+    bool mNotifyCompleteAudio;
+    bool mNotifyCompleteVideo;
 
     bool mSyncQueues;
 
+    // modified on only renderer's thread.
     bool mPaused;
+
     bool mVideoSampleReceived;
     bool mVideoRenderingStarted;
     int32_t mVideoRenderingStartGeneration;
@@ -172,19 +182,44 @@ private:
     int64_t mLastPositionUpdateUs;
 
     int32_t mAudioOffloadPauseTimeoutGeneration;
-    bool mAudioOffloadTornDown;
+    bool mAudioTornDown;
     audio_offload_info_t mCurrentOffloadInfo;
+
+    struct PcmInfo {
+        audio_channel_mask_t mChannelMask;
+        audio_output_flags_t mFlags;
+        audio_format_t mFormat;
+        int32_t mNumChannels;
+        int32_t mSampleRate;
+    };
+    PcmInfo mCurrentPcmInfo;
+    static const PcmInfo AUDIO_PCMINFO_INITIALIZER;
 
     int32_t mTotalBuffersQueued;
     int32_t mLastAudioBufferDrained;
+    bool mUseAudioCallback;
 
+    sp<AWakeLock> mWakeLock;
+
+    status_t getCurrentPositionOnLooper(int64_t *mediaUs);
+    status_t getCurrentPositionOnLooper(
+            int64_t *mediaUs, int64_t nowUs, bool allowPastQueuedVideo = false);
+    bool getCurrentPositionIfPaused_l(int64_t *mediaUs);
+    status_t getCurrentPositionFromAnchor(
+            int64_t *mediaUs, int64_t nowUs, bool allowPastQueuedVideo = false);
 
     size_t fillAudioBuffer(void *buffer, size_t size);
 
     bool onDrainAudioQueue();
+    void drainAudioQueueUntilLastEOS();
     int64_t getPendingAudioPlayoutDurationUs(int64_t nowUs);
     int64_t getPlayedOutAudioDurationUs(int64_t nowUs);
     void postDrainAudioQueue_l(int64_t delayUs = 0);
+
+    void clearAnchorTime_l();
+    void clearAudioFirstAnchorTime_l();
+    void setAudioFirstAnchorTimeIfNeeded_l(int64_t mediaUs);
+    void setVideoLateByUs(int64_t lateUs);
 
     void onNewAudioMediaTime(int64_t mediaTimeUs);
     int64_t getRealTimeUs(int64_t mediaTimeUs, int64_t nowUs);
@@ -192,23 +227,33 @@ private:
     void onDrainVideoQueue();
     void postDrainVideoQueue();
 
-    void prepareForMediaRenderingStart();
-    void notifyIfMediaRenderingStarted();
+    void prepareForMediaRenderingStart_l();
+    void notifyIfMediaRenderingStarted_l();
 
-    void onQueueBuffer(const sp<AMessage> &msg);
+    virtual void onQueueBuffer(const sp<AMessage> &msg);
     void onQueueEOS(const sp<AMessage> &msg);
     void onFlush(const sp<AMessage> &msg);
     void onAudioSinkChanged();
     void onDisableOffloadAudio();
+    void onEnableOffloadAudio();
+    status_t onConfigPlayback(const AudioPlaybackRate &rate /* sanitized */);
+    status_t onGetPlaybackSettings(AudioPlaybackRate *rate /* nonnull */);
+    status_t onConfigSync(const AVSyncSettings &sync, float videoFpsHint);
+    status_t onGetSyncSettings(AVSyncSettings *sync /* nonnull */, float *videoFps /* nonnull */);
+
     void onPause();
     void onResume();
     void onSetVideoFrameRate(float fps);
-    void onAudioOffloadTearDown(AudioOffloadTearDownReason reason);
-    bool onOpenAudioSink(
+    int32_t getQueueGeneration(bool audio);
+    int32_t getDrainGeneration(bool audio);
+    bool getSyncQueues();
+    void onAudioTearDown(AudioTearDownReason reason);
+    status_t onOpenAudioSink(
             const sp<AMessage> &format,
             bool offloadOnly,
             bool hasVideo,
-            uint32_t flags);
+            uint32_t flags,
+            bool isStreaming);
     void onCloseAudioSink();
 
     void notifyEOS(bool audio, status_t finalResult, int64_t delayUs = 0);
@@ -216,10 +261,10 @@ private:
     void notifyPosition();
     void notifyVideoLateBy(int64_t lateByUs);
     void notifyVideoRenderingStart();
-    void notifyAudioOffloadTearDown();
+    void notifyAudioTearDown();
 
     void flushQueue(List<QueueEntry> *queue);
-    bool dropBufferWhileFlushing(bool audio, const sp<AMessage> &msg);
+    bool dropBufferIfStale(bool audio, const sp<AMessage> &msg);
     void syncQueuesDone_l();
 
     bool offloadingAudio() const { return (mFlags & FLAG_OFFLOAD_AUDIO) != 0; }
@@ -227,9 +272,11 @@ private:
     void startAudioOffloadPauseTimeout();
     void cancelAudioOffloadPauseTimeout();
 
+    int64_t getDurationUsIfPlayedAtSampleRate(uint32_t numFrames);
+
     DISALLOW_EVIL_CONSTRUCTORS(Renderer);
 };
 
-}  // namespace android
+} // namespace android
 
 #endif  // NUPLAYER_RENDERER_H_
