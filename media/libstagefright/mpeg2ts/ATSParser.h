@@ -134,6 +134,10 @@ struct ATSParser : public RefBase {
         // Stream type 0x83 is non-standard,
         // it could be LPCM or TrueHD AC3
         STREAMTYPE_LPCM_AC3             = 0x83,
+#ifdef DTS_CODEC_M
+        // Stream type 0x06 for all DTS streams (including DTSHD)
+        STREAMTYPE_DTSHD                = 0x06,
+#endif
     };
 
 protected:
