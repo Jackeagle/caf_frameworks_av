@@ -349,7 +349,7 @@ bool ID3::removeUnsynchronizationV2_4(bool iTunesHack) {
         if (flags & 1) {
             // Strip data length indicator
 
-            if (mSize < 14 || mSize - 14 < offset) {
+            if (mSize < 14 || mSize - 14 < offset || dataSize < 4) {
                 return false;
             }
             memmove(&mData[offset + 10], &mData[offset + 14], mSize - offset - 14);
@@ -830,6 +830,12 @@ ID3::getAlbumArt(size_t *length, String8 *mime) const {
 
             size_t descLen = StringSize(&data[2 + mimeLen], encoding);
 
+            if (size < 2 ||
+                    size - 2 < mimeLen ||
+                    size - 2 - mimeLen < descLen) {
+                ALOGW("bogus album art sizes");
+                return NULL;
+            }
             *length = size - 2 - mimeLen - descLen;
 
             return &data[2 + mimeLen + descLen];
