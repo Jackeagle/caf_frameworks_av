@@ -828,12 +828,10 @@ void AudioPolicyManager::setPhoneState(audio_mode_t state)
 
     bool mode_in_call = (AUDIO_MODE_IN_CALL != oldState) && (AUDIO_MODE_IN_CALL == state);
     //query if it is a actual voice call initiated by telephony
-    if (mode_in_call) {
-        String8 valueStr = mpClientInterface->getParameters((audio_io_handle_t)0, String8("in_call"));
-        AudioParameter result = AudioParameter(valueStr);
-        if (result.getInt(String8("in_call"), voice_call_state) == NO_ERROR)
-            ALOGD("SetPhoneState: Voice call state = %d", voice_call_state);
-    }
+    String8 valueStr = mpClientInterface->getParameters((audio_io_handle_t)0, String8("in_call"));
+    AudioParameter result = AudioParameter(valueStr);
+    if (result.getInt(String8("in_call"), voice_call_state) == NO_ERROR)
+        ALOGD("voice_conc:SetPhoneState: Voice call state = %d", voice_call_state);
 
     if (mode_in_call && voice_call_state && !mvoice_call_state) {
         ALOGD("Entering to call mode oldState :: %d state::%d ",oldState, state);
@@ -915,9 +913,8 @@ void AudioPolicyManager::setPhoneState(audio_mode_t state)
         }
    }
 
-   if ((AUDIO_MODE_IN_CALL == oldState || AUDIO_MODE_IN_COMMUNICATION == oldState) &&
-       (AUDIO_MODE_NORMAL == state) && prop_playback_enabled && mvoice_call_state) {
-        ALOGD("EXITING from call mode oldState :: %d state::%d \n",oldState, state);
+    if(prop_playback_enabled && mvoice_call_state && !voice_call_state) {
+        ALOGD("voice_conc:EXITING from call mode oldState :: %d state::%d \n",oldState, state);
         mvoice_call_state = 0;
         //restore PCM (deep-buffer) output after call termination
         for (size_t i = 0; i < mOutputs.size(); i++) {
