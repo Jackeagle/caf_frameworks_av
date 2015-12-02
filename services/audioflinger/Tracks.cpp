@@ -426,7 +426,6 @@ AudioFlinger::PlaybackThread::Track::Track(
     mAudioTrackServerProxy(NULL),
     mResumeToStopping(false),
     mFlushHwPending(false),
-    mIsRamping(false),
     mPreviousValid(false),
     mPreviousFramesWritten(0)
     // mPreviousTimestamp
@@ -801,7 +800,6 @@ void AudioFlinger::PlaybackThread::Track::pause()
         case ACTIVE:
         case RESUMING:
             mState = PAUSING;
-            mIsRamping = true;
             ALOGV("ACTIVE/RESUMING => PAUSING (%d) on thread %p", mName, thread.get());
             playbackThread->broadcast_l();
             break;

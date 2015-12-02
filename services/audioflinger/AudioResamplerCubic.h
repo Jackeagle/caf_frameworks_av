@@ -31,7 +31,7 @@ public:
     AudioResamplerCubic(int inChannelCount, int32_t sampleRate) :
         AudioResampler(inChannelCount, sampleRate, MED_QUALITY) {
     }
-    virtual size_t resample(int32_t* out, size_t outFrameCount,
+    virtual void resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider);
 private:
     // number of bits used in interpolation multiply - 14 bits avoids overflow

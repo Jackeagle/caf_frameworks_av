@@ -203,7 +203,6 @@ private:
         uint32_t            sampleRate;
         int32_t*           mainBuffer;
         int32_t*           auxBuffer;
-        int32_t            cache[960 * MAX_NUM_CHANNELS * sizeof(int32_t)];
 
         // 16-byte boundary
         AudioBufferProvider*     mInputBufferProvider;    // externally provided buffer provider.
@@ -235,7 +234,6 @@ private:
         bool        doesResample() const { return resampler != NULL; }
         void        resetResampler() { if (resampler != NULL) resampler->reset(); }
         void        adjustVolumeRamp(bool aux, bool useFloat = false);
-        void        restoreVolume();
         size_t      getUnreleasedFrames() const { return resampler != NULL ?
                                                     resampler->getUnreleasedFrames() : 0; };
     };
@@ -392,7 +390,6 @@ private:
     static void unprepareTrackForReformat(track_t* pTrack, int trackName);
     static void reconfigureBufferProviders(track_t* pTrack);
 
-    static void projectDummyFrames(track_t* t, int32_t* out, size_t frameCount);
     static void track__genericResample(track_t* t, int32_t* out, size_t numFrames, int32_t* temp,
             int32_t* aux);
     static void track__nop(track_t* t, int32_t* out, size_t numFrames, int32_t* temp, int32_t* aux);

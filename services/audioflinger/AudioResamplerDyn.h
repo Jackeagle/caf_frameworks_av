@@ -52,7 +52,7 @@ public:
 
     virtual void setVolume(float left, float right);
 
-    virtual size_t resample(int32_t* out, size_t outFrameCount,
+    virtual void resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider);
 
 private:
@@ -111,10 +111,10 @@ private:
             int inSampleRate, int outSampleRate, double tbwCheat);
 
     template<int CHANNELS, bool LOCKED, int STRIDE>
-    size_t resample(TO* out, size_t outFrameCount, AudioBufferProvider* provider);
+    void resample(TO* out, size_t outFrameCount, AudioBufferProvider* provider);
 
     // define a pointer to member function type for resample
-    typedef size_t (AudioResamplerDyn<TC, TI, TO>::*resample_ABP_t)(TO* out,
+    typedef void (AudioResamplerDyn<TC, TI, TO>::*resample_ABP_t)(TO* out,
             size_t outFrameCount, AudioBufferProvider* provider);
 
     // data - the contiguous storage and layout of these is important.

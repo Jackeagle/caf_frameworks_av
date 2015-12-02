@@ -100,7 +100,7 @@ class MediaPlayerService : public BnMediaPlayerService
         virtual status_t        start();
         virtual ssize_t         write(const void* buffer, size_t size);
         virtual void            stop();
-        virtual void            flush(bool partial = false);
+        virtual void            flush();
         virtual void            pause();
         virtual void            close();
                 void            setAudioStreamType(audio_stream_type_t streamType) {
@@ -214,7 +214,7 @@ class MediaPlayerService : public BnMediaPlayerService
         virtual status_t        start();
         virtual ssize_t         write(const void* buffer, size_t size);
         virtual void            stop();
-        virtual void            flush(bool partial = false) {}
+        virtual void            flush() {}
         virtual void            pause() {}
         virtual void            close() {}
                 void            setAudioStreamType(audio_stream_type_t streamType __unused) {}

@@ -3548,13 +3548,12 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::MixerThread::prepareTrac
             // compute volume for this track
             uint32_t vl, vr;       // in U8.24 integer format
             float vlf, vrf, vaf;   // in [0.0, 1.0] float format
-            if (track->isPausing() || track->isRamping() || mStreamTypes[track->streamType()].mute) {
+            if (track->isPausing() || mStreamTypes[track->streamType()].mute) {
                 vl = vr = 0;
                 vlf = vrf = vaf = 0.;
                 if (track->isPausing()) {
                     track->setPaused();
                 }
-                track->setRamping(false);
             } else {
 
                 // read original volumes with volume control
@@ -3723,7 +3722,6 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::MixerThread::prepareTrac
                     }
                     tracksToRemove->add(track);
                 }
-                mAudioMixer->setParameter(name, AudioMixer::RESAMPLE, AudioMixer::RESET, NULL);
             } else {
                 // No buffers for this track. Give it a few chances to
                 // fill a buffer, then remove it from active list.

@@ -24,7 +24,7 @@ namespace android {
 AudioResamplerQTI::AudioResamplerQTI(int format,
         int inChannelCount, int32_t sampleRate)
     :AudioResampler(inChannelCount, sampleRate, QTI_QUALITY),
-    mOutFrameCount(0), mTmpBuf(0), mResamplerOutBuf(0), mFrameIndex(0)
+    mOutFrameCount(0), mTmpBuf(0), mFrameIndex(0)
 {
     stateSize = QCT_Resampler::MemAlloc(format, inChannelCount, sampleRate, sampleRate);
     mState = new int16_t[stateSize];
@@ -40,12 +40,9 @@ AudioResamplerQTI::~AudioResamplerQTI()
     if (mTmpBuf) {
         delete [] mTmpBuf;
     }
-    if (mResamplerOutBuf) {
-        delete [] mResamplerOutBuf;
-    }
 }
 
-size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
+void AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider)
 {
     int16_t vl = mVolume[0];
@@ -54,9 +51,6 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
 
     size_t inFrameRequest;
     size_t inFrameCount = getNumInSample(outFrameCount);
-    // valid input frame count obtained from shared buffer
-    // NOT the actual i/o frame count resampled.
-    size_t validFrames = 0;
     size_t index = 0;
     size_t frameIndex = mFrameIndex;
     size_t out_count = outFrameCount * 2;
@@ -71,11 +65,7 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
         if (mTmpBuf) {
             delete [] mTmpBuf;
         }
-        if (mResamplerOutBuf) {
-            delete [] mResamplerOutBuf;
-        }
         mTmpBuf = new int16_t[inFrameRequest + 16];
-        mResamplerOutBuf = new int32_t[out_count];
     }
 
     if (mChannelCount == 1) {
@@ -84,7 +74,6 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
             if (!mBuffer.frameCount) {
                 mBuffer.frameCount = inFrameCount;
                 provider->getNextBuffer(&mBuffer);
-                validFrames += mBuffer.frameCount;
                 frameIndex = 0;
             }
 
@@ -92,7 +81,7 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
                 while (index < inFrameCount) {
                     mTmpBuf[index++] = 0;
                 }
-                QCT_Resampler::Resample90dB(mState, mTmpBuf, mResamplerOutBuf, inFrameCount, outFrameCount);
+                QCT_Resampler::Resample90dB(mState, mTmpBuf, out, inFrameCount, outFrameCount);
                 goto resample_exit;
             }
 
@@ -103,7 +92,7 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
             }
         }
 
-        QCT_Resampler::Resample90dB(mState, mTmpBuf, mResamplerOutBuf, inFrameCount, outFrameCount);
+        QCT_Resampler::Resample90dB(mState, mTmpBuf, out, inFrameCount, outFrameCount);
     } else {
         pBuf = &mTmpBuf[inFrameCount];
         // buffer is empty, fetch a new one
@@ -111,7 +100,6 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
             if (!mBuffer.frameCount) {
                 mBuffer.frameCount = inFrameCount;
                 provider->getNextBuffer(&mBuffer);
-                validFrames += mBuffer.frameCount;
                 frameIndex = 0;
             }
             if (mBuffer.raw == NULL) {
@@ -119,7 +107,7 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
                     mTmpBuf[index] = 0;
                     pBuf[index++] = 0;
                 }
-                QCT_Resampler::Resample90dB(mState, mTmpBuf, mResamplerOutBuf, inFrameCount, outFrameCount);
+                QCT_Resampler::Resample90dB(mState, mTmpBuf, out, inFrameCount, outFrameCount);
                 goto resample_exit;
             }
 
@@ -131,17 +119,16 @@ size_t AudioResamplerQTI::resample(int32_t* out, size_t outFrameCount,
             }
        }
 
-       QCT_Resampler::Resample90dB(mState, mTmpBuf, mResamplerOutBuf, inFrameCount, outFrameCount);
+       QCT_Resampler::Resample90dB(mState, mTmpBuf, out, inFrameCount, outFrameCount);
     }
 
-    for (size_t i = 0; i < out_count; i += 2) {
-        out[i] += mResamplerOutBuf[i] * vl;
-        out[i+1] += mResamplerOutBuf[i+1] * vr;
+    for (int i = 0; i < out_count; i += 2) {
+        out[i] *= vl;
+        out[i+1] *= vr;
     }
 
 resample_exit:
     mFrameIndex = frameIndex;
-    return validFrames;
 }
 
 void AudioResamplerQTI::setSampleRate(int32_t inSampleRate)
@@ -150,11 +137,6 @@ void AudioResamplerQTI::setSampleRate(int32_t inSampleRate)
         mInSampleRate = inSampleRate;
         init();
     }
-}
-
-void * AudioResamplerQTI::getResampleOutBuf()
-{
-    return mResamplerOutBuf;
 }
 
 void AudioResamplerQTI::init()
@@ -178,7 +160,6 @@ void AudioResamplerQTI::setVolume(int16_t left, int16_t right)
 void AudioResamplerQTI::reset()
 {
     AudioResampler::reset();
-    QCT_Resampler::Init(mState, mChannelCount, mInSampleRate, mSampleRate);
 }
 
 }; // namespace android

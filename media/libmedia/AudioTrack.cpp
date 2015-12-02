@@ -616,7 +616,7 @@ bool AudioTrack::stopped() const
     return mState != STATE_ACTIVE;
 }
 
-void AudioTrack::flush(bool partial)
+void AudioTrack::flush()
 {
     if (mSharedBuffer != 0) {
         return;
@@ -625,10 +625,10 @@ void AudioTrack::flush(bool partial)
     if (mState == STATE_ACTIVE || mState == STATE_FLUSHED) {
         return;
     }
-    flush_l(partial);
+    flush_l();
 }
 
-void AudioTrack::flush_l(bool partial)
+void AudioTrack::flush_l()
 {
     ALOG_ASSERT(mState != STATE_ACTIVE);
 
@@ -643,7 +643,7 @@ void AudioTrack::flush_l(bool partial)
     if (isOffloaded_l()) {
         mProxy->interrupt();
     }
-    mProxy->flush(partial);
+    mProxy->flush();
     mAudioTrack->flush();
 }
 

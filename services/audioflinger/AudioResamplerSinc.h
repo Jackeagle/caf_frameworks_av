@@ -39,7 +39,7 @@ public:
 
     virtual ~AudioResamplerSinc();
 
-    virtual size_t resample(int32_t* out, size_t outFrameCount,
+    virtual void resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider);
 private:
     void init();
@@ -47,7 +47,7 @@ private:
     virtual void setVolume(float left, float right);
 
     template<int CHANNELS>
-    size_t resample(int32_t* out, size_t outFrameCount,
+    void resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider);
 
     template<int CHANNELS>

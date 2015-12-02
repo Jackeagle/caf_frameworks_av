@@ -932,9 +932,7 @@ bool AudioMixer::track_t::setResampler(uint32_t trackSampleRate, uint32_t devSam
                 // quality level based on the initial ratio, but that could change later.
                 // Should have a way to distinguish tracks with static ratios vs. dynamic ratios.
 #ifdef QTI_RESAMPLER
-                if (((trackSampleRate > devSampleRate * 2) || (trackSampleRate == 44100) ||
-                       (trackSampleRate == 24000) || (trackSampleRate == 32000) || (trackSampleRate == 22050)) &&
-                    (devSampleRate == 48000)){
+                if ((trackSampleRate > devSampleRate * 2) && (devSampleRate == 48000)) {
                     quality = AudioResampler::QTI_QUALITY;
                 } else
 #endif
@@ -1017,17 +1015,6 @@ inline void AudioMixer::track_t::adjustVolumeRamp(bool aux, bool useFloat)
             //ALOGV("aux ramp: %d %d %d", auxLevel << 16, prevAuxLevel, auxInc);
         }
     }
-}
-
-inline void AudioMixer::track_t::restoreVolume()
-{
-    for (uint32_t i = 0; i < MAX_NUM_VOLUMES; i++) {
-        mVolume[i] = mPrevVolume[i];
-        volume[i] = prevVolume[i];
-    }
-
-    auxLevel = prevAuxLevel;
-    mAuxLevel = mPrevAuxLevel;
 }
 
 size_t AudioMixer::getUnreleasedFrames(int name) const
@@ -1229,7 +1216,6 @@ void AudioMixer::track__genericResample(track_t* t, int32_t* out, size_t outFram
         int32_t* temp, int32_t* aux)
 {
     ALOGVV("track__genericResample\n");
-    size_t validFrames = 0;
     t->resampler->setSampleRate(t->sampleRate);
 
     // ramp gain - resample to temp buffer and scale/mix in 2nd step
@@ -1238,8 +1224,8 @@ void AudioMixer::track__genericResample(track_t* t, int32_t* out, size_t outFram
         // to apply send level after resampling
         t->resampler->setVolume(UNITY_GAIN_FLOAT, UNITY_GAIN_FLOAT);
         memset(temp, 0, outFrameCount * t->mMixerChannelCount * sizeof(int32_t));
-        validFrames = t->resampler->resample(temp, outFrameCount, t->bufferProvider);
-        if (CC_UNLIKELY((t->volumeInc[0]|t->volumeInc[1]|t->auxInc) && (validFrames > 0))) {
+        t->resampler->resample(temp, outFrameCount, t->bufferProvider);
+        if (CC_UNLIKELY(t->volumeInc[0]|t->volumeInc[1]|t->auxInc)) {
             volumeRampStereo(t, out, outFrameCount, temp, aux);
         } else {
             volumeStereo(t, out, outFrameCount, temp, aux);
@@ -1248,15 +1234,7 @@ void AudioMixer::track__genericResample(track_t* t, int32_t* out, size_t outFram
         if (CC_UNLIKELY(t->volumeInc[0]|t->volumeInc[1])) {
             t->resampler->setVolume(UNITY_GAIN_FLOAT, UNITY_GAIN_FLOAT);
             memset(temp, 0, outFrameCount * MAX_NUM_CHANNELS * sizeof(int32_t));
-            validFrames = t->resampler->resample(temp, outFrameCount, t->bufferProvider);
-
-            // It's possible that valid frames are not sufficient to complete a full ramp down,
-            // even if we've granted one more chance to pump up data before flush.
-            // Then project dummy tails by ourselves.
-            if ((validFrames < outFrameCount/2) && (t->volumeInc[0] < 0)) {
-                memset(temp, 0, outFrameCount * MAX_NUM_CHANNELS * sizeof(int32_t));
-                projectDummyFrames(t, temp, outFrameCount);
-            }
+            t->resampler->resample(temp, outFrameCount, t->bufferProvider);
             volumeRampStereo(t, out, outFrameCount, temp, aux);
         }
 
@@ -1264,28 +1242,6 @@ void AudioMixer::track__genericResample(track_t* t, int32_t* out, size_t outFram
         else {
             t->resampler->setVolume(t->mVolume[0], t->mVolume[1]);
             t->resampler->resample(out, outFrameCount, t->bufferProvider);
-            int32_t *buffer = (int32_t *)t->resampler->getResampleOutBuf();
-            if (buffer != NULL) {
-                memcpy(t->cache, buffer, FCC_2 * outFrameCount * sizeof(int32_t));
-            }
-        }
-    }
-}
-
-void AudioMixer::projectDummyFrames(track_t* t, int32_t* out, size_t frameCount)
-{
-    float delta = 1.0 / frameCount;
-    float gain = 1.0;
-
-    // crossfading last full frames to predict future samples is a comparatively good solution
-    // dummpy frames generation formulation is always open for optimization to make conjection smooth.
-    // O[t] = I[t] * gain[t] + I[t - t0] * (1 - gain[t]) , gain ranges from [1.0, 0.0]
-    for (size_t i = 0; i < (frameCount * t->channelCount); ) {
-        out[i] = gain * (t->cache[frameCount * t->channelCount - 1 - i] << 12);
-        out[i] += (1 - gain) * (t->cache[i] << 12);
-
-        if ((++i % t->channelCount) == 0) {
-            gain -= delta;
         }
     }
 }
@@ -1649,11 +1605,6 @@ void AudioMixer::process__genericNoResampling(state_t* state, int64_t pts)
                     // t.in == NULL can happen if the track was flushed just after having
                     // been enabled for mixing.
                    if (t.in == NULL) {
-                        if ((t.volumeInc[0] > 0) || (t.volumeInc[1] > 0)) {
-                            // restore to previous volume because volume ramp is broken.
-                            // that's to ensure ramp happens again.
-                            t.restoreVolume();
-                        }
                         enabledTracks &= ~(1<<i);
                         e1 &= ~(1<<i);
                         break;
@@ -1677,8 +1628,6 @@ void AudioMixer::process__genericNoResampling(state_t* state, int64_t pts)
                         t.bufferProvider->getNextBuffer(&t.buffer, outputPTS);
                         t.in = t.buffer.raw;
                         if (t.in == NULL) {
-                            // FIXME: track was disabled immediately upon no frame available.
-                            // there's no chance to finish volume ramp down.
                             enabledTracks &= ~(1<<i);
                             e1 &= ~(1<<i);
                             break;

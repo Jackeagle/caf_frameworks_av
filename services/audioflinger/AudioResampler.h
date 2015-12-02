@@ -72,13 +72,12 @@ public:
     // In either case, 'out' holds interleaved pairs of fixed-point Q4.27.
     // That is, for a mono provider, there is an implicit up-channeling.
     // Since this method accumulates, the caller is responsible for clearing 'out' initially.
-    // FIXME assumes provider is always successful;
-    virtual size_t resample(int32_t* out, size_t outFrameCount,
+    // FIXME assumes provider is always successful; it should return the actual frame count.
+    virtual void resample(int32_t* out, size_t outFrameCount,
             AudioBufferProvider* provider) = 0;
 
     virtual void reset();
     virtual size_t getUnreleasedFrames() const { return mInputIndex; }
-    virtual void * getResampleOutBuf() { return NULL; }
 
     // called from destructor, so must not be virtual
     src_quality getQuality() const { return mQuality; }
