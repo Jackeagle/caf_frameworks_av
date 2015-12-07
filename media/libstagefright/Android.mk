@@ -22,6 +22,7 @@ LOCAL_SRC_FILES:=                         \
         FLACExtractor.cpp                 \
         FrameRenderTracker.cpp            \
         HTTPBase.cpp                      \
+        HevcUtils.cpp                     \
         JPEGSource.cpp                    \
         MP3Extractor.cpp                  \
         MPEG2TSWriter.cpp                 \
