@@ -2986,7 +2986,6 @@ bool AudioFlinger::PlaybackThread::threadLoop()
         if (!waitingAsyncCallback()) {
             // mSleepTimeUs == 0 means we must write to audio hardware
             if (mSleepTimeUs == 0) {
-                ssize_t ret = 0;
 #ifdef SRS_PROCESSING
                 if (mType == MIXER && mMixerStatus == MIXER_TRACKS_READY) {
                     POSTPRO_PATCH_OUTPROC_PLAY_SAMPLES(this, mFormat, mSinkBuffer, mSinkBufferSize, mSampleRate, mChannelCount);
@@ -3188,10 +3187,6 @@ status_t AudioFlinger::PlaybackThread::createAudioPatch_l(const struct audio_pat
     for (unsigned int i = 0; i < patch->num_sinks; i++) {
         type |= patch->sinks[i].ext.device.type;
     }
-
-#ifdef SRS_PROCESSING   
-    POSTPRO_PATCH_OUTPROC_PLAY_ROUTE_BY_VALUE(this, type);
-#endif    
 
 #ifdef ADD_BATTERY_DATA
     // when changing the audio output device, call addBatteryData to notify
@@ -4881,7 +4876,9 @@ bool AudioFlinger::DirectOutputThread::checkForNewParameter_l(const String8& key
 
     AudioParameter param = AudioParameter(keyValuePair);
     int value;
-
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_OUTPROC_PLAY_ROUTE(this, param, value);
+#endif
     if (param.getInt(String8(AudioParameter::keyRouting), value) == NO_ERROR) {
         // forward device change to effects that have requested to be
         // aware of attached audio device.
