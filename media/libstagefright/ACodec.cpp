@@ -993,6 +993,11 @@ ACodec::BufferInfo *ACodec::dequeueBufferFromNativeWindow() {
         return NULL;
     }
 
+    if (mFatalError) {
+        ALOGW("not dequeuing from native window due to fatal error");
+        return NULL;
+    }
+
     if (native_window_dequeue_buffer_and_wait(mNativeWindow.get(), &buf) != 0) {
         ALOGE("dequeueBuffer failed.");
         return NULL;
