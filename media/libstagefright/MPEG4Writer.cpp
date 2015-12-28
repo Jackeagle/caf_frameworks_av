@@ -62,6 +62,9 @@ static const int64_t kMax32BitFileSize = 0x00ffffffffLL; // 2^32-1 : max FAT32
 static const uint8_t kNalUnitTypeSeqParamSet = 0x07;
 static const uint8_t kNalUnitTypePicParamSet = 0x08;
 static const int64_t kInitialDelayTimeUs     = 700000LL;
+#ifndef min
+#define min(a,b) (((a)>(b))?(b):(a))
+#endif
 
 class MPEG4Writer::Track {
 public:
@@ -85,6 +88,7 @@ public:
     void addChunkOffset(off64_t offset);
     int32_t getTrackId() const { return mTrackId; }
     status_t dump(int fd, const Vector<String16>& args) const;
+    size_t mMaxBytesToSearch;
 
 private:
     enum {
@@ -1109,7 +1113,7 @@ static void StripStartcode(MediaBuffer *buffer) {
     }
 }
 
-off64_t MPEG4Writer::addLengthPrefixedSample_l(MediaBuffer *buffer) {
+off64_t MPEG4Writer::addLengthPrefixedSample_ll(MediaBuffer *buffer) {
     off64_t old_offset = mOffset;
 
     size_t length = buffer->range_length();
@@ -1141,6 +1145,49 @@ off64_t MPEG4Writer::addLengthPrefixedSample_l(MediaBuffer *buffer) {
     }
 
     return old_offset;
+}
+
+off64_t MPEG4Writer::addLengthPrefixedSample_l(MediaBuffer *buffer, size_t maxBytesToSearch) {
+    off64_t oldOffset = mOffset;
+
+    MediaBuffer *copy = new MediaBuffer(buffer->data(), buffer->size());
+    copy->set_range(buffer->range_offset(), buffer->range_length());
+
+    struct {
+        const char *startCode;
+        size_t length;
+    } startCodes[] = {
+        {"\x00\x01", 2},
+        {"\x00\x00\x00\x01", 4}
+    }, *sc = &startCodes[1];
+
+
+    /* Walk thru the buffer and look for start codes */
+    while (void *accessUnitPtr = memmem(static_cast<char *>(copy->data()) + copy->range_offset(),
+                min(maxBytesToSearch, copy->range_length()), sc->startCode, sc->length)) {
+        size_t accessUnitLen = static_cast<char *>(accessUnitPtr) -
+            (static_cast<char *>(copy->data()) + copy->range_offset());
+        MediaBuffer *accessUnit = new MediaBuffer(copy->data(), copy->size());
+
+        accessUnit->set_range(copy->range_offset(), accessUnitLen);
+        ALOGV("Found next SC, current NAL offset %u, length %u", accessUnit->range_offset(), accessUnit->range_length());
+        MPEG4Writer::addLengthPrefixedSample_ll(accessUnit);
+        accessUnit->release();
+
+        copy->set_range(copy->range_offset() + accessUnitLen,
+                copy->range_length() - accessUnitLen);
+        StripStartcode(copy);
+        if (copy->range_length() < sc->length) {
+            break;
+        }
+    }
+
+    if (copy->range_length() > 0)
+        MPEG4Writer::addLengthPrefixedSample_ll(copy);
+    ALOGV("NAL offset %u, length %u", copy->range_offset(), copy->range_length());
+    copy->release();
+
+    return oldOffset;
 }
 
 size_t MPEG4Writer::write(
@@ -1427,6 +1474,27 @@ MPEG4Writer::Track::Track(
 
     getCodecSpecificDataFromInputFormatIfPossible();
     setTimeScale();
+
+    /*
+     * Only consider kMaxBytesToSearch since we're mainly looking out of small
+     * NALUs like AUD or SEI, which are expected to be at the top of the buffer.
+     * (2015/12/28) Add WA for some platform which will generate multi-slice frames
+     */
+    mMaxBytesToSearch = 64;
+    char property_value[PROPERTY_VALUE_MAX] = {0};
+    if (mIsAvc &&
+            property_get("media.msm8956hw", property_value, "0") &&
+            atoi(property_value)) {
+        int32_t width, height;
+        bool success = mMeta->findInt32(kKeyWidth, &width);
+        success = success && mMeta->findInt32(kKeyHeight, &height);
+        CHECK(success);
+        if (width * height > 1280 * 720) {
+            mMaxBytesToSearch = width * height * 3 / 2;
+            ALOGD("HW limitation on 8956 chip, enable full SC search on multi-slice frames for clips above 720p");
+        }
+    }
+
 }
 
 void MPEG4Writer::Track::updateTrackSizeEstimate() {
@@ -1634,7 +1702,7 @@ void MPEG4Writer::writeChunkToFile(Chunk* chunk) {
         List<MediaBuffer *>::iterator it = chunk->mSamples.begin();
 
         off64_t offset = (chunk->mTrack->isAvc() | chunk->mTrack->isHEVC())
-                                ? addLengthPrefixedSample_l(*it)
+                                ? addLengthPrefixedSample_l(*it, chunk->mTrack->mMaxBytesToSearch)
                                 : addSample_l(*it);
 
         if (isFirstSample) {
@@ -2454,7 +2522,7 @@ status_t MPEG4Writer::Track::threadEntry() {
             trackProgressStatus(timestampUs);
         }
         if (!hasMultipleTracks) {
-            off64_t offset = (mIsAvc | mIsHEVC) ? mOwner->addLengthPrefixedSample_l(copy)
+            off64_t offset = (mIsAvc | mIsHEVC) ? mOwner->addLengthPrefixedSample_l(copy, mMaxBytesToSearch)
                                  : mOwner->addSample_l(copy);
 
             uint32_t count = (mOwner->use32BitFileOffset()
