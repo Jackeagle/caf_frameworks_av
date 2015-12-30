@@ -1852,13 +1852,13 @@ void MediaPlayerService::AudioOutput::switchToNextOutput() {
     }
 }
 
-ssize_t MediaPlayerService::AudioOutput::write(const void* buffer, size_t size)
+ssize_t MediaPlayerService::AudioOutput::write(const void* buffer, size_t size, bool blocking)
 {
     LOG_ALWAYS_FATAL_IF(mCallback != NULL, "Don't call write if supplying a callback.");
 
     //ALOGV("write(%p, %u)", buffer, size);
     if (mTrack != 0) {
-        ssize_t ret = mTrack->write(buffer, size);
+        ssize_t ret = mTrack->write(buffer, size, blocking);
         if (ret >= 0) {
             mBytesWritten += ret;
         }
@@ -2160,7 +2160,7 @@ void MediaPlayerService::AudioCache::stop() {
     }
 }
 
-ssize_t MediaPlayerService::AudioCache::write(const void* buffer, size_t size)
+ssize_t MediaPlayerService::AudioCache::write(const void* buffer, size_t size, bool blocking)
 {
     ALOGV("write(%p, %u)", buffer, size);
     if ((buffer == 0) || (size == 0)) return size;
