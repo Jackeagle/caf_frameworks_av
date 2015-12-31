@@ -45,6 +45,7 @@
 #include <media/stagefright/CameraSource.h>
 #include <media/stagefright/CameraSourceTimeLapse.h>
 #include <camera/CameraParameters.h>
+#include <media/stagefright/MPEG4Writer.h>
 
 #include "common/ExtensionsLoader.hpp"
 #include "stagefright/AVExtensions.h"
@@ -120,6 +121,16 @@ CameraSourceTimeLapse* AVFactory::CreateCameraSourceTimeLapseFromCamera(
             clientName, clientUid, videoSize, videoFrameRate, surface,
             timeBetweenFrameCaptureUs, storeMetaDataInVideoBuffers);
 }
+
+MPEG4Writer* AVFactory::CreateMPEG4Writer(int fd) {
+    return new MPEG4Writer(fd);
+}
+
+ElementaryStreamQueue* AVFactory::createESQueue(
+         ElementaryStreamQueue::Mode , uint32_t ) {
+    return NULL;
+}
+
 // ----- NO TRESSPASSING BEYOND THIS LINE ------
 AVFactory::AVFactory() {
 }

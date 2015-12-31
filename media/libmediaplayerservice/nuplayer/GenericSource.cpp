@@ -128,7 +128,6 @@ status_t NuPlayer::GenericSource::setDataSource(
 
 status_t NuPlayer::GenericSource::setDataSource(const sp<DataSource>& source) {
     resetDataSource();
-    Mutex::Autolock _l(mSourceLock);
     mDataSource = source;
     return OK;
 }
@@ -156,12 +155,7 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
             return UNKNOWN_ERROR;
         }
     } else if (mIsStreaming) {
-        sp<DataSource> dataSource;
-        {
-            Mutex::Autolock _l(mSourceLock);
-            dataSource = mDataSource;
-        }
-        if (!dataSource->sniff(&mimeType, &confidence, &dummy)) {
+        if (!mDataSource->sniff(&mimeType, &confidence, &dummy)) {
             return UNKNOWN_ERROR;
         }
         isWidevineStreaming = !strcasecmp(
@@ -181,7 +175,7 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
     } else {
         extractor = MediaExtractor::Create(mDataSource,
                 mimeType.isEmpty() ? NULL : mimeType.string(),
-                mIsStreaming ? 0 : AVNuUtils::get()->getUseSetBuffersFlag());
+                mIsStreaming ? 0 : AVNuUtils::get()->getFlags());
     }
 
     if (extractor == NULL) {
@@ -386,7 +380,6 @@ void NuPlayer::GenericSource::onPrepareAsync() {
                 }
             }
 
-            Mutex::Autolock _l(mSourceLock);
             mDataSource = DataSource::CreateFromURI(
                    mHTTPService, uri, &mUriHeaders, &contentType,
                    static_cast<HTTPBase *>(mHttpSource.get()),
@@ -394,7 +387,6 @@ void NuPlayer::GenericSource::onPrepareAsync() {
         } else {
             mIsWidevine = false;
 
-            Mutex::Autolock _l(mSourceLock);
             mDataSource = new FileSource(mFd, mOffset, mLength);
             mFd = -1;
         }

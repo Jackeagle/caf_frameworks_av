@@ -35,6 +35,7 @@
 #include <camera/ICamera.h>
 #include <media/mediarecorder.h>
 #include <media/IOMX.h>
+#include "ESQueue.h"
 
 namespace android {
 
@@ -47,7 +48,6 @@ struct ACodec;
 struct ALooper;
 struct IMediaHTTPConnection;
 struct MediaCodec;
-struct MediaSource;
 struct MediaHTTP;
 struct NuCachedSource2;
 class CameraParameters;
@@ -60,6 +60,7 @@ class ICameraRecordingProxy;
 class String16;
 class IGraphicBufferProducer;
 struct Size;
+class MPEG4Writer;
 
 /*
  * Factory to create objects of base-classes in libstagefright
@@ -78,6 +79,8 @@ struct AVFactory {
             bool disconnectAtHighwatermark = false);
     virtual MediaHTTP* createMediaHTTP(
             const sp<IMediaHTTPConnection> &conn);
+    virtual ElementaryStreamQueue* createESQueue(
+            ElementaryStreamQueue::Mode mode, uint32_t flags = 0);
 
     virtual AudioSource* createAudioSource(
             audio_source_t inputSource,
@@ -108,6 +111,8 @@ struct AVFactory {
             const sp<IGraphicBufferProducer>& surface,
             int64_t timeBetweenFrameCaptureUs,
             bool storeMetaDataInVideoBuffers = true);
+
+    virtual MPEG4Writer *CreateMPEG4Writer(int fd);
     // ----- NO TRESSPASSING BEYOND THIS LINE ------
     DECLARE_LOADABLE_SINGLETON(AVFactory);
 };
@@ -204,6 +209,9 @@ struct AVUtils {
     virtual void setIntraPeriod(
                 int nPFrames, int nBFrames, const sp<IOMX> OMXhandle,
                 IOMX::node_id nodeID);
+
+    // Used by ATSParser
+    virtual bool IsHevcIDR(const sp<ABuffer> &accessUnit);
 
 private:
     HEVCMuxer mHEVCMuxer;
