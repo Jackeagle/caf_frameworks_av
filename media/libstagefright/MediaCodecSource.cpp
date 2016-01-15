@@ -474,6 +474,18 @@ status_t MediaCodecSource::initEncoder() {
     return OK;
 }
 
+status_t MediaCodecSource::setParameters(const sp<AMessage> &params) {
+    status_t ret;
+    if (mEncoder != NULL) {
+        ret = mEncoder->setParameters(params);
+    }
+    else {
+        ALOGE("%s Encoder is null", __func__);
+        ret = -1;
+    }
+    return ret;
+}
+
 void MediaCodecSource::releaseEncoder() {
     if (mEncoder == NULL) {
         return;
