@@ -49,34 +49,16 @@ SoftDTSDec::SoftDTSDec( const char *name,
                         OMX_PTR appData,
                         OMX_COMPONENTTYPE **component )
   : SimpleSoftOMXComponent(name, callbacks, appData, component),
-    mComponentHandle(NULL),
-    mOmxLibHandle(NULL)
+    mComponentHandle(NULL)
 {
     DTS_ALOGV("+SoftDTSDec() ctor : name = '%s'  this = 0x%x", name, this);
 
-    mOmxLibHandle = dlopen(DTS_M8_OMX_LIB, RTLD_NOW);
-    if (mOmxLibHandle == NULL) {
-        ALOGE("SoftDTSDec() ctor, failed to dlopen %s", DTS_M8_OMX_LIB);
-    }
+    OMX_Init();
 
-    fPtrInit omxInit = (fPtrInit)(dlsym(mOmxLibHandle, "OMX_Init"));
-    if (omxInit != NULL) {
-        omxInit();
-    } else {
-        ALOGE("SoftDTSDec() ctor, failed to dlsym OMX_Init");
-    }
-
-
-    fPtrGetHandle omxGetHandle = (fPtrGetHandle)(dlsym(mOmxLibHandle, "OMX_GetHandle"));
-    if (omxGetHandle != NULL) {
-        OMX_ERRORTYPE retVal = omxGetHandle(
-                                         &mComponentHandle,
-                                         const_cast<char *>(name),
-                                         appData,
-                                         const_cast<OMX_CALLBACKTYPE *>(callbacks) );
-    } else {
-        ALOGE("SoftDTSDec() ctor, failed to dlsym OMX_GetHandle");
-    }
+    OMX_ERRORTYPE retVal = OMX_GetHandle( &mComponentHandle,
+                                          const_cast<char *>(name),
+                                          appData,
+                                          const_cast<OMX_CALLBACKTYPE *>(callbacks) );
 }
 
 
@@ -84,25 +66,9 @@ SoftDTSDec::~SoftDTSDec()
 {
     DTS_ALOGV("+ ~SoftDTSDec() (dtor)");
 
-    fPtrFreeHandle omxFreeHandle = (fPtrFreeHandle)(dlsym(mOmxLibHandle, "OMX_FreeHandle"));
-    if (omxFreeHandle != NULL) {
-        omxFreeHandle(mComponentHandle);
-    } else {
-        ALOGE("~SoftDTSDec() failed to dlsym OMX_FreeHandle");
-    }
+    OMX_FreeHandle(mComponentHandle);
+    OMX_Deinit();
 
-    fPtrDeinit omxDeinit = (fPtrDeinit)(dlsym(mOmxLibHandle, "OMX_Deinit"));
-    if (omxDeinit != NULL) {
-        omxDeinit();
-    } else {
-        ALOGE("~SoftDTSDec() failed to dlsym OMX_Deinit");
-    }
-
-    if (mOmxLibHandle) {
-        if (dlclose(mOmxLibHandle)) {
-            ALOGV("~SoftDTSDec() failed to dlclose %s", DTS_M8_OMX_LIB);
-        }
-    }
     DTS_ALOGV("- ~SoftDTSDec() (dtor)");
 }
 
