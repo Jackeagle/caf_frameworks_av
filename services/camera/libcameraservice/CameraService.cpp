@@ -173,6 +173,12 @@ void CameraService::onFirstRef()
     mNumberOfCameras = mModule->getNumberOfCameras();
     mNumberOfNormalCameras = mNumberOfCameras;
 
+    VendorTagDescriptor::clearGlobalVendorTagDescriptor();
+
+    if (mModule->getModuleApiVersion() >= CAMERA_MODULE_API_VERSION_2_2) {
+        setUpVendorTags();
+    }
+
     mFlashlight = new CameraFlashlight(*mModule, *this);
     status_t res = mFlashlight->findFlashUnits();
     if (res) {
@@ -237,12 +243,6 @@ void CameraService::onFirstRef()
 
     if (mModule->getModuleApiVersion() >= CAMERA_MODULE_API_VERSION_2_1) {
         mModule->setCallbacks(this);
-    }
-
-    VendorTagDescriptor::clearGlobalVendorTagDescriptor();
-
-    if (mModule->getModuleApiVersion() >= CAMERA_MODULE_API_VERSION_2_2) {
-        setUpVendorTags();
     }
 
     CameraDeviceFactory::registerService(this);
