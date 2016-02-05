@@ -63,7 +63,7 @@ LOCAL_CLANG := true
 
 LOCAL_MODULE:= libmediaplayerservice
 
-#LOCAL_32_BIT_ONLY := true
+LOCAL_32_BIT_ONLY := true
 
 include $(BUILD_SHARED_LIBRARY)
 
