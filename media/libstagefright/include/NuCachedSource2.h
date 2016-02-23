@@ -28,11 +28,11 @@ struct ALooper;
 struct PageCache;
 
 struct NuCachedSource2 : public DataSource {
-    NuCachedSource2(
+    static sp<NuCachedSource2> Create(
             const sp<DataSource> &source,
             const char *cacheConfig = NULL,
             bool disconnectAtHighwatermark = false,
-            bool isProxyConfigured = false);
+	    bool isProxyConfigured = false);
 
     virtual status_t initCheck() const;
 
@@ -75,6 +75,12 @@ protected:
 
 private:
     friend struct AHandlerReflector<NuCachedSource2>;
+
+    NuCachedSource2(
+            const sp<DataSource> &source,
+            const char *cacheConfig,
+            bool disconnectAtHighwatermark,
+	    bool isProxyConfigured);
 
     enum {
         kPageSize                       = 65536,
