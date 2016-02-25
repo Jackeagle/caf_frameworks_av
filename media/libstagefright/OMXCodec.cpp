@@ -220,6 +220,11 @@ static bool IsSoftwareCodec(const char *componentName) {
         return true;
     }
 
+    if (!strncmp("OMX.ittiam", componentName, 10)) {
+        return true;
+    }
+
+
     if (!strncmp("OMX.", componentName, 4)) {
         return false;
     }
