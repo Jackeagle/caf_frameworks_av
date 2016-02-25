@@ -2101,7 +2101,9 @@ status_t AudioTrack::restoreTrack_l(const char *from)
 
     if (isOffloadedOrDirect_l()) {
         // FIXME re-creation of offloaded tracks is not yet implemented
-        return DEAD_OBJECT;
+        // Allow restoration if VOIP flag is set and the format is PCM
+        if (!((mFlags & AUDIO_OUTPUT_FLAG_VOIP_RX) && audio_is_linear_pcm(mFormat)))
+            return DEAD_OBJECT;
     }
 
     // save the old static buffer position
