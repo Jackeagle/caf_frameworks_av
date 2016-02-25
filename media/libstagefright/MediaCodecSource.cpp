@@ -468,12 +468,28 @@ status_t MediaCodecSource::initEncoder() {
             mEncoder = MediaCodec::CreateByComponentName(
                     mCodecLooper, componentName.c_str());
         } else {
-            mEncoder = MediaCodec::CreateByType(
+            if(mFlags & MediaCodecSource::FLAG_USE_CODEC_BYNAME) {
+               mOutputFormat->findString("codecName", &componentName);
+               ALOGD("QIPCam: creating codec by name = %s", componentName.c_str());
+               mEncoder = MediaCodec::CreateByComponentName(
+                       mCodecLooper, componentName.c_str());
+
+            } else {
+                mEncoder = MediaCodec::CreateByType(
                     mCodecLooper, outputMIME.c_str(), true /* encoder */);
+           }
         }
 #else
-        mEncoder = MediaCodec::CreateByType(
-                mCodecLooper, outputMIME.c_str(), true /* encoder */);
+        if(mFlags & MediaCodecSource::FLAG_USE_CODEC_BYNAME) {
+               mOutputFormat->findString("codecName", &componentName);
+               ALOGD("QIPCam: creating codec by name = %s", componentName.c_str());
+               mEncoder = MediaCodec::CreateByComponentName(
+                       mCodecLooper, componentName.c_str());
+
+            } else {
+                mEncoder = MediaCodec::CreateByType(
+                    mCodecLooper, outputMIME.c_str(), true /* encoder */);
+           }
 #endif
     }
 
