@@ -23,6 +23,7 @@
 #include <cutils/properties.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
+#include <media/stagefright/foundation/base64.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaBufferGroup.h>
@@ -1289,24 +1290,24 @@ static void extractAlbumArt(
     char type[128];
 
     if (flacSize < 8) {
-        goto exit;
+        return;
     }
 
     picType = U32_AT(flac);
 
     if (picType != 3) {
         // This is not a front cover.
-        goto exit;
+        return;
     }
 
     typeLen = U32_AT(&flac[4]);
     if (typeLen > sizeof(type) - 1) {
-        goto exit;
+        return;
     }
 
     // we've already checked above that flacSize >= 8
     if (flacSize - 8 < typeLen) {
-        goto exit;
+        return;
     }
 
     memcpy(type, &flac[8], typeLen);
@@ -1316,7 +1317,7 @@ static void extractAlbumArt(
 
     if (!strcmp(type, "-->")) {
         // This is not inline cover art, but an external url instead.
-        goto exit;
+        return;
     }
 
     descLen = U32_AT(&flac[8 + typeLen]);
@@ -1324,7 +1325,7 @@ static void extractAlbumArt(
     if (flacSize < 32 ||
         flacSize - 32 < typeLen ||
         flacSize - 32 - typeLen < descLen) {
-        goto exit;
+        return;
     }
 
     dataLen = U32_AT(&flac[8 + typeLen + 4 + descLen + 16]);
@@ -1332,7 +1333,7 @@ static void extractAlbumArt(
 
     // we've already checked above that (flacSize - 32 - typeLen - descLen) >= 0
     if (flacSize - 32 - typeLen - descLen < dataLen) {
-        goto exit;
+        return;
     }
 
     ALOGV("got image data, %zu trailing bytes",
@@ -1342,10 +1343,6 @@ static void extractAlbumArt(
             kKeyAlbumArt, 0, &flac[8 + typeLen + 4 + descLen + 20], dataLen);
 
     fileMeta->setCString(kKeyAlbumArtMIME, type);
-
-exit:
-    free(flac);
-    flac = NULL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
