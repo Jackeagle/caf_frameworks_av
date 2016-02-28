@@ -1446,6 +1446,11 @@ int64_t MPEG4Writer::getStartTimestampUs() {
     return mStartTimestampUs;
 }
 
+int64_t MPEG4Writer::getMaxFileDurationLimitUs() {
+    Mutex::Autolock autoLock(mLock);
+    return mMaxFileDurationLimitUs;
+}
+
 size_t MPEG4Writer::numTracks() {
     Mutex::Autolock autolock(mLock);
     return mTracks.size();
@@ -1477,6 +1482,7 @@ MPEG4Writer::Track::Track(
       mCodecSpecificDataSize(0),
       mGotAllCodecSpecificData(false),
       mReachedEOS(false),
+      mStartTimestampUs(-1ll),
       mRotation(0) {
     getCodecSpecificDataFromInputFormatIfPossible();
 
@@ -2214,6 +2220,7 @@ status_t MPEG4Writer::Track::threadEntry() {
     int64_t lastCttsOffsetTimeTicks = -1;  // Timescale based ticks
     int32_t cttsSampleCount = 0;           // Sample count in the current ctts table entry
     uint32_t lastSamplesPerChunk = 0;
+    int64_t maxFileDuration = mOwner->getMaxFileDurationLimitUs();
 
     if (mIsAudio) {
         prctl(PR_SET_NAME, (unsigned long)"AudioTrackEncoding", 0, 0, 0);
@@ -2320,10 +2327,14 @@ status_t MPEG4Writer::Track::threadEntry() {
         updateTrackSizeEstimate();
 
         if (mOwner->exceedsFileSizeLimit()) {
+            copy->release();
+            copy = NULL;
             mOwner->notify(MEDIA_RECORDER_EVENT_INFO, MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED, 0);
             break;
         }
         if (mOwner->exceedsFileDurationLimit()) {
+            copy->release();
+            copy = NULL;
             mOwner->notify(MEDIA_RECORDER_EVENT_INFO, MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
             break;
         }
@@ -2385,7 +2396,17 @@ status_t MPEG4Writer::Track::threadEntry() {
             timestampUs = decodingTimeUs;
             ALOGV("decoding time: %" PRId64 " and ctts offset time: %" PRId64,
                 timestampUs, cttsOffsetTimeUs);
-
+            //determine if (Track duration + current sample)
+            //exceeds the max file duration
+            if (timestampUs > mTrackDurationUs) {
+                if (maxFileDuration && (timestampUs + lastDurationUs) > maxFileDuration) {
+                    ALOGI("video Track: total Duration is going to exceed max limit, "
+                            "total Duration %" PRId64 ", estimated %" PRId64, mTrackDurationUs, timestampUs);
+                    mOwner->notify(MEDIA_RECORDER_EVENT_INFO, MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
+                    copy->release();
+                    break;
+                }
+            }
             // Update ctts box table if necessary
             currCttsOffsetTimeTicks =
                     (cttsOffsetTimeUs * mTimeScale + 500000LL) / 1000000LL;
@@ -2427,6 +2448,18 @@ status_t MPEG4Writer::Track::threadEntry() {
                 }
             }
 
+        } else {
+            //determine if (Track duration + current sample)
+            //exceeds the max file duration
+            if (timestampUs > mTrackDurationUs) {
+                if (maxFileDuration && (timestampUs + lastDurationUs) > maxFileDuration) {
+                    ALOGI("audio Track: total Duration is going to exceed max limit, "
+                            "total Duration %" PRId64 ", estimated %" PRId64, mTrackDurationUs, timestampUs);
+                    mOwner->notify(MEDIA_RECORDER_EVENT_INFO, MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
+                    copy->release();
+                    break;
+                }
+            }
         }
 
         if (mOwner->isRealTimeRecording()) {
