@@ -1549,9 +1549,9 @@ status_t ACodec::setComponentRole(
         { MEDIA_MIMETYPE_AUDIO_OPUS,
             "audio_decoder.opus", "audio_encoder.opus" },
         { MEDIA_MIMETYPE_AUDIO_G711_MLAW,
-            "audio_decoder.g711mlaw", "audio_encoder.g711mlaw" },
+            "audio_decoder.g711mlaw", "audio_encoder.g711" },
         { MEDIA_MIMETYPE_AUDIO_G711_ALAW,
-            "audio_decoder.g711alaw", "audio_encoder.g711alaw" },
+            "audio_decoder.g711alaw", "audio_encoder.g711" },
         { MEDIA_MIMETYPE_VIDEO_AVC,
             "video_decoder.avc", "video_encoder.avc" },
         { MEDIA_MIMETYPE_VIDEO_HEVC,
@@ -2598,9 +2598,25 @@ status_t ACodec::setupAMRCodec(bool encoder, bool isWAMR, int32_t bitrate) {
 
 status_t ACodec::setupG711Codec(bool encoder, int32_t sampleRate, int32_t numChannels) {
     if (encoder) {
-        return INVALID_OPERATION;
-    }
+        OMX_AUDIO_PARAM_PCMMODETYPE def;
+        InitOMXParams(&def);
+        def.nPortIndex = kPortIndexOutput;
 
+        status_t err = mOMX->getParameter(mNode, OMX_IndexParamAudioPcm, &def, sizeof(def));
+        if (err != OK) {
+            ALOGE("setupG711Codec(): Error %d getting OMX_IndexParamAudioFlac parameter", err);
+            return err;
+        }
+
+        def.nChannels = numChannels;
+        def.nSamplingRate = sampleRate;
+
+        err = mOMX->setParameter(mNode, OMX_IndexParamAudioPcm, &def, sizeof(def));
+        if (err != OK) {
+            ALOGE("setupG711Codec(): Error %d setting OMX_IndexParamAudioFlac parameter", err);
+            return err;
+        }
+    }
     return setupRawAudioFormat(
             kPortIndexInput, sampleRate, numChannels);
 }
