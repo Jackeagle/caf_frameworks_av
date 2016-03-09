@@ -92,6 +92,8 @@ enum audio_encoder {
     AUDIO_ENCODER_EVRC = 10,
     AUDIO_ENCODER_QCELP = 11,
     AUDIO_ENCODER_LPCM = 12,
+    AUDIO_ENCODER_MLAW = 13,
+    AUDIO_ENCODER_ALAW = 14,
 
     AUDIO_ENCODER_LIST_END // must be the last - used to validate the audio encoder type
 };
