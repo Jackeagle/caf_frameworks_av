@@ -116,6 +116,7 @@ private:
 
     void setStartTimestampUs(int64_t timeUs);
     int64_t getStartTimestampUs();  // Not const
+    int64_t getMaxFileDurationLimitUs();
     status_t startTracks(MetaData *params);
     size_t numTracks();
     int64_t estimateMoovBoxSize(int32_t bitRate);
