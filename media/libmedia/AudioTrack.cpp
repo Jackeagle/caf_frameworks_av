@@ -345,9 +345,13 @@ status_t AudioTrack::set(
         flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_DIRECT);
     }
 
-    if ((mStreamType == AUDIO_STREAM_VOICE_CALL) &&
+    audio_stream_type_t attr_streamType = (mStreamType == AUDIO_STREAM_DEFAULT) ?
+                                           audio_attributes_to_stream_type(&mAttributes):
+                                           mStreamType;
+
+    if ((attr_streamType == AUDIO_STREAM_VOICE_CALL) &&
         (mChannelCount == 1) &&
-        (mSampleRate == 8000 || mSampleRate == 16000)) {
+        (sampleRate == 8000 || sampleRate == 16000)) {
         // Allow Voip direct output only if:
         // audio mode is MODE_IN_COMMUNCATION; AND
         // voip output is not opened already; AND
@@ -375,7 +379,7 @@ status_t AudioTrack::set(
         }
 
         if ((mode == AUDIO_MODE_IN_COMMUNICATION) && (voipOutCount == 0) &&
-            ((voipSampleRate == 0) || (voipSampleRate == mSampleRate))) {
+            ((voipSampleRate == 0) || (voipSampleRate == sampleRate))) {
             if (audio_is_linear_pcm(format)) {
                 char propValue[PROPERTY_VALUE_MAX] = {0};
                 property_get("use.voice.path.for.pcm.voip", propValue, "0");
@@ -1172,6 +1176,7 @@ status_t AudioTrack::createTrack_l()
 
     size_t temp = frameCount;   // temp may be replaced by a revised value of frameCount,
                                 // but we will still need the original value also
+
     sp<IAudioTrack> track = audioFlinger->createTrack(streamType,
                                                       mSampleRate,
                                                       // AudioFlinger only sees 16-bit PCM

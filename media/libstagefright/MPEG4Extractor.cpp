@@ -2058,7 +2058,9 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             // shall be 'text'. We also want to support 'sbtl' handler type
             // for a practical reason as various MPEG4 containers use it.
             if (type == FOURCC('t', 'e', 'x', 't') || type == FOURCC('s', 'b', 't', 'l')) {
-                mLastTrack->meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_TEXT_3GPP);
+                if (mLastTrack != NULL) {
+                    mLastTrack->meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_TEXT_3GPP);
+                }
             }
 
             break;
@@ -2097,7 +2099,6 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             if ((chunk_size > SIZE_MAX) || (SIZE_MAX - chunk_size <= size)) {
                 return ERROR_MALFORMED;
             }
-
             uint8_t *buffer = new (std::nothrow) uint8_t[size + chunk_size];
             if (buffer == NULL) {
                 return ERROR_MALFORMED;
@@ -2535,6 +2536,12 @@ status_t MPEG4Extractor::parseITunesMetaData(off64_t offset, size_t size) {
                     mLastCommentName.setTo((const char *)buffer + 4);
                     break;
                 case FOURCC('d', 'a', 't', 'a'):
+                    if (size < 8) {
+                        delete[] buffer;
+                        buffer = NULL;
+                        ALOGE("b/24346430");
+                        return ERROR_MALFORMED;
+                    }
                     mLastCommentData.setTo((const char *)buffer + 8);
                     break;
             }
@@ -3284,16 +3291,24 @@ status_t MPEG4Source::start(MetaData *params) {
         mWantsNALFragments = false;
     }
 
+    int32_t tmp;
+    CHECK(mFormat->findInt32(kKeyMaxInputSize, &tmp));
+    size_t max_size = tmp;
+
+    // A somewhat arbitrary limit that should be sufficient for 8k video frames
+    // If you see the message below for a valid input stream: increase the limit
+    if (max_size > 64 * 1024 * 1024) {
+        ALOGE("bogus max input size: %zu", max_size);
+        return ERROR_MALFORMED;
+    }
     mGroup = new MediaBufferGroup;
-
-    int32_t max_size;
-    CHECK(mFormat->findInt32(kKeyMaxInputSize, &max_size));
-
     mGroup->add_buffer(new MediaBuffer(max_size));
 
     mSrcBuffer = new (std::nothrow) uint8_t[max_size];
     if (mSrcBuffer == NULL) {
         // file probably specified a bad max size
+        delete mGroup;
+        mGroup = NULL;
         return ERROR_MALFORMED;
     }
 
@@ -4081,7 +4096,10 @@ status_t MPEG4Source::read(
             (const uint8_t *)mBuffer->data() + mBuffer->range_offset();
 
         size_t nal_size = parseNALSize(src);
-        if (mBuffer->range_length() < mNALLengthSize + nal_size) {
+        if (mNALLengthSize > SIZE_MAX - nal_size) {
+            ALOGE("b/24441553, b/24445122");
+        }
+        if (mBuffer->range_length() - mNALLengthSize < nal_size) {
             ALOGE("incomplete NAL unit.");
 
             mBuffer->release();
@@ -4368,7 +4386,11 @@ status_t MPEG4Source::fragmentedRead(
             (const uint8_t *)mBuffer->data() + mBuffer->range_offset();
 
         size_t nal_size = parseNALSize(src);
-        if (mBuffer->range_length() < mNALLengthSize + nal_size) {
+        if (mNALLengthSize > SIZE_MAX - nal_size) {
+            ALOGE("b/24441553, b/24445122");
+        }
+
+        if (mBuffer->range_length() - mNALLengthSize < nal_size) {
             ALOGE("incomplete NAL unit.");
 
             mBuffer->release();

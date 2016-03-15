@@ -476,9 +476,19 @@ void NuPlayer::GenericSource::notifyPreparedAndCleanup(status_t err) {
         mMetaDataSize = -1ll;
         mContentType = "";
         mSniffedMIME = "";
-        mDataSource.clear();
-        mCachedSource.clear();
-        mHttpSource.clear();
+        {
+            sp<DataSource> dataSource = mDataSource;
+            sp<NuCachedSource2> cachedSource = mCachedSource;
+            sp<DataSource> httpSource = mHttpSource;
+            {
+                Mutex::Autolock _l(mDisconnectLock);
+                mDataSource.clear();
+                mDecryptHandle = NULL;
+                mDrmManagerClient = NULL;
+                mCachedSource.clear();
+                mHttpSource.clear();
+            }
+        }
         mBitrate = -1;
 
         cancelPollBuffering();
@@ -601,13 +611,20 @@ void NuPlayer::GenericSource::resume() {
 }
 
 void NuPlayer::GenericSource::disconnect() {
-    if (mDataSource != NULL) {
+    sp<DataSource> dataSource, httpSource;
+    {
+        Mutex::Autolock _l(mDisconnectLock);
+        dataSource = mDataSource;
+        httpSource = mHttpSource;
+    }
+
+    if (dataSource != NULL) {
         // disconnect data source
-        if (mDataSource->flags() & DataSource::kIsCachingDataSource) {
-            static_cast<NuCachedSource2 *>(mDataSource.get())->disconnect();
+        if (dataSource->flags() & DataSource::kIsCachingDataSource) {
+            static_cast<NuCachedSource2 *>(dataSource.get())->disconnect();
         }
-    } else if (mHttpSource != NULL) {
-        static_cast<HTTPBase *>(mHttpSource.get())->disconnect();
+    } else if (httpSource != NULL) {
+        static_cast<HTTPBase *>(httpSource.get())->disconnect();
     }
 }
 

@@ -246,6 +246,7 @@ status_t BnCrypto::onTransact(
 
             size_t totalSize = data.readInt32();
             void *srcData = malloc(totalSize);
+            memset(srcData, 0, totalSize);
             data.read(srcData, totalSize);
 
             int32_t numSubSamples = data.readInt32();
@@ -262,10 +263,32 @@ status_t BnCrypto::onTransact(
                 secureBufferId = reinterpret_cast<void *>(static_cast<uintptr_t>(data.readInt64()));
             } else {
                 dstPtr = malloc(totalSize);
+                memset(dstPtr, 0, totalSize);
             }
 
             AString errorDetailMsg;
-            ssize_t result = decrypt(
+            ssize_t result;
+
+            size_t sumSubsampleSizes = 0;
+            bool overflow = false;
+            for (int32_t i = 0; i < numSubSamples; ++i) {
+                CryptoPlugin::SubSample &ss = subSamples[i];
+                if (sumSubsampleSizes <= SIZE_MAX - ss.mNumBytesOfEncryptedData) {
+                    sumSubsampleSizes += ss.mNumBytesOfEncryptedData;
+                } else {
+                    overflow = true;
+                }
+                if (sumSubsampleSizes <= SIZE_MAX - ss.mNumBytesOfClearData) {
+                    sumSubsampleSizes += ss.mNumBytesOfClearData;
+                } else {
+                    overflow = true;
+                }
+            }
+
+            if (overflow || sumSubsampleSizes != totalSize) {
+                result = -EINVAL;
+            } else {
+                result = decrypt(
                     secure,
                     key,
                     iv,
@@ -274,6 +297,7 @@ status_t BnCrypto::onTransact(
                     subSamples, numSubSamples,
                     secure ? secureBufferId : dstPtr,
                     &errorDetailMsg);
+            }
 
             reply->writeInt32(result);
 
