@@ -18,9 +18,39 @@
 #define _MTP_DEBUG_H
 
 // #define LOG_NDEBUG 0
-#include <utils/Log.h>
+//#include <utils/Log.h>
 
 #include "MtpTypes.h"
+
+#define MTP_LOG_VERBOSE 1
+#define MTP_LOG_DEBUG 2
+#define MTP_LOG_INFO 3
+#define MTP_LOG_ERROR 4
+
+
+#ifndef MTP_LOG_LEVEL
+#define MTP_LOG_LEVEL 3
+#endif
+
+#ifndef ANDROID
+#include <stdio.h>
+#define ALOGE(fmt, args...) do { \
+        if (MTP_LOG_ERROR >= MTP_LOG_LEVEL) \
+            fprintf(stderr, fmt, ##args); \
+    } while (0)
+#define ALOGI(fmt, args...) do { \
+        if (MTP_LOG_INFO >= MTP_LOG_LEVEL) \
+            fprintf(stderr, fmt, ##args); \
+    } while (0)
+#define ALOGD(fmt, args...) do { \
+        if (MTP_LOG_DEBUG >= MTP_LOG_LEVEL) \
+            fprintf(stderr, fmt, ##args); \
+    } while (0)
+#define ALOGV(fmt, args...) do { \
+        if (MTP_LOG_VERBOSE >= MTP_LOG_LEVEL) \
+            fprintf(stderr, fmt, ##args); \
+    } while (0)
+#endif
 
 namespace android {
 

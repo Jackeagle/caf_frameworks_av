@@ -50,5 +50,6 @@ AC_ARG_WITH([additional-include-directives],
 AC_OUTPUT([ \
   Makefile \
   camera/Makefile \
+  media/mtp/Makefile \
 ])
 

@@ -73,7 +73,7 @@ static const MtpOperationCode kSupportedOperationCodes[] = {
     MTP_OPERATION_GET_OBJECT_PROP_DESC,
     MTP_OPERATION_GET_OBJECT_PROP_VALUE,
     MTP_OPERATION_SET_OBJECT_PROP_VALUE,
-    MTP_OPERATION_GET_OBJECT_PROP_LIST,
+//    MTP_OPERATION_GET_OBJECT_PROP_LIST,
 //    MTP_OPERATION_SET_OBJECT_PROP_LIST,
 //    MTP_OPERATION_GET_INTERDEPENDENT_PROP_DESC,
 //    MTP_OPERATION_SEND_OBJECT_PROP_LIST,
@@ -107,7 +107,8 @@ MtpServer::MtpServer(int fd, MtpDatabase* database, bool ptp,
         mSessionOpen(false),
         mSendObjectHandle(kInvalidObjectHandle),
         mSendObjectFormat(0),
-        mSendObjectFileSize(0)
+        mSendObjectFileSize(0),
+        mNeedStop(false)
 {
 }
 
@@ -155,7 +156,7 @@ void MtpServer::run() {
 
     ALOGV("MtpServer::run fd: %d\n", fd);
 
-    while (1) {
+    while (!mNeedStop) {
         int ret = mRequest.read(fd);
         if (ret < 0) {
             ALOGV("request read returned %d, errno: %d", ret, errno);
@@ -905,7 +906,7 @@ MtpResponseCode MtpServer::doSendObjectInfo() {
     if (!mData.getString(modified)) return MTP_RESPONSE_INVALID_PARAMETER;     // date modified
     // keywords follow
 
-    ALOGV("name: %s format: %04X\n", (const char *)name, format);
+    ALOGV("name: %s format: %04X, size %x\n", (const char *)name, format, mSendObjectFileSize);
     time_t modifiedTime;
     if (!parseDateTime(modified, modifiedTime))
         modifiedTime = 0;
@@ -979,7 +980,7 @@ MtpResponseCode MtpServer::doSendObject() {
     initialData = ret - MTP_CONTAINER_HEADER_SIZE;
 
     mtp_file_range  mfr;
-    mfr.fd = open(mSendObjectFilePath, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    mfr.fd = open(mSendObjectFilePath, O_RDWR | O_CREAT | O_TRUNC | O_LARGEFILE, S_IRUSR | S_IWUSR);
     if (mfr.fd < 0) {
         result = MTP_RESPONSE_GENERAL_ERROR;
         goto done;
@@ -1007,10 +1008,10 @@ MtpResponseCode MtpServer::doSendObject() {
                 mfr.length = mSendObjectFileSize - initialData;
             }
 
-            ALOGV("receiving %s\n", (const char *)mSendObjectFilePath);
+            ALOGV("receiving %s, mfr.length %llx\n", (const char *)mSendObjectFilePath, mfr.length);
             // transfer the file
             ret = ioctl(mFD, MTP_RECEIVE_FILE, (unsigned long)&mfr);
-            ALOGV("MTP_RECEIVE_FILE returned %d\n", ret);
+            ALOGV("MTP_RECEIVE_FILE returned %d errno %d\n", ret, errno);
         }
     }
     close(mfr.fd);
@@ -1277,6 +1278,11 @@ MtpResponseCode MtpServer::doEndEditObject() {
     commitEdit(edit);
     removeEditObject(handle);
     return MTP_RESPONSE_OK;
+}
+
+
+void MtpServer::stop() {
+    mNeedStop = true;
 }
 
 }  // namespace android

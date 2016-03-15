@@ -24,6 +24,7 @@
 
 #include "MtpDataPacket.h"
 #include "MtpStringBuffer.h"
+#include "MtpDebug.h"
 
 #define MTP_BUFFER_SIZE 16384
 
