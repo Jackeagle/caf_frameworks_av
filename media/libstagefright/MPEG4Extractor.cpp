@@ -60,6 +60,11 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
+
+#ifndef UINT32_MAX
+#define UINT32_MAX       (4294967295U)
+#endif
+
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include <QCMediaDefs.h>
 #include "include/ExtendedUtils.h"
@@ -1484,15 +1489,27 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 // each chunk originally prefixed with a 2 byte length will
                 // have a 4 byte header (0x00 0x00 0x00 0x01) after conversion,
                 // and thus will grow by 2 bytes per chunk.
+                if (max_size > SIZE_MAX - 10 * 2) {
+                    ALOGE("max sample size too big: %zu", max_size);
+                    return ERROR_MALFORMED;
+                }
                 mLastTrack->meta->setInt32(kKeyMaxInputSize, max_size + 10 * 2);
             } else {
                 // No size was specified. Pick a conservatively large size.
-                int32_t width, height;
-                if (!mLastTrack->meta->findInt32(kKeyWidth, &width) ||
-                    !mLastTrack->meta->findInt32(kKeyHeight, &height)) {
+                uint32_t width, height;
+                if (!mLastTrack->meta->findInt32(kKeyWidth, (int32_t*)&width) ||
+                    !mLastTrack->meta->findInt32(kKeyHeight,(int32_t*) &height)) {
                     ALOGE("No width or height, assuming worst case 1080p");
                     width = 1920;
                     height = 1080;
+                } else {
+                    // A resolution was specified, check that it's not too big. The values below
+                    // were chosen so that the calculations below don't cause overflows, they're
+                    // not indicating that resolutions up to 32kx32k are actually supported.
+                    if (width > 32768 || height > 32768) {
+                        ALOGE("can't support %u x %u video", width, height);
+                        return ERROR_MALFORMED;
+                    }
                 }
 
                 const char *mime;
@@ -1883,7 +1900,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 ALOGV("chunk_data_size = %lld and data_offset = %lld",
                         chunk_data_size, data_offset);
 
-                if (chunk_data_size >= SIZE_MAX - 1) {
+                if (chunk_data_size < 0 || static_cast<uint64_t>(chunk_data_size) >= SIZE_MAX - 1) {
                     return ERROR_MALFORMED;
                 }
                 sp<ABuffer> buffer = new ABuffer(chunk_data_size + 1);
@@ -2140,7 +2157,7 @@ status_t MPEG4Extractor::parseTrackHeader(
 }
 
 status_t MPEG4Extractor::parseMetaData(off64_t offset, size_t size) {
-    if (size < 4) {
+    if (size < 4 || size == SIZE_MAX) {
         return ERROR_MALFORMED;
     }
 
@@ -2845,12 +2862,26 @@ status_t MPEG4Source::parseSampleAuxiliaryInformationOffsets(off64_t offset, off
         return ERROR_IO;
     }
     offset += 4;
+    if (entrycount == 0) {
+        return OK;
+    }
+    if (entrycount > UINT32_MAX / 8) {
+        return ERROR_MALFORMED;
+    }
 
     if (entrycount > mCurrentSampleInfoOffsetsAllocSize) {
-        mCurrentSampleInfoOffsets = (uint64_t*) realloc(mCurrentSampleInfoOffsets, entrycount * 8);
+        uint64_t *newPtr = (uint64_t *)realloc(mCurrentSampleInfoOffsets, entrycount * 8);
+        if (newPtr == NULL) {
+            return NO_MEMORY;
+        }
+        mCurrentSampleInfoOffsets = newPtr;
         mCurrentSampleInfoOffsetsAllocSize = entrycount;
     }
     mCurrentSampleInfoOffsetCount = entrycount;
+
+    if (mCurrentSampleInfoOffsets == NULL) {
+        return OK;
+    }
 
     for (size_t i = 0; i < entrycount; i++) {
         if (version == 0) {
