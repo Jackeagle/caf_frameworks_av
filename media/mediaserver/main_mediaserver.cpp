@@ -141,8 +141,20 @@ int main(int argc __unused, char** argv)
         // notify earlyaudio native app
         property_set(PROP_NAME, "1");
         ResourceManagerService::instantiate();
-        CameraService::instantiate();
-        AudioPolicyService::instantiate();
+        char propValue[PROPERTY_VALUE_MAX] = {0};
+        property_get("AUTOPLATFORM_BOOT", propValue, "false");
+        // propValue would be AUTOPLATFORM_BOOT for Automotive Project
+        // For automotive, the java side audio system service depends on
+        // this audio policy service to be complete for binding; otherwise
+        // there is a sleep of 1 second seen which impacts the boot time.
+        if (!(strcmp(propValue, "true") == 0)) {
+            CameraService::instantiate();
+            AudioPolicyService::instantiate();
+        }
+        else { //For automotive case
+            AudioPolicyService::instantiate();
+            CameraService::instantiate();
+        }
         SoundTriggerHwService::instantiate();
         RadioService::instantiate();
 #ifdef AUDIO_LISTEN_ENABLED

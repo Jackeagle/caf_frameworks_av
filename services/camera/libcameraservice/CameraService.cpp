@@ -247,8 +247,13 @@ void CameraService::onFirstRef()
     }
 
     CameraDeviceFactory::registerService(this);
-
-    CameraService::pingCameraServiceProxy();
+    // For Automotive case, camera is not advertised
+    // and hence there is no equivalent java Camera service as binder
+    char propValue[PROPERTY_VALUE_MAX] = {0};
+    property_get("AUTOPLATFORM_BOOT", propValue, "false");
+    if (!(strcmp(propValue, "true") == 0)) {
+        CameraService::pingCameraServiceProxy(); //avoids GetService call
+    }
 }
 
 sp<ICameraServiceProxy> CameraService::getCameraServiceProxy() {
