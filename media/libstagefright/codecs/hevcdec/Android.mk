@@ -18,6 +18,7 @@ LOCAL_SHARED_LIBRARIES  := libstagefright
 LOCAL_SHARED_LIBRARIES  += libstagefright_omx
 LOCAL_SHARED_LIBRARIES  += libstagefright_foundation
 LOCAL_SHARED_LIBRARIES  += libutils
+LOCAL_SHARED_LIBRARIES  += libcutils
 LOCAL_SHARED_LIBRARIES  += liblog
 
 # We need this because the current asm generates the following link error:
