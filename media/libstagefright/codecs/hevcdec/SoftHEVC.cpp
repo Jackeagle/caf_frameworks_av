@@ -28,6 +28,7 @@
 #include <media/stagefright/foundation/AUtils.h>
 #include <media/stagefright/MediaDefs.h>
 #include <OMX_VideoExt.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -255,7 +256,12 @@ status_t SoftHEVC::setFlushMode() {
 status_t SoftHEVC::initDecoder() {
     IV_API_CALL_STATUS_T status;
 
-    mNumCores = GetCPUCoreCount();
+    char value[PROPERTY_VALUE_MAX];
+    if (property_get("media.hevc.cores", value, NULL)) {
+        mNumCores = max(min(atoi(value), CODEC_MAX_NUM_CORES), 1);
+    } else {
+        mNumCores = GetCPUCoreCount();
+    }
     mCodecCtx = NULL;
 
     mStride = outputBufferWidth();
