@@ -45,9 +45,10 @@
 #include <map>
 #include <stdexcept>
 
-//So far only support SDcard as MTP storage.
-#define SDCARD_MOUNT_PATH "/mnt/sdcard"
-#define SDCARD_DESC "sdcard"
+#define EXTERNAL_STORAGE_PATH "/mnt/sdcard"
+#define EXTERNAL_STORAGE_DESC "sdcard"
+#define INTERNAL_STORAGE_PATH "/media/internal"
+#define INTERNAL_STORAGE_DESC "Internal storage"
 #define DEVICE_FRIENDLY_NAME "MTP"
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -77,7 +78,7 @@ private:
     pthread_t mInotifyWatchThread;
     uint32_t mHandleId;
     bool mRunning;
-    bool mMediaFlag;
+    int mMediaFlag;
 
     void buildSupportedformatMap();
     time_t getModifiedTime(const MtpString& path);
@@ -321,7 +322,7 @@ MyMtpDatabase::MyMtpDatabase()
     mHandleId = 1;
     mRunning = true;
     mServer = NULL;
-    mMediaFlag = false;
+    mMediaFlag = 0;
 
     mObjectDb = std::map<MtpObjectHandle, ObjectInfo>();
     mSupportedFormatMap = std::map<MtpString, MtpObjectFormat>();
@@ -369,9 +370,12 @@ MtpObjectHandle MyMtpDatabase::beginSendObject(const char* path,
     MtpObjectHandle handle = mHandleId;
     MtpString pathString(path);
 
-    // Currentyl only support SDcard
-    if (storage != MTP_STORAGE_REMOVABLE_RAM || pathString.find(SDCARD_MOUNT_PATH) == -1)
+    if (pathString.find(INTERNAL_STORAGE_PATH) == -1 && pathString.find(EXTERNAL_STORAGE_PATH) == -1)
         return kInvalidObjectHandle;
+    if (::access(path, F_OK) == 0) {
+        ALOGD("%s:path %s exists, return\n", __func__, path);
+        return kInvalidObjectHandle;
+    }
 
     ALOGD("%s:path %s,format %d\n", __func__, path, format);
 
@@ -1045,15 +1049,18 @@ bool MyMtpDatabase::needStopInotifyWatchThread()
 
 void MyMtpDatabase::setMediaFlag(bool flag)
 {
-    mMediaFlag = flag;
+    if (flag == true)
+        mMediaFlag++;
+    else
+        mMediaFlag--;
 }
 
 void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferred)
 {
     size_t processed = 0;
 
-    //if sdcard hasn't been inserted,there shouldn't recieved any inotification.
-    if(!mMediaFlag)
+    //if no storage exist,there shouldn't recieved any inotification.
+    if(mMediaFlag <= 0)
         return ;
 
     while(transferred - processed >= sizeof(inotify_event))
@@ -1061,7 +1068,6 @@ void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferre
         const char* data = processed + eventBuf;
         const inotify_event* event = reinterpret_cast<const inotify_event*>(data);
         MtpObjectHandle parent = 0;
-
         processed += sizeof(inotify_event) + event->len;
 
         for (std::map<MtpObjectHandle, ObjectInfo>::const_iterator iter = mObjectDb.begin(),
@@ -1071,7 +1077,8 @@ void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferre
                 break;
             }
         }
-
+        if (parent == 0 || !(event->mask & (IN_DELETE | IN_CREATE)))
+            continue;
         MtpString path(mObjectDb.at(parent).mPath);
         path.append("/");
         path.append(event->name);
@@ -1129,7 +1136,8 @@ void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferre
 
 static MtpServer* mServer;
 static MyMtpDatabase* myDatabase;
-static MtpStorage *mStorage; //SDcard
+static MtpStorage *mExternalStorage; //SDcard
+static MtpStorage *mInternalStorage;
 static int mInotifyMediaFd; //check inotify of the sdcard inserting
 
 /**
@@ -1158,23 +1166,40 @@ static void inotifyAddWatch() {
                     IN_CREATE | IN_DELETE);
 }
 
-static void notifyAddSDcard()
+static void addExternalStorage()
 {
     ALOGD("%s\n", __func__);
-    mStorage = new MtpStorage(MTP_STORAGE_REMOVABLE_RAM, SDCARD_MOUNT_PATH, SDCARD_DESC, 0, true, 0);
-    myDatabase->addStorage(MtpString(SDCARD_MOUNT_PATH), MtpString(SDCARD_DESC), mStorage->getStorageID());
+    mExternalStorage = new MtpStorage(MTP_STORAGE_REMOVABLE_RAM, EXTERNAL_STORAGE_PATH, EXTERNAL_STORAGE_DESC, 0, true, 0);
+    myDatabase->addStorage(MtpString(EXTERNAL_STORAGE_PATH), MtpString(EXTERNAL_STORAGE_DESC), mExternalStorage->getStorageID());
 
-    mServer->addStorage(mStorage);
+    mServer->addStorage(mExternalStorage);
     myDatabase->setMediaFlag(true);
 }
 
-static void notifyRemoveSDcard()
+static void checkAndAddInternalStorage() {
+    ALOGD("%s\n", __func__);
+
+    if(access(INTERNAL_STORAGE_PATH, F_OK) < 0) {
+        ALOGD("%s: path %s not exist\n", __func__, INTERNAL_STORAGE_PATH);
+        return;
+    }
+
+    mInternalStorage = new MtpStorage(MTP_STORAGE_FIXED_RAM, INTERNAL_STORAGE_PATH,
+            INTERNAL_STORAGE_DESC, 0, false, 0);
+    myDatabase->addStorage(MtpString(INTERNAL_STORAGE_PATH),
+            MtpString(INTERNAL_STORAGE_DESC), mInternalStorage->getStorageID());
+
+    mServer->addStorage(mInternalStorage);
+    myDatabase->setMediaFlag(true);
+
+}
+
+static void removeStorage(MtpStorage *storage)
 {
     ALOGD("%s\n", __func__);
-    mServer->removeStorage(mStorage);
-    myDatabase->removeStorage(mStorage->getStorageID());
-    delete mStorage;
-    mStorage = NULL;
+    mServer->removeStorage(storage);
+    myDatabase->removeStorage(storage->getStorageID());
+    delete storage;
     myDatabase->setMediaFlag(false);
 }
 
@@ -1195,11 +1220,13 @@ static void inotifyWatchMediaHandler(const char eventBuf[], size_t transferred)
 
         if (ievent->len > 0 && ievent->mask & IN_CREATE  &&
                 !strcmp(ievent->name, "sdcard")) {
-            notifyAddSDcard();
+            addExternalStorage();
         } else if (ievent->len > 0 && ievent->mask & IN_DELETE &&
                 !strcmp(ievent->name, "sdcard")) {
-            if (mStorage != NULL)
-                notifyRemoveSDcard();
+            if (mExternalStorage != NULL) {
+                removeStorage(mExternalStorage);
+                mExternalStorage = NULL;
+            }
         }
     }
 }
@@ -1252,7 +1279,7 @@ static void installSignalHandler() {
   }
 }
 
-static void checkSDcardMounted() {
+static void checkExternalStorage() {
     int pid;
     FILE *fp;
     char buf[128];
@@ -1277,7 +1304,7 @@ static void checkSDcardMounted() {
                     ALOGD("%s: finish to ln /media/sdcard\n", __func__);
                 }
             } else {
-                notifyAddSDcard();
+                addExternalStorage();
             }
             break;
         }
@@ -1313,7 +1340,8 @@ int main(int argc, char** argv)
         goto fail;
     }
     inotifyAddWatch();
-    checkSDcardMounted();
+    checkExternalStorage();
+    checkAndAddInternalStorage();
 
     installSignalHandler();
 
@@ -1322,8 +1350,10 @@ int main(int argc, char** argv)
 
 fail:
     //Release
-    if (mStorage != NULL)
-        notifyRemoveSDcard();
+    if (mExternalStorage != NULL)
+        removeStorage(mExternalStorage);
+    if (mInternalStorage != NULL)
+        removeStorage(mInternalStorage);
     delete mServer;
     delete myDatabase;
     close(mInotifyMediaFd);
