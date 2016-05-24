@@ -987,10 +987,15 @@ void AudioPolicyManager::setPhoneState(audio_mode_t state)
                     closeOutput(mOutputs.keyAt(i));
                 }
             } else if (AUDIO_OUTPUT_FLAG_DEEP_BUFFER == mFallBackflag) {
-                if ((outputDesc->mProfile->mFlags & AUDIO_OUTPUT_FLAG_DIRECT)
-                                &&  prop_playback_enabled) {
-                    ALOGD("voice_conc:calling closeOutput on call mode for COMPRESS output");
-                    closeOutput(mOutputs.keyAt(i));
+                if (outputDesc->mProfile->mFlags & AUDIO_OUTPUT_FLAG_VOIP_RX) {
+                   if (prop_voip_enabled) {
+                        ALOGD("voice_conc:calling closeOutput on call mode for DIRECT  output");
+                        closeOutput(mOutputs.keyAt(i));
+                   }
+                } else if (prop_playback_enabled
+                                &&  (outputDesc->mProfile->mFlags & AUDIO_OUTPUT_FLAG_DIRECT)) {
+                        ALOGD("voice_conc:calling closeOutput on call mode for COMPRESS output");
+                        closeOutput(mOutputs.keyAt(i));
                 }
             }
         }
@@ -1277,7 +1282,7 @@ sp<AudioPolicyManager::IOProfile> AudioPolicyManager::getProfileForDirectOutput(
     audio_output_flags_t direct_flags = AUDIO_OUTPUT_FLAG_DIRECT;
 
     //if the requested flags has VoIP and DIRECT set, update direct_flags to get VoIP direct o/p profile
-    if (flags & (AUDIO_OUTPUT_FLAG_VOIP_RX | AUDIO_OUTPUT_FLAG_DIRECT)) {
+    if (flags & AUDIO_OUTPUT_FLAG_VOIP_RX) {
         direct_flags = (audio_output_flags_t) (AUDIO_OUTPUT_FLAG_VOIP_RX | AUDIO_OUTPUT_FLAG_DIRECT);
     }
 #ifdef HDMI_PASSTHROUGH_ENABLED
