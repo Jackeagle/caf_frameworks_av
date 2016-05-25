@@ -35,19 +35,22 @@ static const OMX_U32 kPortIndexInput = 0;
 namespace android {
 
 struct BufferMeta {
-    BufferMeta(const sp<IMemory> &mem, bool is_backup = false)
+    BufferMeta(const sp<IMemory> &mem, OMX_U32 portIndex, bool is_backup = false)
         : mMem(mem),
-          mIsBackup(is_backup) {
+          mIsBackup(is_backup),
+          mPortIndex(portIndex) {
     }
 
-    BufferMeta(size_t size)
+    BufferMeta(size_t size, OMX_U32 portIndex)
         : mSize(size),
-          mIsBackup(false) {
+          mIsBackup(false),
+          mPortIndex(portIndex) {
     }
 
-    BufferMeta(const sp<GraphicBuffer> &graphicBuffer)
+    BufferMeta(const sp<GraphicBuffer> &graphicBuffer, OMX_U32 portIndex)
         : mGraphicBuffer(graphicBuffer),
-          mIsBackup(false) {
+          mIsBackup(false),
+          mPortIndex(portIndex) {
     }
 
     void CopyFromOMX(const OMX_BUFFERHEADERTYPE *header) {
@@ -74,11 +77,16 @@ struct BufferMeta {
         mGraphicBuffer = graphicBuffer;
     }
 
+    OMX_U32 getPortIndex() {
+        return mPortIndex;
+    }
+
 private:
     sp<GraphicBuffer> mGraphicBuffer;
     sp<IMemory> mMem;
     size_t mSize;
     bool mIsBackup;
+    OMX_U32 mPortIndex;
 
     BufferMeta(const BufferMeta &);
     BufferMeta &operator=(const BufferMeta &);
@@ -463,7 +471,7 @@ status_t OMXNodeInstance::useBuffer(
         OMX::buffer_id *buffer) {
     Mutex::Autolock autoLock(mLock);
 
-    BufferMeta *buffer_meta = new BufferMeta(params);
+    BufferMeta *buffer_meta = new BufferMeta(params, portIndex);
 
     OMX_BUFFERHEADERTYPE *header;
 
@@ -515,7 +523,7 @@ status_t OMXNodeInstance::useGraphicBuffer2_l(
         return err;
     }
 
-    BufferMeta *bufferMeta = new BufferMeta(graphicBuffer);
+    BufferMeta *bufferMeta = new BufferMeta(graphicBuffer, portIndex);
 
     OMX_BUFFERHEADERTYPE *header = NULL;
     OMX_U8* bufferHandle = const_cast<OMX_U8*>(
@@ -574,7 +582,7 @@ status_t OMXNodeInstance::useGraphicBuffer(
         return StatusFromOMXError(err);
     }
 
-    BufferMeta *bufferMeta = new BufferMeta(graphicBuffer);
+    BufferMeta *bufferMeta = new BufferMeta(graphicBuffer, portIndex);
 
     OMX_BUFFERHEADERTYPE *header;
 
@@ -692,7 +700,7 @@ status_t OMXNodeInstance::allocateBuffer(
         void **buffer_data) {
     Mutex::Autolock autoLock(mLock);
 
-    BufferMeta *buffer_meta = new BufferMeta(size);
+    BufferMeta *buffer_meta = new BufferMeta(size, portIndex);
 
     OMX_BUFFERHEADERTYPE *header;
 
@@ -730,7 +738,7 @@ status_t OMXNodeInstance::allocateBufferWithBackup(
         OMX::buffer_id *buffer) {
     Mutex::Autolock autoLock(mLock);
 
-    BufferMeta *buffer_meta = new BufferMeta(params, true);
+    BufferMeta *buffer_meta = new BufferMeta(params, portIndex, true);
 
     OMX_BUFFERHEADERTYPE *header;
 
@@ -769,6 +777,9 @@ status_t OMXNodeInstance::freeBuffer(
     removeActiveBuffer(portIndex, buffer);
 
     OMX_BUFFERHEADERTYPE *header = (OMX_BUFFERHEADERTYPE *)buffer;
+    if (header == NULL) {
+        return BAD_VALUE;
+    }
     BufferMeta *buffer_meta = static_cast<BufferMeta *>(header->pAppPrivate);
 
     OMX_ERRORTYPE err = OMX_FreeBuffer(mHandle, portIndex, header);
@@ -783,6 +794,9 @@ status_t OMXNodeInstance::fillBuffer(OMX::buffer_id buffer) {
     Mutex::Autolock autoLock(mLock);
 
     OMX_BUFFERHEADERTYPE *header = (OMX_BUFFERHEADERTYPE *)buffer;
+    if (header == NULL) {
+        return BAD_VALUE;
+    }
     header->nFilledLen = 0;
     header->nOffset = 0;
     header->nFlags = 0;
@@ -804,6 +818,9 @@ status_t OMXNodeInstance::emptyBuffer(
     header->nFlags = flags;
     header->nTimeStamp = timestamp;
 
+    if (header == NULL) {
+        return BAD_VALUE;
+    }
     BufferMeta *buffer_meta =
         static_cast<BufferMeta *>(header->pAppPrivate);
     buffer_meta->CopyToOMX(header);
@@ -901,6 +918,9 @@ void OMXNodeInstance::onMessage(const omx_message &msg) {
         OMX_BUFFERHEADERTYPE *buffer =
             static_cast<OMX_BUFFERHEADERTYPE *>(
                     msg.u.extended_buffer_data.buffer);
+        if (buffer == NULL) {
+            return false;
+        }
 
         BufferMeta *buffer_meta =
             static_cast<BufferMeta *>(buffer->pAppPrivate);
