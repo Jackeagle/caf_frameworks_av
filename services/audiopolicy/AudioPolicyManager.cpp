@@ -6005,8 +6005,13 @@ uint32_t AudioPolicyManager::checkDeviceMuteStrategies(sp<AudioOutputDescriptor>
             if (outputDesc->isStrategyActive((routing_strategy)i)) {
                 setStrategyMute((routing_strategy)i, true, outputDesc->mIoHandle);
                 // do tempMute unmute after twice the mute wait time
-                setStrategyMute((routing_strategy)i, false, outputDesc->mIoHandle,
-                                muteWaitMs *2, device);
+                if(outputDesc->mFlags & AUDIO_OUTPUT_FLAG_VOIP_RX){
+                    setStrategyMute((routing_strategy)i, false, outputDesc->mIoHandle,
+                                    muteWaitMs *3, device);
+                } else {
+                    setStrategyMute((routing_strategy)i, false, outputDesc->mIoHandle,
+                                    muteWaitMs *2, device);
+                }
             }
         }
     }
@@ -6948,7 +6953,7 @@ status_t AudioPolicyManager::checkAndSetVolume(audio_stream_type_t stream,
             voiceVolume = 1.0;
         }
 
-        if (voiceVolume != mLastVoiceVolume && ((output == mPrimaryOutput) ||
+        if (voiceVolume != mLastVoiceVolume && ((output == mPrimaryOutput && AUDIO_MODE_IN_CALL == mPhoneState) ||
             isDirectOutput(output) || device & AUDIO_DEVICE_OUT_ALL_USB)) {
             mpClientInterface->setVoiceVolume(voiceVolume, delayMs);
             mLastVoiceVolume = voiceVolume;
