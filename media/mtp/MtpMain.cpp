@@ -84,7 +84,8 @@ private:
     time_t getModifiedTime(const MtpString& path);
     MtpObjectFormat getObjectFormatByExtension(const MtpString& extension);
     bool isDirectory(const MtpString& path);
-    uint32_t getFileSize(const MtpString& path);
+    int64_t getFileSize(const MtpString& path);
+    uint32_t getCompressedFileSize(const MtpString& path);
     void addObjectInfo(const MtpString& path, MtpObjectHandle parent, MtpStorageID storage);
     void enumDirectory(const MtpString& path, MtpObjectHandle parent, MtpStorageID storage);
 
@@ -231,19 +232,26 @@ MtpObjectFormat MyMtpDatabase::getObjectFormatByExtension(const MtpString& exten
 
 bool MyMtpDatabase::isDirectory(const MtpString& path)
 {
-  struct stat64 attr;
-  ::stat64(path.string(), &attr);
-  return S_ISDIR(attr.st_mode);
+    struct stat64 attr;
+    ::stat64(path.string(), &attr);
+    return S_ISDIR(attr.st_mode);
 }
 
-uint32_t MyMtpDatabase::getFileSize(const MtpString& path)
+int64_t MyMtpDatabase::getFileSize(const MtpString& path)
 {
-  struct stat64 attr;
-  ::stat64(path.string(), &attr);
-  if (attr.st_size > 0xFFFFFFFFLL)
-      return 0xFFFFFFFF; //Consistent with Android.
-  else
-      return attr.st_size;
+    struct stat64 attr;
+    ::stat64(path.string(), &attr);
+    return attr.st_size;
+}
+
+uint32_t MyMtpDatabase::getCompressedFileSize(const MtpString& path)
+{
+    struct stat64 attr;
+    ::stat64(path.string(), &attr);
+    if (attr.st_size > 0xFFFFFFFFLL)
+        return 0xFFFFFFFF; //Consistent with Android.
+    else
+        return attr.st_size;
 }
 
 void MyMtpDatabase::addObjectInfo(const MtpString& path, MtpObjectHandle parent, MtpStorageID storage)
@@ -276,7 +284,7 @@ void MyMtpDatabase::addObjectInfo(const MtpString& path, MtpObjectHandle parent,
         objInfo.mName = ::strdup(path.getPathLeaf());
         objInfo.mPath = ::strdup(path);
         objInfo.mFormat = getObjectFormatByExtension(path.getPathExtension());
-        objInfo.mCompressedSize = getFileSize(path);
+        objInfo.mCompressedSize = getCompressedFileSize(path);
         objInfo.mDateModified = getModifiedTime(path);
         mObjectDb.insert( std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo) );
         ALOGD("%s: add file %s\n", __func__, path.string());
@@ -384,7 +392,7 @@ MtpObjectHandle MyMtpDatabase::beginSendObject(const char* path,
     objInfo.mName = ::strdup(pathString.getPathLeaf());
     objInfo.mPath = ::strdup(path);
     objInfo.mFormat = format;
-    objInfo.mCompressedSize = size;
+    objInfo.mCompressedSize = (uint32_t)size;
     objInfo.mDateModified = modified;
 
     mObjectDb.insert(std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo));
@@ -420,7 +428,7 @@ void MyMtpDatabase::endSendObject(const char* path,
         mObjectDb.erase(handle);
     } else {
         if (format != MTP_FORMAT_ASSOCIATION) {
-            mObjectDb.at(handle).mCompressedSize = getFileSize(pathString);
+            mObjectDb.at(handle).mCompressedSize = getCompressedFileSize(pathString);
         }
     }
 }
@@ -583,7 +591,7 @@ MtpResponseCode MyMtpDatabase::getObjectPropertyValue(MtpObjectHandle handle,
             packet.putUInt16(mObjectDb.at(handle).mFormat);
             break;
         case MTP_PROPERTY_OBJECT_SIZE:
-            packet.putUInt32(mObjectDb.at(handle).mCompressedSize);
+            packet.putUInt64((uint64_t)getFileSize(MtpString(mObjectDb.at(handle).mPath)));
             break;
         case MTP_PROPERTY_OBJECT_FILE_NAME:
             packet.putString(mObjectDb.at(handle).mName);
@@ -773,12 +781,13 @@ MtpResponseCode MyMtpDatabase::getObjectFilePath(MtpObjectHandle handle,
         return MTP_RESPONSE_INVALID_OBJECT_HANDLE;
     }
 
-    ALOGD("%s: handle:  %d, path: %s, length: %d, format: %d", __func__,
-            handle, objInfo.mPath, objInfo.mCompressedSize, objInfo.mFormat);
-
     outFilePath = objInfo.mPath;
-    outFileLength = objInfo.mCompressedSize;
+    outFileLength = getFileSize(outFilePath);
     outFormat = objInfo.mFormat;
+
+    ALOGD("%s: handle:  %d, path: %s, length: %lld, format: %d", __func__,
+            handle, objInfo.mPath, outFileLength, objInfo.mFormat);
+
 
     return MTP_RESPONSE_OK;
 }
@@ -928,7 +937,7 @@ MtpProperty* MyMtpDatabase::getObjectPropertyDesc(MtpObjectProperty property,
         result = new MtpProperty(property, MTP_TYPE_UINT32);
         break;
     case MTP_PROPERTY_OBJECT_SIZE:
-        result = new MtpProperty(property, MTP_TYPE_UINT32);
+        result = new MtpProperty(property, MTP_TYPE_UINT64);
         break;
     case MTP_PROPERTY_PERSISTENT_UID:
         result = new MtpProperty(property, MTP_TYPE_UINT128);
@@ -1090,7 +1099,7 @@ void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferre
             for (std::map<MtpObjectHandle, ObjectInfo>::const_iterator iter = mObjectDb.begin(),
                     iter_end = mObjectDb.end(); iter != iter_end; ++iter) {
                 if (path == iter->second.mPath) {
-                    mObjectDb.at(iter->first).mCompressedSize = getFileSize(path);
+                    mObjectDb.at(iter->first).mCompressedSize = getCompressedFileSize(path);
                     break;
                 }
             }
