@@ -142,6 +142,8 @@ protected:
     virtual ~OMXCodec();
 
 private:
+    //Give accessibility of OMX and Node_id to the Extended OMXClass
+    friend struct ExtendedOMXCodec;
 
     // Make sure mLock is accessible to OMXCodecObserver
     friend class OMXCodecObserver;
