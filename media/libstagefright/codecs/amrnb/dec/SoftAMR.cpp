@@ -310,6 +310,13 @@ void SoftAMR::onQueueFilled(OMX_U32 /* portIndex */) {
             return;
         }
 
+        if (inHeader->nFilledLen == 0) {
+            inInfo->mOwnedByUs = false;
+            inQueue.erase(inQueue.begin());
+            notifyEmptyBufferDone(inHeader);
+            continue;
+        }
+
         if (inHeader->nOffset == 0) {
             mAnchorTimeUs = inHeader->nTimeStamp;
             mNumSamplesOutput = 0;
