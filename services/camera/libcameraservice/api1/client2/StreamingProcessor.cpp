@@ -29,6 +29,7 @@
 #include <utils/Trace.h>
 #include <gui/Surface.h>
 #include <media/hardware/MetadataBufferType.h>
+#include <camera/ICameraRecordingProxy.h>
 
 #include "common/CameraDeviceBase.h"
 #include "api1/Camera2Client.h"
@@ -752,6 +753,10 @@ void StreamingProcessor::releaseRecordingFrame(const sp<IMemory>& mem) {
                 kMetadataBufferTypeGrallocSource);
         return;
     }
+
+    // b/28466701
+    payload->pBuffer = (ANativeWindowBuffer*)(((uint8_t*)payload->pBuffer) +
+            ICameraRecordingProxy::getCommonBaseAddress());
 
     // Release the buffer back to the recording queue
 
