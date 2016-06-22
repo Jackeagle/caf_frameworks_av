@@ -717,6 +717,10 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
         meta->setInt32(kKeyTimeScale, timeScale);
     }
 
+    int32_t bitRate;
+    if (msg->findInt32("bit-rate", &bitRate)) {
+        meta->setInt32(kKeyBitRate, bitRate);
+    }
     // XXX TODO add whatever other keys there are
 
 #if 0
