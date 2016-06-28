@@ -632,6 +632,7 @@ void ExtendedCodec::configureFramePackingFormat(
 
     int32_t mode = 0;
     OMX_QCOM_PARAM_PORTDEFINITIONTYPE portFmt;
+    InitOMXParams(&portFmt);
     portFmt.nPortIndex = kPortIndexInput;
 
     if (msg->findInt32(getMsgKey(kKeyUseArbitraryMode), &mode) && mode) {
