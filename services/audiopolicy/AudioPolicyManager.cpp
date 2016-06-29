@@ -7020,6 +7020,11 @@ void AudioPolicyManager::setStreamMute(audio_stream_type_t stream,
             if (streamDesc.mCanBeMuted &&
                     ((stream != AUDIO_STREAM_ENFORCED_AUDIBLE) ||
                      (mForceUse[AUDIO_POLICY_FORCE_FOR_SYSTEM] == AUDIO_POLICY_FORCE_NONE))) {
+                if (stream == AUDIO_STREAM_VOICE_CALL) {
+                    AudioParameter param = AudioParameter();
+                    param.add(String8("voip_mute"), String8("true"));
+                    mpClientInterface->setParameters(0, param.toString());
+                }
                 checkAndSetVolume(stream, 0, output, device, delayMs);
             }
         }
@@ -7031,6 +7036,11 @@ void AudioPolicyManager::setStreamMute(audio_stream_type_t stream,
             return;
         }
         if (--outputDesc->mMuteCount[stream] == 0) {
+            if (stream == AUDIO_STREAM_VOICE_CALL) {
+                AudioParameter param = AudioParameter();
+                param.add(String8("voip_mute"), String8("false"));
+                mpClientInterface->setParameters(0, param.toString());
+            }
             checkAndSetVolume(stream,
                               streamDesc.getVolumeIndex(device),
                               output,
