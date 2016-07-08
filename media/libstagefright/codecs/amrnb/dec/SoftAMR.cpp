@@ -285,15 +285,8 @@ void SoftAMR::onQueueFilled(OMX_U32 portIndex) {
     while (!inQueue.empty() && !outQueue.empty()) {
         BufferInfo *inInfo = *inQueue.begin();
         OMX_BUFFERHEADERTYPE *inHeader = inInfo->mHeader;
-
-        if (inHeader->nFilledLen == 0) {
-            inInfo->mOwnedByUs = false;
-            inQueue.erase(inQueue.begin());
-            notifyEmptyBufferDone(inHeader);
-            continue;
-        }
-
-        BufferInfo *outInfo = *outQueue.begin();
+        
+	BufferInfo *outInfo = *outQueue.begin();
         OMX_BUFFERHEADERTYPE *outHeader = outInfo->mHeader;
 
         if (inHeader->nFlags & OMX_BUFFERFLAG_EOS) {
@@ -309,6 +302,12 @@ void SoftAMR::onQueueFilled(OMX_U32 portIndex) {
             notifyFillBufferDone(outHeader);
             return;
         }
+	if (inHeader->nFilledLen == 0) {
+             inInfo->mOwnedByUs = false;
+             inQueue.erase(inQueue.begin());
+             notifyEmptyBufferDone(inHeader);
+             continue;
+         }
 
         if (inHeader->nOffset == 0) {
             mAnchorTimeUs = inHeader->nTimeStamp;
