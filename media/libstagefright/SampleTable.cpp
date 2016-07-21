@@ -236,7 +236,7 @@ status_t SampleTable::setSampleToChunkParams(
         return ERROR_MALFORMED;
     }
 
-    if ((uint64_t)SIZE_MAX / sizeof(SampleToChunkEntry) <=
+    if ((uint64_t)kMaxTotalSize / sizeof(SampleToChunkEntry) <=
             (uint64_t)mNumSampleToChunkOffsets) {
         ALOGE("Sample-to-chunk table size too large.");
         return ERROR_OUT_OF_RANGE;
@@ -268,7 +268,7 @@ status_t SampleTable::setSampleToChunkParams(
         return OK;
     }
 
-    if ((off64_t)(SIZE_MAX - 8 -
+    if ((off64_t)(kMaxOffset - 8 -
             ((mNumSampleToChunkOffsets - 1) * sizeof(SampleToChunkEntry)))
             < mSampleToChunkOffset) {
         return ERROR_MALFORMED;
@@ -456,7 +456,7 @@ status_t SampleTable::setCompositionTimeToSampleParams(
 
     mNumCompositionTimeDeltaEntries = numEntries;
     uint64_t allocSize = (uint64_t)numEntries * 2 * sizeof(uint32_t);
-    if (allocSize > SIZE_MAX) {
+    if (allocSize > kMaxTotalSize) {
         ALOGE("Composition-time-to-sample table size too large.");
         return ERROR_OUT_OF_RANGE;
     }
@@ -523,7 +523,7 @@ status_t SampleTable::setSyncSampleParams(off64_t data_offset, size_t data_size)
     }
 
     uint64_t allocSize = (uint64_t)mNumSyncSamples * sizeof(uint32_t);
-    if (allocSize > SIZE_MAX) {
+    if (allocSize > kMaxTotalSize) {
         ALOGE("Sync sample table size too large.");
         return ERROR_OUT_OF_RANGE;
     }
