@@ -75,6 +75,7 @@ private:
     std::map<MtpObjectHandle, ObjectInfo> mObjectDb;
     std::map<MtpString, MtpObjectFormat> mSupportedFormatMap;
     MtpServer* mServer;
+    Mutex mMutex;
     pthread_t mInotifyWatchThread;
     uint32_t mHandleId;
     bool mRunning;
@@ -88,6 +89,7 @@ private:
     uint32_t getCompressedFileSize(const MtpString& path);
     void addObjectInfo(const MtpString& path, MtpObjectHandle parent, MtpStorageID storage);
     void enumDirectory(const MtpString& path, MtpObjectHandle parent, MtpStorageID storage);
+    MtpResponseCode deleteChildren(MtpObjectHandle handle);
 
     int checkObjectHandle(MtpObjectHandle handle) {
         if (handle == 0 || handle == MTP_PARENT_ROOT)
@@ -267,11 +269,12 @@ void MyMtpDatabase::addObjectInfo(const MtpString& path, MtpObjectHandle parent,
         objInfo.mFormat = MTP_FORMAT_ASSOCIATION;
         objInfo.mCompressedSize = 0;
         objInfo.mWd = inotify_add_watch(mInotifyFd, path.string(),
-                /*IN_MODIFY | */IN_CREATE | IN_DELETE);
+                /*IN_MODIFY | */IN_CREATE | IN_DELETE | IN_CLOSE_WRITE);
         objInfo.mDateModified = getModifiedTime(path);
-
-        mObjectDb.insert(std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo) );
-
+        {
+            Mutex::Autolock autoLock(mMutex);
+            mObjectDb.insert(std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo) );
+        }
         ALOGD("%s: add directory %s\n", __func__, path.string());
 
         if (mServer)
@@ -286,7 +289,10 @@ void MyMtpDatabase::addObjectInfo(const MtpString& path, MtpObjectHandle parent,
         objInfo.mFormat = getObjectFormatByExtension(path.getPathExtension());
         objInfo.mCompressedSize = getCompressedFileSize(path);
         objInfo.mDateModified = getModifiedTime(path);
-        mObjectDb.insert( std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo) );
+        {
+            Mutex::Autolock autoLock(mMutex);
+            mObjectDb.insert( std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo) );
+        }
         ALOGD("%s: add file %s\n", __func__, path.string());
 
         if (mServer)
@@ -352,6 +358,8 @@ MyMtpDatabase::MyMtpDatabase()
 }
 
 MyMtpDatabase::~MyMtpDatabase() {
+    Mutex::Autolock autoLock(mMutex);
+
     stopInotifyWatchThread();
     close(mInotifyFd);
     pthread_detach(mInotifyWatchThread);
@@ -395,6 +403,7 @@ MtpObjectHandle MyMtpDatabase::beginSendObject(const char* path,
     objInfo.mCompressedSize = (uint32_t)size;
     objInfo.mDateModified = modified;
 
+    Mutex::Autolock autoLock(mMutex);
     mObjectDb.insert(std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo));
 
     mHandleId++;
@@ -424,7 +433,7 @@ void MyMtpDatabase::endSendObject(const char* path,
             ::free(mObjectDb.at(handle).mName);
         if (mObjectDb.at(handle).mPath != NULL)
             ::free(mObjectDb.at(handle).mPath);
-
+        Mutex::Autolock autoLock(mMutex);
         mObjectDb.erase(handle);
     } else {
         if (format != MTP_FORMAT_ASSOCIATION) {
@@ -455,6 +464,7 @@ MtpObjectHandleList* MyMtpDatabase::getObjectList(MtpStorageID storageID,
     ALOGD("%s:storageID %d, format %d, parent %d, mObjectDb size %d\n",
             __func__, storageID, format, parent, mObjectDb.size());
 
+    Mutex::Autolock autoLock(mMutex);
     for (std::map<MtpObjectHandle, ObjectInfo>::const_iterator iter = mObjectDb.begin(),
             iter_end = mObjectDb.end(); iter != iter_end; ++iter) {
         if (iter->second.mStorageId == storageID && iter->second.mParent == parent) {
@@ -669,6 +679,11 @@ MtpResponseCode MyMtpDatabase::setObjectPropertyValue(MtpObjectHandle handle,
 
             mObjectDb.at(handle).mName = ::strdup(buffer);
             mObjectDb.at(handle).mPath = ::strdup(newPath);
+
+            if (mObjectDb.at(handle).mFormat == MTP_FORMAT_ASSOCIATION) {
+                deleteChildren(handle);
+                enumDirectory(newPath, handle, mObjectDb.at(handle).mStorageId);
+            }
             break;
         default:
             return MTP_RESPONSE_OPERATION_NOT_SUPPORTED;
@@ -795,6 +810,7 @@ MtpResponseCode MyMtpDatabase::getObjectFilePath(MtpObjectHandle handle,
 MtpResponseCode MyMtpDatabase::deleteFile(MtpObjectHandle handle)
 {
     ObjectInfo objInfo;
+    Vector<MtpObjectHandle> v;
     ALOGD("%s: handle: %d\n", __func__, handle);
 
     if (checkObjectHandle(handle) != 0)
@@ -810,19 +826,65 @@ MtpResponseCode MyMtpDatabase::deleteFile(MtpObjectHandle handle)
 
     if (mObjectDb.at(handle).mFormat == MTP_FORMAT_ASSOCIATION) {
         inotify_rm_watch(mInotifyFd, mObjectDb.at(handle).mWd);
+        Mutex::Autolock autoLock(mMutex);
         for (std::map<MtpObjectHandle, ObjectInfo>::const_iterator iter = mObjectDb.begin(),
                 iter_end = mObjectDb.end(); iter != iter_end; ++iter) {
             if (iter->second.mParent == handle) {
-                deleteFile(iter->first);
+                v.push(iter->first);
             }
         }
+    }
+
+    for (Vector<MtpObjectHandle>:: const_iterator iter(v.begin()), iter_end(v.end()); iter != iter_end; ++iter)
+    {
+        deleteFile(*iter);
     }
 
     if (mObjectDb.at(handle).mName != NULL)
         ::free(mObjectDb.at(handle).mName);
     if (mObjectDb.at(handle).mPath != NULL)
         ::free(mObjectDb.at(handle).mPath);
+
+    Mutex::Autolock autoLock(mMutex);
     mObjectDb.erase(handle);
+
+    if (mServer)
+        mServer->sendObjectRemoved(handle);
+
+    return MTP_RESPONSE_OK;
+}
+
+MtpResponseCode MyMtpDatabase::deleteChildren(MtpObjectHandle handle)
+{
+    ObjectInfo objInfo;
+    Vector<MtpObjectHandle> v;
+    ALOGD("%s: handle: %d\n", __func__, handle);
+
+    if (checkObjectHandle(handle) != 0)
+        return MTP_RESPONSE_INVALID_OBJECT_HANDLE;
+
+    try {
+        objInfo = mObjectDb.at(handle);
+    }
+    catch (const std::out_of_range& ex) { //handle is valid?
+        ALOGE("%s: invalid handle %d\n", __func__, handle);
+        return MTP_RESPONSE_INVALID_OBJECT_HANDLE;
+    }
+
+    if (mObjectDb.at(handle).mFormat == MTP_FORMAT_ASSOCIATION) {
+        Mutex::Autolock autoLock(mMutex);
+        for (std::map<MtpObjectHandle, ObjectInfo>::const_iterator iter = mObjectDb.begin(),
+                iter_end = mObjectDb.end(); iter != iter_end; ++iter) {
+            if (iter->second.mParent == handle) {
+                v.push(iter->first);
+            }
+        }
+    }
+
+    for (Vector<MtpObjectHandle>:: const_iterator iter(v.begin()), iter_end(v.end()); iter != iter_end; ++iter)
+    {
+        deleteFile(*iter);
+    }
 
     return MTP_RESPONSE_OK;
 }
@@ -1015,7 +1077,7 @@ void MyMtpDatabase::addStorage(const MtpString& storagePath, const MtpString& di
             objInfo.mFormat = MTP_FORMAT_ASSOCIATION;
             objInfo.mCompressedSize = 0;
             objInfo.mWd = inotify_add_watch(mInotifyFd, storagePath.string(),
-                    /*IN_MODIFY | */IN_CREATE | IN_DELETE);
+                    /*IN_MODIFY | */IN_CREATE | IN_DELETE | IN_CLOSE_WRITE);
             objInfo.mDateModified = getModifiedTime(storagePath);
 
             mObjectDb.insert( std::pair<MtpObjectHandle, ObjectInfo>(handle, objInfo) );
@@ -1028,6 +1090,8 @@ void MyMtpDatabase::addStorage(const MtpString& storagePath, const MtpString& di
 
 void MyMtpDatabase::removeStorage(MtpStorageID storage)
 {
+    Mutex::Autolock autoLock(mMutex);
+
     for (std::map<MtpObjectHandle, ObjectInfo>::const_iterator iter = mObjectDb.begin(),
             iter_end = mObjectDb.end(); iter != iter_end; ++iter) {
         if (iter->second.mStorageId == storage) {
@@ -1086,7 +1150,7 @@ void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferre
                 break;
             }
         }
-        if (parent == 0 || !(event->mask & (IN_DELETE | IN_CREATE)))
+        if (parent == 0 || !(event->mask & (IN_DELETE | IN_CREATE | IN_CLOSE_WRITE)))
             continue;
         MtpString path(mObjectDb.at(parent).mPath);
         path.append("/");
@@ -1104,8 +1168,21 @@ void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferre
                 }
             }
 
+        }*/
+        if (event->len > 0 && (event->mask & IN_CLOSE_WRITE))
+        {
+            Mutex::Autolock autoLock(mMutex);
+            ALOGD("%s: file %s close after write\n", __func__, path.string());
+            for (std::map<MtpObjectHandle, ObjectInfo>::const_iterator iter = mObjectDb.begin(),
+                    iter_end = mObjectDb.end(); iter != iter_end; ++iter) {
+                if (path == iter->second.mPath) {
+                    mObjectDb.at(iter->first).mCompressedSize = getCompressedFileSize(path);
+                    break;
+                }
+            }
+
         }
-        else */if(event->len > 0 && (event->mask & IN_CREATE))
+        else if(event->len > 0 && (event->mask & IN_CREATE))
         {
             int pHandle = parent;
             bool isExist = false;
@@ -1132,8 +1209,6 @@ void MyMtpDatabase::inotifyWatchHandler(const char eventBuf[], size_t transferre
                 if (path == iter->second.mPath) {
                     ALOGD("deleting file %s at handle %d\n", iter->second.mPath, iter->first);
                     deleteFile(iter->first);
-                    if (mServer)
-                        mServer->sendObjectRemoved(iter->first);
                     break;
                 }
             }
