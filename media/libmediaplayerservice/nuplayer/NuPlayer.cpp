@@ -1146,6 +1146,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 if (reason == Renderer::kDueToTimeout && !(mPaused && mOffloadAudio)) {
                     // TimeoutWhenPaused is only for offload mode.
                     ALOGW("Receive a stale message for teardown.");
+                    if (mRenderer != NULL) {
+                        mRenderer->signalAudioTearDownComplete();
+                    }
                     break;
                 }
                 mAudioDecoder->pause();
