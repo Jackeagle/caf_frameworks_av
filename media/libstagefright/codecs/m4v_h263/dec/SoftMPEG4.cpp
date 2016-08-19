@@ -210,6 +210,16 @@ void SoftMPEG4::onQueueFilled(OMX_U32 /* portIndex */) {
             PortInfo *port = editPortInfo(1);
             OMX_BUFFERHEADERTYPE *outHeader = port->mBuffers.editItemAt(1).mHeader;
 
+            OMX_U32 yFrameSize = sizeof(uint8) * mHandle->size;
+            if ((outHeader->nAllocLen < yFrameSize) ||
+                    (outHeader->nAllocLen - yFrameSize < yFrameSize / 2)) {
+                ALOGE("Too small output buffer for reference frame: %lu bytes",
+                        (unsigned long)outHeader->nAllocLen);
+                android_errorWriteLog(0x534e4554, "30033990");
+                notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
+                mSignalledError = true;
+                return;
+            }
             PVSetReferenceYUV(mHandle, outHeader->pBuffer);
 
             mFramesConfigured = true;
