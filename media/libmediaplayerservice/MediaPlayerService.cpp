@@ -353,7 +353,9 @@ sp<IMediaPlayer> MediaPlayerService::create(const sp<IMediaPlayerClient>& client
 {
     pid_t pid = IPCThreadState::self()->getCallingPid();
     int32_t connId = android_atomic_inc(&mNextConnId);
+#ifdef EARLY_AUDIO_ENABLED
     char propValue[PROP_VALUE_MAX];
+#endif
 
     sp<Client> c = new Client(
             this, pid, connId, client, audioSessionId,
@@ -362,6 +364,7 @@ sp<IMediaPlayer> MediaPlayerService::create(const sp<IMediaPlayerClient>& client
     ALOGV("Create new client(%d) from pid %d, uid %d, ", connId, pid,
          IPCThreadState::self()->getCallingUid());
 
+#ifdef EARLY_AUDIO_ENABLED
     property_get("early.audio.start",propValue,"0");
 
     if (atoi(propValue) == 1) {
@@ -402,6 +405,7 @@ sp<IMediaPlayer> MediaPlayerService::create(const sp<IMediaPlayerClient>& client
             return c;
         }
     }
+#endif
 
     wp<Client> w = c;
     {
