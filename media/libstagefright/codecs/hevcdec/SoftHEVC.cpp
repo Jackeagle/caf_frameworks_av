@@ -531,6 +531,7 @@ void SoftHEVC::onQueueFilled(OMX_U32 portIndex) {
             if (!setDecodeArgs(&s_dec_ip, &s_dec_op, inHeader, outHeader, timeStampIx)) {
                 ALOGE("Decoder arg setup failed");
                 notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
+                mSignalledError = true;
                 return;
             }
 
