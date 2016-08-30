@@ -4307,11 +4307,9 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
 }
 
 status_t OMXCodec::pause() {
-    Mutex::Autolock autoLock(mLock);
-
-    mPaused = true;
-
-    return OK;
+   // don't support pause,
+   // see https://bugzilla.mozilla.org/show_bug.cgi?id=919590#c2
+  return ERROR_UNSUPPORTED;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
