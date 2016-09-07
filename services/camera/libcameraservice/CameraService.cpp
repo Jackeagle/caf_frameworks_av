@@ -248,23 +248,6 @@ void CameraService::onFirstRef()
 
     CameraDeviceFactory::registerService(this);
 
-    CameraService::pingCameraServiceProxy();
-}
-
-sp<ICameraServiceProxy> CameraService::getCameraServiceProxy() {
-    sp<IServiceManager> sm = defaultServiceManager();
-    sp<IBinder> binder = sm->getService(String16("media.camera.proxy"));
-    if (binder == nullptr) {
-        return nullptr;
-    }
-    sp<ICameraServiceProxy> proxyBinder = interface_cast<ICameraServiceProxy>(binder);
-    return proxyBinder;
-}
-
-void CameraService::pingCameraServiceProxy() {
-    sp<ICameraServiceProxy> proxyBinder = getCameraServiceProxy();
-    if (proxyBinder == nullptr) return;
-    proxyBinder->pingForUserUpdate();
 }
 
 CameraService::~CameraService() {
@@ -1013,9 +996,12 @@ status_t CameraService::handleEvictionsLocked(const String8& cameraId, int clien
         // not have an out-of-class definition.
         std::vector<int> priorities(ownerPids.size(), +PROCESS_STATE_NONEXISTENT);
 
-        // Get priorites of all active PIDs
-        ProcessInfoService::getProcessStatesFromPids(ownerPids.size(), &ownerPids[0],
-                /*out*/&priorities[0]);
+        //Android add ProcessInfoService in java framework layer, but B2G does not.
+        //So, Camera Server get a timeout when call ProcessInfoServer.
+        //Remove getProcessStatesFromPids and making the value of priority for all camera clients are larger than -1 and all the same.
+        for (size_t i = 0; i < ownerPids.size(); i++) {
+            priorities[i] = PROCESS_STATE_TOP;
+        }
 
         // Update all active clients' priorities
         std::map<int,int> pidToPriorityMap;
@@ -2003,10 +1989,6 @@ status_t CameraService::BasicClient::startCameraOps() {
     mCameraService->updateStatus(ICameraServiceListener::STATUS_NOT_AVAILABLE,
             String8::format("%d", mCameraId));
 
-    // Transition device state to OPEN
-    mCameraService->updateProxyDeviceState(ICameraServiceProxy::CAMERA_STATE_OPEN,
-            String8::format("%d", mCameraId));
-
     return OK;
 }
 
@@ -2023,10 +2005,6 @@ status_t CameraService::BasicClient::finishCameraOps() {
         // Transition to PRESENT if the camera is not in either of the rejected states
         mCameraService->updateStatus(ICameraServiceListener::STATUS_PRESENT,
                 String8::format("%d", mCameraId), rejected);
-
-        // Transition device state to CLOSED
-        mCameraService->updateProxyDeviceState(ICameraServiceProxy::CAMERA_STATE_CLOSED,
-                String8::format("%d", mCameraId));
 
         // Notify flashlight that a camera device is closed.
         mCameraService->mFlashlight->deviceClosed(
@@ -2529,14 +2507,6 @@ void CameraService::updateStatus(ICameraServiceListener::Status status, const St
                 if (id != -1) listener->onStatusChanged(status, id);
             }
         });
-}
-
-void CameraService::updateProxyDeviceState(ICameraServiceProxy::CameraState newState,
-        const String8& cameraId) {
-    sp<ICameraServiceProxy> proxyBinder = getCameraServiceProxy();
-    if (proxyBinder == nullptr) return;
-    String16 id(cameraId);
-    proxyBinder->notifyCameraState(id, newState);
 }
 
 status_t CameraService::getTorchStatusLocked(
