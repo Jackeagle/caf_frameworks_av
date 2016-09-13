@@ -50,6 +50,7 @@
 #include <OMX_Component.h>
 #include <OMX_IndexExt.h>
 #include <OMX_AsString.h>
+#include <OMX_QCOMExtns.h>
 
 #include "include/avc_utils.h"
 
@@ -3555,6 +3556,17 @@ status_t ACodec::setupHEVCEncoderParameters(const sp<AMessage> &msg) {
     if (err != OK) {
         return err;
     }
+
+    // Set Intra-period
+    int frame_spacing = setPFramesSpacing(iFrameInterval, frameRate);
+    QOMX_VIDEO_INTRAPERIODTYPE intraperiod;
+    InitOMXParams(&intraperiod);
+    intraperiod.nPortIndex = 1;  // kPortIndexOutput
+    intraperiod.nIDRPeriod = 1;
+    intraperiod.nPFrames = frame_spacing - 1;
+    intraperiod.nBFrames = 0;
+    mOMX->setConfig(
+        mNode, (OMX_INDEXTYPE)QOMX_IndexConfigVideoIntraperiod, &intraperiod, sizeof(intraperiod));
 
     return configureBitrate(bitrate, bitrateMode);
 }
