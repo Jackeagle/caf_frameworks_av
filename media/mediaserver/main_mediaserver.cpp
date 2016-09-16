@@ -40,7 +40,9 @@
 #include "MediaUtils.h"
 #include "SoundTriggerHwService.h"
 #include "RadioService.h"
+#ifdef EARLY_AUDIO_ENABLED
 #define PROP_NAME "sys.mediaserver.ready"
+#endif
 #ifdef AUDIO_LISTEN_ENABLED
 #include "ListenService.h"
 #endif
@@ -144,8 +146,10 @@ int main(int argc __unused, char** argv)
         ALOGI("ServiceManager: %p", sm.get());
         AudioFlinger::instantiate();
         MediaPlayerService::instantiate();
+#ifdef EARLY_AUDIO_ENABLED
         // notify earlyaudio native app
         property_set(PROP_NAME, "1");
+#endif
         ResourceManagerService::instantiate();
         char propValue[PROPERTY_VALUE_MAX] = {0};
         property_get("AUTOPLATFORM_BOOT", propValue, "false");
