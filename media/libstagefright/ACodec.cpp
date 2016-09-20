@@ -6386,6 +6386,108 @@ status_t ACodec::setParameters(const sp<AMessage> &params) {
         }
     }
 
+    int32_t fps;
+    if (params->findInt32("vt-config-framerate", &fps) && fps > 0) {
+        OMX_CONFIG_FRAMERATETYPE frameRate;
+        InitOMXParams(&frameRate);
+        frameRate.nPortIndex = kPortIndexOutput;
+        //Changing fps to Q16 format before setting it in venus encoder
+        frameRate.xEncodeFramerate = (OMX_U32)(fps * 65536);
+        status_t err = mOMX->setConfig(mNode, OMX_IndexConfigVideoFramerate,
+                (void *)&frameRate, sizeof(frameRate));
+        if (err != OK) {
+            ALOGE("Failed to set frame rate");
+            return err;
+        }
+    }
+
+    int32_t markLtr;
+    if (params->findInt32("vt-config-mark-ltr", &markLtr)) {
+        OMX_QCOM_VIDEO_CONFIG_LTRMARK_TYPE markLTRParams;
+        InitOMXParams(&markLTRParams);
+
+        markLTRParams.nPortIndex = kPortIndexInput;
+        markLTRParams.nID = markLtr;
+        status_t err = mOMX->setConfig(mNode, (OMX_INDEXTYPE)QOMX_IndexConfigVideoLTRMark,
+                (void *)&markLTRParams, sizeof(markLTRParams));
+        if (err != OK) {
+            ALOGE("Failed to set mark LTR");
+            return err;
+        }
+    }
+
+    bool paramsSet = false;
+    int32_t useLtrId, useLtrFrame;
+    paramsSet  = params->findInt32("vt-config-use-ltr-id", &useLtrId);
+    paramsSet &= params->findInt32("vt-config-use-ltr-frame", &useLtrFrame);
+    if (paramsSet) {
+        OMX_QCOM_VIDEO_CONFIG_LTRUSE_TYPE useLTRParams;
+        InitOMXParams(&useLTRParams);
+
+        useLTRParams.nPortIndex = kPortIndexInput;
+        useLTRParams.nID = useLtrId;
+        useLTRParams.nFrames = useLtrFrame;
+        status_t err = mOMX->setConfig(mNode, (OMX_INDEXTYPE)QOMX_IndexConfigVideoLTRUse,
+                (void *)&useLTRParams, sizeof(useLTRParams));
+        if (err != OK) {
+            ALOGE("Failed to set use LTR");
+            return err;
+        }
+    }
+
+    int32_t ltrPeriodValue;
+    if (params->findInt32("vt-config-ltr-period", &ltrPeriodValue)) {
+        QOMX_VIDEO_CONFIG_LTRPERIOD_TYPE ltrPeriod;
+        InitOMXParams(&ltrPeriod);
+
+        ltrPeriod.nPortIndex = kPortIndexOutput;
+        ltrPeriod.nFrames = ltrPeriodValue - 1;
+
+        status_t err = mOMX->setConfig(mNode, (OMX_INDEXTYPE)QOMX_IndexConfigVideoLTRPeriod,
+                (void *)&ltrPeriod, sizeof(ltrPeriod));
+        if (err != OK) {
+            ALOGE("Failed to set LTR Period");
+            return err;
+        }
+    }
+
+    int32_t templayerCount;
+    if (params->findInt32("vt-config-temporal-layer-count", &templayerCount)
+            && templayerCount) {
+        QOMX_EXTNINDEX_VIDEO_MAX_HIER_P_LAYERS tpLayerCountParams;
+        InitOMXParams(&tpLayerCountParams);
+
+        tpLayerCountParams.nMaxHierLayers = templayerCount;
+        status_t err = mOMX->setConfig(mNode, (OMX_INDEXTYPE) OMX_QcomIndexConfigMaxHierPLayers,
+                (void *)&tpLayerCountParams, sizeof(tpLayerCountParams));
+        if (err != OK) {
+            ALOGE("Failed to set hier-p layers");
+            return err;
+        }
+    }
+
+    paramsSet = false;
+    int32_t intraPeriod, numPframe, numBframe;
+    intraPeriod = numPframe = numBframe = 0;
+    paramsSet  = params->findInt32("vt-config-intra-interval", &intraPeriod);
+    paramsSet |= params->findInt32("vt-config-num-P-frame", &numPframe);
+    paramsSet |= params->findInt32("vt-config-num-B-frame", &numBframe);
+    if (paramsSet) {
+        QOMX_VIDEO_INTRAPERIODTYPE intraPeriodParams;
+        InitOMXParams(&intraPeriodParams);
+        intraPeriodParams.nPortIndex = kPortIndexOutput;
+
+        intraPeriodParams.nPFrames = numPframe;
+        intraPeriodParams.nBFrames = numBframe;
+        intraPeriodParams.nIDRPeriod = intraPeriod;
+
+        status_t err = mOMX->setConfig(mNode, (OMX_INDEXTYPE) QOMX_IndexConfigVideoIntraperiod,
+                (void *)&intraPeriodParams, sizeof(intraPeriodParams));
+        if (err != OK) {
+            ALOGE("Failed to set IDR interval");
+            return err;
+        }
+    }
     return OK;
 }
 
