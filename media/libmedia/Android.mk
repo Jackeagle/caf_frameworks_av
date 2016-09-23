@@ -101,5 +101,9 @@ LOCAL_C_INCLUDES := \
 LOCAL_CFLAGS += -Werror -Wno-error=deprecated-declarations -Wall
 LOCAL_CLANG := true
 
+ifeq ($(TARGET_USES_EARLY_AUDIO),true)
+LOCAL_CFLAGS += -DEARLY_AUDIO_ENABLED
+endif
+
 include $(BUILD_SHARED_LIBRARY)
 

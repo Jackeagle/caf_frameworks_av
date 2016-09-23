@@ -71,15 +71,15 @@ MediaPlayer::MediaPlayer()
 
 MediaPlayer::~MediaPlayer()
 {
-    char propValue[PROP_VALUE_MAX];
     ALOGV("destructor");
-
+#ifdef EARLY_AUDIO_ENABLED
+    char propValue[PROP_VALUE_MAX];
     property_get("early.audionative.id",propValue,"0");
     // Do not delete early audio native app object
     if (mAudioSessionId == atoi(propValue)) {
        return;
     }
-
+#endif
     if (mAudioAttributesParcel != NULL) {
         delete mAudioAttributesParcel;
         mAudioAttributesParcel = NULL;
@@ -178,13 +178,22 @@ status_t MediaPlayer::setDataSource(int fd, int64_t offset, int64_t length)
     ALOGV("setDataSource(%d, %" PRId64 ", %" PRId64 ")", fd, offset, length);
     status_t err = UNKNOWN_ERROR;
     const sp<IMediaPlayerService> service(getMediaPlayerService());
-    if (service != 0) {
+#ifdef EARLY_AUDIO_ENABLED
+    int earlyAudioAppId = 0;
+    char propValue[PROP_VALUE_MAX];
+
+    property_get("early.audioapp.id",propValue,"0");
+    earlyAudioAppId = atoi(propValue);
+    property_get("early.audio.start",propValue,"0");
+
+    if ((atoi(propValue) == 1) && (mAudioSessionId == earlyAudioAppId)) {
         sp<IMediaPlayer> player(service->create(this, mAudioSessionId));
         mCurrentState = MEDIA_PLAYER_STARTED;
         mPlayer = player;
         err = NO_ERROR;
         ALOGV("setDataSource returning NO_ERROR");
     } else {
+#endif
         if (service != 0) {
             sp<IMediaPlayer> player(service->create(this, mAudioSessionId));
             if ((NO_ERROR != doSetRetransmitEndpoint(player)) ||
@@ -193,7 +202,9 @@ status_t MediaPlayer::setDataSource(int fd, int64_t offset, int64_t length)
             }
             err = attachNewPlayer(player);
         }
+#ifdef EARLY_AUDIO_ENABLED
     }
+#endif
     return err;
 }
 
@@ -217,7 +228,7 @@ status_t MediaPlayer::setDataSource(const sp<IDataSource> &source)
 {
     ALOGV("setDataSource(IDataSource)");
     status_t err = UNKNOWN_ERROR;
-    const sp<IMediaPlayerService>& service(getMediaPlayerService());
+    const sp<IMediaPlayerService> service(getMediaPlayerService());
     if (service != 0) {
         sp<IMediaPlayer> player(service->create(this, mAudioSessionId));
         if ((NO_ERROR != doSetRetransmitEndpoint(player)) ||
