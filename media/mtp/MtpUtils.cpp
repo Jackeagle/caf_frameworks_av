@@ -19,8 +19,6 @@
 #include <stdio.h>
 #include <time.h>
 
-#include <../private/bionic_time.h> /* TODO: switch this code to icu4c! */
-
 #include "MtpUtils.h"
 
 namespace android {
@@ -62,8 +60,6 @@ bool parseDateTime(const char* dateTime, time_t& outSeconds) {
     tm.tm_isdst = -1;
     if (useUTC)
         outSeconds = mktime(&tm);
-    else
-        outSeconds = mktime_tz(&tm, tm.tm_zone);
 
     return true;
 }
