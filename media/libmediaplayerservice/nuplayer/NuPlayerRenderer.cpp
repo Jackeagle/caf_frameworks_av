@@ -440,7 +440,11 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatStopAudioSink:
         {
-            mAudioSink->stop();
+            int32_t generation;
+            CHECK(msg->findInt32("drainGeneration", &generation));
+            if (generation == getDrainGeneration(true /* audio */)) {
+                mAudioSink->stop();
+            }
             break;
         }
 
@@ -796,7 +800,9 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
     }
 
     if (hasEOS) {
-        (new AMessage(kWhatStopAudioSink, this))->post();
+        sp<AMessage> msg = new AMessage(kWhatStopAudioSink, this);
+        msg->setInt32("drainGeneration", mAudioDrainGeneration);
+        msg->post();
         // As there is currently no EVENT_STREAM_END callback notification for
         // non-offloaded audio tracks, we need to post the EOS ourselves.
         if (!offloadingAudio()) {
@@ -1710,10 +1716,16 @@ void NuPlayer::Renderer::startAudioOffloadPauseTimeout() {
 }
 
 void NuPlayer::Renderer::cancelAudioOffloadPauseTimeout() {
-    if (offloadingAudio()) {
-        mWakeLock->release(true);
-        ++mAudioOffloadPauseTimeoutGeneration;
-    }
+    // We may have called startAudioOffloadPauseTimeout() without
+    // the AudioSink open and with offloadingAudio enabled.
+    //
+    // When we cancel, it may be that offloadingAudio is subsequently disabled, so regardless
+    // we always release the wakelock and increment the pause timeout generation.
+    //
+    // Note: The acquired wakelock prevents the device from suspending
+    // immediately after offload pause (in case a resume happens shortly thereafter).
+    mWakeLock->release(true);
+    ++mAudioOffloadPauseTimeoutGeneration;
 }
 
 status_t NuPlayer::Renderer::onOpenAudioSink(
