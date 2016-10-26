@@ -3129,6 +3129,182 @@ status_t ACodec::setupVideoEncoder(const char *mime, const sp<AMessage> &msg) {
         ALOGI("setupVideoEncoder succeeded");
     }
 
+    bool isQCComponent = mComponentName.startsWith("OMX.qcom.");
+
+    if (isQCComponent) {
+
+        bool paramsSet = false;
+
+        int32_t minQP, maxQP;
+        paramsSet = msg->findInt32("vt-min-QP-range",  (int32_t *)&minQP);
+        paramsSet |= msg->findInt32("vt-max-QP-range",  (int32_t *)&maxQP);
+        if(paramsSet) {
+           //Set QP Range
+           OMX_QCOM_VIDEO_PARAM_QPRANGETYPE session_qp;
+           InitOMXParams(&session_qp);
+           session_qp.nPortIndex = kPortIndexOutput;
+           err = mOMX->getParameter(
+                         mNode, (OMX_INDEXTYPE)OMX_QcomIndexParamVideoQPRange,
+                         &session_qp, sizeof(session_qp));
+
+           if (err != OK) {
+               ALOGE("Failed to get QPRange Value");
+               return err;
+           }
+
+           session_qp.minQP = minQP;
+           session_qp.maxQP = maxQP;
+
+           err = mOMX->setParameter(
+                          mNode, (OMX_INDEXTYPE)OMX_QcomIndexParamVideoQPRange,
+                          &session_qp, sizeof(session_qp));
+           if (err != OK) {
+               ALOGE("Failed to set QPRange Value(%d, %d)",minQP,maxQP);
+               return err;
+           }
+        }
+
+        int32_t nQpI, nQpP, nQpB;
+        paramsSet  = msg->findInt32("vt-initial-QpI",   (int32_t *)&nQpI);
+        paramsSet |= msg->findInt32("vt-initial-QpP",   (int32_t *)&nQpP);
+        paramsSet |= msg->findInt32("vt-initial-QpB",   (int32_t *)&nQpB);
+        if(paramsSet) {
+            //Set Initial QP
+            QOMX_EXTNINDEX_VIDEO_INITIALQP initqp;
+            InitOMXParams(&initqp);
+            initqp.nPortIndex = kPortIndexOutput;
+            status_t err = mOMX->getParameter(
+                                   mNode, (OMX_INDEXTYPE)QOMX_IndexParamVideoInitialQp,
+                                   &initqp, sizeof(initqp));
+            if (err != OK) {
+                ALOGE("Failed to get InitialQP");
+                return err;
+            }
+
+            initqp.nQpI          = nQpI;
+            initqp.nQpP          = nQpP;
+            initqp.nQpB          = nQpB;
+            int32_t enbaleQPFrame;
+            msg->findInt32("vt-initial-QP-enable-frame",   (int32_t *)&enbaleQPFrame);
+            initqp.bEnableInitQp = enbaleQPFrame;
+            err = mOMX->setParameter(
+                           mNode, (OMX_INDEXTYPE)QOMX_IndexParamVideoInitialQp,
+                           &initqp, sizeof(initqp));
+            if(err != OK) {
+                ALOGE("Failed to set InitialQP(%d, %d, %d)",nQpI,nQpP,nQpB);
+                return err;
+            }
+        }
+
+        int32_t minIQP, maxIQP, minPQP, maxPQP, minBQP, maxBQP;
+        paramsSet = msg->findInt32("vt-min-IQP-range", (int32_t *)&minIQP);
+        paramsSet |= msg->findInt32("vt-max-IQP-range", (int32_t *)&maxIQP);
+        paramsSet |= msg->findInt32("vt-min-PQP-range", (int32_t *)&minPQP);
+        paramsSet |= msg->findInt32("vt-max-PQP-range", (int32_t *)&maxPQP);
+        paramsSet |= msg->findInt32("vt-min-BQP-range", (int32_t *)&minBQP);
+        paramsSet |= msg->findInt32("vt-max-BQP-range", (int32_t *)&maxBQP);
+        if(paramsSet) {
+           //Set IPB QPRange
+           OMX_QCOM_VIDEO_PARAM_IPB_QPRANGETYPE  qprange;
+           InitOMXParams(&qprange);
+           qprange.nPortIndex = kPortIndexOutput;
+
+           qprange.minIQP = minIQP;
+           qprange.maxIQP = maxIQP;
+           qprange.minPQP = minPQP;
+           qprange.maxPQP = maxPQP;
+           qprange.minBQP = minBQP;
+           qprange.maxBQP = maxBQP;
+           err = mOMX->setParameter(
+                          mNode, (OMX_INDEXTYPE)OMX_QcomIndexParamVideoIPBQPRange,
+                          &qprange, sizeof(qprange));
+           if (err != OK) {
+               ALOGE("Failed to set IPB QPRange Value");
+               return err;
+           }
+        }
+
+        uint32_t ltrCount;
+        paramsSet = msg->findInt32("vt-num-ltr-count", (int32_t *)&ltrCount);
+        if (paramsSet) {
+            QOMX_VIDEO_PARAM_LTRCOUNT_TYPE ltrFrameCount;
+            InitOMXParams(&ltrFrameCount);
+            ltrFrameCount.nPortIndex = kPortIndexOutput;
+
+            err = mOMX->getParameter(mNode, (OMX_INDEXTYPE)QOMX_IndexParamVideoLTRCount,
+                    (void *)&ltrFrameCount, sizeof(ltrFrameCount));
+            if (err != OK) {
+                ALOGE("Failed to get LTR Count");
+                return err;
+            }
+
+            ltrFrameCount.nCount = ltrCount;
+            err = mOMX->setParameter(mNode, (OMX_INDEXTYPE)QOMX_IndexParamVideoLTRCount,
+                    (void *)&ltrFrameCount, sizeof(ltrFrameCount));
+            if (err != OK) {
+                ALOGE("Failed to set LTR Count");
+                return err;
+            }
+        }
+
+        uint32_t hpType = 0, maxLayercount = 0;
+        // set Hierarchial layers with type  = P and layers = layers;
+        paramsSet = msg->findInt32("vt-video-hierar-type", (int32_t *)&hpType);
+        paramsSet |= msg->findInt32("vt-max-temporal-layer-count", (int32_t *)&maxLayercount);
+        if (paramsSet && hpType) {
+            QOMX_VIDEO_HIERARCHICALLAYERS hierType;
+            InitOMXParams(&hierType);
+            hierType.nPortIndex = kPortIndexOutput;
+
+            err = mOMX->getParameter(mNode, (OMX_INDEXTYPE)OMX_QcomIndexHierarchicalStructure,
+                    (void *)&hierType, sizeof(hierType));
+            if (err != OK) {
+                ALOGE("Failed to get hier-p");
+                return err;
+            }
+
+            hierType.eHierarchicalCodingType = static_cast<QOMX_VIDEO_HIERARCHICALCODINGTYPE>(hpType);
+            hierType.nNumLayers = maxLayercount;
+
+            err = mOMX->setParameter(mNode, (OMX_INDEXTYPE)OMX_QcomIndexHierarchicalStructure,
+                    (void *)&hierType, sizeof(hierType));
+            if (err != OK) {
+                ALOGE("Failed to set hier-p");
+                return err;
+            }
+        }
+
+        /* set power save mode */
+        int32_t mode;
+        if (msg->findInt32("vt-config-power-save-mode", &mode)) {
+            QOMX_EXTNINDEX_VIDEO_PERFMODE pMode;
+            InitOMXParams(&pMode);
+            pMode.nPerfMode = mode;
+            err = mOMX->setConfig(mNode,
+                     (OMX_INDEXTYPE)OMX_QcomIndexConfigVideoVencPerfMode,
+                      (void *)&pMode, sizeof(pMode));
+            if (err != OK) {
+                ALOGE("Failed to set power save mode");
+                return err;
+            }
+        }
+
+        /* Disable/Enable 8x8 transform mode */
+        if (msg->findInt32("vt-config-8x8-transform", &mode)) {
+            OMX_CONFIG_BOOLEANTYPE transform8x8;
+            if(mode == 0)
+                transform8x8.bEnabled = OMX_FALSE;
+            else
+                transform8x8.bEnabled = OMX_TRUE;
+            err = mOMX->setConfig(mNode,
+                    (OMX_INDEXTYPE) OMX_QcomIndexConfigH264Transform8x8,
+                    (void*)&transform8x8, sizeof(transform8x8));
+             if (err != OK) {
+                ALOGE("Failed to set 8x8 transform mode");
+                return err;
+            }
+        }
+    }
     return err;
 }
 
