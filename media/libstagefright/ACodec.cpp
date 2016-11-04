@@ -5096,14 +5096,31 @@ void ACodec::BaseState::onInputBufferFilled(const sp<AMessage> &msg) {
                     }
                 }
                 info->checkReadFence("onInputBufferFilled");
-                status_t err2 = mCodec->mOMX->emptyBuffer(
-                    mCodec->mNode,
-                    bufferID,
-                    0,
-                    buffer->size(),
-                    flags,
-                    timeUs,
-                    info->mFenceFd);
+
+                status_t err2 = OK;
+                if (mCodec->mInputMetadataType == kMetadataBufferTypeCameraSource) {
+#ifndef OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+                    if (info->mData->size() >= sizeof(VideoNativeMetadata)) {
+                        VideoNativeMetadata *vnmd = (VideoNativeMetadata*)info->mData->base();
+                       err2 = mCodec->mOMX->updateGraphicBufferInMeta(
+                                mCodec->mNode, kPortIndexInput,
+                                new GraphicBuffer(vnmd->pBuffer, false /* keepOwnership */),
+                                bufferID);
+                    }
+#endif
+                }
+
+                if (err2 == OK) {
+                        err2 = mCodec->mOMX->emptyBuffer(
+                        mCodec->mNode,
+                        bufferID,
+                        0,
+                        buffer->size(),
+                        flags,
+                        timeUs,
+                        info->mFenceFd);
+                }
+
                 info->mFenceFd = -1;
                 if (err2 != OK) {
                     mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err2));
