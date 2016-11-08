@@ -1143,6 +1143,14 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 int32_t reason;
                 CHECK(msg->findInt32("reason", &reason));
                 ALOGV("Tear down audio with reason %d.", reason);
+                if (reason == Renderer::kDueToTimeout && !(mPaused && mOffloadAudio)) {
+                    // TimeoutWhenPaused is only for offload mode.
+                    ALOGW("Receive a stale message for teardown.");
+                    if (mRenderer != NULL) {
+                        mRenderer->signalAudioTearDownComplete();
+                    }
+                    break;
+                }
                 mAudioDecoder->pause();
                 mAudioDecoder.clear();
                 ++mAudioDecoderGeneration;
