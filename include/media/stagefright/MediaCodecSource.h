@@ -66,6 +66,8 @@ struct MediaCodecSource : public MediaSource,
     // for AHandlerReflector
     void onMessageReceived(const sp<AMessage> &msg);
 
+    status_t setParameters(const sp<AMessage> &params);
+
 protected:
     virtual ~MediaCodecSource();
 

@@ -26,7 +26,7 @@
 #include <sys/time.h>
 #include <dirent.h>
 #include <unistd.h>
-
+#include <dlfcn.h>
 #include <string.h>
 
 #include <cutils/atomic.h>
@@ -265,6 +265,24 @@ static bool checkPermission(const char* permissionString) {
 void MediaPlayerService::instantiate() {
     defaultServiceManager()->addService(
             String16("media.player"), new MediaPlayerService());
+
+    void *handle = dlopen("libipcam_service.so", RTLD_LAZY);
+    if (NULL != handle) {
+        typedef void (*concam_inst) ();
+        dlerror();
+        concam_inst inst = (concam_inst) dlsym(handle, "concam_instantiate");
+        const char *dlsymError = dlerror();
+        if (dlsymError) {
+            ALOGE("%s: Unable to find concam instaniate function: %s",
+                __func__, dlsymError);
+            dlclose(handle);
+            return;
+        }
+
+        inst();
+    } else {
+        ALOGE("%s: Unable to open concam service library!", __func__);
+    }
 }
 
 MediaPlayerService::MediaPlayerService()
