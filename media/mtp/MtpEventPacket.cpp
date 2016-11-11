@@ -17,6 +17,7 @@
 #define LOG_TAG "MtpEventPacket"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>

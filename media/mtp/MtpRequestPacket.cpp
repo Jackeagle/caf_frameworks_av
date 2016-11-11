@@ -21,6 +21,7 @@
 #include <fcntl.h>
 
 #include "MtpRequestPacket.h"
+#include "MtpDebug.h"
 
 #include <usbhost/usbhost.h>
 

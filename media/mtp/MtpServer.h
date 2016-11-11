@@ -88,6 +88,7 @@ private:
         }
     };
     Vector<ObjectEdit*>  mObjectEditList;
+    bool mNeedStop;
 
 public:
                         MtpServer(int fd, MtpDatabase* database, bool ptp,
@@ -105,6 +106,7 @@ public:
     void                sendObjectAdded(MtpObjectHandle handle);
     void                sendObjectRemoved(MtpObjectHandle handle);
     void                sendDevicePropertyChanged(MtpDeviceProperty property);
+    void                stop();
 
 private:
     void                sendStoreAdded(MtpStorageID id);
