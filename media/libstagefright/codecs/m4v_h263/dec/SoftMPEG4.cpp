@@ -238,16 +238,7 @@ void SoftMPEG4::onQueueFilled(OMX_U32 /* portIndex */) {
         int32_t bufferSize = inHeader->nFilledLen;
         int32_t tmp = bufferSize;
 
-        OMX_U32 frameSize;
-        OMX_U64 yFrameSize = (OMX_U64)mWidth * (OMX_U64)mHeight;
-        if (yFrameSize > ((OMX_U64)UINT32_MAX / 3) * 2) {
-            ALOGE("Frame size too large");
-            notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
-            mSignalledError = true;
-            return;
-        }
-        frameSize = (OMX_U32)(yFrameSize + (yFrameSize / 2));
-
+        OMX_U32 frameSize = (mWidth * mHeight * 3) / 2;
         if (outHeader->nAllocLen < frameSize) {
             android_errorWriteLog(0x534e4554, "27833616");
             ALOGE("Insufficient output buffer size");
@@ -298,7 +289,7 @@ void SoftMPEG4::onQueueFilled(OMX_U32 /* portIndex */) {
         ++mInputBufferCount;
 
         outHeader->nOffset = 0;
-        outHeader->nFilledLen = (mWidth * mHeight * 3) / 2;
+        outHeader->nFilledLen = frameSize;
 
         List<BufferInfo *>::iterator it = outQueue.begin();
         while ((*it)->mHeader != outHeader) {
