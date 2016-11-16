@@ -170,6 +170,10 @@ struct BufferMeta {
         return buf;
     }
 
+    bool copyToOmx() const {
+         return mCopyToOmx;
+    }
+
     void setGraphicBuffer(const sp<GraphicBuffer> &graphicBuffer) {
         mGraphicBuffer = graphicBuffer;
     }
@@ -392,7 +396,8 @@ status_t OMXNodeInstance::sendCommand(
         OMX_COMMANDTYPE cmd, OMX_S32 param) {
     if (cmd == OMX_CommandStateSet) {
         // We do not support returning from unloaded state, so there are no configurations past
-        // first StateSet command.
+        // There are no configurations past first StateSet command.
+
         mSailed = true;
     }
     const sp<GraphicBufferSource> bufferSource(getGraphicBufferSource());
@@ -787,14 +792,12 @@ status_t OMXNodeInstance::useBuffer(
             delete[] data;
             return BAD_VALUE;
         }
-
         buffer_meta = new BufferMeta(
-                params, portIndex, false /* copyToOmx */, false /* copyFromOmx */, data);
+               params, portIndex, false /* copyToOmx */, false /* copyFromOmx */, data);
     } else {
         buffer_meta = new BufferMeta(
                 params, portIndex, false /* copyFromOmx */, false /* copyToOmx */, NULL);
     }
-
     OMX_BUFFERHEADERTYPE *header;
 
     OMX_ERRORTYPE err = OMX_UseBuffer(
@@ -1281,7 +1284,8 @@ status_t OMXNodeInstance::emptyBuffer(
 
     // convert incoming ANW meta buffers if component is configured for gralloc metadata mode
     // ignore rangeOffset in this case
-    if (mMetadataType[kPortIndexInput] == kMetadataBufferTypeGrallocSource
+    if (buffer_meta->copyToOmx()
+            && mMetadataType[kPortIndexInput] == kMetadataBufferTypeGrallocSource
             && backup->capacity() >= sizeof(VideoNativeMetadata)
             && codec->capacity() >= sizeof(VideoGrallocMetadata)
             && ((VideoNativeMetadata *)backup->base())->eType
@@ -1691,8 +1695,14 @@ void OMXNodeInstance::onEvent(
             && arg2 == OMX_StateExecuting) {
         bufferSource->omxExecuting();
     }
-}
 
+    // allow configuration if we return to the loaded state
+    if (event == OMX_EventCmdComplete
+          && arg1 == OMX_CommandStateSet
+          && arg2 == OMX_StateLoaded) {
+        mSailed = false;
+    }
+}
 // static
 OMX_ERRORTYPE OMXNodeInstance::OnEvent(
         OMX_IN OMX_HANDLETYPE /* hComponent */,
