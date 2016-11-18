@@ -1036,9 +1036,11 @@ status_t CameraService::handleEvictionsLocked(const String8& cameraId, int clien
         // not have an out-of-class definition.
         std::vector<int> priorities(ownerPids.size(), +PROCESS_STATE_NONEXISTENT);
 
+#ifndef __BRILLO__ //Activity Manager service is missing in Brillo at the moment
         // Get priorites of all active PIDs
         ProcessInfoService::getProcessStatesFromPids(ownerPids.size(), &ownerPids[0],
                 /*out*/&priorities[0]);
+#endif
 
         // Update all active clients' priorities
         std::map<int,int> pidToPriorityMap;

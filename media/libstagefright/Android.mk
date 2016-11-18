@@ -22,6 +22,7 @@ LOCAL_SRC_FILES:=                         \
         FLACExtractor.cpp                 \
         FrameRenderTracker.cpp            \
         HTTPBase.cpp                      \
+        HevcUtils.cpp                     \
         JPEGSource.cpp                    \
         MP3Extractor.cpp                  \
         MPEG2TSWriter.cpp                 \
@@ -74,6 +75,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/tremolo \
         $(TOP)/external/libvpx/libwebm \
         $(TOP)/system/netd/include \
+        $(TOP)/hardware/bsp/qcom/media/mm-core/inc/ \
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
