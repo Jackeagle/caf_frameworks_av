@@ -33,8 +33,8 @@ namespace android {
 
 AudioOutputDescriptor::AudioOutputDescriptor(const sp<AudioPort>& port,
                                              AudioPolicyClientInterface *clientInterface)
-    : mPort(port), mDevice(AUDIO_DEVICE_NONE), mIoHandle(0),
-      mPatchHandle(0), mClientInterface(clientInterface), mId(0)
+    : mPort(port), mDevice(AUDIO_DEVICE_NONE),mIoHandle(0),
+      mClientInterface(clientInterface), mPatchHandle(AUDIO_PATCH_HANDLE_NONE), mId(0)
 {
     // clear usage count for all stream types
     for (int i = 0; i < AUDIO_STREAM_CNT; i++) {
@@ -47,9 +47,7 @@ AudioOutputDescriptor::AudioOutputDescriptor(const sp<AudioPort>& port,
         mStrategyMutedByDevice[i] = false;
     }
     if (port != NULL) {
-        mSamplingRate = port->pickSamplingRate();
-        mFormat = port->pickFormat();
-        mChannelMask = port->pickChannelMask();
+        port->pickAudioProfile(mSamplingRate, mChannelMask, mFormat);
         if (port->mGains.size() > 0) {
             port->mGains[0]->getDefaultConfig(&mGain);
         }
@@ -220,15 +218,15 @@ void AudioOutputDescriptor::log(const char* indent)
 }
 
 // SwAudioOutputDescriptor implementation
-SwAudioOutputDescriptor::SwAudioOutputDescriptor(
-        const sp<IOProfile>& profile, AudioPolicyClientInterface *clientInterface)
+SwAudioOutputDescriptor::SwAudioOutputDescriptor(const sp<IOProfile>& profile,
+                                                 AudioPolicyClientInterface *clientInterface)
     : AudioOutputDescriptor(profile, clientInterface),
     mProfile(profile), mLatency(0),
     mFlags((audio_output_flags_t)0), mPolicyMix(NULL),
     mOutput1(0), mOutput2(0), mDirectOpenCount(0), mGlobalRefCount(0)
 {
     if (profile != NULL) {
-        mFlags = (audio_output_flags_t)profile->mFlags;
+        mFlags = (audio_output_flags_t)profile->getFlags();
     }
 }
 
@@ -283,7 +281,7 @@ audio_devices_t SwAudioOutputDescriptor::supportedDevices()
     if (isDuplicated()) {
         return (audio_devices_t)(mOutput1->supportedDevices() | mOutput2->supportedDevices());
     } else {
-        return mProfile->mSupportedDevices.types() ;
+        return mProfile->getSupportedDevicesType();
     }
 }
 
@@ -317,14 +315,14 @@ void SwAudioOutputDescriptor::changeRefCount(audio_stream_type_t stream,
     if ((oldGlobalRefCount == 0) && (mGlobalRefCount > 0)) {
         if ((mPolicyMix != NULL) && ((mPolicyMix->mCbFlags & AudioMix::kCbFlagNotifyActivity) != 0))
         {
-            mClientInterface->onDynamicPolicyMixStateUpdate(mPolicyMix->mRegistrationId,
+            mClientInterface->onDynamicPolicyMixStateUpdate(mPolicyMix->mDeviceAddress,
                     MIX_STATE_MIXING);
         }
 
     } else if ((oldGlobalRefCount > 0) && (mGlobalRefCount == 0)) {
         if ((mPolicyMix != NULL) && ((mPolicyMix->mCbFlags & AudioMix::kCbFlagNotifyActivity) != 0))
         {
-            mClientInterface->onDynamicPolicyMixStateUpdate(mPolicyMix->mRegistrationId,
+            mClientInterface->onDynamicPolicyMixStateUpdate(mPolicyMix->mDeviceAddress,
                     MIX_STATE_IDLE);
         }
     }
@@ -388,8 +386,64 @@ bool SwAudioOutputDescriptor::setVolume(float volume,
     return changed;
 }
 
-// SwAudioOutputCollection implementation
+// HwAudioOutputDescriptor implementation
+HwAudioOutputDescriptor::HwAudioOutputDescriptor(const sp<AudioSourceDescriptor>& source,
+                                                 AudioPolicyClientInterface *clientInterface)
+    : AudioOutputDescriptor(source->mDevice, clientInterface),
+      mSource(source)
+{
+}
 
+status_t HwAudioOutputDescriptor::dump(int fd)
+{
+    const size_t SIZE = 256;
+    char buffer[SIZE];
+    String8 result;
+
+    AudioOutputDescriptor::dump(fd);
+
+    snprintf(buffer, SIZE, "Source:\n");
+    result.append(buffer);
+    write(fd, result.string(), result.size());
+    mSource->dump(fd);
+
+    return NO_ERROR;
+}
+
+audio_devices_t HwAudioOutputDescriptor::supportedDevices()
+{
+    return mDevice;
+}
+
+void HwAudioOutputDescriptor::toAudioPortConfig(
+                                                 struct audio_port_config *dstConfig,
+                                                 const struct audio_port_config *srcConfig) const
+{
+    mSource->mDevice->toAudioPortConfig(dstConfig, srcConfig);
+}
+
+void HwAudioOutputDescriptor::toAudioPort(
+                                                    struct audio_port *port) const
+{
+    mSource->mDevice->toAudioPort(port);
+}
+
+
+bool HwAudioOutputDescriptor::setVolume(float volume,
+                                        audio_stream_type_t stream,
+                                        audio_devices_t device,
+                                        uint32_t delayMs,
+                                        bool force)
+{
+    bool changed = AudioOutputDescriptor::setVolume(volume, stream, device, delayMs, force);
+
+    if (changed) {
+      // TODO: use gain controller on source device if any to adjust volume
+    }
+    return changed;
+}
+
+// SwAudioOutputCollection implementation
 bool SwAudioOutputCollection::isStreamActive(audio_stream_type_t stream, uint32_t inPastMs) const
 {
     nsecs_t sysTime = systemTime();
@@ -429,6 +483,23 @@ audio_io_handle_t SwAudioOutputCollection::getA2dpOutput() const
         }
     }
     return 0;
+}
+
+bool SwAudioOutputCollection::isA2dpOnPrimary() const
+{
+    sp<SwAudioOutputDescriptor> primaryOutput = getPrimaryOutput();
+
+    if ((primaryOutput != NULL) && (primaryOutput->mProfile != NULL)
+        && (primaryOutput->mProfile->mModule != NULL)) {
+        Vector <sp<IOProfile>> primaryOutputProfiles =
+                               primaryOutput->mProfile->mModule->mOutputProfiles;
+        for (size_t j = 0; j < primaryOutputProfiles.size(); j++) {
+            if (primaryOutputProfiles[j]->supportDevice(AUDIO_DEVICE_OUT_ALL_A2DP)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 sp<SwAudioOutputDescriptor> SwAudioOutputCollection::getPrimaryOutput() const
@@ -473,12 +544,57 @@ bool SwAudioOutputCollection::isAnyOutputActive(audio_stream_type_t streamToIgno
 audio_devices_t SwAudioOutputCollection::getSupportedDevices(audio_io_handle_t handle) const
 {
     sp<SwAudioOutputDescriptor> outputDesc = valueFor(handle);
-    audio_devices_t devices = outputDesc->mProfile->mSupportedDevices.types();
+    audio_devices_t devices = outputDesc->mProfile->getSupportedDevicesType();
     return devices;
 }
 
 
 status_t SwAudioOutputCollection::dump(int fd) const
+{
+    const size_t SIZE = 256;
+    char buffer[SIZE];
+
+    snprintf(buffer, SIZE, "\nOutputs dump:\n");
+    write(fd, buffer, strlen(buffer));
+    for (size_t i = 0; i < size(); i++) {
+        snprintf(buffer, SIZE, "- Output %d dump:\n", keyAt(i));
+        write(fd, buffer, strlen(buffer));
+        valueAt(i)->dump(fd);
+    }
+
+    return NO_ERROR;
+}
+
+// HwAudioOutputCollection implementation
+bool HwAudioOutputCollection::isStreamActive(audio_stream_type_t stream, uint32_t inPastMs) const
+{
+    nsecs_t sysTime = systemTime();
+    for (size_t i = 0; i < this->size(); i++) {
+        const sp<HwAudioOutputDescriptor> outputDesc = this->valueAt(i);
+        if (outputDesc->isStreamActive(stream, inPastMs, sysTime)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool HwAudioOutputCollection::isAnyOutputActive(audio_stream_type_t streamToIgnore) const
+{
+    for (size_t s = 0 ; s < AUDIO_STREAM_CNT ; s++) {
+        if (s == (size_t) streamToIgnore) {
+            continue;
+        }
+        for (size_t i = 0; i < size(); i++) {
+            const sp<HwAudioOutputDescriptor> outputDesc = valueAt(i);
+            if (outputDesc->mRefCount[s] != 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+status_t HwAudioOutputCollection::dump(int fd) const
 {
     const size_t SIZE = 256;
     char buffer[SIZE];

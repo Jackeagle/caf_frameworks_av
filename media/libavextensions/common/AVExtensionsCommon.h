@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -30,6 +30,8 @@
 #define _AV_EXTENSIONS_COMMON_H_
 
 namespace android {
+
+static const char * CUSTOMIZATION_LIB_NAME = "libavenhancements.so";
 
 typedef void *(*createFunction_t)(void);
 

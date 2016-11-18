@@ -35,12 +35,11 @@
 #include <media/stagefright/MediaErrors.h>
 
 #include <stagefright/AVExtensions.h>
+#include "mediaplayerservice/AVNuExtensions.h"
 #include <gui/Surface.h>
 
 #include "avc_utils.h"
 #include "ATSParser.h"
-#include "mediaplayerservice/AVNuExtensions.h"
-
 
 namespace android {
 
@@ -72,7 +71,8 @@ NuPlayer::Decoder::Decoder(
       mIsSecure(false),
       mFormatChangePending(false),
       mTimeChangePending(false),
-      mPaused(true),
+      mPlaybackSpeed(1.0f),
+      mVideoTemporalLayerCount(0),
       mResumePending(false),
       mComponentName("decoder") {
     mCodecLooper = new ALooper;
@@ -81,9 +81,7 @@ NuPlayer::Decoder::Decoder(
 }
 
 NuPlayer::Decoder::~Decoder() {
-    if (mCodec != NULL) {
-        mCodec->release();
-    }
+    mCodec->release();
     releaseAndResetMediaBuffers();
 }
 
@@ -258,7 +256,8 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
 
     mCodec = AVUtils::get()->createCustomComponentByName(mCodecLooper, mime.c_str(), false /* encoder */, format);
     if (mCodec == NULL) {
-        mCodec = MediaCodec::CreateByType(mCodecLooper, mime.c_str(), false /* encoder */);
+    mCodec = MediaCodec::CreateByType(
+            mCodecLooper, mime.c_str(), false /* encoder */, NULL /* err */, mPid);
     }
     int32_t secure = 0;
     if (format->findInt32("secure", &secure) && secure != 0) {
@@ -341,6 +340,11 @@ void NuPlayer::Decoder::onSetParameters(const sp<AMessage> &params) {
         ALOGW("onSetParameters called before codec is created.");
         return;
     }
+    if (params->findFloat("playback-speed", &mPlaybackSpeed)) {
+        return;
+    } else if (params->findInt32("temporal-layer-count", &mVideoTemporalLayerCount)) {
+        return;
+    }
     mCodec->setParameters(params);
 }
 
@@ -364,14 +368,7 @@ void NuPlayer::Decoder::onResume(bool notifyComplete) {
     if (notifyComplete) {
         mResumePending = true;
     }
-
-    if (mCodec != NULL) {
-        mCodec->start();
-    } else {
-        ALOGW("Decoder %s onResume without a valid codec object",
-              mComponentName.c_str());
-        handleError(NO_INIT);
-    }
+    mCodec->start();
 }
 
 void NuPlayer::Decoder::doFlush(bool notifyComplete) {
@@ -540,7 +537,10 @@ bool NuPlayer::Decoder::handleAnInputBuffer(size_t index) {
         ALOGI("[%s] resubmitting CSD", mComponentName.c_str());
         msg->setBuffer("buffer", buffer);
         mCSDsToSubmit.removeAt(0);
-        CHECK(onInputBufferFetched(msg));
+        if (!onInputBufferFetched(msg)) {
+            handleError(UNKNOWN_ERROR);
+            return false;
+        }
         return true;
     }
 
@@ -588,7 +588,6 @@ bool NuPlayer::Decoder::handleAnOutputBuffer(
     buffer->setRange(offset, size);
     buffer->meta()->clear();
     buffer->meta()->setInt64("timeUs", timeUs);
-    setPcmFormat(buffer->meta());
 
     bool eos = flags & MediaCodec::BUFFER_FLAG_EOS;
     // we do not expect CODECCONFIG or SYNCFRAME for decoder
@@ -612,6 +611,12 @@ bool NuPlayer::Decoder::handleAnOutputBuffer(
         }
 
         mSkipRenderingUntilMediaTimeUs = -1;
+    } else if ((flags & MediaCodec::BUFFER_FLAG_DATACORRUPT) &&
+            AVNuUtils::get()->dropCorruptFrame()) {
+        ALOGV("[%s] dropping corrupt buffer at time %lld as requested.",
+                     mComponentName.c_str(), (long long)timeUs);
+        reply->post();
+        return true;
     }
 
     mNumFramesTotal += !mIsAudio;
@@ -655,8 +660,11 @@ void NuPlayer::Decoder::handleOutputFormatChange(const sp<AMessage> &format) {
             flags = AUDIO_OUTPUT_FLAG_NONE;
         }
 
-        mRenderer->openAudioSink(
+        status_t err = mRenderer->openAudioSink(
                 format, false /* offloadOnly */, hasVideo, flags, NULL /* isOffloaed */, mSource->isStreaming());
+        if (err != OK) {
+            handleError(err);
+        }
     }
 }
 
@@ -758,7 +766,44 @@ status_t NuPlayer::Decoder::fetchInputData(sp<AMessage> &reply) {
         }
 
         dropAccessUnit = false;
+        int32_t layerId = 0;
         if (!mIsAudio
+                && !mIsSecure
+                && mPlaybackSpeed > 1.0f
+                && accessUnit->meta()->findInt32("temporal-layer-id", &layerId)) {
+
+                if ((layerId + 1) > mVideoTemporalLayerCount) {
+                    mVideoTemporalLayerCount = layerId + 1;
+                }
+
+            /*
+                For content encoded with hierarchical layers,
+                drop input frames from selective enhancement layers when
+                playing back at faster speeds.
+
+                speed = 1x (decode all layers)
+                layer-d       0   2   1   2   0   2   1   2   0
+                decode      | 0 |33 |66 |99 |133|166|199|233|266|
+                render      | 0 |33 |66 |99 |133|166|199|233|266|
+
+                speed = 2x (drop layer-2)
+                layer-d       0   2   1   2   0   2   1   2   0
+                decode      | 0 |   |66 |   |133|   |199|   |266|
+                render      | 0 |66 |133|199|266|
+
+                speed = 4x (drop layer-2 and layer-1)
+                layer-d       0   2   1   2   0   2   1   2   0
+                decode      | 0 |           |133|          |266|
+                render      | 0 |133|266|
+            */
+            int32_t dropLayerThreshold = mVideoTemporalLayerCount - (uint32_t)log2f(mPlaybackSpeed) - 1;
+            dropLayerThreshold = dropLayerThreshold < 0 ? 0 : dropLayerThreshold;
+            dropAccessUnit = layerId > dropLayerThreshold;
+            if (dropAccessUnit) {
+                ALOGV("dropping layer=%d [@speed=%g, will drop layers with id > %d]",
+                        layerId, mPlaybackSpeed, dropLayerThreshold);
+            }
+        } else if (!mIsAudio
                 && !mIsSecure
                 && mRenderer->getVideoLateByUs() > 100000ll
                 && mIsVideoAVC
@@ -766,6 +811,7 @@ status_t NuPlayer::Decoder::fetchInputData(sp<AMessage> &reply) {
             dropAccessUnit = true;
             ++mNumInputFramesDropped;
         }
+
     } while (dropAccessUnit);
 
     // ALOGV("returned a valid buffer of %s data", mIsAudio ? "mIsAudio" : "video");
@@ -881,7 +927,11 @@ bool NuPlayer::Decoder::onInputBufferFetched(const sp<AMessage> &msg) {
 
         // copy into codec buffer
         if (buffer != codecBuffer) {
-            CHECK_LE(buffer->size(), codecBuffer->capacity());
+            if (buffer->size() > codecBuffer->capacity()) {
+                handleError(ERROR_BUFFER_TOO_SMALL);
+                mDequeuedInputBuffers.push_back(bufferIx);
+                return false;
+            }
             codecBuffer->setRange(0, buffer->size());
             memcpy(codecBuffer->data(), buffer->data(), buffer->size());
         }

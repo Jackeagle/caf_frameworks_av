@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -49,18 +49,28 @@ status_t AVUtils::convertMetaDataToMessage(
     return OK;
 }
 
+status_t AVUtils::convertMessageToMetaData(
+        const sp<AMessage> &, sp<MetaData> &) {
+    return OK;
+}
+
 status_t AVUtils::mapMimeToAudioFormat(
         audio_format_t&, const char* ) {
-        return OK;
+    return OK;
 }
 
 status_t AVUtils::sendMetaDataToHal(
         const sp<MetaData>&, AudioParameter *){
-        return OK;
+    return OK;
 }
 
-bool AVUtils::is24bitPCMOffloadEnabled() {return false;}
-bool AVUtils::is16bitPCMOffloadEnabled() {return false;}
+bool AVUtils::hasAudioSampleBits(const sp<MetaData> &) {
+    return false;
+}
+
+bool AVUtils::hasAudioSampleBits(const sp<AMessage> &) {
+    return false;
+}
 
 int AVUtils::getAudioSampleBits(const sp<MetaData> &) {
     return 16;
@@ -68,12 +78,6 @@ int AVUtils::getAudioSampleBits(const sp<MetaData> &) {
 
 int AVUtils::getAudioSampleBits(const sp<AMessage> &) {
     return 16;
-}
-
-void AVUtils::setPcmSampleBits(const sp<AMessage> &, int32_t /*bitWidth*/) {
-}
-
-void AVUtils::setPcmSampleBits(const sp<MetaData> &, int32_t /*bitWidth*/) {
 }
 
 audio_format_t AVUtils::updateAudioFormat(audio_format_t audioFormat,
@@ -97,12 +101,8 @@ DataSource::SnifferFunc AVUtils::getExtendedSniffer() {
 }
 
 sp<MediaCodec> AVUtils::createCustomComponentByName(
-        const sp<ALooper> &, const char* , bool, const sp<AMessage> &) {
-    return NULL;
-}
-
-bool AVUtils::canOffloadAPE(const sp<MetaData> &) {
-   return true;
+           const sp<ALooper> &, const char* , bool, const sp<AMessage> &) {
+               return NULL;
 }
 
 int32_t AVUtils::getAudioMaxInputBufferSize(audio_format_t, const sp<AMessage> &) {
@@ -119,49 +119,19 @@ bool AVUtils::mapAACProfileToAudioFormat(const sp<AMessage> &,  audio_format_t &
     return false ;
 }
 
+bool AVUtils::canOffloadAPE(const sp<MetaData> &) {
+   return true;
+}
+
 bool AVUtils::isEnhancedExtension(const char *) {
     return false;
-}
-
-bool AVUtils::HEVCMuxer::reassembleHEVCCSD(const AString &/*mime*/, sp<ABuffer> /*csd0*/, sp<MetaData> &/*meta*/) {
-    return false;
-}
-
-void AVUtils::HEVCMuxer::writeHEVCFtypBox(MPEG4Writer * /*writer*/) {
-    return;
-}
-
-status_t AVUtils::HEVCMuxer::makeHEVCCodecSpecificData(const uint8_t * /*data*/,
-        size_t /*size*/, void ** /*codecSpecificData*/,
-        size_t * /*codecSpecificDataSize*/) {
-    return UNKNOWN_ERROR;
-}
-
-const char *AVUtils::HEVCMuxer::getFourCCForMime(const char * /*mime*/) {
-    return NULL;
-}
-
-void AVUtils::HEVCMuxer::writeHvccBox(MPEG4Writer * /*writer*/,
-        void * /*codecSpecificData*/, size_t /*codecSpecificDataSize*/,
-        bool /*useNalLengthFour*/) {
-    return;
-}
-
-bool AVUtils::HEVCMuxer::isVideoHEVC(const char * /*mime*/) {
-    return false;
-}
-
-void AVUtils::HEVCMuxer::getHEVCCodecSpecificDataFromInputFormatIfPossible(
-        sp<MetaData> /*meta*/, void ** /*codecSpecificData*/,
-        size_t * /*codecSpecificDataSize*/, bool * /*gotAllCodecSpecificData*/) {
-    return;
 }
 
 bool AVUtils::isAudioMuxFormatSupported(const char *) {
     return true;
 }
 
-void AVUtils::cacheCaptureBuffers(sp<ICamera>, video_encoder) {
+void AVUtils::cacheCaptureBuffers(sp<hardware::ICamera>, video_encoder) {
     return;
 }
 
@@ -173,6 +143,14 @@ void AVUtils::setIntraPeriod(
         int, int, const sp<IOMX>,
         IOMX::node_id) {
     return;
+}
+
+const char *AVUtils::getCustomCodecsPerformanceLocation() {
+    return "/etc/media_codecs_performance.xml";
+}
+
+bool AVUtils::IsHevcIDR(const sp<ABuffer> &) {
+   return false;
 }
 
 // ----- NO TRESSPASSING BEYOND THIS LINE ------

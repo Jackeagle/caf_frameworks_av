@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -44,71 +44,39 @@
 
 namespace android {
 
-sp<MetaData> AVNuUtils::createPCMMetaFromSource(const sp<MetaData> &sMeta) {
-    return sMeta;
-}
-
-bool AVNuUtils::pcmOffloadException(const sp<MetaData> &) {
-    return true;
-}
-
-bool AVNuUtils::isRAWFormat(const sp<MetaData> &) {
-    return false;
-}
-
-bool AVNuUtils::isRAWFormat(const sp<AMessage> &) {
-    return false;
-}
-
 bool AVNuUtils::isVorbisFormat(const sp<MetaData> &) {
     return false;
 }
 
-int AVNuUtils::updateAudioBitWidth(audio_format_t /*audioFormat*/,
-        const sp<AMessage> &){
-    return 16;
+void AVNuUtils::printFileName(int) {}
+
+bool AVNuUtils::dropCorruptFrame() { return false; }
+
+void AVNuUtils::addFlagsInMeta(const sp<ABuffer> & /*buffer*/,
+        int32_t /*flags*/, bool /*isAudio*/) {
 }
 
-audio_format_t AVNuUtils::getKeyPCMFormat(const sp<MetaData> &) {
-    return AUDIO_FORMAT_INVALID;
-}
-
-void AVNuUtils::setKeyPCMFormat(const sp<MetaData> &, audio_format_t /*audioFormat*/) {
-
+bool AVNuUtils::pcmOffloadException(const sp<AMessage> &) {
+    return true;
 }
 
 audio_format_t AVNuUtils::getPCMFormat(const sp<AMessage> &) {
     return AUDIO_FORMAT_PCM_16_BIT;
 }
 
-void AVNuUtils::setPCMFormat(const sp<AMessage> &, audio_format_t /*audioFormat*/) {
+void AVNuUtils::setCodecOutputFormat(const sp<AMessage> &) {
 
 }
 
-void AVNuUtils::setSourcePCMFormat(const sp<MetaData> &) {
-
+void AVNuUtils::overWriteAudioOutputFormat(
+       sp <AMessage> & /*dst*/, const sp <AMessage> & /*src*/) {
 }
-
-void AVNuUtils::setDecodedPCMFormat(const sp<AMessage> &) {
-
-}
-
-status_t AVNuUtils::convertToSinkFormatIfNeeded(const sp<ABuffer> &, sp<ABuffer> &,
-        audio_format_t /*sinkFormat*/, bool /*isOffload*/) {
-    return INVALID_OPERATION;
-}
-
-void AVNuUtils::printFileName(int) {}
 
 void AVNuUtils::checkFormatChange(bool * /*formatChange*/,
         const sp<ABuffer> & /*accessUnit*/) {
 }
 
-uint32_t AVNuUtils::getUseSetBuffersFlag() {
-    return 0;
-}
-
-bool AVNuUtils::canUseSetBuffers(const sp<MetaData> &/*Meta*/) {
+bool AVNuUtils::isByteStreamModeEnabled(const sp<MetaData> &) {
     return false;
 }
 

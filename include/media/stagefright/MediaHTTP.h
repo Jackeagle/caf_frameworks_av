@@ -54,7 +54,7 @@ protected:
     virtual String8 getUri();
     virtual String8 getMIMEType() const;
 
-protected:
+private:
     status_t mInitCheck;
     sp<IMediaHTTPConnection> mHTTPConnection;
 

@@ -29,9 +29,13 @@ ABuffer::ABuffer(size_t capacity)
       mInt32Data(0),
       mOwnsData(true) {
     mData = malloc(capacity);
-    CHECK(mData != NULL);
-    mCapacity = capacity;
-    mRangeLength = capacity;
+    if (mData == NULL) {
+        mCapacity = 0;
+        mRangeLength = 0;
+    } else {
+        mCapacity = capacity;
+        mRangeLength = capacity;
+    }
 }
 
 ABuffer::ABuffer(void *data, size_t capacity)
@@ -63,10 +67,6 @@ ABuffer::~ABuffer() {
         }
     }
 
-    if (mFarewell != NULL) {
-        mFarewell->post();
-    }
-
     setMediaBufferBase(NULL);
 }
 
@@ -76,10 +76,6 @@ void ABuffer::setRange(size_t offset, size_t size) {
 
     mRangeOffset = offset;
     mRangeLength = size;
-}
-
-void ABuffer::setFarewellMessage(const sp<AMessage> msg) {
-    mFarewell = msg;
 }
 
 sp<AMessage> ABuffer::meta() {

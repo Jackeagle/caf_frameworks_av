@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -37,35 +37,22 @@
 namespace android {
 
 class MediaRecorder;
-class Parcel;
 /*
  * Common delegate to the classes in libstagefright
  */
 struct AVMediaUtils {
 
-    virtual bool AudioTrackIsPcmOffloaded(const audio_format_t /*format*/) {
-        return false;
-    }
-    virtual status_t AudioTrackGetPosition(AudioTrack* /*track*/,
-            uint32_t* /*position*/) {
-        return NO_INIT;
-    }
 
-    virtual status_t AudioTrackGetTimestamp(AudioTrack* /*track*/,
-            AudioTimestamp* /*timestamp*/) {
-        return NO_INIT;
-    }
+    virtual size_t AudioTrackGetOffloadFrameCount(size_t frameCount);
 
-    virtual size_t AudioTrackGetOffloadFrameCount(size_t frameCount) {
-        return frameCount;
-    }
+    virtual bool AudioTrackIsTrackOffloaded(audio_io_handle_t /*output*/);
 
-    virtual sp<MediaRecorder> createMediaRecorder(const String16& opPackageName);
-    virtual void writeCustomData(
-            Parcel * /* reply */, void * /* buffer_data */) {}
-    virtual void readCustomData(
-            const Parcel * /* reply */, void ** /*buffer_data */ ) {}
-    virtual void closeFileDescriptor(void * /* buffer_ptr */) {}
+    virtual void writeCustomParamData(
+        int , const void *, size_t, Parcel *) {}
+
+    virtual void readCustomParamData(
+        int , void *, size_t, const Parcel *) {}
+
     // ----- NO TRESSPASSING BEYOND THIS LINE ------
     DECLARE_LOADABLE_SINGLETON(AVMediaUtils);
 };

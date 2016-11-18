@@ -36,6 +36,7 @@
 #include <media/MediaMetadataRetrieverInterface.h>
 #include <media/MediaPlayerInterface.h>
 #include <media/stagefright/DataSource.h>
+#include <media/stagefright/Utils.h>
 #include <private/media/VideoFrame.h>
 #include "MetadataRetrieverClient.h"
 #include "StagefrightMetadataRetriever.h"
@@ -85,6 +86,7 @@ static sp<MediaMetadataRetrieverBase> createRetriever(player_type playerType)
 {
     sp<MediaMetadataRetrieverBase> p;
     switch (playerType) {
+        case STAGEFRIGHT_PLAYER:
         case NU_PLAYER:
         {
             p = new StagefrightMetadataRetriever;
@@ -149,7 +151,6 @@ status_t MetadataRetrieverClient::setDataSource(int fd, int64_t offset, int64_t 
 
     if (offset >= sb.st_size) {
         ALOGE("offset (%" PRId64 ") bigger than file size (%" PRIu64 ")", offset, sb.st_size);
-        ::close(fd);
         return BAD_VALUE;
     }
     if (offset + length > sb.st_size) {
@@ -165,12 +166,10 @@ status_t MetadataRetrieverClient::setDataSource(int fd, int64_t offset, int64_t 
     ALOGV("player type = %d", playerType);
     sp<MediaMetadataRetrieverBase> p = createRetriever(playerType);
     if (p == NULL) {
-        ::close(fd);
         return NO_INIT;
     }
     status_t status = p->setDataSource(fd, offset, length);
     if (status == NO_ERROR) mRetriever = p;
-    ::close(fd);
     return status;
 }
 
@@ -231,6 +230,7 @@ sp<IMemory> MetadataRetrieverClient::getFrameAtTime(int64_t timeUs, int option)
     ALOGV("rotation: %d", frameCopy->mRotationAngle);
     frameCopy->mData = (uint8_t *)frameCopy + sizeof(VideoFrame);
     memcpy(frameCopy->mData, frame->mData, frame->mSize);
+    frameCopy->mData = 0;
     delete frame;  // Fix memory leakage
     return mThumbnail;
 }

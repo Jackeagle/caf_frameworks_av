@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -64,27 +64,17 @@ struct AVNuFactory {
  * Common delegate to the classes in NuPlayer
  */
 struct AVNuUtils {
-
-    virtual sp<MetaData> createPCMMetaFromSource(const sp<MetaData> &);
-    virtual bool pcmOffloadException(const sp<MetaData> &);
-    virtual bool isRAWFormat(const sp<MetaData> &);
-    virtual bool isRAWFormat(const sp<AMessage> &);
     virtual bool isVorbisFormat(const sp<MetaData> &);
-    virtual int updateAudioBitWidth(audio_format_t audioFormat,
-            const sp<AMessage> &);
-    virtual audio_format_t getKeyPCMFormat(const sp<MetaData> &);
-    virtual void setKeyPCMFormat(const sp<MetaData> &, audio_format_t audioFormat);
-    virtual audio_format_t getPCMFormat(const sp<AMessage> &);
-    virtual void setPCMFormat(const sp<AMessage> &, audio_format_t audioFormat);
-    virtual void setSourcePCMFormat(const sp<MetaData> &);
-    virtual void setDecodedPCMFormat(const sp<AMessage> &);
-    virtual status_t convertToSinkFormatIfNeeded(const sp<ABuffer> &, sp<ABuffer> &,
-            audio_format_t sinkFormat, bool isOffload);
-    virtual uint32_t getUseSetBuffersFlag();
-    virtual bool canUseSetBuffers(const sp<MetaData> &Meta);
 
     virtual void printFileName(int fd);
+    virtual bool dropCorruptFrame();
+    virtual void addFlagsInMeta(const sp<ABuffer> &buffer, int32_t flags, bool isAudio);
     virtual void checkFormatChange(bool *formatChange, const sp<ABuffer> &accessUnit);
+    virtual void overWriteAudioOutputFormat(sp <AMessage> &dst, const sp <AMessage> &src);
+    virtual bool pcmOffloadException(const sp<AMessage> &);
+    virtual audio_format_t getPCMFormat(const sp<AMessage> &);
+    virtual void setCodecOutputFormat(const sp<AMessage> &);
+    virtual bool isByteStreamModeEnabled(const sp<MetaData> &);
 
     // ----- NO TRESSPASSING BEYOND THIS LINE ------
     DECLARE_LOADABLE_SINGLETON(AVNuUtils);

@@ -7,6 +7,7 @@ LOCAL_SRC_FILES:=                     \
         OMX.cpp                       \
         OMXMaster.cpp                 \
         OMXNodeInstance.cpp           \
+        OMXUtils.cpp                  \
         SimpleSoftOMXComponent.cpp    \
         SoftOMXComponent.cpp          \
         SoftOMXPlugin.cpp             \
@@ -32,13 +33,14 @@ LOCAL_SHARED_LIBRARIES :=               \
 
 ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
-    LOCAL_CFLAGS += -DQTI_FLAC_DECODER
+LOCAL_CFLAGS += -DQTI_FLAC_DECODER
 endif
 endif
 
 LOCAL_MODULE:= libstagefright_omx
 LOCAL_CFLAGS += -Werror -Wall
 LOCAL_CLANG := true
+LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 
 include $(BUILD_SHARED_LIBRARY)
 

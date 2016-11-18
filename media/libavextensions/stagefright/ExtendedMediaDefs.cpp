@@ -1,4 +1,4 @@
-/*Copyright (c) 2012 - 2015, The Linux Foundation. All rights reserved.
+/*Copyright (c) 2012 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -64,5 +64,9 @@ const char *MEDIA_MIMETYPE_CONTAINER_QCFLV = "video/qc-flv";
 const char *MEDIA_MIMETYPE_VIDEO_VPX = "video/x-vnd.on2.vp8"; //backward compatibility
 const char *MEDIA_MIMETYPE_CONTAINER_QTIFLAC = "audio/qti-flac";
 const char *MEDIA_MIMETYPE_VIDEO_MPEG4_DP = "video/mp4v-esdp";
+const char *MEDIA_MIMETYPE_CONTAINER_DSF = "audio/x-dsf"; // For DSF clip
+const char *MEDIA_MIMETYPE_CONTAINER_DFF = "audio/x-dff"; // For DFF or DIF clip
+const char *MEDIA_MIMETYPE_AUDIO_DSD = "audio/dsd";
+
 
 }  // namespace android

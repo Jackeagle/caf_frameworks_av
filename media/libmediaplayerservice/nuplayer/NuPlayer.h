@@ -109,7 +109,6 @@ public:
     struct SetSurfaceAction;
     struct ResumeDecoderAction;
     struct FlushDecoderAction;
-    struct InstantiateDecoderAction;
     struct PostMessageAction;
     struct SimpleAction;
 
@@ -145,6 +144,7 @@ protected:
     bool mUIDValid;
     uid_t mUID;
     pid_t mPID;
+    Mutex mSourceLock;  // guard |mSource|.
     sp<Source> mSource;
     uint32_t mSourceFlags;
     sp<Surface> mSurface;
@@ -202,6 +202,8 @@ protected:
     AVSyncSettings mSyncSettings;
     float mVideoFpsHint;
     bool mStarted;
+    bool mPrepared;
+    bool mResetting;
     bool mSourceStarted;
 
     // Actual pause state, either as requested by client or due to buffering.
@@ -226,11 +228,15 @@ protected:
         mFlushComplete[1][1] = false;
     }
 
-    virtual void tryOpenAudioSinkForOffload(const sp<AMessage> &format, bool hasVideo);
+    void tryOpenAudioSinkForOffload(
+            const sp<AMessage> &format, const sp<MetaData> &audioMeta, bool hasVideo);
     void closeAudioSink();
-    void determineAudioModeChange();
+    void restartAudio(
+            int64_t currentPositionUs, bool forceNonOffload, bool needsToCreateAudioDecoder);
+    void determineAudioModeChange(const sp<AMessage> &audioFormat);
 
-    virtual status_t instantiateDecoder(bool audio, sp<DecoderBase> *decoder);
+    virtual status_t instantiateDecoder(
+            bool audio, sp<DecoderBase> *decoder, bool checkAudioModeChange = true);
 
     status_t onInstantiateSecureDecoders();
 
@@ -238,7 +244,7 @@ protected:
             const sp<AMessage> &inputFormat,
             const sp<AMessage> &outputFormat = NULL);
 
-    virtual void notifyListener(int msg, int ext1, int ext2, const Parcel *in = NULL);
+    void notifyListener(int msg, int ext1, int ext2, const Parcel *in = NULL);
 
     void handleFlushComplete(bool audio, bool isDecoder);
     void finishFlushIfPossible();
@@ -261,7 +267,7 @@ protected:
 
     void processDeferredActions();
 
-    void performSeek(int64_t seekTimeUs);
+    virtual void performSeek(int64_t seekTimeUs);
     void performDecoderFlush(FlushCommand audio, FlushCommand video);
     void performReset();
     void performScanSources();
@@ -279,8 +285,6 @@ protected:
     void sendTimedTextData(const sp<ABuffer> &buffer);
 
     void writeTrackInfo(Parcel* reply, const sp<AMessage> format) const;
-
-    void tearDownPCMOffload(const sp<AMessage> &msg);
 
     DISALLOW_EVIL_CONSTRUCTORS(NuPlayer);
 };

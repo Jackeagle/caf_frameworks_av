@@ -149,7 +149,10 @@ AudioPolicyService::~AudioPolicyService()
 // connects to AudioPolicyService.
 void AudioPolicyService::registerClient(const sp<IAudioPolicyServiceClient>& client)
 {
-
+    if (client == 0) {
+        ALOGW("%s got NULL client", __FUNCTION__);
+        return;
+    }
     Mutex::Autolock _l(mNotificationClientsLock);
 
     uid_t uid = IPCThreadState::self()->getCallingUid();
@@ -212,19 +215,6 @@ void AudioPolicyService::onAudioPatchListUpdate()
     mOutputCommandThread->updateAudioPatchListCommand();
 }
 
-status_t AudioPolicyService::clientCreateAudioPatch(const struct audio_patch *patch,
-                                                audio_patch_handle_t *handle,
-                                                int delayMs)
-{
-    return mAudioCommandThread->createAudioPatchCommand(patch, handle, delayMs);
-}
-
-status_t AudioPolicyService::clientReleaseAudioPatch(audio_patch_handle_t handle,
-                                                 int delayMs)
-{
-    return mAudioCommandThread->releaseAudioPatchCommand(handle, delayMs);
-}
-
 void AudioPolicyService::doOnAudioPatchListUpdate()
 {
     Mutex::Autolock _l(mNotificationClientsLock);
@@ -246,6 +236,38 @@ void AudioPolicyService::doOnDynamicPolicyMixStateUpdate(String8 regId, int32_t 
     for (size_t i = 0; i < mNotificationClients.size(); i++) {
         mNotificationClients.valueAt(i)->onDynamicPolicyMixStateUpdate(regId, state);
     }
+}
+
+void AudioPolicyService::onRecordingConfigurationUpdate(int event, audio_session_t session,
+        audio_source_t source, const audio_config_base_t *clientConfig,
+        const audio_config_base_t *deviceConfig, audio_patch_handle_t patchHandle)
+{
+    mOutputCommandThread->recordingConfigurationUpdateCommand(event, session, source,
+            clientConfig, deviceConfig, patchHandle);
+}
+
+void AudioPolicyService::doOnRecordingConfigurationUpdate(int event, audio_session_t session,
+        audio_source_t source, const audio_config_base_t *clientConfig,
+        const audio_config_base_t *deviceConfig, audio_patch_handle_t patchHandle)
+{
+    Mutex::Autolock _l(mNotificationClientsLock);
+    for (size_t i = 0; i < mNotificationClients.size(); i++) {
+        mNotificationClients.valueAt(i)->onRecordingConfigurationUpdate(event, session, source,
+                clientConfig, deviceConfig, patchHandle);
+    }
+}
+
+status_t AudioPolicyService::clientCreateAudioPatch(const struct audio_patch *patch,
+                                                audio_patch_handle_t *handle,
+                                                int delayMs)
+{
+    return mAudioCommandThread->createAudioPatchCommand(patch, handle, delayMs);
+}
+
+status_t AudioPolicyService::clientReleaseAudioPatch(audio_patch_handle_t handle,
+                                                 int delayMs)
+{
+    return mAudioCommandThread->releaseAudioPatchCommand(handle, delayMs);
 }
 
 status_t AudioPolicyService::clientSetAudioPortConfig(const struct audio_port_config *config,
@@ -293,7 +315,18 @@ void AudioPolicyService::NotificationClient::onDynamicPolicyMixStateUpdate(
         String8 regId, int32_t state)
 {
     if (mAudioPolicyServiceClient != 0) {
-            mAudioPolicyServiceClient->onDynamicPolicyMixStateUpdate(regId, state);
+        mAudioPolicyServiceClient->onDynamicPolicyMixStateUpdate(regId, state);
+    }
+}
+
+void AudioPolicyService::NotificationClient::onRecordingConfigurationUpdate(
+        int event, audio_session_t session, audio_source_t source,
+        const audio_config_base_t *clientConfig, const audio_config_base_t *deviceConfig,
+        audio_patch_handle_t patchHandle)
+{
+    if (mAudioPolicyServiceClient != 0) {
+        mAudioPolicyServiceClient->onRecordingConfigurationUpdate(event, session, source,
+                clientConfig, deviceConfig, patchHandle);
     }
 }
 
@@ -423,7 +456,7 @@ void AudioPolicyService::AudioCommandThread::onFirstRef()
 
 bool AudioPolicyService::AudioCommandThread::threadLoop()
 {
-    nsecs_t waitTime = INT64_MAX;
+    nsecs_t waitTime = -1;
 
     mLock.lock();
     while (!exitPending())
@@ -477,6 +510,19 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                     ALOGV("AudioCommandThread() processing set voice volume volume %f",
                             data->mVolume);
                     command->mStatus = AudioSystem::setVoiceVolume(data->mVolume);
+                    }break;
+                case START_OUTPUT: {
+                    StartOutputData *data = (StartOutputData *)command->mParam.get();
+                    ALOGV("AudioCommandThread() processing start output %d",
+                            data->mIO);
+                    svc = mService.promote();
+                    if (svc == 0) {
+                        command->mStatus = UNKNOWN_ERROR;
+                        break;
+                    }
+                    mLock.unlock();
+                    command->mStatus = svc->doStartOutput(data->mIO, data->mStream, data->mSession);
+                    mLock.lock();
                     }break;
                 case STOP_OUTPUT: {
                     StopOutputData *data = (StopOutputData *)command->mParam.get();
@@ -555,7 +601,6 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                 case DYN_POLICY_MIX_STATE_UPDATE: {
                     DynPolicyMixStateUpdateData *data =
                             (DynPolicyMixStateUpdateData *)command->mParam.get();
-                    //###ALOGV("AudioCommandThread() processing dyn policy mix state update");
                     ALOGV("AudioCommandThread() processing dyn policy mix state update %s %d",
                             data->mRegId.string(), data->mState);
                     svc = mService.promote();
@@ -564,6 +609,20 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                     }
                     mLock.unlock();
                     svc->doOnDynamicPolicyMixStateUpdate(data->mRegId, data->mState);
+                    mLock.lock();
+                    } break;
+                case RECORDING_CONFIGURATION_UPDATE: {
+                    RecordingConfigurationUpdateData *data =
+                            (RecordingConfigurationUpdateData *)command->mParam.get();
+                    ALOGV("AudioCommandThread() processing recording configuration update");
+                    svc = mService.promote();
+                    if (svc == 0) {
+                        break;
+                    }
+                    mLock.unlock();
+                    svc->doOnRecordingConfigurationUpdate(data->mEvent, data->mSession,
+                            data->mSource, &data->mClientConfig, &data->mDeviceConfig,
+                            data->mPatchHandle);
                     mLock.lock();
                     } break;
                 default:
@@ -576,23 +635,33 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                         command->mCond.signal();
                     }
                 }
-                waitTime = INT64_MAX;
+                waitTime = -1;
+                // release mLock before releasing strong reference on the service as
+                // AudioPolicyService destructor calls AudioCommandThread::exit() which
+                // acquires mLock.
+                mLock.unlock();
+                svc.clear();
+                mLock.lock();
             } else {
                 waitTime = mAudioCommands[0]->mTime - curTime;
                 break;
             }
         }
-        // release mLock before releasing strong reference on the service as
-        // AudioPolicyService destructor calls AudioCommandThread::exit() which acquires mLock.
-        mLock.unlock();
-        svc.clear();
-        mLock.lock();
-        if (!exitPending() && (mAudioCommands.isEmpty() || waitTime != INT64_MAX)) {
-            // release delayed commands wake lock
+
+        // release delayed commands wake lock if the queue is empty
+        if (mAudioCommands.isEmpty()) {
             release_wake_lock(mName.string());
+        }
+
+        // At this stage we have either an empty command queue or the first command in the queue
+        // has a finite delay. So unless we are exiting it is safe to wait.
+        if (!exitPending()) {
             ALOGV("AudioCommandThread() going to sleep");
-            mWaitWorkCV.waitRelative(mLock, waitTime);
-            ALOGV("AudioCommandThread() waking up");
+            if (waitTime == -1) {
+                mWaitWorkCV.wait(mLock);
+            } else {
+                mWaitWorkCV.waitRelative(mLock, waitTime);
+            }
         }
     }
     // release delayed commands wake lock before quitting
@@ -708,6 +777,22 @@ status_t AudioPolicyService::AudioCommandThread::voiceVolumeCommand(float volume
     return sendCommand(command, delayMs);
 }
 
+status_t AudioPolicyService::AudioCommandThread::startOutputCommand(audio_io_handle_t output,
+                                                                    audio_stream_type_t stream,
+                                                                    audio_session_t session)
+{
+    sp<AudioCommand> command = new AudioCommand();
+    command->mCommand = START_OUTPUT;
+    sp<StartOutputData> data = new StartOutputData();
+    data->mIO = output;
+    data->mStream = stream;
+    data->mSession = session;
+    command->mParam = data;
+    command->mWaitStatus = true;
+    ALOGV("AudioCommandThread() adding start output %d", output);
+    return sendCommand(command);
+}
+
 void AudioPolicyService::AudioCommandThread::stopOutputCommand(audio_io_handle_t output,
                                                                audio_stream_type_t stream,
                                                                audio_session_t session)
@@ -816,6 +901,26 @@ void AudioPolicyService::AudioCommandThread::dynamicPolicyMixStateUpdateCommand(
     sendCommand(command);
 }
 
+void AudioPolicyService::AudioCommandThread::recordingConfigurationUpdateCommand(
+        int event, audio_session_t session, audio_source_t source,
+        const audio_config_base_t *clientConfig, const audio_config_base_t *deviceConfig,
+        audio_patch_handle_t patchHandle)
+{
+    sp<AudioCommand>command = new AudioCommand();
+    command->mCommand = RECORDING_CONFIGURATION_UPDATE;
+    RecordingConfigurationUpdateData *data = new RecordingConfigurationUpdateData();
+    data->mEvent = event;
+    data->mSession = session;
+    data->mSource = source;
+    data->mClientConfig = *clientConfig;
+    data->mDeviceConfig = *deviceConfig;
+    data->mPatchHandle = patchHandle;
+    command->mParam = data;
+    ALOGV("AudioCommandThread() adding recording configuration update event %d, source %d",
+            event, source);
+    sendCommand(command);
+}
+
 status_t AudioPolicyService::AudioCommandThread::sendCommand(sp<AudioCommand>& command, int delayMs)
 {
     {
@@ -893,12 +998,10 @@ void AudioPolicyService::AudioCommandThread::insertCommand_l(sp<AudioCommand>& c
             } else {
                 data2->mKeyValuePairs = param2.toString();
             }
-            if (!data2->mKeyValuePairs.compare(data->mKeyValuePairs)) {
-                command->mTime = command2->mTime;
-                // force delayMs to non 0 so that code below does not request to wait for
-                // command status as the command is now delayed
-                delayMs = 1;
-            }
+            command->mTime = command2->mTime;
+            // force delayMs to non 0 so that code below does not request to wait for
+            // command status as the command is now delayed
+            delayMs = 1;
         } break;
 
         case SET_VOLUME: {
@@ -964,6 +1067,10 @@ void AudioPolicyService::AudioCommandThread::insertCommand_l(sp<AudioCommand>& c
 
         } break;
 
+        case RECORDING_CONFIGURATION_UPDATE: {
+
+        } break;
+
         case START_TONE:
         case STOP_TONE:
         default:
@@ -1005,6 +1112,8 @@ void AudioPolicyService::AudioCommandThread::exit()
         requestExit();
         mWaitWorkCV.signal();
     }
+    // Note that we can call it from the thread loop if all other references have been released
+    // but it will safely return WOULD_BLOCK in this case
     requestExitAndWait();
 }
 
@@ -1102,7 +1211,7 @@ audio_io_handle_t aps_open_input_on_module(void *service __unused,
                                                   audio_channel_mask_t *pChannelMask);
 int aps_close_input(void *service __unused, audio_io_handle_t input);
 int aps_invalidate_stream(void *service __unused, audio_stream_type_t stream);
-int aps_move_effects(void *service __unused, int session,
+int aps_move_effects(void *service __unused, audio_session_t session,
                                 audio_io_handle_t src_output,
                                 audio_io_handle_t dst_output);
 char * aps_get_parameters(void *service __unused, audio_io_handle_t io_handle,

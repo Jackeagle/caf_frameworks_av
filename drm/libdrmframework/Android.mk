@@ -31,13 +31,14 @@ LOCAL_SHARED_LIBRARIES := \
     libbinder \
     libdl
 
-LOCAL_WHOLE_STATIC_LIBRARIES := \
+LOCAL_STATIC_LIBRARIES := \
     libdrmframeworkcommon
 
 LOCAL_C_INCLUDES += \
     $(TOP)/frameworks/av/drm/libdrmframework/include \
     $(TOP)/frameworks/av/include
 
+LOCAL_CFLAGS += -Werror
 
 
 LOCAL_MODULE_TAGS := optional

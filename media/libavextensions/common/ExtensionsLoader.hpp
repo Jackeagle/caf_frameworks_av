@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,8 +31,6 @@
 
 namespace android {
 
-static const char * CUSTOMIZATION_LIB_NAME = "libavenhancements.so";
-
 /*
  * Create strongly-typed objects of type T
  * If the customization library exists and does contain a "named" constructor,
@@ -48,7 +46,7 @@ static const char * CUSTOMIZATION_LIB_NAME = "libavenhancements.so";
 
 template <typename T>
 T *ExtensionsLoader<T>::createInstance(const char *createFunctionName) {
-        ALOGV("createInstance(%dbit) : %s", sizeof(intptr_t)*8, createFunctionName);
+        ALOGV("createInstance(%lubit) : %s", (unsigned long)sizeof(intptr_t)*8, createFunctionName);
         // create extended object if extensions-lib is available and
         // AV_ENHANCEMENTS is enabled
 #if ENABLE_AV_ENHANCEMENTS

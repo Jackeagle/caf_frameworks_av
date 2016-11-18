@@ -909,11 +909,6 @@ bool ARTSPConnection::parseAuthMethod(const sp<ARTSPResponse> &response) {
     if (!strncmp(value.c_str(), "Basic", 5)) {
         mAuthType = BASIC;
     } else {
-#if !defined(HAVE_ANDROID_OS)
-        // We don't have access to the MD5 implementation on the simulator,
-        // so we won't support digest authentication.
-        return false;
-#endif
 
         CHECK(!strncmp(value.c_str(), "Digest", 6));
         mAuthType = DIGEST;
@@ -930,7 +925,6 @@ bool ARTSPConnection::parseAuthMethod(const sp<ARTSPResponse> &response) {
     return true;
 }
 
-#if defined(HAVE_ANDROID_OS)
 static void H(const AString &s, AString *out) {
     out->clear();
 
@@ -959,7 +953,6 @@ static void H(const AString &s, AString *out) {
         out->append(&nibble, 1);
     }
 }
-#endif
 
 static void GetMethodAndURL(
         const AString &request, AString *method, AString *url) {
@@ -1001,7 +994,6 @@ void ARTSPConnection::addAuthentication(AString *request) {
         return;
     }
 
-#if defined(HAVE_ANDROID_OS)
     CHECK_EQ((int)mAuthType, (int)DIGEST);
 
     AString method, url;
@@ -1050,7 +1042,6 @@ void ARTSPConnection::addAuthentication(AString *request) {
     fragment.append("\r\n");
 
     request->insert(fragment, i + 2);
-#endif
 }
 
 void ARTSPConnection::addUserAgent(AString *request) const {

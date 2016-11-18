@@ -38,15 +38,15 @@ struct AudioSource : public MediaSource, public MediaBufferObserver {
             const String16 &opPackageName,
             uint32_t sampleRate,
             uint32_t channels,
-            uint32_t outSampleRate = 0);
+            uint32_t outSampleRate = 0,
+            uid_t uid = -1,
+            pid_t pid = -1);
 
     status_t initCheck() const;
 
     virtual status_t start(MetaData *params = NULL);
     virtual status_t stop() { return reset(); }
     virtual sp<MetaData> getFormat();
-
-    virtual status_t pause() { return ERROR_UNSUPPORTED; }
 
     // Returns the maximum amplitude since last call.
     int16_t getMaxAmplitude();
@@ -60,11 +60,8 @@ struct AudioSource : public MediaSource, public MediaBufferObserver {
 protected:
     virtual ~AudioSource();
 
-protected:
     enum {
-        //calculated for max duration 80 msec with 48K sampling rate.
-        kMaxBufferSize = 30720,
-
+        kMaxBufferSize = 2048,
 
         // After the initial mute, we raise the volume linearly
         // over kAutoRampDurationUs.
@@ -72,7 +69,7 @@ protected:
 
         // This is the initial mute duration to suppress
         // the video recording signal tone
-        kAutoRampStartUs = 500000,
+        kAutoRampStartUs = 0,
     };
 
     Mutex mLock;
@@ -93,7 +90,7 @@ protected:
     int64_t mInitialReadTimeUs;
     int64_t mNumFramesReceived;
     int64_t mNumClientOwnedBuffers;
-
+    size_t mMaxBufferSize;
     List<MediaBuffer * > mBuffersReceived;
 
     void trackMaxAmplitude(int16_t *data, int nSamples);
@@ -104,7 +101,7 @@ protected:
         int32_t startFrame, int32_t rampDurationFrames,
         uint8_t *data,   size_t bytes);
 
-    virtual void queueInputBuffer_l(MediaBuffer *buffer, int64_t timeUs);
+    void queueInputBuffer_l(MediaBuffer *buffer, int64_t timeUs);
     void releaseQueuedFrames_l();
     void waitOutstandingEncodingFrames_l();
     virtual status_t reset();

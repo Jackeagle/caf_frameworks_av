@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -40,15 +40,12 @@
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaExtractor.h>
-#include <media/stagefright/MediaHTTP.h>
-#include <media/stagefright/AudioSource.h>
-#include <media/stagefright/CameraSource.h>
 #include <media/stagefright/CameraSourceTimeLapse.h>
-#include <camera/CameraParameters.h>
+#include <media/stagefright/MPEG4Writer.h>
+#include <media/stagefright/AudioSource.h>
 
 #include "common/ExtensionsLoader.hpp"
 #include "stagefright/AVExtensions.h"
-#include "include/NuCachedSource2.h"
 
 namespace android {
 
@@ -57,68 +54,61 @@ sp<ACodec> AVFactory::createACodec() {
 }
 
 MediaExtractor* AVFactory::createExtendedExtractor(
-         const sp<DataSource> &, const char *, const sp<AMessage> &,
-         const uint32_t) {
+         const sp<DataSource> &, const char *, const sp<AMessage> &) {
     return NULL;
 }
 
-sp<MediaExtractor> AVFactory::updateExtractor(
-            sp<MediaExtractor> ext, const sp<DataSource> &,
-            const char *, const sp<AMessage> &, const uint32_t) {
-    return ext;
-}
-
-sp<NuCachedSource2> AVFactory::createCachedSource(
-            const sp<DataSource> &source,
-            const char *cacheConfig,
-            bool disconnectAtHighwatermark) {
-    return new NuCachedSource2(source, cacheConfig, disconnectAtHighwatermark);
-}
-
-MediaHTTP* AVFactory::createMediaHTTP(
-         const sp<IMediaHTTPConnection> &conn) {
-    return new MediaHTTP(conn);
-}
-
-AudioSource* AVFactory::createAudioSource(
-            audio_source_t inputSource,
-            const String16 &opPackageName,
-            uint32_t sampleRate,
-            uint32_t channels,
-            uint32_t outSampleRate) {
-    return new AudioSource(inputSource, opPackageName, sampleRate,
-                            channels, outSampleRate);
-}
-
 CameraSource* AVFactory::CreateCameraSourceFromCamera(
-            const sp<ICamera> &camera,
+            const sp<hardware::ICamera> &camera,
             const sp<ICameraRecordingProxy> &proxy,
             int32_t cameraId,
             const String16& clientName,
             uid_t clientUid,
+            pid_t clientPid,
             Size videoSize,
             int32_t frameRate,
             const sp<IGraphicBufferProducer>& surface,
             bool storeMetaDataInVideoBuffers) {
     return CameraSource::CreateFromCamera(camera, proxy, cameraId,
-            clientName, clientUid, videoSize, frameRate, surface,
+            clientName, clientUid, clientPid, videoSize, frameRate, surface,
             storeMetaDataInVideoBuffers);
 }
 
 CameraSourceTimeLapse* AVFactory::CreateCameraSourceTimeLapseFromCamera(
-        const sp<ICamera> &camera,
+        const sp<hardware::ICamera> &camera,
         const sp<ICameraRecordingProxy> &proxy,
         int32_t cameraId,
         const String16& clientName,
         uid_t clientUid,
+        pid_t clientPid,
         Size videoSize,
         int32_t videoFrameRate,
         const sp<IGraphicBufferProducer>& surface,
         int64_t timeBetweenFrameCaptureUs,
         bool storeMetaDataInVideoBuffers) {
     return CameraSourceTimeLapse::CreateFromCamera(camera, proxy, cameraId,
-            clientName, clientUid, videoSize, videoFrameRate, surface,
+            clientName, clientUid, clientPid, videoSize, videoFrameRate, surface,
             timeBetweenFrameCaptureUs, storeMetaDataInVideoBuffers);
+}
+
+MPEG4Writer* AVFactory::CreateMPEG4Writer(int fd) {
+    return new MPEG4Writer(fd);
+}
+
+ElementaryStreamQueue* AVFactory::createESQueue(
+         ElementaryStreamQueue::Mode , uint32_t ) {
+    return NULL;
+}
+AudioSource* AVFactory::createAudioSource(
+            audio_source_t inputSource,
+            const String16 &opPackageName,
+            uint32_t sampleRate,
+            uint32_t channels,
+            uint32_t outSampleRate,
+            uid_t clientUid,
+            pid_t clientPid) {
+    return new AudioSource(inputSource, opPackageName, sampleRate,
+                            channels, outSampleRate, clientUid, clientPid);
 }
 // ----- NO TRESSPASSING BEYOND THIS LINE ------
 AVFactory::AVFactory() {

@@ -1,7 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 LOCAL_SRC_FILES:=                         \
         ACodec.cpp                        \
@@ -11,12 +10,11 @@ LOCAL_SRC_FILES:=                         \
         AMRWriter.cpp                     \
         AudioPlayer.cpp                   \
         AudioSource.cpp                   \
-        AwesomePlayer.cpp                 \
         CallbackDataSource.cpp            \
         CameraSource.cpp                  \
         CameraSourceTimeLapse.cpp         \
-        ClockEstimator.cpp                \
         CodecBase.cpp                     \
+        DataConverter.cpp                 \
         DataSource.cpp                    \
         DataURISource.cpp                 \
         DRMExtractor.cpp                  \
@@ -25,14 +23,13 @@ LOCAL_SRC_FILES:=                         \
         FLACExtractor.cpp                 \
         FrameRenderTracker.cpp            \
         HTTPBase.cpp                      \
+        HevcUtils.cpp                     \
         JPEGSource.cpp                    \
         MP3Extractor.cpp                  \
         MPEG2TSWriter.cpp                 \
         MPEG4Extractor.cpp                \
         MPEG4Writer.cpp                   \
         MediaAdapter.cpp                  \
-        MediaBuffer.cpp                   \
-        MediaBufferGroup.cpp              \
         MediaClock.cpp                    \
         MediaCodec.cpp                    \
         MediaCodecList.cpp                \
@@ -45,23 +42,20 @@ LOCAL_SRC_FILES:=                         \
         http/MediaHTTP.cpp                \
         MediaMuxer.cpp                    \
         MediaSource.cpp                   \
-        MetaData.cpp                      \
         NuCachedSource2.cpp               \
         NuMediaExtractor.cpp              \
         OMXClient.cpp                     \
-        OMXCodec.cpp                      \
         OggExtractor.cpp                  \
         ProcessInfo.cpp                   \
         SampleIterator.cpp                \
         SampleTable.cpp                   \
+        SimpleDecodingSource.cpp          \
         SkipCutBuffer.cpp                 \
         StagefrightMediaScanner.cpp       \
         StagefrightMetadataRetriever.cpp  \
         SurfaceMediaSource.cpp            \
         SurfaceUtils.cpp                  \
         ThrottledSource.cpp               \
-        TimeSource.cpp                    \
-        TimedEventQueue.cpp               \
         Utils.cpp                         \
         VBRISeeker.cpp                    \
         VideoFrameScheduler.cpp           \
@@ -73,6 +67,7 @@ LOCAL_SRC_FILES:=                         \
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/ \
         $(TOP)/frameworks/av/media/libavextensions \
+        $(TOP)/frameworks/av/media/libstagefright/mpeg2ts \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
         $(TOP)/frameworks/native/include/media/openmax \
@@ -80,8 +75,10 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/tremolo \
         $(TOP)/external/libvpx/libwebm \
         $(TOP)/system/netd/include \
+        $(call include-path-for, audio-utils)
 
 LOCAL_SHARED_LIBRARIES := \
+        libaudioutils \
         libbinder \
         libcamera_client \
         libcutils \
@@ -137,7 +134,14 @@ ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
 LOCAL_CFLAGS += -DENABLE_STAGEFRIGHT_EXPERIMENTS
 endif
 
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
+LOCAL_CFLAGS += -DQTI_FLAC_DECODER
+endif
+endif
+
 LOCAL_CLANG := true
+LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 
 LOCAL_MODULE:= libstagefright
 

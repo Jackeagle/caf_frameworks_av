@@ -36,19 +36,17 @@
 namespace android {
 
 static const size_t kMaxCachedBytes = 200000;
-
 NuPlayer::DecoderPassThrough::DecoderPassThrough(
         const sp<AMessage> &notify,
         const sp<Source> &source,
         const sp<Renderer> &renderer)
     : DecoderBase(notify),
+      mAggregateBufferSizeBytes(24 * 1024),
       mSource(source),
       mRenderer(renderer),
       // TODO optimize buffer size for power consumption
       // The offload read buffer size is 32 KB but 24 KB uses less power.
-      mAggregateBufferSizeBytes(24 * 1024),
       mSkipRenderingUntilMediaTimeUs(-1ll),
-      mPaused(false),
       mReachedEOS(true),
       mPendingAudioErr(OK),
       mPendingBuffersToDrain(0),
@@ -202,7 +200,6 @@ sp<ABuffer> NuPlayer::DecoderPassThrough::aggregateBuffer(
             if ((bigSize == 0) && smallTimestampValid) {
                 mAggregateBuffer->meta()->setInt64("timeUs", timeUs);
             }
-            setPcmFormat(mAggregateBuffer->meta());
             // Append small buffer to the bigger buffer.
             memcpy(mAggregateBuffer->base() + bigSize, accessUnit->data(), smallSize);
             bigSize += smallSize;
@@ -226,6 +223,11 @@ status_t NuPlayer::DecoderPassThrough::fetchInputData(sp<AMessage> &reply) {
         status_t err = dequeueAccessUnit(&accessUnit);
 
         if (err == -EWOULDBLOCK) {
+            // Flush out the aggregate buffer to try to avoid underrun.
+            accessUnit = aggregateBuffer(NULL /* accessUnit */);
+            if (accessUnit != NULL) {
+                break;
+            }
             return err;
         } else if (err != OK) {
             if (err == INFO_DISCONTINUITY) {

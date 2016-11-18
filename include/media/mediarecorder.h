@@ -29,11 +29,14 @@ namespace android {
 
 class Surface;
 class IMediaRecorder;
-class ICamera;
 class ICameraRecordingProxy;
 class IGraphicBufferProducer;
 struct PersistentSurface;
 class Surface;
+
+namespace hardware {
+class ICamera;
+}
 
 typedef void (*media_completion_f)(status_t status, void *cookie);
 
@@ -73,10 +76,8 @@ enum output_format {
 
     /* VP8/VORBIS data in a WEBM container */
     OUTPUT_FORMAT_WEBM = 9,
-
     OUTPUT_FORMAT_QCP = 20,
     OUTPUT_FORMAT_WAVE = 21,
-
     OUTPUT_FORMAT_LIST_END // must be last - used to validate format type
 };
 
@@ -88,11 +89,9 @@ enum audio_encoder {
     AUDIO_ENCODER_HE_AAC = 4,
     AUDIO_ENCODER_AAC_ELD = 5,
     AUDIO_ENCODER_VORBIS = 6,
-
     AUDIO_ENCODER_EVRC = 10,
     AUDIO_ENCODER_QCELP = 11,
     AUDIO_ENCODER_LPCM = 12,
-
     AUDIO_ENCODER_LIST_END // must be the last - used to validate the audio encoder type
 };
 
@@ -102,12 +101,9 @@ enum video_encoder {
     VIDEO_ENCODER_H264 = 2,
     VIDEO_ENCODER_MPEG_4_SP = 3,
     VIDEO_ENCODER_VP8 = 4,
+    VIDEO_ENCODER_HEVC = 5,
 
-    VIDEO_ENCODER_LIST_END, // must be the last - used to validate the video encoder type
-
-    VIDEO_ENCODER_LIST_VENDOR_START = 1000,
-    VIDEO_ENCODER_H265 = 1001,
-    VIDEO_ENCODER_LIST_VENDOR_END,
+    VIDEO_ENCODER_LIST_END // must be the last - used to validate the video encoder type
 };
 
 /*
@@ -226,7 +222,8 @@ public:
 
     void        died();
     status_t    initCheck();
-    status_t    setCamera(const sp<ICamera>& camera, const sp<ICameraRecordingProxy>& proxy);
+    status_t    setCamera(const sp<hardware::ICamera>& camera,
+            const sp<ICameraRecordingProxy>& proxy);
     status_t    setPreviewSurface(const sp<IGraphicBufferProducer>& surface);
     status_t    setVideoSource(int vs);
     status_t    setAudioSource(int as);
@@ -236,14 +233,16 @@ public:
     status_t    setOutputFile(int fd, int64_t offset, int64_t length);
     status_t    setVideoSize(int width, int height);
     status_t    setVideoFrameRate(int frames_per_second);
-    virtual status_t    setParameters(const String8& params);
+    status_t    setParameters(const String8& params);
     status_t    setListener(const sp<MediaRecorderListener>& listener);
     status_t    setClientName(const String16& clientName);
     status_t    prepare();
     status_t    getMaxAmplitude(int* max);
-    virtual status_t    start();
-    virtual status_t    stop();
+    status_t    start();
+    status_t    stop();
     status_t    reset();
+    status_t    pause();
+    status_t    resume();
     status_t    init();
     status_t    close();
     status_t    release();
@@ -251,7 +250,7 @@ public:
     status_t    setInputSurface(const sp<PersistentSurface>& surface);
     sp<IGraphicBufferProducer>     querySurfaceMediaSourceFromMediaServer();
 
-protected:
+private:
     void                    doCleanUp();
     status_t                doReset();
 

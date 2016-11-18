@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -40,22 +40,25 @@
 #include <media/stagefright/ACodec.h>
 
 #include <media/AudioTrack.h>
-#include <media/mediarecorder.h>
 
 #include "common/ExtensionsLoader.hpp"
 #include "media/AVMediaExtensions.h"
 
 namespace android {
 
+size_t AVMediaUtils::AudioTrackGetOffloadFrameCount(size_t frameCount) {
+    return frameCount;
+}
+
+bool AVMediaUtils::AudioTrackIsTrackOffloaded(audio_io_handle_t output __unused) {
+    return false;
+}
+
 // ----- NO TRESSPASSING BEYOND THIS LINE ------
 AVMediaUtils::AVMediaUtils() {
 }
 
 AVMediaUtils::~AVMediaUtils() {
-}
-
-sp<MediaRecorder> AVMediaUtils::createMediaRecorder(const String16& opPackageName) {
-    return new MediaRecorder(opPackageName);
 }
 
 //static

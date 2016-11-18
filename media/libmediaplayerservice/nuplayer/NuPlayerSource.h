@@ -39,7 +39,6 @@ struct NuPlayer::Source : public AHandler {
         FLAG_DYNAMIC_DURATION   = 16,
         FLAG_SECURE             = 32,
         FLAG_PROTECTED          = 64,
-        FLAG_USE_SET_BUFFERS    = 128,
     };
 
     enum {
@@ -47,8 +46,6 @@ struct NuPlayer::Source : public AHandler {
         kWhatFlagsChanged,
         kWhatVideoSizeChanged,
         kWhatBufferingUpdate,
-        kWhatBufferingStart,
-        kWhatBufferingEnd,
         kWhatPauseOnBufferingStart,
         kWhatResumeOnBufferingEnd,
         kWhatCacheStats,
@@ -124,6 +121,8 @@ struct NuPlayer::Source : public AHandler {
         return true;
     }
 
+    virtual void setOffloadAudio(bool /* offload */) {}
+
 protected:
     virtual ~Source() {}
 
@@ -134,10 +133,10 @@ protected:
     void notifyFlagsChanged(uint32_t flags);
     void notifyVideoSizeChanged(const sp<AMessage> &format = NULL);
     void notifyInstantiateSecureDecoders(const sp<AMessage> &reply);
-    virtual void notifyPrepared(status_t err = OK);
+    void notifyPrepared(status_t err = OK);
 
-    sp<AMessage> mNotify;
 private:
+    sp<AMessage> mNotify;
 
     DISALLOW_EVIL_CONSTRUCTORS(Source);
 };

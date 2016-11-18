@@ -43,8 +43,6 @@ struct NuPlayer::RTSPSource : public NuPlayer::Source {
     virtual void prepareAsync();
     virtual void start();
     virtual void stop();
-    virtual void pause();
-    virtual void resume();
 
     virtual status_t feedMoreTSData();
 
@@ -65,6 +63,7 @@ private:
         kWhatNotify          = 'noti',
         kWhatDisconnect      = 'disc',
         kWhatPerformSeek     = 'seek',
+        kWhatPollBuffering   = 'poll',
     };
 
     enum State {
@@ -78,6 +77,12 @@ private:
         // Don't log any URLs.
         kFlagIncognito = 1,
     };
+
+    // Buffer Prepare/Underflow/Overflow/Resume Marks
+    static const int64_t kPrepareMarkUs;
+    static const int64_t kUnderflowMarkUs;
+    static const int64_t kOverflowMarkUs;
+    static const int64_t kStartServerMarkUs;
 
     struct TrackInfo {
         sp<AnotherPacketSource> mSource;
@@ -100,6 +105,7 @@ private:
     sp<AReplyToken> mDisconnectReplyID;
     Mutex mBufferingLock;
     bool mBuffering;
+    bool mInPreparationPhase;
 
     sp<ALooper> mLooper;
     sp<MyHandler> mHandler;
@@ -118,6 +124,10 @@ private:
 
     sp<AReplyToken> mSeekReplyID;
 
+    int32_t mVideoTrackIndex;
+    bool mKeepDamagedAccessUnits;
+    uint32_t mNumKeepDamagedAccessUnits;
+
     sp<AnotherPacketSource> getSource(bool audio);
 
     void onConnected();
@@ -126,6 +136,9 @@ private:
     void finishDisconnectIfPossible();
 
     void performSeek(int64_t seekTimeUs);
+    void schedulePollBuffering();
+    void checkBuffering(bool *prepared, bool *underflow, bool *overflow, bool *startServer);
+    void onPollBuffering();
 
     bool haveSufficientDataOnAllTracks();
 

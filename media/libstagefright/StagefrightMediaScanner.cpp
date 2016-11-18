@@ -29,7 +29,6 @@
 #include <private/media/VideoFrame.h>
 
 #include <stagefright/AVExtensions.h>
-
 namespace android {
 
 StagefrightMediaScanner::StagefrightMediaScanner() {}

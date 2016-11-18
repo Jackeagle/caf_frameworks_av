@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -32,34 +32,27 @@
 #include <media/stagefright/DataSource.h>
 #include <common/AVExtensionsCommon.h>
 #include <system/audio.h>
-#include <camera/ICamera.h>
-#include <media/mediarecorder.h>
 #include <media/IOMX.h>
+#include <camera/android/hardware/ICamera.h>
+#include <media/mediarecorder.h>
+#include "ESQueue.h"
 
 namespace android {
 
+struct ACodec;
+struct MediaCodec;
+struct ALooper;
+class MediaExtractor;
 class AudioParameter;
 class MetaData;
-class MediaExtractor;
-class MPEG4Writer;
-struct ABuffer;
-struct ACodec;
-struct ALooper;
-struct IMediaHTTPConnection;
-struct MediaCodec;
-struct MediaSource;
-struct MediaHTTP;
-struct NuCachedSource2;
 class CameraParameters;
 class MediaBuffer;
-struct AudioSource;
 class CameraSource;
 class CameraSourceTimeLapse;
-class ICamera;
 class ICameraRecordingProxy;
-class String16;
-class IGraphicBufferProducer;
 struct Size;
+class MPEG4Writer;
+struct AudioSource;
 
 /*
  * Factory to create objects of base-classes in libstagefright
@@ -67,47 +60,43 @@ struct Size;
 struct AVFactory {
     virtual sp<ACodec> createACodec();
     virtual MediaExtractor* createExtendedExtractor(
-            const sp<DataSource> &source, const char *mime,
-            const sp<AMessage> &meta, const uint32_t flags);
-    virtual sp<MediaExtractor> updateExtractor(
-            sp<MediaExtractor> ext, const sp<DataSource> &source,
-            const char *mime, const sp<AMessage> &meta, const uint32_t flags);
-    virtual sp<NuCachedSource2> createCachedSource(
-            const sp<DataSource> &source,
-            const char *cacheConfig = NULL,
-            bool disconnectAtHighwatermark = false);
-    virtual MediaHTTP* createMediaHTTP(
-            const sp<IMediaHTTPConnection> &conn);
-
-    virtual AudioSource* createAudioSource(
-            audio_source_t inputSource,
-            const String16 &opPackageName,
-            uint32_t sampleRate,
-            uint32_t channels,
-            uint32_t outSampleRate = 0);
-
+            const sp<DataSource> &source, const char *mime, const sp<AMessage> &meta);
+    virtual ElementaryStreamQueue* createESQueue(
+            ElementaryStreamQueue::Mode mode, uint32_t flags = 0);
     virtual CameraSource *CreateCameraSourceFromCamera(
-            const sp<ICamera> &camera,
+            const sp<hardware::ICamera> &camera,
             const sp<ICameraRecordingProxy> &proxy,
             int32_t cameraId,
             const String16& clientName,
             uid_t clientUid,
+            pid_t clientPid,
             Size videoSize,
             int32_t frameRate,
             const sp<IGraphicBufferProducer>& surface,
             bool storeMetaDataInVideoBuffers = true);
 
     virtual CameraSourceTimeLapse *CreateCameraSourceTimeLapseFromCamera(
-            const sp<ICamera> &camera,
+            const sp<hardware::ICamera> &camera,
             const sp<ICameraRecordingProxy> &proxy,
             int32_t cameraId,
             const String16& clientName,
             uid_t clientUid,
+            pid_t clientPid,
             Size videoSize,
             int32_t videoFrameRate,
             const sp<IGraphicBufferProducer>& surface,
             int64_t timeBetweenFrameCaptureUs,
             bool storeMetaDataInVideoBuffers = true);
+    virtual AudioSource* createAudioSource(
+            audio_source_t inputSource,
+            const String16 &opPackageName,
+            uint32_t sampleRate,
+            uint32_t channels,
+            uint32_t outSampleRate = 0,
+            uid_t clientUid = -1,
+            pid_t clientPid = -1);
+    virtual MPEG4Writer *CreateMPEG4Writer(int fd);
+
     // ----- NO TRESSPASSING BEYOND THIS LINE ------
     DECLARE_LOADABLE_SINGLETON(AVFactory);
 };
@@ -119,28 +108,27 @@ struct AVUtils {
 
     virtual status_t convertMetaDataToMessage(
             const sp<MetaData> &meta, sp<AMessage> *format);
+    virtual status_t convertMessageToMetaData(
+            const sp<AMessage> &msg, sp<MetaData> &meta);
     virtual DataSource::SnifferFunc getExtendedSniffer();
     virtual status_t mapMimeToAudioFormat( audio_format_t& format, const char* mime);
     virtual status_t sendMetaDataToHal(const sp<MetaData>& meta, AudioParameter *param);
-
     virtual sp<MediaCodec> createCustomComponentByName(const sp<ALooper> &looper,
                 const char* mime, bool encoder, const sp<AMessage> &format);
     virtual bool isEnhancedExtension(const char *extension);
 
-    virtual bool is24bitPCMOffloadEnabled();
-    virtual bool is16bitPCMOffloadEnabled();
+    virtual bool hasAudioSampleBits(const sp<MetaData> &);
+    virtual bool hasAudioSampleBits(const sp<AMessage> &);
     virtual int getAudioSampleBits(const sp<MetaData> &);
     virtual int getAudioSampleBits(const sp<AMessage> &);
-    virtual void setPcmSampleBits(const sp<MetaData> &, int32_t /*bitWidth*/);
-    virtual void setPcmSampleBits(const sp<AMessage> &, int32_t /*bitWidth*/);
-
     virtual audio_format_t updateAudioFormat(audio_format_t audioFormat,
             const sp<MetaData> &);
-
     virtual audio_format_t updateAudioFormat(audio_format_t audioFormat,
             const sp<AMessage> &);
 
     virtual bool canOffloadAPE(const sp<MetaData> &meta);
+
+    virtual bool useQCHWEncoder(const sp<AMessage> &,Vector<AString> *) { return false; }
 
     virtual int32_t getAudioMaxInputBufferSize(audio_format_t audioFormat,
             const sp<AMessage> &);
@@ -159,50 +147,21 @@ struct AVUtils {
     virtual void addDecodingTimesFromBatch(MediaBuffer * /*buf*/,
             List<int64_t> &/*decodeTimeQueue*/) {}
 
-    virtual bool useQCHWEncoder(const sp<AMessage> &, AString &) { return false; }
-
-    struct HEVCMuxer {
-
-        virtual bool reassembleHEVCCSD(const AString &mime, sp<ABuffer> csd0, sp<MetaData> &meta);
-
-        virtual void writeHEVCFtypBox(MPEG4Writer *writer);
-
-        virtual status_t makeHEVCCodecSpecificData(const uint8_t *data,
-                  size_t size, void** codecSpecificData,
-                  size_t *codecSpecificDataSize);
-
-        virtual const char *getFourCCForMime(const char *mime);
-
-        virtual void writeHvccBox(MPEG4Writer *writer,
-                  void* codecSpecificData, size_t codecSpecificDataSize,
-                  bool useNalLengthFour);
-
-        virtual bool isVideoHEVC(const char* mime);
-
-        virtual void getHEVCCodecSpecificDataFromInputFormatIfPossible(
-                  sp<MetaData> meta, void **codecSpecificData,
-                  size_t *codecSpecificDataSize, bool *gotAllCodecSpecificData);
-
-    protected:
-        HEVCMuxer() {};
-        virtual ~HEVCMuxer() {};
-        friend struct AVUtils;
-    };
-
-    virtual inline HEVCMuxer& HEVCMuxerUtils() {
-         return mHEVCMuxer;
-    }
+    virtual bool canDeferRelease(const sp<MetaData> &/*meta*/) { return false; }
+    virtual void setDeferRelease(sp<MetaData> &/*meta*/) {}
 
     virtual bool isAudioMuxFormatSupported(const char *mime);
-    virtual void cacheCaptureBuffers(sp<ICamera> camera, video_encoder encoder);
+    virtual void cacheCaptureBuffers(sp<hardware::ICamera> camera, video_encoder encoder);
     virtual const char *getCustomCodecsLocation();
+    virtual const char *getCustomCodecsPerformanceLocation();
 
     virtual void setIntraPeriod(
                 int nPFrames, int nBFrames, const sp<IOMX> OMXhandle,
                 IOMX::node_id nodeID);
 
-private:
-    HEVCMuxer mHEVCMuxer;
+    // Used by ATSParser
+    virtual bool IsHevcIDR(const sp<ABuffer> &accessUnit);
+
     // ----- NO TRESSPASSING BEYOND THIS LINE ------
     DECLARE_LOADABLE_SINGLETON(AVUtils);
 };

@@ -8,8 +8,6 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
     src/Engine.cpp \
     src/EngineInstance.cpp \
-    src/Gains.cpp \
-
 
 audio_policy_engine_includes_common := \
     $(LOCAL_PATH)/include \
@@ -31,6 +29,8 @@ LOCAL_C_INCLUDES := \
     $(call include-path-for, bionic) \
     $(TOPDIR)frameworks/av/services/audiopolicy/common/include
 
+LOCAL_MULTILIB := $(AUDIOSERVER_MULTILIB)
+
 ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_PROXY_DEVICE)),true)
 LOCAL_CFLAGS += -DAUDIO_EXTN_AFE_PROXY_ENABLED
@@ -39,9 +39,11 @@ endif
 
 LOCAL_MODULE := libaudiopolicyenginedefault
 LOCAL_MODULE_TAGS := optional
+
 LOCAL_STATIC_LIBRARIES := \
     libmedia_helper \
-    libaudiopolicycomponents
+    libaudiopolicycomponents \
+    libxml2
 
 LOCAL_SHARED_LIBRARIES += \
     libcutils \

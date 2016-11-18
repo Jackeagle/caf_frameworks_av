@@ -14,6 +14,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/flac/include \
         $(TOP)/hardware/qcom/media/mm-core/inc \
         $(TOP)/frameworks/av/media/libstagefright \
+        $(TOP)/frameworks/av/media/libstagefright/mpeg2ts \
 
 LOCAL_CFLAGS += -Wno-multichar -Werror
 
@@ -22,7 +23,6 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
 endif
 
 LOCAL_MODULE:= libavextensions
-LOCAL_CLANG := false
 
 LOCAL_MODULE_TAGS := optional
 
@@ -50,7 +50,6 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
 endif
 
 LOCAL_MODULE:= libavmediaextentions
-LOCAL_CLANG := false
 
 LOCAL_MODULE_TAGS := optional
 
@@ -84,7 +83,6 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
 endif
 
 LOCAL_MODULE:= libavmediaserviceextensions
-LOCAL_CLANG := false
 
 LOCAL_MODULE_TAGS := optional
 

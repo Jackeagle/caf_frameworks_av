@@ -22,8 +22,8 @@
 #include <utils/Log.h>
 #include <gui/Surface.h>
 
+#include "include/avc_utils.h"
 #include "include/StagefrightMetadataRetriever.h"
-#include "include/HTTPBase.h"
 
 #include <media/ICrypto.h>
 #include <media/IMediaHTTPService.h>
@@ -36,11 +36,12 @@
 #include <media/stagefright/FileSource.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaCodec.h>
+#include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MediaExtractor.h>
+#include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
-#include <media/stagefright/OMXCodec.h>
 #include <media/stagefright/Utils.h>
 
 #include <CharacterEncodingDetector.h>
@@ -58,18 +59,13 @@ StagefrightMetadataRetriever::StagefrightMetadataRetriever()
     ALOGV("StagefrightMetadataRetriever()");
 
     DataSource::RegisterDefaultSniffers();
-    CHECK_EQ(mClient.connect(), (status_t)OK);
 }
 
 StagefrightMetadataRetriever::~StagefrightMetadataRetriever() {
     ALOGV("~StagefrightMetadataRetriever()");
     clearMetadata();
-    mClient.disconnect();
-
-    if (mSource != NULL &&
-        (mSource->flags() & DataSource::kIsHTTPBasedSource)) {
-        mExtractor.clear();
-        static_cast<HTTPBase *>(mSource.get())->disconnect();
+    if (mSource != NULL) {
+        mSource->close();
     }
 }
 
@@ -147,16 +143,20 @@ status_t StagefrightMetadataRetriever::setDataSource(
 }
 
 static VideoFrame *extractVideoFrame(
-        const char *componentName,
+        const AString &componentName,
         const sp<MetaData> &trackMeta,
-        const sp<MediaSource> &source,
+        const sp<IMediaSource> &source,
         int64_t frameTimeUs,
         int seekMode) {
 
     sp<MetaData> format = source->getFormat();
 
     sp<AMessage> videoFormat;
-    convertMetaDataToMessage(trackMeta, &videoFormat);
+    if (convertMetaDataToMessage(trackMeta, &videoFormat) != OK) {
+        ALOGE("b/23680780");
+        ALOGW("Failed to convert meta data to message");
+        return NULL;
+    }
 
     // TODO: Use Flexible color instead
     videoFormat->setInt32("color-format", OMX_COLOR_FormatYUV420Planar);
@@ -170,7 +170,7 @@ static VideoFrame *extractVideoFrame(
             looper, componentName, &err);
 
     if (decoder.get() == NULL || err != OK) {
-        ALOGW("Failed to instantiate decoder [%s]", componentName);
+        ALOGW("Failed to instantiate decoder [%s]", componentName.c_str());
         return NULL;
     }
 
@@ -223,8 +223,8 @@ static VideoFrame *extractVideoFrame(
     err = decoder->getInputBuffers(&inputBuffers);
     if (err != OK) {
         ALOGW("failed to get input buffers: %d (%s)", err, asString(err));
-        source->stop();
         decoder->release();
+        source->stop();
         return NULL;
     }
 
@@ -232,8 +232,8 @@ static VideoFrame *extractVideoFrame(
     err = decoder->getOutputBuffers(&outputBuffers);
     if (err != OK) {
         ALOGW("failed to get output buffers: %d (%s)", err, asString(err));
-        source->stop();
         decoder->release();
+        source->stop();
         return NULL;
     }
 
@@ -243,6 +243,15 @@ static VideoFrame *extractVideoFrame(
     int64_t timeUs;
     size_t retriesLeft = kRetryCount;
     bool done = false;
+    const char *mime;
+    bool success = format->findCString(kKeyMIMEType, &mime);
+    if (!success) {
+        ALOGE("Could not find mime type");
+        return NULL;
+    }
+
+    bool isAvcOrHevc = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC)
+            || !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC);
 
     do {
         size_t inputIndex = -1;
@@ -282,6 +291,11 @@ static VideoFrame *extractVideoFrame(
                 memcpy(codecBuffer->data(),
                         (const uint8_t*)mediaBuffer->data() + mediaBuffer->range_offset(),
                         mediaBuffer->range_length());
+                if (isAvcOrHevc && IsIDR(codecBuffer)) {
+                    // Only need to decode one IDR frame.
+                    haveMoreInputs = false;
+                    flags |= MediaCodec::BUFFER_FLAG_EOS;
+                }
             }
 
             mediaBuffer->release();
@@ -339,7 +353,6 @@ static VideoFrame *extractVideoFrame(
     if (err != OK || size <= 0 || outputFormat == NULL) {
         ALOGE("Failed to decode thumbnail frame");
         source->stop();
-        decoder->stop();
         decoder->release();
         return NULL;
     }
@@ -414,7 +427,6 @@ static VideoFrame *extractVideoFrame(
     videoFrameBuffer.clear();
     source->stop();
     decoder->releaseOutputBuffer(index);
-    decoder->stop();
     decoder->release();
 
     if (err != OK) {
@@ -471,7 +483,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     sp<MetaData> trackMeta = mExtractor->getTrackMetaData(
             i, MediaExtractor::kIncludeExtensiveMetaData);
 
-    sp<MediaSource> source = mExtractor->getTrack(i);
+    sp<IMediaSource> source = mExtractor->getTrack(i);
 
     if (source.get() == NULL) {
         ALOGV("unable to instantiate video track.");
@@ -489,23 +501,22 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     const char *mime;
     CHECK(trackMeta->findCString(kKeyMIMEType, &mime));
 
-    Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
-    OMXCodec::findMatchingCodecs(
+    Vector<AString> matchingCodecs;
+    MediaCodecList::findMatchingCodecs(
             mime,
             false, /* encoder */
-            NULL, /* matchComponentName */
-            0 /* OMXCodec::kPreferSoftwareCodecs */,
+            0 /* MediaCodecList::kPreferSoftwareCodecs */,
             &matchingCodecs);
 
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
-        const char *componentName = matchingCodecs[i].mName.string();
+        const AString &componentName = matchingCodecs[i];
         VideoFrame *frame =
             extractVideoFrame(componentName, trackMeta, source, timeUs, option);
 
         if (frame != NULL) {
             return frame;
         }
-        ALOGV("%s failed to extract thumbnail, trying next decoder.", componentName);
+        ALOGV("%s failed to extract thumbnail, trying next decoder.", componentName.c_str());
     }
 
     return NULL;
@@ -717,7 +728,7 @@ void StagefrightMetadataRetriever::parseMetaData() {
         mMetaData.add(METADATA_KEY_BITRATE, String8(tmp));
     } else {
         off64_t sourceSize;
-        if (mSource->getSize(&sourceSize) == OK) {
+        if (mSource != NULL && mSource->getSize(&sourceSize) == OK) {
             int64_t avgBitRate = (int64_t)(sourceSize * 8E6 / maxDurationUs);
 
             sprintf(tmp, "%" PRId64, avgBitRate);

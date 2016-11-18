@@ -22,8 +22,6 @@
 #include <sys/types.h>
 #include <media/IEffectClient.h>
 
-#include <media/stagefright/foundation/ADebug.h>
-
 namespace android {
 
 enum {
@@ -119,14 +117,12 @@ status_t BnEffectClient::onTransact(
             char *cmd = NULL;
             if (cmdSize) {
                 cmd = (char *)malloc(cmdSize);
-                CHECK(cmd != NULL);
                 data.read(cmd, cmdSize);
             }
             uint32_t replySize = data.readInt32();
             char *resp = NULL;
             if (replySize) {
                 resp = (char *)malloc(replySize);
-                CHECK(resp != NULL);
                 data.read(resp, replySize);
             }
             commandExecuted(cmdCode, cmdSize, cmd, replySize, resp);

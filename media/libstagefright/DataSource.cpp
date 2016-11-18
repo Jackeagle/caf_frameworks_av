@@ -48,6 +48,7 @@
 
 #include <cutils/properties.h>
 
+#include <private/android_filesystem_config.h>
 #include <stagefright/AVExtensions.h>
 
 namespace android {
@@ -175,7 +176,10 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer_l(SniffMP3);
     RegisterSniffer_l(SniffAAC);
     RegisterSniffer_l(SniffMPEG2PS);
-    RegisterSniffer_l(SniffWVM);
+    if (getuid() == AID_MEDIA) {
+        // WVM only in the media server process
+        RegisterSniffer_l(SniffWVM);
+    }
     RegisterSniffer_l(SniffMidi);
     RegisterSniffer_l(AVUtils::get()->getExtendedSniffer());
 
@@ -193,8 +197,7 @@ sp<DataSource> DataSource::CreateFromURI(
         const char *uri,
         const KeyedVector<String8, String8> *headers,
         String8 *contentType,
-        HTTPBase *httpSource,
-        bool useExtendedCache) {
+        HTTPBase *httpSource) {
     if (contentType != NULL) {
         *contentType = "";
     }
@@ -218,7 +221,7 @@ sp<DataSource> DataSource::CreateFromURI(
                 ALOGE("Failed to make http connection from http service!");
                 return NULL;
             }
-            httpSource = AVFactory::get()->createMediaHTTP(conn);
+            httpSource = new MediaHTTP(conn);
         }
 
         String8 tmp;
@@ -250,17 +253,10 @@ sp<DataSource> DataSource::CreateFromURI(
                 *contentType = httpSource->getMIMEType();
             }
 
-            if (useExtendedCache) {
-                source = AVFactory::get()->createCachedSource(
-                        httpSource,
-                        cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
-                        disconnectAtHighwatermark);
-            } else {
-                source = new NuCachedSource2(
-                        httpSource,
-                        cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
-                        disconnectAtHighwatermark);
-            }
+            source = NuCachedSource2::Create(
+                    httpSource,
+                    cacheConfig.isEmpty() ? NULL : cacheConfig.string(),
+                    disconnectAtHighwatermark);
         } else {
             // We do not want that prefetching, caching, datasource wrapper
             // in the widevine:// case.
@@ -289,7 +285,7 @@ sp<DataSource> DataSource::CreateMediaHTTP(const sp<IMediaHTTPService> &httpServ
     if (conn == NULL) {
         return NULL;
     } else {
-        return AVFactory::get()->createMediaHTTP(conn);
+        return new MediaHTTP(conn);
     }
 }
 

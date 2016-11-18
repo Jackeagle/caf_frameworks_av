@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -66,6 +66,7 @@ struct AVMediaServiceFactory {
  */
 struct AVMediaServiceUtils {
     virtual void getDashPlayerFactory(MediaPlayerFactory::IFactory *&, player_type ) {}
+
     // RTSP IPV6 utils
     virtual bool pokeAHole(sp<MyHandler> handler, int rtpSocket, int rtcpSocket,
             const AString &transport, const AString &sessionHost);

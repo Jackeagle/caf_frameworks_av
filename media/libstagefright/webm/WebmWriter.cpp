@@ -31,6 +31,8 @@
 #include <sys/stat.h>
 #include <inttypes.h>
 
+#include "stagefright/AVExtensions.h"
+
 using namespace webm;
 
 namespace {
@@ -83,9 +85,30 @@ WebmWriter::WebmWriter(int fd)
 // static
 sp<WebmElement> WebmWriter::videoTrack(const sp<MetaData>& md) {
     int32_t width, height;
-    CHECK(md->findInt32(kKeyWidth, &width));
-    CHECK(md->findInt32(kKeyHeight, &height));
-    return WebmElement::VideoTrackEntry(width, height);
+    const char *mimeType;
+    if (!md->findInt32(kKeyWidth, &width)
+            || !md->findInt32(kKeyHeight, &height)
+            || !md->findCString(kKeyMIMEType, &mimeType)) {
+        ALOGE("Missing format keys for video track");
+        md->dumpToLog();
+        return NULL;
+    }
+    const char *codec;
+    if (!strncasecmp(
+            mimeType,
+            MEDIA_MIMETYPE_VIDEO_VP8,
+            strlen(MEDIA_MIMETYPE_VIDEO_VP8))) {
+        codec = "V_VP8";
+    } else if (!strncasecmp(
+            mimeType,
+            MEDIA_MIMETYPE_VIDEO_VP9,
+            strlen(MEDIA_MIMETYPE_VIDEO_VP9))) {
+        codec = "V_VP9";
+    } else {
+        ALOGE("Unsupported codec: %s", mimeType);
+        return NULL;
+    }
+    return WebmElement::VideoTrackEntry(codec, width, height, md);
 }
 
 // static
@@ -97,11 +120,16 @@ sp<WebmElement> WebmWriter::audioTrack(const sp<MetaData>& md) {
             'a', 'n', 'd', 'r', 'o', 'i', 'd', 0, 0, 0, 0, 1 };
     const void *headerData3;
     size_t headerSize1, headerSize2 = sizeof(headerData2), headerSize3;
+    int32_t bitWidth = 0;
 
-    CHECK(md->findInt32(kKeyChannelCount, &nChannels));
-    CHECK(md->findInt32(kKeySampleRate, &samplerate));
-    CHECK(md->findData(kKeyVorbisInfo, &type, &headerData1, &headerSize1));
-    CHECK(md->findData(kKeyVorbisBooks, &type, &headerData3, &headerSize3));
+    if (!md->findInt32(kKeyChannelCount, &nChannels)
+            || !md->findInt32(kKeySampleRate, &samplerate)
+            || !md->findData(kKeyVorbisInfo, &type, &headerData1, &headerSize1)
+            || !md->findData(kKeyVorbisBooks, &type, &headerData3, &headerSize3)) {
+        ALOGE("Missing format keys for audio track");
+        md->dumpToLog();
+        return NULL;
+    }
 
     size_t codecPrivateSize = 1;
     codecPrivateSize += XiphLaceCodeLen(headerSize1);
@@ -122,10 +150,15 @@ sp<WebmElement> WebmWriter::audioTrack(const sp<MetaData>& md) {
     off += headerSize2;
     memcpy(codecPrivateData + off, headerData3, headerSize3);
 
+    if (AVUtils::get()->hasAudioSampleBits(md)) {
+        bitWidth = AVUtils::get()->getAudioSampleBits(md);
+    }
+
     sp<WebmElement> entry = WebmElement::AudioTrackEntry(
             nChannels,
             samplerate,
-            codecPrivateBuf);
+            codecPrivateBuf,
+            bitWidth);
     return entry;
 }
 
@@ -227,6 +260,11 @@ void WebmWriter::release() {
     mFd = -1;
     mInitCheck = NO_INIT;
     mStarted = false;
+    for (size_t ix = 0; ix < kMaxStreams; ++ix) {
+        mStreams[ix].mTrackEntry.clear();
+        mStreams[ix].mSource.clear();
+    }
+    mStreamsInOrder.clear();
 }
 
 status_t WebmWriter::reset() {
@@ -259,6 +297,8 @@ status_t WebmWriter::reset() {
         if (durationUs < minDurationUs) {
             minDurationUs = durationUs;
         }
+
+        mStreams[i].mThread.clear();
     }
 
     if (numTracks() > 1) {
@@ -328,7 +368,7 @@ status_t WebmWriter::reset() {
     return err;
 }
 
-status_t WebmWriter::addSource(const sp<MediaSource> &source) {
+status_t WebmWriter::addSource(const sp<IMediaSource> &source) {
     Mutex::Autolock l(mLock);
     if (mStarted) {
         ALOGE("Attempt to add source AFTER recording is started");
@@ -348,15 +388,18 @@ status_t WebmWriter::addSource(const sp<MediaSource> &source) {
     const char *mime;
     source->getFormat()->findCString(kKeyMIMEType, &mime);
     const char *vp8 = MEDIA_MIMETYPE_VIDEO_VP8;
+    const char *vp9 = MEDIA_MIMETYPE_VIDEO_VP9;
     const char *vorbis = MEDIA_MIMETYPE_AUDIO_VORBIS;
 
     size_t streamIndex;
-    if (!strncasecmp(mime, vp8, strlen(vp8))) {
+    if (!strncasecmp(mime, vp8, strlen(vp8)) ||
+        !strncasecmp(mime, vp9, strlen(vp9))) {
         streamIndex = kVideoIndex;
     } else if (!strncasecmp(mime, vorbis, strlen(vorbis))) {
         streamIndex = kAudioIndex;
     } else {
-        ALOGE("Track (%s) other than %s or %s is not supported", mime, vp8, vorbis);
+        ALOGE("Track (%s) other than %s, %s or %s is not supported",
+              mime, vp8, vp9, vorbis);
         return ERROR_UNSUPPORTED;
     }
 
@@ -370,6 +413,11 @@ status_t WebmWriter::addSource(const sp<MediaSource> &source) {
     // Go ahead to add the track.
     mStreams[streamIndex].mSource = source;
     mStreams[streamIndex].mTrackEntry = mStreams[streamIndex].mMakeTrack(source->getFormat());
+    if (mStreams[streamIndex].mTrackEntry == NULL) {
+        mStreams[streamIndex].mSource.clear();
+        return BAD_VALUE;
+    }
+    mStreamsInOrder.push_back(mStreams[streamIndex].mTrackEntry);
 
     return OK;
 }
@@ -410,7 +458,10 @@ status_t WebmWriter::start(MetaData *params) {
             mTimeCodeScale = tcsl;
         }
     }
-    CHECK_GT(mTimeCodeScale, 0);
+    if (mTimeCodeScale == 0) {
+        ALOGE("movie time scale is 0");
+        return BAD_VALUE;
+    }
     ALOGV("movie time scale: %" PRIu64, mTimeCodeScale);
 
     /*
@@ -432,10 +483,8 @@ status_t WebmWriter::start(MetaData *params) {
     info = WebmElement::SegmentInfo(mTimeCodeScale, 0);
 
     List<sp<WebmElement> > children;
-    for (size_t i = 0; i < kMaxStreams; ++i) {
-        if (mStreams[i].mTrackEntry != NULL) {
-            children.push_back(mStreams[i].mTrackEntry);
-        }
+    for (size_t i = 0; i < mStreamsInOrder.size(); ++i) {
+        children.push_back(mStreamsInOrder[i]);
     }
     tracks = new WebmMaster(kMkvTracks, children);
 

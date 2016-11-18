@@ -698,7 +698,11 @@ const ToneGenerator::ToneDescriptor ToneGenerator::sToneDescriptors[] = {
           { .segments = { { .duration = 0, .waveFreq = { 0 }, 0, 0 }},
           .repeatCnt = 0,
           .repeatSegment = 0 },                            // TONE_CDMA_SIGNAL_OFF
-
+        { .segments = { { .duration = 15000, .waveFreq = { 0 }, 0, 0 },
+                      { .duration = 500, .waveFreq = { 450, 0 }, 0, 0 },
+                      { .duration = 0 , .waveFreq = { 0 }, 0, 0}},
+          .repeatCnt = ToneGenerator::TONEGEN_INF,
+          .repeatSegment = 0 },                              // TONE_HOLD_RECALL
         { .segments = { { .duration = ToneGenerator::TONEGEN_INF, .waveFreq = { 350, 440, 0 }, 0, 0 },
                         { .duration = 0 , .waveFreq = { 0 }, 0, 0}},
           .repeatCnt = ToneGenerator::TONEGEN_INF,
@@ -740,6 +744,13 @@ const ToneGenerator::ToneDescriptor ToneGenerator::sToneDescriptors[] = {
                         { .duration = 0 , .waveFreq = { 0 }, 0, 0}},
           .repeatCnt = ToneGenerator::TONEGEN_INF,
           .repeatSegment = 0 },                              // TONE_JAPAN_RADIO_ACK
+        { .segments = { { .duration = 400, .waveFreq = { 400, 450, 0 }, 0, 0 },
+                        { .duration = 200, .waveFreq = { 0 }, 0, 0 },
+                        { .duration = 400, .waveFreq = { 400, 450, 0 }, 0, 0 },
+                        { .duration = 2000, .waveFreq = { 0 }, 0, 0},
+                        { .duration = 0, .waveFreq = { 0 }, 0, 0}},
+          .repeatCnt = ToneGenerator::TONEGEN_INF,
+          .repeatSegment = 0 },                              // TONE_UK_RINGTONE
 
 
 
@@ -767,7 +778,18 @@ const unsigned char /*tone_type*/ ToneGenerator::sToneMappingTable[NUM_REGIONS-1
             TONE_SUP_ERROR,              // TONE_SUP_ERROR
             TONE_SUP_CALL_WAITING,       // TONE_SUP_CALL_WAITING
             TONE_SUP_RINGTONE            // TONE_SUP_RINGTONE
+        },
+        {   // UK
+            TONE_SUP_DIAL,               // TONE_SUP_DIAL
+            TONE_SUP_BUSY,               // TONE_SUP_BUSY
+            TONE_SUP_CONGESTION,         // TONE_SUP_CONGESTION
+            TONE_SUP_RADIO_ACK,          // TONE_SUP_RADIO_ACK
+            TONE_SUP_RADIO_NOTAVAIL,     // TONE_SUP_RADIO_NOTAVAIL
+            TONE_SUP_ERROR,              // TONE_SUP_ERROR
+            TONE_SUP_CALL_WAITING,       // TONE_SUP_CALL_WAITING
+            TONE_UK_RINGTONE             // TONE_SUP_RINGTONE
         }
+
 };
 
 
@@ -804,12 +826,6 @@ ToneGenerator::ToneGenerator(audio_stream_type_t streamType, float volume, bool 
         ALOGE("Unable to marshal AudioFlinger");
         return;
     }
-
-    if (mSamplingRate > 48000) {
-        ALOGW("mSamplingRate %d . limit to 48k", mSamplingRate);
-        mSamplingRate = 48000;
-    }
-
     mThreadCanCallJava = threadCanCallJava;
     mStreamType = streamType;
     mVolume = volume;
@@ -825,6 +841,9 @@ ToneGenerator::ToneGenerator(audio_stream_type_t streamType, float volume, bool 
         mRegion = ANSI;
     } else if (strcmp(value,"jp") == 0) {
         mRegion = JAPAN;
+    } else if (strcmp(value,"uk") == 0 ||
+               strcmp(value,"uk,uk") == 0) {
+        mRegion = UK;
     } else {
         mRegion = CEPT;
     }
@@ -1052,7 +1071,7 @@ bool ToneGenerator::initAudioTrack() {
     ALOGV("Create Track: %p", mpAudioTrack.get());
 
     mpAudioTrack->set(mStreamType,
-                      mSamplingRate,
+                      0,    // sampleRate
                       AUDIO_FORMAT_PCM_16_BIT,
                       AUDIO_CHANNEL_OUT_MONO,
                       0,    // frameCount
@@ -1586,7 +1605,8 @@ void ToneGenerator::WaveGenerator::getSamples(short *outBuffer,
         }
         long dec = lAmplitude/count;
         // loop generation
-        while (count--) {
+        while (count) {
+            count--;
             Sample = ((lA1 * lS1) >> S_Q14) - lS2;
             // shift delay
             lS2 = lS1;
@@ -1597,7 +1617,8 @@ void ToneGenerator::WaveGenerator::getSamples(short *outBuffer,
         }
     } else {
         // loop generation
-        while (count--) {
+        while (count) {
+            count--;
             Sample = ((lA1 * lS1) >> S_Q14) - lS2;
             // shift delay
             lS2 = lS1;

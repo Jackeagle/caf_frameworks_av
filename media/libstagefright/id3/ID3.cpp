@@ -194,6 +194,13 @@ struct id3_header {
 
     if (header.version_major == 4) {
         void *copy = malloc(size);
+        if (copy == NULL) {
+            free(mData);
+            mData = NULL;
+            ALOGE("b/24623447, no more memory");
+            return false;
+        }
+
         memcpy(copy, mData, size);
 
         bool success = removeUnsynchronizationV2_4(false /* iTunesHack */);
@@ -234,7 +241,14 @@ struct id3_header {
             return false;
         }
 
-        size_t extendedHeaderSize = U32_AT(&mData[0]) + 4;
+        size_t extendedHeaderSize = U32_AT(&mData[0]);
+        if (extendedHeaderSize > SIZE_MAX - 4) {
+            free(mData);
+            mData = NULL;
+            ALOGE("b/24623447, extendedHeaderSize is too large");
+            return false;
+        }
+        extendedHeaderSize += 4;
 
         if (extendedHeaderSize > mSize) {
             free(mData);
@@ -252,7 +266,10 @@ struct id3_header {
             if (extendedHeaderSize >= 10) {
                 size_t paddingSize = U32_AT(&mData[6]);
 
-                if (mFirstFrameOffset + paddingSize > mSize) {
+                if (paddingSize > SIZE_MAX - mFirstFrameOffset) {
+                    ALOGE("b/24623447, paddingSize is too large");
+                }
+                if (paddingSize > mSize - mFirstFrameOffset) {
                     free(mData);
                     mData = NULL;
 
@@ -486,9 +503,9 @@ void ID3::Iterator::getString(String8 *id, String8 *comment) const {
 void ID3::Iterator::getstring(String8 *id, bool otherdata) const {
     id->setTo("");
 
-    size_t size;
+    size_t size = 0;
     const uint8_t *frameData = getData(&size);
-    if ((size == 0) || (frameData == NULL)) {
+    if ((frameData == NULL) || (size == 0)) {
         return;
     }
 
@@ -599,6 +616,11 @@ const uint8_t *ID3::Iterator::getData(size_t *length) const {
     *length = 0;
 
     if (mFrameData == NULL) {
+        return NULL;
+    }
+
+    // Prevent integer underflow
+    if (mFrameSize < getHeaderLength()) {
         return NULL;
     }
 
@@ -816,6 +838,9 @@ ID3::getAlbumArt(size_t *length, String8 *mime) const {
     while (!it.done()) {
         size_t size;
         const uint8_t *data = it.getData(&size);
+        if (!data) {
+            return NULL;
+        }
 
         if (mVersion == ID3_V2_3 || mVersion == ID3_V2_4) {
             uint8_t encoding = data[0];

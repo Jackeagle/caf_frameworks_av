@@ -23,7 +23,7 @@
 #include <utils/Log.h>
 #include <utils/Vector.h>
 #include <cutils/properties.h>
-#include <libexpat/expat.h>
+#include <expat.h>
 #include <media/MediaProfiles.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <OMX_Video.h>
@@ -38,7 +38,7 @@ const MediaProfiles::NameToTagMap MediaProfiles::sVideoEncoderNameMap[] = {
     {"h263", VIDEO_ENCODER_H263},
     {"h264", VIDEO_ENCODER_H264},
     {"m4v",  VIDEO_ENCODER_MPEG_4_SP},
-    {"h265", VIDEO_ENCODER_H265}
+    {"hevc", VIDEO_ENCODER_HEVC}
 };
 
 const MediaProfiles::NameToTagMap MediaProfiles::sAudioEncoderNameMap[] = {
@@ -99,6 +99,10 @@ const MediaProfiles::NameToTagMap MediaProfiles::sCamcorderQualityNameMap[] = {
     {"highspeedcif", CAMCORDER_QUALITY_HIGH_SPEED_CIF},
     {"highspeedvga", CAMCORDER_QUALITY_HIGH_SPEED_VGA},
     {"highspeed4kdci", CAMCORDER_QUALITY_HIGH_SPEED_4KDCI},
+    {"qhd", CAMCORDER_QUALITY_QHD},
+    {"2k", CAMCORDER_QUALITY_2k},
+    {"timelapseqhd", CAMCORDER_QUALITY_TIME_LAPSE_QHD},
+    {"timelapse2k", CAMCORDER_QUALITY_TIME_LAPSE_2k},
 };
 
 #if LOG_NDEBUG

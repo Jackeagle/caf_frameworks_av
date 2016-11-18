@@ -11,10 +11,13 @@ LOCAL_SRC_FILES:=               \
 
 LOCAL_C_INCLUDES:= \
 	$(TOP)/frameworks/av/media/libstagefright \
+	$(TOP)/frameworks/av/media/libavextensions \
+        $(TOP)/frameworks/av/media/libstagefright/mpeg2ts \
 	$(TOP)/frameworks/native/include/media/openmax
 
 LOCAL_CFLAGS += -Werror -Wall
 LOCAL_CLANG := true
+LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \

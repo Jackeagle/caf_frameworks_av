@@ -73,8 +73,6 @@ struct NuPlayer::Renderer : public AHandler {
     status_t getCurrentPosition(int64_t *mediaUs);
     int64_t getVideoLateByUs();
 
-    virtual audio_stream_type_t getAudioStreamType(){return AUDIO_STREAM_DEFAULT;}
-
     status_t openAudioSink(
             const sp<AMessage> &format,
             bool offloadOnly,
@@ -83,6 +81,7 @@ struct NuPlayer::Renderer : public AHandler {
             bool *isOffloaded,
             bool isStreaming);
     void closeAudioSink();
+    void signalAudioTearDownComplete();
 
     enum {
         kWhatEOS                      = 'eos ',
@@ -92,11 +91,13 @@ struct NuPlayer::Renderer : public AHandler {
         kWhatMediaRenderingStart      = 'mdrd',
         kWhatAudioTearDown            = 'adTD',
         kWhatAudioOffloadPauseTimeout = 'aOPT',
+        kWhatAudioTearDownComplete    = 'aTDC',
     };
 
     enum AudioTearDownReason {
-        kDueToError = 0,
+        kDueToError = 0,   // Could restart with either offload or non-offload.
         kDueToTimeout,
+        kForceNonOffload,  // Restart only with non-offload.
     };
 
 protected:
@@ -136,6 +137,7 @@ protected:
     static const int64_t kMinPositionUpdateDelayUs;
 
     sp<MediaPlayerBase::AudioSink> mAudioSink;
+    bool mUseVirtualAudioSink;
     sp<AMessage> mNotify;
     Mutex mLock;
     uint32_t mFlags;
@@ -150,6 +152,7 @@ protected:
     int32_t mVideoQueueGeneration;
     int32_t mAudioDrainGeneration;
     int32_t mVideoDrainGeneration;
+    int32_t mAudioEOSGeneration;
 
     sp<MediaClock> mMediaClock;
     float mPlaybackRate; // audio track rate
@@ -164,7 +167,6 @@ protected:
     int64_t mVideoLateByUs;
     bool mHasAudio;
     bool mHasVideo;
-    bool mFoundAudioEOS;
 
     bool mNotifyCompleteAudio;
     bool mNotifyCompleteVideo;
@@ -173,16 +175,20 @@ protected:
 
     // modified on only renderer's thread.
     bool mPaused;
+    int64_t mPauseDrainAudioAllowedUs; // time when we can drain/deliver audio in pause mode.
 
     bool mVideoSampleReceived;
     bool mVideoRenderingStarted;
     int32_t mVideoRenderingStartGeneration;
     int32_t mAudioRenderingStartGeneration;
+    bool mRenderingDataDelivered;
 
-    int64_t mLastPositionUpdateUs;
+    int64_t mNextAudioClockUpdateTimeUs;
+    // the media timestamp of last audio sample right before EOS.
+    int64_t mLastAudioMediaTimeUs;
 
     int32_t mAudioOffloadPauseTimeoutGeneration;
-    bool mAudioTornDown;
+    bool mAudioTearingDown;
     audio_offload_info_t mCurrentOffloadInfo;
 
     struct PcmInfo {
@@ -213,7 +219,6 @@ protected:
     bool onDrainAudioQueue();
     void drainAudioQueueUntilLastEOS();
     int64_t getPendingAudioPlayoutDurationUs(int64_t nowUs);
-    int64_t getPlayedOutAudioDurationUs(int64_t nowUs);
     void postDrainAudioQueue_l(int64_t delayUs = 0);
 
     void clearAnchorTime_l();
@@ -255,13 +260,14 @@ protected:
             uint32_t flags,
             bool isStreaming);
     void onCloseAudioSink();
+    void onAudioTearDownComplete();
 
     void notifyEOS(bool audio, status_t finalResult, int64_t delayUs = 0);
     void notifyFlushComplete(bool audio);
     void notifyPosition();
     void notifyVideoLateBy(int64_t lateByUs);
     void notifyVideoRenderingStart();
-    void notifyAudioTearDown();
+    void notifyAudioTearDown(AudioTearDownReason reason);
 
     void flushQueue(List<QueueEntry> *queue);
     bool dropBufferIfStale(bool audio, const sp<AMessage> &msg);

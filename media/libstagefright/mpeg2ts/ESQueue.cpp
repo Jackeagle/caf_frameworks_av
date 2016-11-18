@@ -33,6 +33,7 @@
 
 #include <inttypes.h>
 #include <netinet/in.h>
+#include <stagefright/AVExtensions.h>
 
 namespace android {
 
@@ -255,6 +256,7 @@ status_t ElementaryStreamQueue::appendData(
     if (mBuffer == NULL || mBuffer->size() == 0) {
         switch (mMode) {
             case H264:
+            case H265:
             case MPEG_VIDEO:
             {
 #if 0
@@ -492,6 +494,8 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnit() {
     switch (mMode) {
         case H264:
             return dequeueAccessUnitH264();
+        case H265:
+            return dequeueAccessUnitH265();
         case AAC:
             return dequeueAccessUnitAAC();
         case AC3:
@@ -592,6 +596,7 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitPCMAudio() {
         mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_RAW);
         mFormat->setInt32(kKeyChannelCount, 2);
         mFormat->setInt32(kKeySampleRate, 48000);
+        mFormat->setInt32(kKeyPcmEncoding, kAudioEncodingPcm16bit);
     }
 
     static const size_t kFramesPerAU = 80;
@@ -1047,6 +1052,8 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {
     const uint8_t *data = mBuffer->data();
     size_t size = mBuffer->size();
 
+    Vector<size_t> userDataPositions;
+
     bool sawPictureStart = false;
     int pprevStartCode = -1;
     int prevStartCode = -1;
@@ -1121,9 +1128,17 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {
 
         if (mFormat != NULL && currentStartCode == 0xb8) {
             // GOP layer
+            if (offset + 7 >= size) {
+                ALOGE("Size too small");
+                return NULL;
+            }
             gopFound = true;
             isClosedGop = (data[offset + 7] & 0x40) != 0;
             brokenLink = (data[offset + 7] & 0x20) != 0;
+        }
+
+        if (mFormat != NULL && currentStartCode == 0xb2) {
+            userDataPositions.add(offset);
         }
 
         if (mFormat != NULL && currentStartCode == 0x00) {
@@ -1158,6 +1173,19 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {
                       timeUs);
 
                 // hexdump(accessUnit->data(), accessUnit->size());
+
+                if (userDataPositions.size() > 0) {
+                    sp<ABuffer> mpegUserData =
+                        new ABuffer(userDataPositions.size() * sizeof(size_t));
+                    if (mpegUserData != NULL && mpegUserData->data() != NULL) {
+                        for (size_t i = 0; i < userDataPositions.size(); ++i) {
+                            memcpy(
+                                    mpegUserData->data() + i * sizeof(size_t),
+                                    &userDataPositions[i], sizeof(size_t));
+                        }
+                        accessUnit->meta()->setBuffer("mpegUserData", mpegUserData);
+                    }
+                }
 
                 return accessUnit;
             }
