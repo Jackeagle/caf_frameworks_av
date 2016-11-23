@@ -25,6 +25,9 @@
 
 namespace android {
 
+// Maximum command/reply size expected
+#define EFFECT_PARAM_SIZE_MAX       65536
+
 enum {
     ENABLE = IBinder::FIRST_CALL_TRANSACTION,
     DISABLE,
