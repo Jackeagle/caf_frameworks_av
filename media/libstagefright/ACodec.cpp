@@ -1730,7 +1730,10 @@ status_t ACodec::configureCodec(
             ALOGE("[%s] storeMetaDataInBuffers (input) failed w/ err %d",
                     mComponentName.c_str(), err);
 
-            return err;
+            if (mOMX->livesLocally(mNode, getpid())) {
+                return err;
+            }
+            ALOGI("ignoring failure to use internal MediaCodec key.");
         }
         // For this specific case we could be using camera source even if storeMetaDataInBuffers
         // returns Gralloc source. Pretend that we are; this will force us to use nBufferSize.
@@ -2518,6 +2521,7 @@ status_t ACodec::setupAACCodec(
             : OMX_AUDIO_AACStreamFormatMP4FF;
 
     OMX_AUDIO_PARAM_ANDROID_AACPRESENTATIONTYPE presentation;
+    InitOMXParams(&presentation);
     presentation.nMaxOutputChannels = maxOutputChannelCount;
     presentation.nDrcCut = drc.drcCut;
     presentation.nDrcBoost = drc.drcBoost;
@@ -5092,14 +5096,31 @@ void ACodec::BaseState::onInputBufferFilled(const sp<AMessage> &msg) {
                     }
                 }
                 info->checkReadFence("onInputBufferFilled");
-                status_t err2 = mCodec->mOMX->emptyBuffer(
-                    mCodec->mNode,
-                    bufferID,
-                    0,
-                    buffer->size(),
-                    flags,
-                    timeUs,
-                    info->mFenceFd);
+
+                status_t err2 = OK;
+                if (mCodec->mInputMetadataType == kMetadataBufferTypeCameraSource) {
+#ifndef OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+                    if (info->mData->size() >= sizeof(VideoNativeMetadata)) {
+                        VideoNativeMetadata *vnmd = (VideoNativeMetadata*)info->mData->base();
+                       err2 = mCodec->mOMX->updateGraphicBufferInMeta(
+                                mCodec->mNode, kPortIndexInput,
+                                new GraphicBuffer(vnmd->pBuffer, false /* keepOwnership */),
+                                bufferID);
+                    }
+#endif
+                }
+
+                if (err2 == OK) {
+                        err2 = mCodec->mOMX->emptyBuffer(
+                        mCodec->mNode,
+                        bufferID,
+                        0,
+                        buffer->size(),
+                        flags,
+                        timeUs,
+                        info->mFenceFd);
+                }
+
                 info->mFenceFd = -1;
                 if (err2 != OK) {
                     mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err2));
