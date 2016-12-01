@@ -1,6 +1,6 @@
 /*
 **
-** Copyright 2007, The Android Open Source Project
+** Copyright 2016, The Android Open Source Project
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -684,6 +684,14 @@ void AudioTrack::pause()
     mAudioTrack->pause();
 
     if (isOffloaded_l()) {
+        if (AVMediaUtils::get()->AudioTrackIsPcmOffloaded(mFormat)) {
+            if (AVMediaUtils::get()->AudioTrackGetPosition(this, &mPausedPosition) == NO_ERROR){
+                ALOGV("AudioTrack::pause for pcm offload, cache current position %u", mPausedPosition);
+                return;
+            } else {
+                ALOGE("AudioTrack::pause for pcm offlaod, AudioTrackGetPosition returned error. ");
+           }
+        }
         if (mOutput != AUDIO_IO_HANDLE_NONE) {
             // An offload output can be re-used between two audio tracks having
             // the same configuration. A timestamp query for a paused track
