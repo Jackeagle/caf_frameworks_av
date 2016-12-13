@@ -698,7 +698,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                     // the extractor may not yet be started and will assert.
                     // If the video decoder is not set (perhaps audio only in this case)
                     // do not perform a seek as it is not needed.
-                    int64_t currentPositionUs = 0;
+                    int64_t currentPositionUs = mPreviousSeekTimeUs;
                     getCurrentPosition(&currentPositionUs);
                     mDeferredActions.push_back(
                             new SeekAction(currentPositionUs));
