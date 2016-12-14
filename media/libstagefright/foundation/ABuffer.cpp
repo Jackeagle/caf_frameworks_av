@@ -29,9 +29,13 @@ ABuffer::ABuffer(size_t capacity)
       mInt32Data(0),
       mOwnsData(true) {
     mData = malloc(capacity);
-    CHECK(mData != NULL);
-    mCapacity = capacity;
-    mRangeLength = capacity;
+    if (mData == NULL) {
+         mCapacity = 0;
+         mRangeLength = 0;
+     } else {
+         mCapacity = capacity;
+         mRangeLength = capacity;
+     }
 }
 
 ABuffer::ABuffer(void *data, size_t capacity)
