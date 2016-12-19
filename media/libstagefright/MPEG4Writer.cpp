@@ -2373,7 +2373,9 @@ status_t MPEG4Writer::Track::threadEntry() {
         timestampUs -= previousPausedDurationUs;
         if (WARN_UNLESS(timestampUs >= 0ll, "for %s track", trackName)) {
             copy->release();
-            return ERROR_MALFORMED;
+            err = ERROR_MALFORMED;
+            mSource->notifyError(err);
+            return err;
         }
 
         if (!mIsAudio) {
