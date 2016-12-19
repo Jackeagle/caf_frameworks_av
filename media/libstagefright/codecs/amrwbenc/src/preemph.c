@@ -25,6 +25,8 @@
 #include "typedef.h"
 #include "basic_op.h"
 
+#define INT32_MAX   2147483647
+
 void Preemph(
         Word16 x[],                           /* (i/o)   : input signal overwritten by the output */
         Word16 mu,                            /* (i) Q15 : preemphasis coefficient                */

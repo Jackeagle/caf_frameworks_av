@@ -1,0 +1,7 @@
+voGetAMRWBEncAPI
+cmnMemAlloc
+cmnMemCopy
+cmnMemFree
+cmnMemSet
+cmnMemCheck
+VO_IMF_USERMEMOPERATOR
