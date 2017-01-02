@@ -13,6 +13,25 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
+**
+** This file was modified by Dolby Laboratories, Inc. The portions of the
+** code that are surrounded by "DOLBY..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2011-2016 Dolby Laboratories, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
+**
 */
 
 // Proxy for media player implementations
@@ -82,6 +101,9 @@
 #include "HDCP.h"
 #include "HTTPBase.h"
 #include "RemoteDisplay.h"
+#ifdef DOLBY_ENABLE
+#include "DolbyMediaPlayerServiceExtImpl.h"
+#endif // DOLBY_END
 
 namespace {
 using android::media::Metadata;
@@ -557,6 +579,12 @@ void MediaPlayerService::removeClient(wp<Client> client)
 {
     Mutex::Autolock lock(mLock);
     mClients.remove(client);
+}
+
+bool MediaPlayerService::hasClient(wp<Client> client)
+{
+    Mutex::Autolock lock(mLock);
+    return mClients.indexOf(client) != NAME_NOT_FOUND;
 }
 
 MediaPlayerService::Client::Client(
@@ -1086,6 +1114,10 @@ status_t MediaPlayerService::Client::setNextPlayer(const sp<IMediaPlayer>& playe
     ALOGV("setNextPlayer");
     Mutex::Autolock l(mLock);
     sp<Client> c = static_cast<Client*>(player.get());
+    if (c != NULL && !mService->hasClient(c)) {
+      return BAD_VALUE;
+    }
+
     mNextClient = c;
 
     if (c != NULL) {
@@ -1406,6 +1438,9 @@ MediaPlayerService::AudioOutput::AudioOutput(audio_session_t sessionId, int uid,
     }
 
     setMinBufferCount();
+#ifdef DOLBY_ENABLE
+    mProcessedAudio = false;
+#endif // DOLBY_END
 }
 
 MediaPlayerService::AudioOutput::~AudioOutput()
@@ -1583,6 +1618,9 @@ status_t MediaPlayerService::AudioOutput::getFramesWritten(uint32_t *frameswritt
 status_t MediaPlayerService::AudioOutput::setParameters(const String8& keyValuePairs)
 {
     Mutex::Autolock lock(mLock);
+#ifdef DOLBY_ENABLE
+    setDolbyParameters(keyValuePairs);
+#endif // DOLBY_END
     if (mTrack == 0) return NO_INIT;
     return mTrack->setParameters(keyValuePairs);
 }
@@ -1874,6 +1912,9 @@ status_t MediaPlayerService::AudioOutput::open(
                 mCallbackData->setOutput(this);
             }
             delete newcbd;
+#ifdef DOLBY_ENABLE
+            updateTrackOnAudioProcessed(mTrack, reuse);
+#endif // DOLBY_END
             return OK;
         }
     }
@@ -1906,6 +1947,9 @@ status_t MediaPlayerService::AudioOutput::open(
             res = t->attachAuxEffect(mAuxEffectId);
         }
     }
+#ifdef DOLBY_ENABLE
+    updateTrackOnAudioProcessed(t, false);
+#endif // DOLBY_END
     ALOGV("open() DONE status %d", res);
     return res;
 }
