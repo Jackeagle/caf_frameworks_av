@@ -2375,7 +2375,9 @@ status_t MPEG4Writer::Track::threadEntry() {
         timestampUs -= previousPausedDurationUs;
         if (WARN_UNLESS(timestampUs >= 0ll, "for %s track", trackName)) {
             copy->release();
-            return ERROR_MALFORMED;
+            err = ERROR_MALFORMED;
+            mSource->notifyError(err);
+            return err;
         }
 
         if (!mIsAudio) {
@@ -2470,7 +2472,9 @@ status_t MPEG4Writer::Track::threadEntry() {
             ALOGE("timestampUs %" PRId64 " < lastTimestampUs %" PRId64 " for %s track",
                 timestampUs, lastTimestampUs, trackName);
             copy->release();
-            return UNKNOWN_ERROR;
+            err = UNKNOWN_ERROR;
+            mSource->notifyError(err);
+            return err;
         }
 
         // if the duration is different for this sample, see if it is close enough to the previous
