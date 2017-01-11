@@ -350,9 +350,9 @@ status_t OMX::prepareForAdaptivePlayback(
 
 status_t OMX::useBuffer(
         node_id node, OMX_U32 port_index, const sp<IMemory> &params,
-        buffer_id *buffer, OMX_BOOL crossProcess) {
+        buffer_id *buffer) {
     return findInstance(node)->useBuffer(
-             port_index, params, buffer, crossProcess);
+            port_index, params, buffer);
 }
 
 status_t OMX::useGraphicBuffer(
@@ -389,9 +389,9 @@ status_t OMX::allocateBuffer(
 
 status_t OMX::allocateBufferWithBackup(
         node_id node, OMX_U32 port_index, const sp<IMemory> &params,
-        buffer_id *buffer, OMX_BOOL crossProcess) {
+        buffer_id *buffer) {
     return findInstance(node)->allocateBufferWithBackup(
-           port_index, params, buffer, crossProcess);
+            port_index, params, buffer);
 }
 
 status_t OMX::freeBuffer(node_id node, OMX_U32 port_index, buffer_id buffer) {
