@@ -154,6 +154,7 @@ protected:
         kWhatSubmitOutputMetadataBufferIfEOS = 'subm',
         kWhatOMXDied                 = 'OMXd',
         kWhatReleaseCodecInstance    = 'relC',
+        kWhatForcedShutdown          = 'shuC',
     };
 
     enum {

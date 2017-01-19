@@ -643,6 +643,9 @@ void ACodec::initiateShutdown(bool keepComponentAllocated) {
     if (!keepComponentAllocated) {
         // ensure shutdown completes in 30 seconds
         (new AMessage(kWhatReleaseCodecInstance, this))->post(30000000);
+    } else {
+        // ensure stop completes in 3 seconds
+        (new AMessage(kWhatForcedShutdown, this))->post(3000000);
     }
 }
 
@@ -6097,6 +6100,42 @@ bool ACodec::IdleToExecutingState::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatShutdown:
         {
             mCodec->deferMessage(msg);
+            return true;
+        }
+
+        case kWhatForcedShutdown:
+        {
+            ALOGI("[%s] forcing the stop of codec",
+                    mCodec->mComponentName.c_str());
+
+            if (mCodec->allYourBuffersAreBelongToUs()) {
+                status_t err = mCodec->mOMX->sendCommand(
+                        mCodec->mNode, OMX_CommandStateSet, OMX_StateLoaded);
+                if (err == OK) {
+                    err = mCodec->freeBuffersOnPort(kPortIndexInput);
+                    status_t err2 = mCodec->freeBuffersOnPort(kPortIndexOutput);
+                    if (err == OK) {
+                        err = err2;
+                    }
+                }
+
+                if ((mCodec->mFlags & kFlagPushBlankBuffersToNativeWindowOnShutdown)
+                        && mCodec->mNativeWindow != NULL) {
+                    // We push enough 1x1 blank buffers to ensure that one of
+                    // them has made it to the display.  This allows the OMX
+                    // component teardown to zero out any protected buffers
+                    // without the risk of scanning out one of those buffers.
+                    pushBlankBuffersToNativeWindow(mCodec->mNativeWindow.get());
+                }
+
+                if (err != OK) {
+                    mCodec->signalError(OMX_ErrorUndefined, FAILED_TRANSACTION);
+                    return true;
+                }
+
+                mCodec->changeState(mCodec->mIdleToLoadedState);
+            }
+
             return true;
         }
 
