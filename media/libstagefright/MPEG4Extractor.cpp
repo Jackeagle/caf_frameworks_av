@@ -45,6 +45,8 @@
 #include "include/ESDS.h"
 
 #include <ctype.h>
+#define __STDC_FORMAT_MACROS 1
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,6 +73,12 @@
 #endif
 
 namespace android {
+
+enum {
+    // maximum size of an atom. Some atoms can be bigger according to the spec,
+    // but we only allow up to this size.
+    kMaxAtomSize = 64 * 1024 * 1024,
+};
 
 class MPEG4Source : public MediaSource {
 public:
@@ -874,6 +882,13 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
     PathAdder autoAdder(&mPath, chunk_type);
 
     off64_t chunk_data_size = *offset + chunk_size - data_offset;
+    if (chunk_type != FOURCC('m', 'd', 'a', 't') && chunk_data_size > kMaxAtomSize) {
+        char errMsg[100];
+        sprintf(errMsg, "%s atom has size %" PRId64, chunk, chunk_data_size);
+        ALOGE("%s (b/28615448)", errMsg);
+        android_errorWriteWithInfoLog(0x534e4554, "28615448", -1, errMsg, strlen(errMsg));
+        return ERROR_MALFORMED;
+    }
 
     if (chunk_type != FOURCC('c', 'p', 'r', 't')
             && chunk_type != FOURCC('c', 'o', 'v', 'r')
@@ -3807,7 +3822,15 @@ status_t MPEG4Source::fragmentedRead(
                     continue;
                 }
 
-                CHECK(dstOffset + 4 <= mBuffer->size());
+                if (dstOffset > SIZE_MAX - 4 ||
+                        dstOffset + 4 > SIZE_MAX - nalLength ||
+                        dstOffset + 4 + nalLength > mBuffer->size()) {
+                    ALOGE("b/27208621 : %zu %zu", dstOffset, mBuffer->size());
+                    android_errorWriteLog(0x534e4554, "27208621");
+                    mBuffer->release();
+                    mBuffer = NULL;
+                    return ERROR_MALFORMED;
+                }
 
                 dstData[dstOffset++] = 0;
                 dstData[dstOffset++] = 0;

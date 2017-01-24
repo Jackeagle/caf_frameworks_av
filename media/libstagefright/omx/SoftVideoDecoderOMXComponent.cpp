@@ -148,6 +148,10 @@ OMX_ERRORTYPE SoftVideoDecoderOMXComponent::internalGetParameter(
             OMX_VIDEO_PARAM_PORTFORMATTYPE *formatParams =
                 (OMX_VIDEO_PARAM_PORTFORMATTYPE *)params;
 
+            if (!isValidOMXParam(formatParams)) {
+                return OMX_ErrorBadParameter;
+            }
+
             if (formatParams->nPortIndex > kMaxPortIndex) {
                 return OMX_ErrorUndefined;
             }
@@ -176,6 +180,10 @@ OMX_ERRORTYPE SoftVideoDecoderOMXComponent::internalGetParameter(
             OMX_VIDEO_PARAM_PROFILELEVELTYPE *profileLevel =
                   (OMX_VIDEO_PARAM_PROFILELEVELTYPE *) params;
 
+            if (!isValidOMXParam(profileLevel)) {
+                return OMX_ErrorBadParameter;
+            }
+
             if (profileLevel->nPortIndex != kInputPortIndex) {
                 ALOGE("Invalid port index: %ld", profileLevel->nPortIndex);
                 return OMX_ErrorUnsupportedIndex;
@@ -203,6 +211,10 @@ OMX_ERRORTYPE SoftVideoDecoderOMXComponent::internalSetParameter(
             const OMX_PARAM_COMPONENTROLETYPE *roleParams =
                 (const OMX_PARAM_COMPONENTROLETYPE *)params;
 
+            if (!isValidOMXParam(roleParams)) {
+                return OMX_ErrorBadParameter;
+            }
+
             if (strncmp((const char *)roleParams->cRole,
                         mComponentRole,
                         OMX_MAX_STRINGNAME_SIZE - 1)) {
@@ -217,6 +229,10 @@ OMX_ERRORTYPE SoftVideoDecoderOMXComponent::internalSetParameter(
             OMX_VIDEO_PARAM_PORTFORMATTYPE *formatParams =
                 (OMX_VIDEO_PARAM_PORTFORMATTYPE *)params;
 
+            if (!isValidOMXParam(formatParams)) {
+                return OMX_ErrorBadParameter;
+            }
+
             if (formatParams->nPortIndex > kMaxPortIndex) {
                 return OMX_ErrorUndefined;
             }
@@ -227,6 +243,41 @@ OMX_ERRORTYPE SoftVideoDecoderOMXComponent::internalSetParameter(
 
             return OMX_ErrorNone;
         }
+
+        case OMX_IndexParamPortDefinition:
+        {
+            OMX_PARAM_PORTDEFINITIONTYPE *newParams =
+                (OMX_PARAM_PORTDEFINITIONTYPE *)params;
+
+
+            OMX_VIDEO_PORTDEFINITIONTYPE *video_def = &newParams->format.video;
+            OMX_PARAM_PORTDEFINITIONTYPE *def = &editPortInfo(newParams->nPortIndex)->mDef;
+
+            uint32_t oldWidth = def->format.video.nFrameWidth;
+            uint32_t oldHeight = def->format.video.nFrameHeight;
+            uint32_t newWidth = video_def->nFrameWidth;
+            uint32_t newHeight = video_def->nFrameHeight;
+            if (newWidth != oldWidth || newHeight != oldHeight) {
+                bool outputPort = (newParams->nPortIndex == kOutputPortIndex);
+                def->format.video.nFrameWidth = newWidth;
+                def->format.video.nFrameHeight = newHeight;
+                def->format.video.nStride = def->format.video.nFrameWidth;
+                def->format.video.nSliceHeight = def->format.video.nFrameHeight;
+                def->nBufferSize =
+                    def->format.video.nFrameWidth * def->format.video.nFrameHeight * 3 / 2;
+                if (outputPort) {
+                    mWidth = newWidth;
+                    mHeight = newHeight;
+                    mCropLeft = 0;
+                    mCropTop = 0;
+                    mCropWidth = newWidth;
+                    mCropHeight = newHeight;
+                }
+                newParams->nBufferSize = def->nBufferSize;
+            }
+            return SimpleSoftOMXComponent::internalSetParameter(index, params);
+        }
+
 
         default:
             return SimpleSoftOMXComponent::internalSetParameter(index, params);
@@ -239,6 +290,10 @@ OMX_ERRORTYPE SoftVideoDecoderOMXComponent::getConfig(
         case OMX_IndexConfigCommonOutputCrop:
         {
             OMX_CONFIG_RECTTYPE *rectParams = (OMX_CONFIG_RECTTYPE *)params;
+
+            if (!isValidOMXParam(rectParams)) {
+                return OMX_ErrorBadParameter;
+            }
 
             if (rectParams->nPortIndex != kOutputPortIndex) {
                 return OMX_ErrorUndefined;
