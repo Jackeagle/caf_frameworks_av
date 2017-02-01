@@ -1527,7 +1527,6 @@ void NuPlayer::Renderer::onPause() {
 
     if (mHasAudio) {
         mAudioSink->pause();
-        startAudioOffloadPauseTimeout();
     }
 
     ALOGV("now paused audio queue has %zu entries, video has %zu entries",
@@ -1542,7 +1541,6 @@ void NuPlayer::Renderer::onResume() {
     }
 
     if (mHasAudio) {
-        cancelAudioOffloadPauseTimeout();
         status_t err = mAudioSink->start();
         if (err != OK) {
             ALOGE("cannot start AudioSink err %d", err);
