@@ -221,7 +221,8 @@ void SoftAVC::onQueueFilled(OMX_U32 portIndex) {
 }
 
 bool SoftAVC::handlePortSettingChangeEvent(const H264SwDecInfo *info) {
-    if (mWidth != info->picWidth || mHeight != info->picHeight) {
+    if (mWidth != info->picWidth || mHeight != info->picHeight ||
+            mPictureSize != (mWidth * mHeight * 3 / 2)) {
         mWidth  = info->picWidth;
         mHeight = info->picHeight;
         mPictureSize = mWidth * mHeight * 3 / 2;
