@@ -83,6 +83,13 @@ static void camera_device_status_change(
 }
 } // extern "C"
 
+int getDeviceSubType() {
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.subtype", value, "0");
+    int subtype = atoi(value);
+    return subtype;
+}
+
 // ----------------------------------------------------------------------------
 
 // This is ugly and only safe if we never re-create the CameraService, but
@@ -541,8 +548,13 @@ status_t CameraService::connectPro(
           case CAMERA_DEVICE_API_VERSION_2_0:
           case CAMERA_DEVICE_API_VERSION_2_1:
           case CAMERA_DEVICE_API_VERSION_3_0:
-            client = new ProCamera2Client(this, cameraCb, clientPackageName,
+            if (getDeviceSubType() == 2) {
+                client = new ProCamera2Client(this, cameraCb, String16(),
+                    cameraId, facing, callingPid, USE_CALLING_UID, getpid());
+            }else {
+               client = new ProCamera2Client(this, cameraCb, String16(),
                     cameraId, facing, callingPid, clientUid, getpid());
+            }
             break;
           case -1:
             ALOGE("Invalid camera id %d", cameraId);
@@ -619,8 +631,13 @@ status_t CameraService::connectDevice(
           case CAMERA_DEVICE_API_VERSION_2_0:
           case CAMERA_DEVICE_API_VERSION_2_1:
           case CAMERA_DEVICE_API_VERSION_3_0:
-            client = new CameraDeviceClient(this, cameraCb, clientPackageName,
+            if (getDeviceSubType() == 2) {
+                client = new CameraDeviceClient(this, cameraCb, String16(),
+                    cameraId, facing, callingPid, USE_CALLING_UID, getpid());
+            } else {
+                 client = new CameraDeviceClient(this, cameraCb, String16(),
                     cameraId, facing, callingPid, clientUid, getpid());
+            }
             break;
           case -1:
             ALOGE("Invalid camera id %d", cameraId);
@@ -834,7 +851,6 @@ status_t CameraService::onTransact(
     switch (code) {
         case BnCameraService::CONNECT:
         case BnCameraService::CONNECT_PRO:
-        case BnCameraService::CONNECT_DEVICE:
             const int pid = getCallingPid();
             const int self_pid = getpid();
             if (pid != self_pid) {
@@ -910,12 +926,16 @@ void CameraService::releaseSound() {
 }
 
 void CameraService::playSound(sound_kind kind) {
-    LOG1("playSound(%d)", kind);
-    Mutex::Autolock lock(mSoundLock);
-    sp<MediaPlayer> player = mSoundPlayer[kind];
-    if (player != 0) {
-        player->seekTo(0);
-        player->start();
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.sys.camera.silent",value,"0");
+    if(strcmp(value,"0") == 0){
+        LOG1("playSound(%d)", kind);
+        Mutex::Autolock lock(mSoundLock);
+        sp<MediaPlayer> player = mSoundPlayer[kind];
+        if (player != 0) {
+            player->seekTo(0);
+            player->start();
+        }
     }
 }
 
