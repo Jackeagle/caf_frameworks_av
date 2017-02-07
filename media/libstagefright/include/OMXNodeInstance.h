@@ -72,7 +72,7 @@ struct OMXNodeInstance {
 
     status_t useBuffer(
             OMX_U32 portIndex, const sp<IMemory> &params,
-            OMX::buffer_id *buffer, OMX_U32 allottedSize);
+            OMX::buffer_id *buffer, OMX_U32 allottedSize, OMX_BOOL crossProcess);
 
     status_t useGraphicBuffer(
             OMX_U32 portIndex, const sp<GraphicBuffer> &graphicBuffer,
@@ -102,7 +102,7 @@ struct OMXNodeInstance {
 
     status_t allocateBufferWithBackup(
             OMX_U32 portIndex, const sp<IMemory> &params,
-            OMX::buffer_id *buffer, OMX_U32 allottedSize);
+            OMX::buffer_id *buffer, OMX_U32 allottedSize, OMX_BOOL crossProcess);
 
     status_t freeBuffer(OMX_U32 portIndex, OMX::buffer_id buffer);
 
@@ -146,10 +146,10 @@ private:
     OMX::node_id mNodeID;
     OMX_HANDLETYPE mHandle;
     sp<IOMXObserver> mObserver;
-    atomic_bool mDying;
-    bool mSailed;  // configuration is set (no more meta-mode changes)
+    bool mSailed;
     bool mQueriedProhibitedExtensions;
     SortedVector<OMX_INDEXTYPE> mProhibitedExtensions;
+    atomic_bool mDying;
     bool mIsSecure;
 
     // Lock only covers mGraphicBufferSource.  We can't always use mLock

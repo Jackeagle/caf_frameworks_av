@@ -249,7 +249,7 @@ public:
 
     virtual status_t useBuffer(
             node_id node, OMX_U32 port_index, const sp<IMemory> &params,
-            buffer_id *buffer, OMX_U32 allottedSize) {
+            buffer_id *buffer, OMX_U32 allottedSize, OMX_BOOL /* crossProcess */) {
         Parcel data, reply;
         data.writeInterfaceToken(IOMX::getInterfaceDescriptor());
         data.writeInt32((int32_t)node);
@@ -483,7 +483,7 @@ public:
 
     virtual status_t allocateBufferWithBackup(
             node_id node, OMX_U32 port_index, const sp<IMemory> &params,
-            buffer_id *buffer, OMX_U32 allottedSize) {
+            buffer_id *buffer, OMX_U32 allottedSize, OMX_BOOL /* crossProcess */) {
         Parcel data, reply;
         data.writeInterfaceToken(IOMX::getInterfaceDescriptor());
         data.writeInt32((int32_t)node);
@@ -760,6 +760,8 @@ status_t BnOMX::onTransact(
                                         err = setInternalOption(node, index, type, params, size);
                                         break;
                                     }
+                                    default:
+                                        TRESPASS();
                                 }
                             }
                         }
@@ -837,7 +839,8 @@ status_t BnOMX::onTransact(
             OMX_U32 allottedSize = data.readInt32();
 
             buffer_id buffer;
-            status_t err = useBuffer(node, port_index, params, &buffer, allottedSize);
+            status_t err = useBuffer(
+                    node, port_index, params, &buffer, allottedSize, OMX_TRUE /* crossProcess */);
             reply->writeInt32(err);
 
             if (err == OK) {
@@ -972,7 +975,10 @@ status_t BnOMX::onTransact(
             OMX_BOOL enable = (OMX_BOOL)data.readInt32();
 
             MetadataBufferType type = kMetadataBufferTypeInvalid;
-            status_t err = storeMetaDataInBuffers(node, port_index, enable, &type);
+            status_t err =
+                 // only control output metadata via Binder
+                 port_index != 1 /* kOutputPortIndex */ ? BAD_VALUE :
+                 storeMetaDataInBuffers(node, port_index, enable, &type);
 
             if ((err != OK) && (type == kMetadataBufferTypeInvalid)) {
                 android_errorWriteLog(0x534e4554, "26324358");
@@ -1062,7 +1068,7 @@ status_t BnOMX::onTransact(
 
             buffer_id buffer;
             status_t err = allocateBufferWithBackup(
-                    node, port_index, params, &buffer, allottedSize);
+                    node, port_index, params, &buffer, allottedSize, OMX_TRUE /* crossProcess */);
 
             reply->writeInt32(err);
 

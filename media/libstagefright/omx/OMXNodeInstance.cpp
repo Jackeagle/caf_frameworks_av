@@ -170,6 +170,12 @@ struct BufferMeta {
         return buf;
     }
 
+    bool copyingOrSharingToOmx(const OMX_BUFFERHEADERTYPE *header) const {
+        return mCopyToOmx
+                                    // sharing buffer with client
+                || (mMem != NULL && mMem->pointer() == header->pBuffer);
+    }
+
     void setGraphicBuffer(const sp<GraphicBuffer> &graphicBuffer) {
         mGraphicBuffer = graphicBuffer;
     }
@@ -391,7 +397,9 @@ status_t OMXNodeInstance::freeNode(OMXMaster *master) {
 status_t OMXNodeInstance::sendCommand(
         OMX_COMMANDTYPE cmd, OMX_S32 param) {
     if (cmd == OMX_CommandStateSet) {
+        // We do not support returning from unloaded state, so there are no configurations past
         // There are no configurations past first StateSet command.
+
         mSailed = true;
     }
     const sp<GraphicBufferSource> bufferSource(getGraphicBufferSource());
@@ -761,16 +769,16 @@ status_t OMXNodeInstance::configureVideoTunnelMode(
 
 status_t OMXNodeInstance::useBuffer(
         OMX_U32 portIndex, const sp<IMemory> &params,
-        OMX::buffer_id *buffer, OMX_U32 allottedSize) {
+        OMX::buffer_id *buffer, OMX_U32 allottedSize, OMX_BOOL crossProcess) {
     Mutex::Autolock autoLock(mLock);
     if (allottedSize > params->size() || portIndex >= NELEM(mNumPortBuffers)) {
         return BAD_VALUE;
     }
 
     // metadata buffers are not connected cross process
-    // use a backup buffer instead of the actual buffer
     BufferMeta *buffer_meta;
-    bool useBackup = mMetadataType[portIndex] != kMetadataBufferTypeInvalid;
+    bool isMeta = mMetadataType[portIndex] != kMetadataBufferTypeInvalid;
+    bool useBackup = crossProcess && isMeta; // use a backup buffer instead of the actual buffer
     OMX_U8 *data = static_cast<OMX_U8 *>(params->pointer());
     // allocate backup buffer
     if (useBackup) {
@@ -1145,14 +1153,15 @@ status_t OMXNodeInstance::allocateBuffer(
 
 status_t OMXNodeInstance::allocateBufferWithBackup(
         OMX_U32 portIndex, const sp<IMemory> &params,
-        OMX::buffer_id *buffer, OMX_U32 allottedSize) {
+        OMX::buffer_id *buffer, OMX_U32 allottedSize, OMX_BOOL crossProcess) {
     Mutex::Autolock autoLock(mLock);
     if (allottedSize > params->size() || portIndex >= NELEM(mNumPortBuffers)) {
         return BAD_VALUE;
     }
 
-    // metadata buffers are not connected cross process; only copy if not meta
-    bool copy = mMetadataType[portIndex] == kMetadataBufferTypeInvalid;
+    // metadata buffers are not connected cross process
+    bool isMeta = mMetadataType[portIndex] != kMetadataBufferTypeInvalid;
+    bool copy = !(crossProcess && isMeta);
 
     BufferMeta *buffer_meta = new BufferMeta(
             params, portIndex,
@@ -1266,11 +1275,24 @@ status_t OMXNodeInstance::emptyBuffer(
     }
     BufferMeta *buffer_meta =
         static_cast<BufferMeta *>(header->pAppPrivate);
+    sp<ABuffer> backup = buffer_meta->getBuffer(header, true /* backup */, false /* limit */);
+    sp<ABuffer> codec = buffer_meta->getBuffer(header, false /* backup */, false /* limit */);
 
-    // set up proper filled length if component is configured for gralloc metadata mode
-    // ignore rangeOffset in this case (as client may be assuming ANW meta buffers).
-    if (mMetadataType[kPortIndexInput] == kMetadataBufferTypeGrallocSource) {
-        header->nFilledLen = rangeLength ? sizeof(VideoGrallocMetadata) : 0;
+    // convert incoming ANW meta buffers if component is configured for gralloc metadata mode
+    // ignore rangeOffset in this case
+    if (buffer_meta->copyingOrSharingToOmx(header)
+            && mMetadataType[kPortIndexInput] == kMetadataBufferTypeGrallocSource
+            && backup->capacity() >= sizeof(VideoNativeMetadata)
+            && codec->capacity() >= sizeof(VideoGrallocMetadata)
+            && ((VideoNativeMetadata *)backup->base())->eType
+                    == kMetadataBufferTypeANWBuffer) {
+        VideoNativeMetadata &backupMeta = *(VideoNativeMetadata *)backup->base();
+        VideoGrallocMetadata &codecMeta = *(VideoGrallocMetadata *)codec->base();
+        CLOG_BUFFER(emptyBuffer, "converting ANWB %p to handle %p",
+                backupMeta.pBuffer, backupMeta.pBuffer->handle);
+        codecMeta.pHandle = backupMeta.pBuffer != NULL ? backupMeta.pBuffer->handle : NULL;
+        codecMeta.eType = kMetadataBufferTypeGrallocSource;
+        header->nFilledLen = rangeLength ? sizeof(codecMeta) : 0;
         header->nOffset = 0;
     } else {
         // rangeLength and rangeOffset must be a subset of the allocated data in the buffer.
@@ -1672,12 +1694,11 @@ void OMXNodeInstance::onEvent(
 
     // allow configuration if we return to the loaded state
     if (event == OMX_EventCmdComplete
-            && arg1 == OMX_CommandStateSet
-            && arg2 == OMX_StateLoaded) {
+          && arg1 == OMX_CommandStateSet
+          && arg2 == OMX_StateLoaded) {
         mSailed = false;
     }
 }
-
 // static
 OMX_ERRORTYPE OMXNodeInstance::OnEvent(
         OMX_IN OMX_HANDLETYPE /* hComponent */,
