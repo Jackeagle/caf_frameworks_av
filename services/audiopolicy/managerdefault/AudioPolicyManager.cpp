@@ -3827,6 +3827,11 @@ void AudioPolicyManager::closeOutput(audio_io_handle_t output)
         mpClientInterface->onAudioPatchListUpdate();
     }
 
+    // check strategy mute status which may have been set by this output
+    audio_devices_t prevDevice = outputDesc->mDevice;
+    outputDesc->mDevice = AUDIO_DEVICE_NONE;
+    checkDeviceMuteStrategies(outputDesc, prevDevice, outputDesc->latency() * 2);
+
     AudioParameter param;
     param.add(String8("closing"), String8("true"));
     mpClientInterface->setParameters(output, param.toString());
