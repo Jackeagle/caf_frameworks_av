@@ -541,7 +541,7 @@ status_t CameraService::connectPro(
           case CAMERA_DEVICE_API_VERSION_2_0:
           case CAMERA_DEVICE_API_VERSION_2_1:
           case CAMERA_DEVICE_API_VERSION_3_0:
-            client = new ProCamera2Client(this, cameraCb, clientPackageName,
+               client = new ProCamera2Client(this, cameraCb, clientPackageName,
                     cameraId, facing, callingPid, clientUid, getpid());
             break;
           case -1:
@@ -619,7 +619,7 @@ status_t CameraService::connectDevice(
           case CAMERA_DEVICE_API_VERSION_2_0:
           case CAMERA_DEVICE_API_VERSION_2_1:
           case CAMERA_DEVICE_API_VERSION_3_0:
-            client = new CameraDeviceClient(this, cameraCb, clientPackageName,
+                 client = new CameraDeviceClient(this, cameraCb, clientPackageName,
                     cameraId, facing, callingPid, clientUid, getpid());
             break;
           case -1:
@@ -910,12 +910,16 @@ void CameraService::releaseSound() {
 }
 
 void CameraService::playSound(sound_kind kind) {
-    LOG1("playSound(%d)", kind);
-    Mutex::Autolock lock(mSoundLock);
-    sp<MediaPlayer> player = mSoundPlayer[kind];
-    if (player != 0) {
-        player->seekTo(0);
-        player->start();
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.sys.camera.silent",value,"0");
+    if(strcmp(value,"0") == 0){
+        LOG1("playSound(%d)", kind);
+        Mutex::Autolock lock(mSoundLock);
+        sp<MediaPlayer> player = mSoundPlayer[kind];
+        if (player != 0) {
+            player->seekTo(0);
+            player->start();
+        }
     }
 }
 
