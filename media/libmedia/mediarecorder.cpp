@@ -274,10 +274,11 @@ status_t MediaRecorder::setOutputFile(int fd, int64_t offset, int64_t length)
         return INVALID_OPERATION;
     }
     if (mIsOutputFileSet) {
-        ALOGE("output file has already been set");
-        return INVALID_OPERATION;
+        ALOGW("output file has already been set");
+        //return INVALID_OPERATION;
     }
-    if (!(mCurrentState & MEDIA_RECORDER_DATASOURCE_CONFIGURED)) {
+    if (!(mCurrentState & MEDIA_RECORDER_DATASOURCE_CONFIGURED) &&
+        !(mCurrentState & MEDIA_RECORDER_RECORDING)) {
         ALOGE("setOutputFile called in an invalid state(%d)", mCurrentState);
         return INVALID_OPERATION;
     }

@@ -66,6 +66,7 @@ public:
     status_t setGeoData(int latitudex10000, int longitudex10000);
     status_t setCaptureRate(float captureFps);
     status_t setTemporalLayerCount(uint32_t layerCount);
+    virtual status_t setNextOutputFile(int fd);
     virtual void setStartTimeOffsetMs(int ms) { mStartTimeOffsetMs = ms; }
     virtual int32_t getStartTimeOffsetMs() const { return mStartTimeOffsetMs; }
 
@@ -75,6 +76,8 @@ protected:
 private:
     class Track;
 
+    sp<MetaData> mMetaData;
+    bool mWriteVideoFileTmpMoovBox; //do not lock again when write tmp moov box
     int  mFd;
     status_t mInitCheck;
     bool mIsRealTimeRecording;
@@ -113,6 +116,9 @@ private:
 
     sp<AMessage> mMetaKeys;
 
+    status_t finishCurrentFile();
+    /* write the tmp moov box to ensure the video file is playable when system crash while recording */
+    status_t writeVideoFileTmpMoovBox();
     void setStartTimestampUs(int64_t timeUs);
     int64_t getStartTimestampUs();  // Not const
     status_t startTracks(MetaData *params);
@@ -135,6 +141,7 @@ private:
     struct ChunkInfo {
         Track               *mTrack;        // Owner
         List<Chunk>         mChunks;        // Remaining chunks to be written
+        bool mCanWriteMoovBox; // at least 3 frames to generate moov box info
 
         // Previous chunk timestamp that has been written
         int64_t mPrevChunkTimestampUs;

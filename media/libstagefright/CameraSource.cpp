@@ -634,6 +634,10 @@ status_t CameraSource::initWithCameraAccess(
     if ((err = isCameraColorFormatSupported(params)) != OK) {
         return err;
     }
+    const char* camera_property = params.get("camera-property");
+    if(camera_property != NULL){
+        ALOGE("camera_property =%s",camera_property);
+    }
 
     // Set the camera to use the requested video frame size
     // and/or frame rate.
@@ -663,6 +667,13 @@ status_t CameraSource::initWithCameraAccess(
 
     // By default, store real data in video buffers.
     mVideoBufferMode = hardware::ICamera::VIDEO_BUFFER_MODE_DATA_CALLBACK_YUV;
+
+    if(camera_property != NULL && !strncmp(camera_property,"usb",3) ){
+         ALOGE("camerasource init is usb camera,set storeMetaDataInVideoBuffers false,set videobuffermode VIDEO_BUFFER_MODE_DATA_CALLBACK_YUV");
+         storeMetaDataInVideoBuffers = false;
+    }
+    else
+        storeMetaDataInVideoBuffers = true;
     if (storeMetaDataInVideoBuffers) {
         if (OK == mCamera->setVideoBufferMode(hardware::ICamera::VIDEO_BUFFER_MODE_BUFFER_QUEUE)) {
             mVideoBufferMode = hardware::ICamera::VIDEO_BUFFER_MODE_BUFFER_QUEUE;

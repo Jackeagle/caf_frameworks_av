@@ -321,7 +321,9 @@ status_t ModuleFlashControl::hasFlashUnit(const String8& cameraId, bool *hasFlas
     if (res != 0) {
         return res;
     }
-
+    if(info.device_version < CAMERA_DEVICE_API_VERSION_2_0) {
+        return res;
+    }
     CameraMetadata metadata;
     metadata = info.static_camera_characteristics;
     camera_metadata_entry flashAvailable =

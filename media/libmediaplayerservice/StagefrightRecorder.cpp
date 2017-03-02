@@ -271,6 +271,11 @@ status_t StagefrightRecorder::setOutputFile(int fd, int64_t offset, int64_t leng
     }
     mOutputFd = dup(fd);
 
+    if(mStarted && mWriter != NULL) {
+        ALOGD("recorder already started, set next out put file");
+        mWriter->setNextOutputFile(mOutputFd);
+    }
+
     return OK;
 }
 

@@ -599,6 +599,7 @@ void Camera2Client::setPreviewCallbackFlagL(Parameters &params, int flag) {
         case Parameters::WAITING_FOR_PREVIEW_WINDOW:
         case Parameters::PREVIEW:
         case Parameters::STILL_CAPTURE:
+        case Parameters::RECORD:
             // OK
             break;
         default:
@@ -1042,7 +1043,7 @@ status_t Camera2Client::startRecordingL(Parameters &params, bool restart) {
 
     // Not all devices can support a preview callback stream and a recording
     // stream at the same time, so assume none of them can.
-    if (mCallbackProcessor->getStreamId() != NO_STREAM) {
+    /*if (mCallbackProcessor->getStreamId() != NO_STREAM) {
         ALOGV("%s: Camera %d: Clearing out callback stream before "
                 "creating recording stream", __FUNCTION__, mCameraId);
         res = mStreamingProcessor->stopStream();
@@ -1058,7 +1059,7 @@ status_t Camera2Client::startRecordingL(Parameters &params, bool restart) {
                     strerror(-res), res);
             return res;
         }
-    }
+    }*/
 
     // Clean up ZSL before transitioning into recording
     if (mZslProcessor->getStreamId() != NO_STREAM) {
@@ -1138,6 +1139,9 @@ status_t Camera2Client::startRecordingL(Parameters &params, bool restart) {
     Vector<int32_t> outputStreams;
     outputStreams.push(getPreviewStreamId());
     outputStreams.push(getRecordingStreamId());
+    if (mCallbackProcessor->getStreamId() != NO_STREAM) {
+        outputStreams.push(getCallbackStreamId());
+    }
 
     res = mStreamingProcessor->startStream(StreamingProcessor::RECORD,
             outputStreams);
