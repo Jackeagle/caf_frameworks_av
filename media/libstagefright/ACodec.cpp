@@ -641,8 +641,8 @@ void ACodec::initiateShutdown(bool keepComponentAllocated) {
     msg->setInt32("keepComponentAllocated", keepComponentAllocated);
     msg->post();
     if (!keepComponentAllocated) {
-        // ensure shutdown completes in 30 seconds
-        (new AMessage(kWhatReleaseCodecInstance, this))->post(30000000);
+        // ensure shutdown completes in 3 seconds
+        (new AMessage(kWhatReleaseCodecInstance, this))->post(3000000);
     } else {
         // ensure stop completes in 3 seconds
         (new AMessage(kWhatForcedShutdown, this))->post(3000000);
@@ -3884,7 +3884,7 @@ bool ACodec::allYourBuffersAreBelongToUs(
 
         if (info->mStatus != BufferInfo::OWNED_BY_US
                 && info->mStatus != BufferInfo::OWNED_BY_NATIVE_WINDOW) {
-            ALOGV("[%s] Buffer %u on port %u still has status %d",
+            ALOGI("[%s] Buffer %u on port %u still has status %d",
                     mComponentName.c_str(),
                     info->mBufferID, portIndex, info->mStatus);
             return false;
@@ -6964,8 +6964,8 @@ bool ACodec::FlushingState::onMessageReceived(const sp<AMessage> &msg) {
 
 bool ACodec::FlushingState::onOMXEvent(
         OMX_EVENTTYPE event, OMX_U32 data1, OMX_U32 data2) {
-    ALOGV("[%s] FlushingState onOMXEvent(%u,%d)",
-            mCodec->mComponentName.c_str(), event, (OMX_S32)data1);
+    ALOGI("[%s] FlushingState onOMXEvent(%u,%d), data2 %d",
+            mCodec->mComponentName.c_str(), event, (OMX_S32)data1, (OMX_S32)data2);
 
     switch (event) {
         case OMX_EventCmdComplete:
