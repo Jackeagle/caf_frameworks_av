@@ -270,6 +270,8 @@ protected:
     // and do not release the component instance.
     bool mKeepComponentAllocated;
 
+    int32_t mForcedShutdownGeneration;
+
     int32_t mEncoderDelay;
     int32_t mEncoderPadding;
     int32_t mRotationDegrees;

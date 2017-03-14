@@ -524,6 +524,7 @@ ACodec::ACodec()
       mFatalError(false),
       mShutdownInProgress(false),
       mExplicitShutdown(false),
+      mForcedShutdownGeneration(0),
       mEncoderDelay(0),
       mEncoderPadding(0),
       mRotationDegrees(0),
@@ -645,7 +646,9 @@ void ACodec::initiateShutdown(bool keepComponentAllocated) {
         (new AMessage(kWhatReleaseCodecInstance, this))->post(3000000);
     } else {
         // ensure stop completes in 3 seconds
-        (new AMessage(kWhatForcedShutdown, this))->post(3000000);
+        sp<AMessage> forcedShutdownMsg = new AMessage(kWhatForcedShutdown, this);
+        forcedShutdownMsg->setInt32( "generation", ++mForcedShutdownGeneration);
+        forcedShutdownMsg->post(3000000);
     }
 }
 
@@ -5725,6 +5728,7 @@ void ACodec::LoadedState::onShutdown(bool keepComponentAllocated) {
         notify->setInt32("what", CodecBase::kWhatShutdownCompleted);
         notify->post();
         mCodec->mExplicitShutdown = false;
+        mCodec->mForcedShutdownGeneration++;
     }
 }
 
@@ -6125,6 +6129,16 @@ bool ACodec::IdleToExecutingState::onMessageReceived(const sp<AMessage> &msg) {
 
         case kWhatForcedShutdown:
         {
+            ALOGI("[%s] Got kWhatForcedShutdown message",
+                    mCodec->mComponentName.c_str());
+
+            int32_t generation;
+            CHECK(msg->findInt32("generation", &generation));
+            if (generation != mCodec->mForcedShutdownGeneration) {
+                // Obsolete
+                return true;
+            }
+
             ALOGI("[%s] forcing the stop of codec",
                     mCodec->mComponentName.c_str());
 
