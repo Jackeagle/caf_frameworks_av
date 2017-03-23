@@ -50,8 +50,6 @@ struct SoftMPEG4Encoder : public SoftVideoEncoderOMXComponent {
 
     virtual void onReset();
 
-    virtual void onReset();
-
 protected:
     virtual ~SoftMPEG4Encoder();
 
