@@ -1048,6 +1048,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 FlushStatus *flushing = audio ? &mFlushingAudio : &mFlushingVideo;
                 ALOGE("received error(%#x) from %s decoder, flushing(%d), now shutting down",
                         err, audio ? "audio" : "video", *flushing);
+                ++mScanSourcesGeneration;
+                mScanSourcesPending = false;
 
                 switch (*flushing) {
                     case NONE:
