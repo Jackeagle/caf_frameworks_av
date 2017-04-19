@@ -3049,6 +3049,7 @@ status_t MPEG4Writer::Track::threadHandleMedia() {
             trackProgressStatus(timestampUs);
         }
         if (!hasMultipleTracks) {
+            static int writeMoovBoxDurationsUs = 0;
             off64_t offset = (mIsAvc || mIsHevc) ? mOwner->addMultipleLengthPrefixedSamples_l(copy)
                                  : mOwner->addSample_l(copy);
 
@@ -3059,7 +3060,16 @@ status_t MPEG4Writer::Track::threadHandleMedia() {
             if (count == 0) {
                 addChunkOffset(offset);
             }
-            //TODO write video file tmp moov box
+
+            writeMoovBoxDurationsUs += lastDurationUs;
+            if(writeMoovBoxDurationsUs >= 30000 && mStszTableEntries->count() > 2) {
+                addOneStscTableEntry(1, mStszTableEntries->count());
+                mOwner->writeVideoFileTmpMoovBox();
+                writeMoovBoxDurationsUs = 0;
+                delete mStscTableEntries;
+                mStscTableEntries = new ListTableEntries<uint32_t,3>(1000);
+            }
+
             if (mOwner->exceedsFileDurationLimit() && (mIsAudio || isSync)) {
                 ALOGW("Recorded file duration exceeds limit %" PRId64 "microseconds",
                         mOwner->mMaxFileDurationLimitUs);
