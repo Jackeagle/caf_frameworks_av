@@ -172,6 +172,10 @@ struct MediaCodec : public AHandler {
     static size_t CreateFramesRenderedMessage(
             std::list<FrameRenderTracker::Info> done, sp<AMessage> &msg);
 
+    // This is used to get graphicBuffer with the index obtained from
+    // calling dequeueOutputBuffer()
+    sp<GraphicBuffer> getOutputGraphicBufferFromIndex(size_t index);
+
 protected:
     virtual ~MediaCodec();
     virtual void onMessageReceived(const sp<AMessage> &msg);

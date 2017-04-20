@@ -109,6 +109,7 @@ struct ACodec : public AHierarchicalStateMachine, public CodecBase {
     static int /* OMX_VIDEO_AVCLEVELTYPE */ getAVCLevelFor(
             int width, int height, int rate, int bitrate,
             OMX_VIDEO_AVCPROFILETYPE profile = OMX_VIDEO_AVCProfileBaseline);
+    friend class MediaCodec;
 
 protected:
     virtual ~ACodec();
@@ -288,6 +289,7 @@ protected:
     int64_t mTimePerFrameUs;
     int64_t mTimePerCaptureUs;
 
+    bool mUseUndequeuedBufs;
     bool mCreateInputBuffersSuspended;
 
     bool mTunneled;

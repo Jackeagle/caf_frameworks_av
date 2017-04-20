@@ -2825,5 +2825,13 @@ void MediaCodec::updateBatteryStat() {
         mBatteryStatNotified = false;
     }
 }
+sp<GraphicBuffer> MediaCodec::getOutputGraphicBufferFromIndex(size_t index) {
+
+    if (mState != STARTED || index >= mPortBuffers[kPortIndexOutput].size()) {
+        return NULL;
+    }
+
+    return ((ACodec*)mCodec.get())->mBuffers[kPortIndexOutput].editItemAt(index).mGraphicBuffer;
+}
 
 }  // namespace android
