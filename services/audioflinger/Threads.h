@@ -13,6 +13,24 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
+**
+** This file was modified by DTS, Inc. The portions of the
+** code that are surrounded by "DTS..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2017 DTS, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
 */
 
 #ifndef INCLUDING_FROM_AUDIOFLINGER_H
@@ -295,14 +313,17 @@ public:
                                     audio_session_t sessionId,
                                     effect_descriptor_t *desc,
                                     int *enabled,
-                                    status_t *status /*non-NULL*/);
+                                    status_t *status /*non-NULL*/,
+                                    bool pinned);
 
                 // return values for hasAudioSession (bit field)
                 enum effect_state {
                     EFFECT_SESSION = 0x1,   // the audio session corresponds to at least one
                                             // effect
-                    TRACK_SESSION = 0x2     // the audio session corresponds to at least one
+                    TRACK_SESSION = 0x2,    // the audio session corresponds to at least one
                                             // track
+                    FAST_SESSION = 0x4      // the audio session corresponds to at least one
+                                            // fast track
                 };
 
                 // get effect chain corresponding to session Id.
@@ -332,12 +353,21 @@ public:
                 status_t addEffect_l(const sp< EffectModule>& effect);
                 // remove and effect module. Also removes the effect chain is this was the last
                 // effect
-                void removeEffect_l(const sp< EffectModule>& effect);
+                void removeEffect_l(const sp< EffectModule>& effect, bool release = false);
+                // disconnect an effect handle from module and destroy module if last handle
+                void disconnectEffectHandle(EffectHandle *handle, bool unpinIfLast);
                 // detach all tracks connected to an auxiliary effect
     virtual     void detachAuxEffect_l(int effectId __unused) {}
-                // returns either EFFECT_SESSION if effects on this audio session exist in one
-                // chain, or TRACK_SESSION if tracks on this audio session exist, or both
-                virtual uint32_t hasAudioSession(audio_session_t sessionId) const = 0;
+                // returns a combination of:
+                // - EFFECT_SESSION if effects on this audio session exist in one chain
+                // - TRACK_SESSION if tracks on this audio session exist
+                // - FAST_SESSION if fast tracks on this audio session exist
+    virtual     uint32_t hasAudioSession_l(audio_session_t sessionId) const = 0;
+                uint32_t hasAudioSession(audio_session_t sessionId) const {
+                    Mutex::Autolock _l(mLock);
+                    return hasAudioSession_l(sessionId);
+                }
+
                 // the value returned by default implementation is not important as the
                 // strategy is only meaningful for PlaybackThread which implements this method
                 virtual uint32_t getStrategyForSession_l(audio_session_t sessionId __unused)
@@ -373,6 +403,10 @@ public:
                 virtual sp<IMemory> pipeMemory() const { return 0; }
 
                         void systemReady();
+
+                // checkEffectCompatibility_l() must be called with ThreadBase::mLock held
+                virtual status_t    checkEffectCompatibility_l(const effect_descriptor_t *desc,
+                                                               audio_session_t sessionId) = 0;
 
     mutable     Mutex                   mLock;
 
@@ -494,6 +528,8 @@ public:
     static const int8_t kMaxTrackRetriesOffload = 20;
     static const int8_t kMaxTrackStartupRetriesOffload = 100;
     static const int8_t kMaxTrackStopRetriesOffload = 2;
+    // 14 tracks max per client allows for 2 misbehaving application leaving 4 available tracks.
+    static const uint32_t kMaxTracksPerUid = 14;
 
     PlaybackThread(const sp<AudioFlinger>& audioFlinger, AudioStreamOut* output,
                    audio_io_handle_t id, audio_devices_t device, type_t type, bool systemReady);
@@ -506,6 +542,9 @@ public:
 
     // RefBase
     virtual     void        onFirstRef();
+
+    virtual     status_t    checkEffectCompatibility_l(const effect_descriptor_t *desc,
+                                                       audio_session_t sessionId);
 
 protected:
     // Code snippets that were lifted up out of threadLoop()
@@ -528,6 +567,7 @@ protected:
                 void        resetWriteBlocked(uint32_t sequence);
                 void        drainCallback();
                 void        resetDraining(uint32_t sequence);
+                void        errorCallback();
 
     static      int         asyncCallback(stream_callback_event_t event, void *param, void *cookie);
 
@@ -535,6 +575,7 @@ protected:
     virtual     bool        waitingAsyncCallback_l();
     virtual     bool        shouldStandby_l();
     virtual     void        onAddNewTrack_l();
+                void        onAsyncError(); // error reported by AsyncCallbackThread
 
     // ThreadBase virtuals
     virtual     void        preExit();
@@ -552,7 +593,9 @@ public:
 
                 void        setMasterVolume(float value);
                 void        setMasterMute(bool muted);
-
+#ifdef SRS_PROCESSING
+                void        setPostPro();
+#endif
                 void        setStreamVolume(audio_stream_type_t stream, float value);
                 void        setStreamMute(audio_stream_type_t stream, bool muted);
 
@@ -567,7 +610,7 @@ public:
                                 size_t *pFrameCount,
                                 const sp<IMemory>& sharedBuffer,
                                 audio_session_t sessionId,
-                                IAudioFlinger::track_flags_t *flags,
+                                audio_output_flags_t *flags,
                                 pid_t tid,
                                 int uid,
                                 status_t *status /*non-NULL*/);
@@ -606,7 +649,7 @@ public:
 
                 virtual status_t addEffectChain_l(const sp<EffectChain>& chain);
                 virtual size_t removeEffectChain_l(const sp<EffectChain>& chain);
-                virtual uint32_t hasAudioSession(audio_session_t sessionId) const;
+                virtual uint32_t hasAudioSession_l(audio_session_t sessionId) const;
                 virtual uint32_t getStrategyForSession_l(audio_session_t sessionId);
 
 
@@ -704,6 +747,7 @@ protected:
 
     int64_t                         mBytesWritten;
     int64_t                         mFramesWritten; // not reset on standby
+    int64_t                         mSuspendedFrames; // not reset on standby
 private:
     // mMasterMute is in both PlaybackThread and in AudioFlinger.  When a
     // PlaybackThread needs to find out if master-muted, it checks it's local
@@ -718,8 +762,8 @@ protected:
 
     // Allocate a track name for a given channel mask.
     //   Returns name >= 0 if successful, -1 on failure.
-    virtual int             getTrackName_l(audio_channel_mask_t channelMask,
-                                           audio_format_t format, audio_session_t sessionId) = 0;
+    virtual int             getTrackName_l(audio_channel_mask_t channelMask, audio_format_t format,
+                                           audio_session_t sessionId, uid_t uid) = 0;
     virtual void            deleteTrackName_l(int name) = 0;
 
     // Time to sleep between cycles when:
@@ -748,6 +792,8 @@ protected:
                 bool        usesHwAvSync() const { return (mType == DIRECT) && (mOutput != NULL)
                                     && mHwSupportsPause
                                     && (mOutput->flags & AUDIO_OUTPUT_FLAG_HW_AV_SYNC); }
+
+                uint32_t    trackCountForUid_l(uid_t uid);
 
 private:
 
@@ -871,8 +917,8 @@ public:
 
 protected:
     virtual     mixer_state prepareTracks_l(Vector< sp<Track> > *tracksToRemove);
-    virtual     int         getTrackName_l(audio_channel_mask_t channelMask,
-                                           audio_format_t format, audio_session_t sessionId);
+    virtual     int         getTrackName_l(audio_channel_mask_t channelMask, audio_format_t format,
+                                           audio_session_t sessionId, uid_t uid);
     virtual     void        deleteTrackName_l(int name);
     virtual     uint32_t    idleSleepTimeUs() const;
     virtual     uint32_t    suspendSleepTimeUs() const;
@@ -951,8 +997,8 @@ public:
     virtual     void        flushHw_l();
 
 protected:
-    virtual     int         getTrackName_l(audio_channel_mask_t channelMask,
-                                           audio_format_t format, audio_session_t sessionId);
+    virtual     int         getTrackName_l(audio_channel_mask_t channelMask, audio_format_t format,
+                                           audio_session_t sessionId, uid_t uid);
     virtual     void        deleteTrackName_l(int name);
     virtual     uint32_t    activeSleepTimeUs() const;
     virtual     uint32_t    idleSleepTimeUs() const;
@@ -1003,12 +1049,16 @@ protected:
     virtual     bool        waitingAsyncCallback_l();
     virtual     void        invalidateTracks(audio_stream_type_t streamType);
 
-    virtual     bool        keepWakeLock() const { return mKeepWakeLock; }
+    virtual     bool        keepWakeLock() const { return (mKeepWakeLock || (mDrainSequence & 1)); }
 
 private:
     size_t      mPausedWriteLength;     // length in bytes of write interrupted by pause
     size_t      mPausedBytesRemaining;  // bytes still waiting in mixbuffer after resume
     bool        mKeepWakeLock;          // keep wake lock while waiting for write callback
+    uint64_t    mOffloadUnderrunPosition; // Current frame position for offloaded playback
+                                          // used and valid only during underrun.  ~0 if
+                                          // no underrun has occurred during playback and
+                                          // is not reset on standby.
 };
 
 class AsyncCallbackThread : public Thread {
@@ -1029,6 +1079,7 @@ public:
             void        resetWriteBlocked();
             void        setDraining(uint32_t sequence);
             void        resetDraining();
+            void        setAsyncError();
 
 private:
     const wp<PlaybackThread>   mPlaybackThread;
@@ -1042,6 +1093,7 @@ private:
     uint32_t                   mDrainSequence;
     Condition                  mWaitWorkCV;
     Mutex                      mLock;
+    bool                       mAsyncError;
 };
 
 class DuplicatingThread : public MixerThread {
@@ -1259,7 +1311,7 @@ public:
                     audio_session_t sessionId,
                     size_t *notificationFrames,
                     int uid,
-                    IAudioFlinger::track_flags_t *flags,
+                    audio_input_flags_t *flags,
                     pid_t tid,
                     status_t *status /*non-NULL*/);
 
@@ -1293,7 +1345,7 @@ public:
 
     virtual status_t addEffectChain_l(const sp<EffectChain>& chain);
     virtual size_t removeEffectChain_l(const sp<EffectChain>& chain);
-    virtual uint32_t hasAudioSession(audio_session_t sessionId) const;
+    virtual uint32_t hasAudioSession_l(audio_session_t sessionId) const;
 
             // Return the set of unique session IDs across all tracks.
             // The keys are the session IDs, and the associated values are meaningless.
@@ -1308,6 +1360,9 @@ public:
     virtual size_t      frameCount() const { return mFrameCount; }
             bool        hasFastCapture() const { return mFastCapture != 0; }
     virtual void        getAudioPortConfig(struct audio_port_config *config);
+
+    virtual status_t    checkEffectCompatibility_l(const effect_descriptor_t *desc,
+                                                   audio_session_t sessionId);
 
 private:
             // Enter standby if not already in standby, and set mStandby flag

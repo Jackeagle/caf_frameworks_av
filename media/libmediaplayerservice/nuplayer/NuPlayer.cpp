@@ -12,6 +12,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2014-2016 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -57,6 +76,9 @@
 #include "ESDS.h"
 #include <media/stagefright/Utils.h>
 #include "mediaplayerservice/AVNuExtensions.h"
+#ifdef DOLBY_ENABLE
+#include "DolbyNuPlayerExtImpl.h"
+#endif // DOLBY_END
 
 namespace android {
 
@@ -785,16 +807,9 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             }
 
             if (mVideoDecoder != NULL) {
-                float rate = getFrameRate();
-                if (rate > 0) {
-                    sp<AMessage> params = new AMessage();
-                    params->setFloat("operating-rate", rate * mPlaybackSettings.mSpeed);
-                    mVideoDecoder->setParameters(params);
-
-                    params = new AMessage();
-                    params->setFloat("playback-speed", mPlaybackSettings.mSpeed);
-                    mVideoDecoder->setParameters(params);
-                }
+                sp<AMessage> params = new AMessage();
+                params->setFloat("playback-speed", mPlaybackSettings.mSpeed);
+                mVideoDecoder->setParameters(params);
             }
 
             sp<AMessage> response = new AMessage;
@@ -1010,6 +1025,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 sp<AMessage> inputFormat =
                         mSource->getFormat(false /* audio */);
 
+                setVideoScalingMode(mVideoScalingMode);
                 updateVideoSize(inputFormat, format);
             } else if (what == DecoderBase::kWhatShutdownCompleted) {
                 ALOGV("%s shutdown completed", audio ? "audio" : "video");
@@ -1081,6 +1097,10 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                         break;                    // Finish anyways.
                 }
                 notifyListener(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, err);
+#ifdef DOLBY_ENABLE
+            } else if (what == kWhatDlbCpProc) {
+                onDolbyMessageReceived();
+#endif // DOLBY_END
             } else {
                 ALOGV("Unhandled decoder notification %d '%c%c%c%c'.",
                       what,
@@ -1359,6 +1379,14 @@ void NuPlayer::onStart(int64_t startPositionUs) {
     }
 
     sp<MetaData> audioMeta = mSource->getFormatMeta(true /* audio */);
+    sp<MetaData> videoMeta = mSource->getFormatMeta(false /* audio */);
+    if (audioMeta == NULL && videoMeta == NULL) {
+        ALOGE("no metadata for either audio or video source");
+        mSource->stop();
+        mSourceStarted = false;
+        notifyListener(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, ERROR_MALFORMED);
+        return;
+    }
     ALOGV_IF(audioMeta == NULL, "no metadata for audio source");  // video only stream
 
     audio_stream_type_t streamType = AUDIO_STREAM_MUSIC;
@@ -1702,17 +1730,22 @@ status_t NuPlayer::instantiateDecoder(
     }
 
     if (!audio) {
-        sp<MetaData> fileMeta = getFileMeta();
-        if (fileMeta == NULL) {
-            ALOGW("source has video meta but not file meta");
-            return -1;
+        sp<AMessage> params = new AMessage();
+        float rate = getFrameRate();
+        if (rate > 0) {
+            params->setFloat("frame-rate-total", rate);
         }
 
-        int32_t videoTemporalLayerCount = 0;
-        if (fileMeta->findInt32(kKeyTemporalLayerCount, &videoTemporalLayerCount)
-                && videoTemporalLayerCount > 0) {
-            sp<AMessage> params = new AMessage();
-            params->setInt32("temporal-layer-count", videoTemporalLayerCount);
+        sp<MetaData> fileMeta = getFileMeta();
+        if (fileMeta != NULL) {
+            int32_t videoTemporalLayerCount;
+            if (fileMeta->findInt32(kKeyTemporalLayerCount, &videoTemporalLayerCount)
+                    && videoTemporalLayerCount > 0) {
+                params->setInt32("temporal-layer-count", videoTemporalLayerCount);
+            }
+        }
+
+        if (params->countEntries() > 0) {
             (*decoder)->setParameters(params);
         }
     }

@@ -105,8 +105,15 @@ public:
         ALOGV("setDrmFlag NOT IMPLEMENTED");
     }
     virtual bool getDrmFlag() {
-        ALOGV("getDrmFlag NOT IMPLEMENTED");
-       return false;
+        ALOGV("getDrmFlag");
+        Parcel data, reply;
+        data.writeInterfaceToken(BpMediaExtractor::getInterfaceDescriptor());
+        status_t ret = remote()->transact(GETDRMFLAG, data, &reply);
+        bool  isDrm = 0;
+        if (ret == NO_ERROR) {
+            isDrm = reply.readUint32();
+        }
+        return isDrm;
     }
     virtual char* getDrmTrackInfo(size_t trackID __unused, int *len __unused) {
         ALOGV("getDrmTrackInfo NOT IMPLEMENTED");
@@ -160,6 +167,9 @@ status_t BnMediaExtractor::onTransact(
             if (data.readUint32(&idx) == NO_ERROR &&
                     data.readUint32(&flags) == NO_ERROR) {
                 sp<MetaData> meta = getTrackMetaData(idx, flags);
+                if (meta == NULL) {
+                    return UNKNOWN_ERROR;
+                }
                 meta->writeToParcel(*reply);
                 return NO_ERROR;
             }
@@ -174,6 +184,13 @@ status_t BnMediaExtractor::onTransact(
                 return NO_ERROR;
             }
             return UNKNOWN_ERROR;
+        }
+        case GETDRMFLAG: {
+            ALOGV("getDrmFlag");
+            CHECK_INTERFACE(IMediaExtractor, data, reply);
+            bool isDrm  = getDrmFlag();
+            reply->writeUint32(uint32_t(isDrm));
+            return NO_ERROR;
         }
         default:
             return BBinder::onTransact(code, data, reply, flags);

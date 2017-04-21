@@ -13,6 +13,42 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
+**
+** This file was modified by Dolby Laboratories, Inc. The portions of the
+** code that are surrounded by "DOLBY..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2011-2016 Dolby Laboratories, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
+**
+** This file was modified by DTS, Inc. The portions of the
+** code that are surrounded by "DTS..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2017 DTS, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
 */
 
 
@@ -65,6 +101,10 @@
 #include <mediautils/BatteryNotifier.h>
 #include <private/android_filesystem_config.h>
 
+#ifdef SRS_PROCESSING
+#include "postpro_patch.h"
+#endif
+
 // ----------------------------------------------------------------------------
 
 // Note: the following macro is used for extremely verbose logging message.  In
@@ -80,6 +120,9 @@
 #define ALOGVV(a...) do { } while(0)
 #endif
 
+#ifdef DOLBY_ENABLE
+#include "EffectDapController_impl.h"
+#endif // DOLBY_END
 namespace android {
 
 static const char kDeadlockedString[] = "AudioFlinger may be deadlocked\n";
@@ -132,6 +175,9 @@ const char *formatToString(audio_format_t format) {
     case AUDIO_FORMAT_AC3: return "ac-3";
     case AUDIO_FORMAT_E_AC3: return "e-ac-3";
     case AUDIO_FORMAT_IEC61937: return "iec61937";
+    case AUDIO_FORMAT_DTS: return "dts";
+    case AUDIO_FORMAT_DTS_HD: return "dts-hd";
+    case AUDIO_FORMAT_DOLBY_TRUEHD: return "dolby-truehd";
     default:
         break;
     }
@@ -222,6 +268,9 @@ AudioFlinger::AudioFlinger()
         mTeeSinkTrackEnabled = true;
     }
 #endif
+#ifdef DOLBY_ENABLE
+    EffectDapController::mInstance = new EffectDapController(this);
+#endif // DOLBY_END
 }
 
 void AudioFlinger::onFirstRef()
@@ -249,6 +298,9 @@ void AudioFlinger::onFirstRef()
 
 AudioFlinger::~AudioFlinger()
 {
+#ifdef DOLBY_ENABLE
+    delete EffectDapController::mInstance;
+#endif // DOLBY_END
     while (!mRecordThreads.isEmpty()) {
         // closeInput_nonvirtual() will remove specified entry from mRecordThreads
         closeInput_nonvirtual(mRecordThreads.keyAt(0));
@@ -576,7 +628,7 @@ sp<IAudioTrack> AudioFlinger::createTrack(
         audio_format_t format,
         audio_channel_mask_t channelMask,
         size_t *frameCount,
-        IAudioFlinger::track_flags_t *flags,
+        audio_output_flags_t *flags,
         const sp<IMemory>& sharedBuffer,
         audio_io_handle_t output,
         pid_t pid,
@@ -660,7 +712,7 @@ sp<IAudioTrack> AudioFlinger::createTrack(
                 sp<PlaybackThread> t = mPlaybackThreads.valueAt(i);
                 if (mPlaybackThreads.keyAt(i) != output) {
                     uint32_t sessions = t->hasAudioSession(lSessionId);
-                    if (sessions & PlaybackThread::EFFECT_SESSION) {
+                    if (sessions & ThreadBase::EFFECT_SESSION) {
                         effectThread = t.get();
                         break;
                     }
@@ -1101,14 +1153,27 @@ status_t AudioFlinger::setParameters(audio_io_handle_t ioHandle, const String8& 
     // AUDIO_IO_HANDLE_NONE means the parameters are global to the audio hardware interface
     if (ioHandle == AUDIO_IO_HANDLE_NONE) {
         Mutex::Autolock _l(mLock);
-        status_t final_result = NO_ERROR;
+        // result will remain NO_INIT if no audio device is present
+        status_t final_result = NO_INIT;
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_PARAMS_SET(keyValuePairs);
+        for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
+            PlaybackThread *thread = mPlaybackThreads.valueAt(i).get();
+            thread->setPostPro();
+        }
+#endif
         {
             AutoMutex lock(mHardwareLock);
             mHardwareStatus = AUDIO_HW_SET_PARAMETER;
             for (size_t i = 0; i < mAudioHwDevs.size(); i++) {
                 audio_hw_device_t *dev = mAudioHwDevs.valueAt(i)->hwDevice();
                 status_t result = dev->set_parameters(dev, keyValuePairs.string());
-                final_result = result ?: final_result;
+                // return success if at least one audio device accepts the parameters as not all
+                // HALs are requested to support all parameters. If no audio device supports the
+                // requested parameters, the last error is reported.
+                if (final_result != NO_ERROR) {
+                    final_result = result;
+                }
             }
             mHardwareStatus = AUDIO_HW_IDLE;
         }
@@ -1196,6 +1261,9 @@ String8 AudioFlinger::getParameters(audio_io_handle_t ioHandle, const String8& k
 
     if (ioHandle == AUDIO_IO_HANDLE_NONE) {
         String8 out_s8;
+#ifdef SRS_PROCESSING
+        POSTPRO_PATCH_PARAMS_GET(keys, out_s8);
+#endif
 
         for (size_t i = 0; i < mAudioHwDevs.size(); i++) {
             char *s;
@@ -1365,7 +1433,7 @@ void AudioFlinger::removeNotificationClient(pid_t pid)
     ALOGV("%d died, releasing its sessions", pid);
     size_t num = mAudioSessionRefs.size();
     bool removed = false;
-    for (size_t i = 0; i< num; ) {
+    for (size_t i = 0; i < num; ) {
         AudioSessionRef *ref = mAudioSessionRefs.itemAt(i);
         ALOGV(" pid %d @ %zu", ref->mPid, i);
         if (ref->mPid == pid) {
@@ -1420,8 +1488,14 @@ sp<AudioFlinger::PlaybackThread> AudioFlinger::getEffectThread_l(audio_session_t
     return thread;
 }
 
-
-
+#ifdef SRS_PROCESSING
+void AudioFlinger::PlaybackThread::setPostPro()
+{
+    Mutex::Autolock _l(mLock);
+    if (mType == OFFLOAD)
+        broadcast_l();
+}
+#endif
 // ----------------------------------------------------------------------------
 
 AudioFlinger::Client::Client(const sp<AudioFlinger>& audioFlinger, pid_t pid)
@@ -1432,6 +1506,9 @@ AudioFlinger::Client::Client(const sp<AudioFlinger>& audioFlinger, pid_t pid)
     size_t heapSize = kClientSharedHeapSizeBytes;
     // Increase heap size on non low ram devices to limit risk of reconnection failure for
     // invalidated tracks
+    kClientSharedHeapSizeMultiplier =
+        property_get_int32("audio.heap.size.multiplier",
+            kClientSharedHeapSizeMultiplier);
     if (!audioFlinger->isLowRamDevice()) {
         heapSize *= kClientSharedHeapSizeMultiplier;
     }
@@ -1478,7 +1555,7 @@ sp<IAudioRecord> AudioFlinger::openRecord(
         audio_channel_mask_t channelMask,
         const String16& opPackageName,
         size_t *frameCount,
-        IAudioFlinger::track_flags_t *flags,
+        audio_input_flags_t *flags,
         pid_t pid,
         pid_t tid,
         int clientUid,
@@ -1709,14 +1786,14 @@ audio_module_handle_t AudioFlinger::loadHwModule_l(const char *name)
 uint32_t AudioFlinger::getPrimaryOutputSamplingRate()
 {
     Mutex::Autolock _l(mLock);
-    PlaybackThread *thread = primaryPlaybackThread_l();
+    PlaybackThread *thread = fastPlaybackThread_l();
     return thread != NULL ? thread->sampleRate() : 0;
 }
 
 size_t AudioFlinger::getPrimaryOutputFrameCount()
 {
     Mutex::Autolock _l(mLock);
-    PlaybackThread *thread = primaryPlaybackThread_l();
+    PlaybackThread *thread = fastPlaybackThread_l();
     return thread != NULL ? thread->frameCountHAL() : 0;
 }
 
@@ -1777,7 +1854,7 @@ audio_hw_sync_t AudioFlinger::getAudioHwSyncForSession(audio_session_t sessionId
     for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
         sp<PlaybackThread> thread = mPlaybackThreads.valueAt(i);
         uint32_t sessions = thread->hasAudioSession(sessionId);
-        if (sessions & PlaybackThread::TRACK_SESSION) {
+        if (sessions & ThreadBase::TRACK_SESSION) {
             AudioParameter param = AudioParameter();
             param.addInt(String8(AUDIO_PARAMETER_STREAM_HW_AV_SYNC), value);
             thread->setParameters(param.toString());
@@ -2214,7 +2291,7 @@ sp<AudioFlinger::RecordThread> AudioFlinger::openInput_l(audio_module_handle_t m
         }
 #endif
 
-        AudioStreamIn *inputStream = new AudioStreamIn(inHwDev, inStream);
+        AudioStreamIn *inputStream = new AudioStreamIn(inHwDev, inStream, flags);
 
         // Start record thread
         // RecordThread requires both input and output device indication to forward to audio
@@ -2367,7 +2444,7 @@ void AudioFlinger::acquireAudioSessionId(audio_session_t audioSession, pid_t pid
     }
 
     size_t num = mAudioSessionRefs.size();
-    for (size_t i = 0; i< num; i++) {
+    for (size_t i = 0; i < num; i++) {
         AudioSessionRef *ref = mAudioSessionRefs.editItemAt(i);
         if (ref->mSessionid == audioSession && ref->mPid == caller) {
             ref->mCnt++;
@@ -2388,7 +2465,7 @@ void AudioFlinger::releaseAudioSessionId(audio_session_t audioSession, pid_t pid
         caller = pid;
     }
     size_t num = mAudioSessionRefs.size();
-    for (size_t i = 0; i< num; i++) {
+    for (size_t i = 0; i < num; i++) {
         AudioSessionRef *ref = mAudioSessionRefs.itemAt(i);
         if (ref->mSessionid == audioSession && ref->mPid == caller) {
             ref->mCnt--;
@@ -2404,6 +2481,18 @@ void AudioFlinger::releaseAudioSessionId(audio_session_t audioSession, pid_t pid
     // If the caller is mediaserver it is likely that the session being released was acquired
     // on behalf of a process not in notification clients and we ignore the warning.
     ALOGW_IF(caller != getpid_cached, "session id %d not found for pid %d", audioSession, caller);
+}
+
+bool AudioFlinger::isSessionAcquired_l(audio_session_t audioSession)
+{
+    size_t num = mAudioSessionRefs.size();
+    for (size_t i = 0; i < num; i++) {
+        AudioSessionRef *ref = mAudioSessionRefs.itemAt(i);
+        if (ref->mSessionid == audioSession) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void AudioFlinger::purgeStaleEffects_l() {
@@ -2545,6 +2634,25 @@ audio_devices_t AudioFlinger::primaryOutputDevice_l() const
     }
 
     return thread->outDevice();
+}
+
+AudioFlinger::PlaybackThread *AudioFlinger::fastPlaybackThread_l() const
+{
+    size_t minFrameCount = 0;
+    PlaybackThread *minThread = NULL;
+    for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
+        PlaybackThread *thread = mPlaybackThreads.valueAt(i).get();
+        if (!thread->isDuplicating()) {
+            size_t frameCount = thread->frameCountHAL();
+            if (frameCount != 0 && (minFrameCount == 0 || frameCount < minFrameCount ||
+                    (frameCount == minFrameCount && thread->hasFastMixer() &&
+                    /*minThread != NULL &&*/ !minThread->hasFastMixer()))) {
+                minFrameCount = frameCount;
+                minThread = thread;
+            }
+        }
+    }
+    return minThread;
 }
 
 sp<AudioFlinger::SyncEvent> AudioFlinger::createSyncEvent(AudioSystem::sync_event_t type,
@@ -2780,8 +2888,9 @@ sp<IEffect> AudioFlinger::createEffect(
         sp<Client> client = registerPid(pid);
 
         // create effect on selected output thread
+        bool pinned = (sessionId > AUDIO_SESSION_OUTPUT_MIX) && isSessionAcquired_l(sessionId);
         handle = thread->createEffect_l(client, effectClient, priority, sessionId,
-                &desc, enabled, &lStatus);
+                &desc, enabled, &lStatus, pinned);
         if (handle != 0 && id != NULL) {
             *id = handle->id();
         }
@@ -2820,6 +2929,11 @@ status_t AudioFlinger::moveEffects(audio_session_t sessionId, audio_io_handle_t 
 
     Mutex::Autolock _dl(dstThread->mLock);
     Mutex::Autolock _sl(srcThread->mLock);
+#ifdef DOLBY_ENABLE
+    if (static_cast<int>(sessionId) == DOLBY_MOVE_EFFECT_SIGNAL) {
+        return EffectDapController::instance()->moveEffect(AUDIO_SESSION_OUTPUT_MIX, srcThread, dstThread);
+    }
+#endif // DOLBY_END
     return moveEffectChain_l(sessionId, srcThread, dstThread, false);
 }
 
@@ -2839,14 +2953,11 @@ status_t AudioFlinger::moveEffectChain_l(audio_session_t sessionId,
         return INVALID_OPERATION;
     }
 
-    // Check whether the destination thread has a channel count of FCC_2, which is
-    // currently required for (most) effects. Prevent moving the effect chain here rather
-    // than disabling the addEffect_l() call in dstThread below.
-    if ((dstThread->type() == ThreadBase::MIXER || dstThread->isDuplicating()) &&
-            dstThread->mChannelCount != FCC_2) {
+    // Check whether the destination thread and all effects in the chain are compatible
+    if (!chain->isCompatibleWithThread_l(dstThread)) {
         ALOGW("moveEffectChain_l() effect chain failed because"
-                " destination thread %p channel count(%u) != %u",
-                dstThread, dstThread->mChannelCount, FCC_2);
+                " destination thread %p is not compatible with effects in the chain",
+                dstThread);
         return INVALID_OPERATION;
     }
 
@@ -2901,6 +3012,9 @@ status_t AudioFlinger::moveEffectChain_l(audio_session_t sessionId,
     if (status != NO_ERROR) {
         for (size_t i = 0; i < removed.size(); i++) {
             srcThread->addEffect_l(removed[i]);
+#ifdef DOLBY_ENABLE
+            EffectDapController::instance()->restartEffect(effect);
+#endif // DOLBY_END
             if (dstChain != 0 && reRegister) {
                 AudioSystem::unregisterEffect(removed[i]->id());
                 AudioSystem::registerEffect(&removed[i]->desc(),
@@ -2981,7 +3095,7 @@ bool AudioFlinger::updateOrphanEffectChains(const sp<AudioFlinger::EffectModule>
     ALOGV("updateOrphanEffectChains session %d index %zd", session, index);
     if (index >= 0) {
         sp<EffectChain> chain = mOrphanEffectChains.valueAt(index);
-        if (chain->removeEffect_l(effect) == 0) {
+        if (chain->removeEffect_l(effect, true) == 0) {
             ALOGV("updateOrphanEffectChains removing effect chain at index %zd", index);
             mOrphanEffectChains.removeItemsAt(index);
         }
@@ -3054,7 +3168,7 @@ void AudioFlinger::dumpTee(int fd, const sp<NBAIO_Source>& source, audio_io_hand
             }
         } else {
             if (fd >= 0) {
-                dprintf(fd, "unable to rotate tees in %.*s: %s\n", teePathLen, teePath,
+                dprintf(fd, "unable to rotate tees in %.*s: %s\n", (int) teePathLen, teePath,
                         strerror(errno));
             }
         }

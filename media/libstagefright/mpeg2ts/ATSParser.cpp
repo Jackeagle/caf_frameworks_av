@@ -12,6 +12,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2011-2016 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -635,6 +654,12 @@ ATSParser::Stream::Stream(
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::AC3);
             break;
+#ifdef DOLBY_ENABLE
+        case STREAMTYPE_EAC3:
+            mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::EAC3);
+            break;
+#endif // DOLBY_END
 
         case STREAMTYPE_METADATA:
             mQueue = new ElementaryStreamQueue(
@@ -708,6 +733,10 @@ status_t ATSParser::Stream::parse(
         }
 
         mPayloadStarted = true;
+        // There should be at most 2 elements in |mPesStartOffsets|.
+        while (mPesStartOffsets.size() >= 2) {
+            mPesStartOffsets.erase(mPesStartOffsets.begin());
+        }
         mPesStartOffsets.push_back(offset);
     }
 
@@ -761,6 +790,9 @@ bool ATSParser::Stream::isAudio() const {
         case STREAMTYPE_MPEG2_AUDIO_ADTS:
         case STREAMTYPE_LPCM_AC3:
         case STREAMTYPE_AC3:
+#ifdef DOLBY_ENABLE
+        case STREAMTYPE_EAC3:
+#endif // DOLBY_END
             return true;
 
         default:
@@ -1114,15 +1146,20 @@ void ATSParser::Stream::onPayloadData(
             mSource->queueAccessUnit(accessUnit);
         }
 
-        if ((event != NULL) && !found && mQueue->getFormat() != NULL) {
+        // Every access unit has a pesStartOffset queued in |mPesStartOffsets|.
+        off64_t pesStartOffset = -1;
+        if (!mPesStartOffsets.empty()) {
+            pesStartOffset = *mPesStartOffsets.begin();
+            mPesStartOffsets.erase(mPesStartOffsets.begin());
+        }
+
+        if (pesStartOffset >= 0 && (event != NULL) && !found && mQueue->getFormat() != NULL) {
             int32_t sync = 0;
             if (accessUnit->meta()->findInt32("isSync", &sync) && sync) {
                 int64_t timeUs;
                 if (accessUnit->meta()->findInt64("timeUs", &timeUs)) {
                     found = true;
-                    off64_t pesStartOffset = *mPesStartOffsets.begin();
                     event->init(pesStartOffset, mSource, timeUs);
-                    mPesStartOffsets.erase(mPesStartOffsets.begin());
                 }
             }
         }

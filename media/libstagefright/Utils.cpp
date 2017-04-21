@@ -12,6 +12,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2014-2016 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -1321,9 +1340,18 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
 
         convertMessageToMetaDataColorAspects(msg, meta);
 
-        int32_t numLayers = 0;
-        if (msg->findInt32("num-temporal-layers", &numLayers) && numLayers > 0) {
-            meta->setInt32(kKeyTemporalLayerCount, numLayers);
+        AString tsSchema;
+        if (msg->findString("ts-schema", &tsSchema)) {
+            unsigned int numLayers = 0;
+            unsigned int numBLayers = 0;
+            char dummy;
+            int tags = sscanf(tsSchema.c_str(), "android.generic.%u%c%u%c",
+                    &numLayers, &dummy, &numBLayers, &dummy);
+            if ((tags == 1 || (tags == 3 && dummy == '+'))
+                    && numLayers > 0 && numLayers < UINT32_MAX - numBLayers
+                    && numLayers + numBLayers <= INT32_MAX) {
+                meta->setInt32(kKeyTemporalLayerCount, numLayers + numBLayers);
+            }
         }
     } else if (mime.startsWith("audio/")) {
         int32_t numChannels;
@@ -1500,6 +1528,11 @@ static const struct mime_conv_t mimeLookup[] = {
     { MEDIA_MIMETYPE_AUDIO_AAC,         AUDIO_FORMAT_AAC },
     { MEDIA_MIMETYPE_AUDIO_VORBIS,      AUDIO_FORMAT_VORBIS },
     { MEDIA_MIMETYPE_AUDIO_OPUS,        AUDIO_FORMAT_OPUS},
+#ifdef DOLBY_ENABLE
+    { MEDIA_MIMETYPE_AUDIO_AC3,         AUDIO_FORMAT_AC3},
+    { MEDIA_MIMETYPE_AUDIO_EAC3,        AUDIO_FORMAT_E_AC3},
+    { MEDIA_MIMETYPE_AUDIO_EAC3_JOC,    AUDIO_FORMAT_E_AC3},
+#endif // DOLBY_END
     { 0, AUDIO_FORMAT_INVALID }
 };
 

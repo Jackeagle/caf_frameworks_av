@@ -13,6 +13,25 @@
 ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
+**
+** This file was modified by Dolby Laboratories, Inc. The portions of the
+** code that are surrounded by "DOLBY..." are copyrighted and
+** licensed separately, as follows:
+**
+**  (C) 2011-2016 Dolby Laboratories, Inc.
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**    http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
+**
 */
 
 // Proxy for media player implementations
@@ -82,6 +101,9 @@
 #include "HDCP.h"
 #include "HTTPBase.h"
 #include "RemoteDisplay.h"
+#ifdef DOLBY_ENABLE
+#include "DolbyMediaPlayerServiceExtImpl.h"
+#endif // DOLBY_END
 
 namespace {
 using android::media::Metadata;
@@ -685,10 +707,20 @@ sp<MediaPlayerBase> MediaPlayerService::Client::setDataSource_pre(
 
     sp<IServiceManager> sm = defaultServiceManager();
     sp<IBinder> binder = sm->getService(String16("media.extractor"));
+    if (binder == NULL) {
+        ALOGE("Unable to connect to media extractor service");
+        return NULL;
+    }
+
     mExtractorDeathListener = new ServiceDeathNotifier(binder, p, MEDIAEXTRACTOR_PROCESS_DEATH);
     binder->linkToDeath(mExtractorDeathListener);
 
     binder = sm->getService(String16("media.codec"));
+    if (binder == NULL) {
+        ALOGE("Unable to connect to media codec service");
+        return NULL;
+    }
+
     mCodecDeathListener = new ServiceDeathNotifier(binder, p, MEDIACODEC_PROCESS_DEATH);
     binder->linkToDeath(mCodecDeathListener);
 
@@ -1416,6 +1448,9 @@ MediaPlayerService::AudioOutput::AudioOutput(audio_session_t sessionId, int uid,
     }
 
     setMinBufferCount();
+#ifdef DOLBY_ENABLE
+    mProcessedAudio = false;
+#endif // DOLBY_END
 }
 
 MediaPlayerService::AudioOutput::~AudioOutput()
@@ -1593,6 +1628,9 @@ status_t MediaPlayerService::AudioOutput::getFramesWritten(uint32_t *frameswritt
 status_t MediaPlayerService::AudioOutput::setParameters(const String8& keyValuePairs)
 {
     Mutex::Autolock lock(mLock);
+#ifdef DOLBY_ENABLE
+    setDolbyParameters(keyValuePairs);
+#endif // DOLBY_END
     if (mTrack == 0) return NO_INIT;
     return mTrack->setParameters(keyValuePairs);
 }
@@ -1873,6 +1911,13 @@ status_t MediaPlayerService::AudioOutput::open(
                       mRecycledTrack->frameCount(), t->frameCount());
                 reuse = false;
             }
+            // If recycled and new tracks are not on the same output,
+            // don't reuse the recycled one.
+            if (mRecycledTrack->getOutput() != t->getOutput()) {
+                ALOGV("effect chain if exists has already moved to new output, \
+                        giving up reusing recycled track.");
+                reuse = false;
+            }
         }
 
         if (reuse) {
@@ -1884,7 +1929,10 @@ status_t MediaPlayerService::AudioOutput::open(
                 mCallbackData->setOutput(this);
             }
             delete newcbd;
-            return OK;
+#ifdef DOLBY_ENABLE
+            updateTrackOnAudioProcessed(mTrack, reuse);
+#endif // DOLBY_END
+            return updateTrack();
         }
     }
 
@@ -1906,17 +1954,29 @@ status_t MediaPlayerService::AudioOutput::open(
     mFrameSize = t->frameSize();
     mTrack = t;
 
+    return updateTrack();
+}
+
+status_t MediaPlayerService::AudioOutput::updateTrack() {
+    if (mTrack == NULL) {
+        return NO_ERROR;
+    }
+
     status_t res = NO_ERROR;
     // Note some output devices may give us a direct track even though we don't specify it.
     // Example: Line application b/17459982.
-    if ((t->getFlags() & (AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD | AUDIO_OUTPUT_FLAG_DIRECT)) == 0) {
-        res = t->setPlaybackRate(mPlaybackRate);
+    if ((mTrack->getFlags()
+            & (AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD | AUDIO_OUTPUT_FLAG_DIRECT)) == 0) {
+        res = mTrack->setPlaybackRate(mPlaybackRate);
         if (res == NO_ERROR) {
-            t->setAuxEffectSendLevel(mSendLevel);
-            res = t->attachAuxEffect(mAuxEffectId);
+            mTrack->setAuxEffectSendLevel(mSendLevel);
+            res = mTrack->attachAuxEffect(mAuxEffectId);
         }
     }
-    ALOGV("open() DONE status %d", res);
+#ifdef DOLBY_ENABLE
+    updateTrackOnAudioProcessed(mTrack, false);
+#endif // DOLBY_END
+    ALOGV("updateTrack() DONE status %d", res);
     return res;
 }
 
@@ -1968,6 +2028,7 @@ void MediaPlayerService::AudioOutput::switchToNextOutput() {
                     continue;
                 }
                 callbackData->mSwitching = true; // begin track switch
+                callbackData->setOutput(NULL);
 #else
                 // tryBeginTrackSwitch() returns false if the callback has the lock.
                 if (!mCallbackData->tryBeginTrackSwitch()) {
