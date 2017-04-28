@@ -4608,6 +4608,10 @@ uint32_t AudioPolicyManager::handleEventForBeacon(int event) {
 uint32_t AudioPolicyManager::setBeaconMute(bool mute) {
     ALOGV("setBeaconMute(%d) mBeaconMuteRefCount=%d mBeaconPlayingRefCount=%d",
             mute, mBeaconMuteRefCount, mBeaconPlayingRefCount);
+    // FIXME: Becon playback was handling in DSP.so this function is not needed
+    // to handle the pop noices in concurrent playback sessions.So stubbed this
+    // function to avoid playback latencies.
+    return 0;
     // keep track of muted state to avoid repeating mute/unmute operations
     if (mBeaconMuted != mute) {
         // mute/unmute AUDIO_STREAM_TTS on all outputs
@@ -4626,7 +4630,6 @@ uint32_t AudioPolicyManager::setBeaconMute(bool mute) {
         mBeaconMuted = mute;
         return maxLatency;
     }
-    return 0;
 }
 
 audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy,
