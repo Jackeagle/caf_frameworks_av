@@ -805,6 +805,27 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
         return INVALID_OPERATION;
     }
 
+    if (mA2dpSuspended) {
+        sp<AudioOutputDescriptor> curr_desc = mOutputs.valueFor(*output);
+        if (curr_desc->supportedDevices() & AUDIO_DEVICE_OUT_ALL_A2DP) {
+            for (int i = 0; i < NUM_STRATEGIES; i++) {
+                if (curr_desc->mStrategyMutedByA2dpSuspended[i]) {
+                    // exist output reused, no need to mute again
+                    break;
+                }
+                // check whether mute is needed for new output
+                for (size_t j = 0; j < mOutputs.size(); j++) {
+                    sp<AudioOutputDescriptor> desc = mOutputs.valueAt(j);
+                    if (curr_desc->sharesHwModuleWith(desc) &&
+                        desc->mStrategyMutedByA2dpSuspended[i]) {
+                        curr_desc->mStrategyMutedByA2dpSuspended[i] = true;
+                        setStrategyMute((routing_strategy)i, true, curr_desc);
+                        break;
+                    }
+                }
+            }
+        }
+    }
     return NO_ERROR;
 }
 
