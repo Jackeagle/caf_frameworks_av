@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "AudioStreamRecord"
+#define LOG_TAG "AAudio"
 //#define LOG_NDEBUG 0
 #include <utils/Log.h>
 
@@ -60,14 +60,29 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
                               ? 2 : getSamplesPerFrame();
     audio_channel_mask_t channelMask = audio_channel_in_mask_from_count(samplesPerFrame);
 
-    audio_input_flags_t flags = (audio_input_flags_t) AUDIO_INPUT_FLAG_NONE;
-
     size_t frameCount = (builder.getBufferCapacity() == AAUDIO_UNSPECIFIED) ? 0
                         : builder.getBufferCapacity();
+
     // TODO implement an unspecified Android format then use that.
     audio_format_t format = (getFormat() == AAUDIO_UNSPECIFIED)
             ? AUDIO_FORMAT_PCM_FLOAT
             : AAudioConvert_aaudioToAndroidDataFormat(getFormat());
+
+    audio_input_flags_t flags = AUDIO_INPUT_FLAG_NONE;
+    aaudio_performance_mode_t perfMode = getPerformanceMode();
+    switch (perfMode) {
+        case AAUDIO_PERFORMANCE_MODE_LOW_LATENCY:
+            flags = (audio_input_flags_t) (AUDIO_INPUT_FLAG_FAST | AUDIO_INPUT_FLAG_RAW);
+            break;
+
+        case AAUDIO_PERFORMANCE_MODE_POWER_SAVING:
+        case AAUDIO_PERFORMANCE_MODE_NONE:
+        default:
+            // No flags.
+            break;
+    }
+
+    uint32_t notificationFrames = 0;
 
     // Setup the callback if there is one.
     AudioRecord::callback_t callback = nullptr;
@@ -77,11 +92,14 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
         streamTransferType = AudioRecord::transfer_type::TRANSFER_CALLBACK;
         callback = getLegacyCallback();
         callbackData = this;
+        notificationFrames = builder.getFramesPerDataCallback();
     }
     mCallbackBufferSize = builder.getFramesPerDataCallback();
 
+    ALOGD("AudioStreamRecord::open(), request notificationFrames = %u, frameCount = %u",
+          notificationFrames, (uint)frameCount);
     mAudioRecord = new AudioRecord(
-            AUDIO_SOURCE_DEFAULT,
+            AUDIO_SOURCE_VOICE_RECOGNITION,
             getSampleRate(),
             format,
             channelMask,
@@ -89,7 +107,7 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
             frameCount,
             callback,
             callbackData,
-            0,    //    uint32_t notificationFrames = 0,
+            notificationFrames,
             AUDIO_SESSION_ALLOCATE,
             streamTransferType,
             flags
@@ -108,8 +126,13 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
 
     // Get the actual rate.
     setSampleRate(mAudioRecord->getSampleRate());
-    setSamplesPerFrame(mAudioRecord->channelCount());
     setFormat(AAudioConvert_androidToAAudioDataFormat(mAudioRecord->format()));
+
+    int32_t actualSampleRate = mAudioRecord->getSampleRate();
+    ALOGW_IF(actualSampleRate != getSampleRate(),
+             "AudioStreamRecord::open() sampleRate changed from %d to %d",
+             getSampleRate(), actualSampleRate);
+    setSampleRate(actualSampleRate);
 
     // We may need to pass the data through a block size adapter to guarantee constant size.
     if (mCallbackBufferSize != AAUDIO_UNSPECIFIED) {
@@ -119,6 +142,24 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
     } else {
         mBlockAdapter = nullptr;
     }
+
+    // Update performance mode based on the actual stream.
+    // For example, if the sample rate does not match native then you won't get a FAST track.
+    audio_input_flags_t actualFlags = mAudioRecord->getFlags();
+    aaudio_performance_mode_t actualPerformanceMode = AAUDIO_PERFORMANCE_MODE_NONE;
+    // FIXME Some platforms do not advertise RAW mode for low latency inputs.
+    if ((actualFlags & (AUDIO_INPUT_FLAG_FAST))
+        == (AUDIO_INPUT_FLAG_FAST)) {
+        actualPerformanceMode = AAUDIO_PERFORMANCE_MODE_LOW_LATENCY;
+    }
+    setPerformanceMode(actualPerformanceMode);
+    // Log warning if we did not get what we asked for.
+    ALOGW_IF(actualFlags != flags,
+             "AudioStreamRecord::open() flags changed from 0x%08X to 0x%08X",
+             flags, actualFlags);
+    ALOGW_IF(actualPerformanceMode != perfMode,
+             "AudioStreamRecord::open() perfMode changed from %d to %d",
+             perfMode, actualPerformanceMode);
 
     setState(AAUDIO_STREAM_STATE_OPEN);
 
@@ -137,8 +178,6 @@ aaudio_result_t AudioStreamRecord::close()
 }
 
 void AudioStreamRecord::processCallback(int event, void *info) {
-
-    ALOGD("AudioStreamRecord::processCallback(), event %d", event);
     switch (event) {
         case AudioRecord::EVENT_MORE_DATA:
             processCallbackCommon(AAUDIO_CALLBACK_OPERATION_PROCESS_DATA, info);
@@ -177,10 +216,13 @@ aaudio_result_t AudioStreamRecord::requestStart()
 
 aaudio_result_t AudioStreamRecord::requestPause()
 {
+    // This does not make sense for an input stream.
+    // There is no real difference between pause() and stop().
     return AAUDIO_ERROR_UNIMPLEMENTED;
 }
 
 aaudio_result_t AudioStreamRecord::requestFlush() {
+    // This does not make sense for an input stream.
     return AAUDIO_ERROR_UNIMPLEMENTED;
 }
 
@@ -189,7 +231,9 @@ aaudio_result_t AudioStreamRecord::requestStop() {
         return AAUDIO_ERROR_INVALID_STATE;
     }
     setState(AAUDIO_STREAM_STATE_STOPPING);
+    incrementFramesWritten(getFramesRead() - getFramesWritten()); // TODO review
     mAudioRecord->stop();
+    mFramesRead.reset32();
     return AAUDIO_OK;
 }
 
@@ -239,6 +283,7 @@ aaudio_result_t AudioStreamRecord::read(void *buffer,
         return AAudioConvert_androidToAAudioResult(bytesRead);
     }
     int32_t framesRead = (int32_t)(bytesRead / bytesPerFrame);
+    incrementFramesRead(framesRead);
     return (aaudio_result_t) framesRead;
 }
 
@@ -259,7 +304,7 @@ int32_t AudioStreamRecord::getBufferCapacity() const
 
 int32_t AudioStreamRecord::getXRunCount() const
 {
-    return AAUDIO_ERROR_UNIMPLEMENTED; // TODO implement when AudioRecord supports it
+    return 0; // TODO implement when AudioRecord supports it
 }
 
 int32_t AudioStreamRecord::getFramesPerBurst() const
@@ -275,20 +320,5 @@ aaudio_result_t AudioStreamRecord::getTimestamp(clockid_t clockId,
     if (status != NO_ERROR) {
         return AAudioConvert_androidToAAudioResult(status);
     }
-    // TODO Merge common code into AudioStreamLegacy after rebasing.
-    int timebase;
-    switch(clockId) {
-        case CLOCK_BOOTTIME:
-            timebase = ExtendedTimestamp::TIMEBASE_BOOTTIME;
-            break;
-        case CLOCK_MONOTONIC:
-            timebase = ExtendedTimestamp::TIMEBASE_MONOTONIC;
-            break;
-        default:
-            ALOGE("getTimestamp() - Unrecognized clock type %d", (int) clockId);
-            return AAUDIO_ERROR_UNEXPECTED_VALUE;
-            break;
-    }
-    status = extendedTimestamp.getBestTimestamp(framePosition, timeNanoseconds, timebase);
-    return AAudioConvert_androidToAAudioResult(status);
+    return getBestTimestamp(clockId, framePosition, timeNanoseconds, &extendedTimestamp);
 }

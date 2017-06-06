@@ -63,10 +63,18 @@ public:
 
     int64_t getFramesRead() override;
 
+    aaudio_direction_t getDirection() const override {
+        return AAUDIO_DIRECTION_OUTPUT;
+    }
+
     aaudio_result_t updateStateWhileWaiting() override;
 
     // This is public so it can be called from the C callback function.
     void processCallback(int event, void *info) override;
+
+    int64_t incrementClientFrameCounter(int32_t frames) override {
+        return incrementFramesWritten(frames);
+    }
 
 private:
 

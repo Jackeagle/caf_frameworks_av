@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "AudioStreamTrack"
+#define LOG_TAG "AAudio"
 //#define LOG_NDEBUG 0
 #include <utils/Log.h>
 
@@ -58,25 +58,35 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
         return result;
     }
 
-    ALOGD("AudioStreamTrack::open = %p", this);
-
     // Try to create an AudioTrack
-    // TODO Support UNSPECIFIED in AudioTrack. For now, use stereo if unspecified.
+    // Use stereo if unspecified.
     int32_t samplesPerFrame = (getSamplesPerFrame() == AAUDIO_UNSPECIFIED)
                               ? 2 : getSamplesPerFrame();
     audio_channel_mask_t channelMask = audio_channel_out_mask_from_count(samplesPerFrame);
-    ALOGD("AudioStreamTrack::open(), samplesPerFrame = %d, channelMask = 0x%08x",
-            samplesPerFrame, channelMask);
 
-    // TODO add more performance options
-    audio_output_flags_t flags = (audio_output_flags_t) AUDIO_OUTPUT_FLAG_FAST;
+    audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE;
+    aaudio_performance_mode_t perfMode = getPerformanceMode();
+    switch(perfMode) {
+        case AAUDIO_PERFORMANCE_MODE_LOW_LATENCY:
+            // Bypass the normal mixer and go straight to the FAST mixer.
+            flags = (audio_output_flags_t)(AUDIO_OUTPUT_FLAG_FAST | AUDIO_OUTPUT_FLAG_RAW);
+            break;
 
-    int32_t frameCount = builder.getBufferCapacity();
-    ALOGD("AudioStreamTrack::open(), requested buffer capacity %d", frameCount);
+        case AAUDIO_PERFORMANCE_MODE_POWER_SAVING:
+            // This uses a mixer that wakes up less often than the FAST mixer.
+            flags = AUDIO_OUTPUT_FLAG_DEEP_BUFFER;
+            break;
+
+        case AAUDIO_PERFORMANCE_MODE_NONE:
+        default:
+            // No flags. Use a normal mixer in front of the FAST mixer.
+            break;
+    }
+
+    size_t frameCount = (size_t)builder.getBufferCapacity();
 
     int32_t notificationFrames = 0;
 
-    // TODO implement an unspecified AudioTrack format then use that.
     audio_format_t format = (getFormat() == AAUDIO_FORMAT_UNSPECIFIED)
             ? AUDIO_FORMAT_PCM_FLOAT
             : AAudioConvert_aaudioToAndroidDataFormat(getFormat());
@@ -91,17 +101,20 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
         callback = getLegacyCallback();
         callbackData = this;
 
-        notificationFrames = builder.getFramesPerDataCallback();
         // If the total buffer size is unspecified then base the size on the burst size.
-        if (frameCount == AAUDIO_UNSPECIFIED) {
+        if (frameCount == 0
+                && ((flags & AUDIO_OUTPUT_FLAG_FAST) != 0)) {
             // Take advantage of a special trick that allows us to create a buffer
             // that is some multiple of the burst size.
             notificationFrames = 0 - DEFAULT_BURSTS_PER_BUFFER_CAPACITY;
+        } else {
+            notificationFrames = builder.getFramesPerDataCallback();
         }
     }
     mCallbackBufferSize = builder.getFramesPerDataCallback();
 
-    ALOGD("AudioStreamTrack::open(), notificationFrames = %d", notificationFrames);
+    ALOGD("AudioStreamTrack::open(), request notificationFrames = %d, frameCount = %u",
+          notificationFrames, (uint)frameCount);
     mAudioTrack = new AudioTrack(
             (audio_stream_type_t) AUDIO_STREAM_MUSIC,
             getSampleRate(),
@@ -118,7 +131,6 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
 
     // Did we get a valid track?
     status_t status = mAudioTrack->initCheck();
-    ALOGD("AudioStreamTrack::open(), initCheck() returned %d", status);
     if (status != NO_ERROR) {
         close();
         ALOGE("AudioStreamTrack::open(), initCheck() returned %d", status);
@@ -127,10 +139,15 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
 
     // Get the actual values from the AudioTrack.
     setSamplesPerFrame(mAudioTrack->channelCount());
-    setSampleRate(mAudioTrack->getSampleRate());
     aaudio_audio_format_t aaudioFormat =
             AAudioConvert_androidToAAudioDataFormat(mAudioTrack->format());
     setFormat(aaudioFormat);
+
+    int32_t actualSampleRate = mAudioTrack->getSampleRate();
+    ALOGW_IF(actualSampleRate != getSampleRate(),
+             "AudioStreamTrack::open() sampleRate changed from %d to %d",
+             getSampleRate(), actualSampleRate);
+    setSampleRate(actualSampleRate);
 
     // We may need to pass the data through a block size adapter to guarantee constant size.
     if (mCallbackBufferSize != AAUDIO_UNSPECIFIED) {
@@ -144,14 +161,33 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
     setState(AAUDIO_STREAM_STATE_OPEN);
     setDeviceId(mAudioTrack->getRoutedDeviceId());
 
+    // Update performance mode based on the actual stream.
+    // For example, if the sample rate is not allowed then you won't get a FAST track.
+    audio_output_flags_t actualFlags = mAudioTrack->getFlags();
+    aaudio_performance_mode_t actualPerformanceMode = AAUDIO_PERFORMANCE_MODE_NONE;
+    if ((actualFlags & (AUDIO_OUTPUT_FLAG_FAST | AUDIO_OUTPUT_FLAG_RAW))
+        == (AUDIO_OUTPUT_FLAG_FAST | AUDIO_OUTPUT_FLAG_RAW)) {
+        actualPerformanceMode = AAUDIO_PERFORMANCE_MODE_LOW_LATENCY;
+
+    } else if ((actualFlags & AUDIO_OUTPUT_FLAG_DEEP_BUFFER) != 0) {
+        actualPerformanceMode = AAUDIO_PERFORMANCE_MODE_POWER_SAVING;
+    }
+    setPerformanceMode(actualPerformanceMode);
+    // Log warning if we did not get what we asked for.
+    ALOGW_IF(actualFlags != flags,
+             "AudioStreamTrack::open() flags changed from 0x%08X to 0x%08X",
+             flags, actualFlags);
+    ALOGW_IF(actualPerformanceMode != perfMode,
+             "AudioStreamTrack::open() perfMode changed from %d to %d",
+             perfMode, actualPerformanceMode);
+
     return AAUDIO_OK;
 }
 
 aaudio_result_t AudioStreamTrack::close()
 {
-    // TODO maybe add close() or release() to AudioTrack API then call it from here
     if (getState() != AAUDIO_STREAM_STATE_CLOSED) {
-        mAudioTrack.clear(); // TODO is this right?
+        mAudioTrack.clear();
         setState(AAUDIO_STREAM_STATE_CLOSED);
     }
     mFixedBlockReader.close();
@@ -276,7 +312,7 @@ aaudio_result_t AudioStreamTrack::updateStateWhileWaiting()
             if (err != OK) {
                 return AAudioConvert_androidToAAudioResult(err);
             } else if (position == 0) {
-                // Advance frames read to match written.
+                // TODO Advance frames read to match written.
                 setState(AAUDIO_STREAM_STATE_FLUSHED);
             }
         }
@@ -354,6 +390,8 @@ int64_t AudioStreamTrack::getFramesRead() {
     case AAUDIO_STREAM_STATE_STARTING:
     case AAUDIO_STREAM_STATE_STARTED:
     case AAUDIO_STREAM_STATE_STOPPING:
+    case AAUDIO_STREAM_STATE_PAUSING:
+    case AAUDIO_STREAM_STATE_PAUSED:
         result = mAudioTrack->getPosition(&position);
         if (result == OK) {
             mFramesRead.update32(position);
@@ -373,20 +411,5 @@ aaudio_result_t AudioStreamTrack::getTimestamp(clockid_t clockId,
     if (status != NO_ERROR) {
         return AAudioConvert_androidToAAudioResult(status);
     }
-    // TODO Merge common code into AudioStreamLegacy after rebasing.
-    int timebase;
-    switch (clockId) {
-        case CLOCK_BOOTTIME:
-            timebase = ExtendedTimestamp::TIMEBASE_BOOTTIME;
-            break;
-        case CLOCK_MONOTONIC:
-            timebase = ExtendedTimestamp::TIMEBASE_MONOTONIC;
-            break;
-        default:
-            ALOGE("getTimestamp() - Unrecognized clock type %d", (int) clockId);
-            return AAUDIO_ERROR_UNEXPECTED_VALUE;
-            break;
-    }
-    status = extendedTimestamp.getBestTimestamp(framePosition, timeNanoseconds, timebase);
-    return AAudioConvert_androidToAAudioResult(status);
+    return getBestTimestamp(clockId, framePosition, timeNanoseconds, &extendedTimestamp);
 }

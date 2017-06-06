@@ -22,8 +22,8 @@
 #include <aaudio/AAudio.h>
 #include "SineGenerator.h"
 
-#define SAMPLE_RATE   48000
-#define NUM_SECONDS   5
+#define SAMPLE_RATE           48000
+#define NUM_SECONDS           5
 #define NANOS_PER_MICROSECOND ((int64_t)1000)
 #define NANOS_PER_MILLISECOND (NANOS_PER_MICROSECOND * 1000)
 #define NANOS_PER_SECOND      (NANOS_PER_MILLISECOND * 1000)
@@ -63,8 +63,8 @@ int main(int argc, char **argv)
 
     aaudio_result_t result = AAUDIO_OK;
 
-    const int requestedSamplesPerFrame = 2;
-    int actualSamplesPerFrame = 0;
+    const int requestedChannelCount = 2;
+    int actualChannelCount = 0;
     const int requestedSampleRate = SAMPLE_RATE;
     int actualSampleRate = 0;
     aaudio_audio_format_t actualDataFormat = AAUDIO_FORMAT_UNSPECIFIED;
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
     // in a buffer if we hang or crash.
     setvbuf(stdout, nullptr, _IONBF, (size_t) 0);
 
-    printf("%s - Play a sine wave using AAudio, Z2\n", argv[0]);
+    printf("%s - Play a sine wave using AAudio\n", argv[0]);
 
     // Use an AAudioStreamBuilder to contain requested parameters.
     result = AAudio_createStreamBuilder(&aaudioBuilder);
@@ -100,9 +100,13 @@ int main(int argc, char **argv)
 
     // Request stream properties.
     AAudioStreamBuilder_setSampleRate(aaudioBuilder, requestedSampleRate);
-    AAudioStreamBuilder_setSamplesPerFrame(aaudioBuilder, requestedSamplesPerFrame);
+    AAudioStreamBuilder_setChannelCount(aaudioBuilder, requestedChannelCount);
     AAudioStreamBuilder_setFormat(aaudioBuilder, REQUESTED_FORMAT);
     AAudioStreamBuilder_setSharingMode(aaudioBuilder, REQUESTED_SHARING_MODE);
+
+    AAudioStreamBuilder_setPerformanceMode(aaudioBuilder, AAUDIO_PERFORMANCE_MODE_NONE);
+    //AAudioStreamBuilder_setPerformanceMode(aaudioBuilder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    //AAudioStreamBuilder_setPerformanceMode(aaudioBuilder, AAUDIO_PERFORMANCE_MODE_POWER_SAVING);
 
     // Create an AAudioStream using the Builder.
     result = AAudioStreamBuilder_openStream(aaudioBuilder, &aaudioStream);
@@ -120,9 +124,9 @@ int main(int argc, char **argv)
     sineOsc1.setup(440.0, actualSampleRate);
     sineOsc2.setup(660.0, actualSampleRate);
 
-    actualSamplesPerFrame = AAudioStream_getSamplesPerFrame(aaudioStream);
-    printf("SamplesPerFrame: requested = %d, actual = %d\n",
-            requestedSamplesPerFrame, actualSamplesPerFrame);
+    actualChannelCount = AAudioStream_getChannelCount(aaudioStream);
+    printf("ChannelCount: requested = %d, actual = %d\n",
+            requestedChannelCount, actualChannelCount);
 
     actualSharingMode = AAudioStream_getSharingMode(aaudioStream);
     printf("SharingMode: requested = %s, actual = %s\n",
@@ -132,7 +136,6 @@ int main(int argc, char **argv)
     // This is the number of frames that are read in one chunk by a DMA controller
     // or a DSP or a mixer.
     framesPerBurst = AAudioStream_getFramesPerBurst(aaudioStream);
-    printf("Buffer: framesPerBurst = %d\n",framesPerBurst);
     printf("Buffer: bufferSize = %d\n", AAudioStream_getBufferSizeInFrames(aaudioStream));
     bufferCapacity = AAudioStream_getBufferCapacityInFrames(aaudioStream);
     printf("Buffer: bufferCapacity = %d, remainder = %d\n",
@@ -144,17 +147,20 @@ int main(int argc, char **argv)
     while (framesPerWrite < 48) {
         framesPerWrite *= 2;
     }
-    printf("DataFormat: framesPerWrite = %d\n",framesPerWrite);
+    printf("Buffer: framesPerBurst = %d\n",framesPerBurst);
+    printf("Buffer: framesPerWrite = %d\n",framesPerWrite);
 
     actualDataFormat = AAudioStream_getFormat(aaudioStream);
     printf("DataFormat: requested = %d, actual = %d\n", REQUESTED_FORMAT, actualDataFormat);
     // TODO handle other data formats
 
+    printf("PerformanceMode: %d\n", AAudioStream_getPerformanceMode(aaudioStream));
+
     // Allocate a buffer for the audio data.
     if (actualDataFormat == AAUDIO_FORMAT_PCM_FLOAT) {
-        floatData = new float[framesPerWrite * actualSamplesPerFrame];
+        floatData = new float[framesPerWrite * actualChannelCount];
     } else if (actualDataFormat == AAUDIO_FORMAT_PCM_I16) {
-        shortData = new int16_t[framesPerWrite * actualSamplesPerFrame];
+        shortData = new int16_t[framesPerWrite * actualChannelCount];
     } else {
         printf("ERROR Unsupported data format!\n");
         goto finish;
@@ -178,15 +184,15 @@ int main(int argc, char **argv)
 
         if (actualDataFormat == AAUDIO_FORMAT_PCM_FLOAT) {
             // Render sine waves to left and right channels.
-            sineOsc1.render(&floatData[0], actualSamplesPerFrame, framesPerWrite);
-            if (actualSamplesPerFrame > 1) {
-                sineOsc2.render(&floatData[1], actualSamplesPerFrame, framesPerWrite);
+            sineOsc1.render(&floatData[0], actualChannelCount, framesPerWrite);
+            if (actualChannelCount > 1) {
+                sineOsc2.render(&floatData[1], actualChannelCount, framesPerWrite);
             }
         } else if (actualDataFormat == AAUDIO_FORMAT_PCM_I16) {
             // Render sine waves to left and right channels.
-            sineOsc1.render(&shortData[0], actualSamplesPerFrame, framesPerWrite);
-            if (actualSamplesPerFrame > 1) {
-                sineOsc2.render(&shortData[1], actualSamplesPerFrame, framesPerWrite);
+            sineOsc1.render(&shortData[0], actualChannelCount, framesPerWrite);
+            if (actualChannelCount > 1) {
+                sineOsc2.render(&shortData[1], actualChannelCount, framesPerWrite);
             }
         }
 

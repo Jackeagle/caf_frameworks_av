@@ -273,6 +273,10 @@ protected:
         {
             return mDefaultOutputDevice;
         }
+        virtual const bool &getA2dpSuspended() const
+        {
+            return mA2dpSuspended;
+        }
 protected:
         void addOutput(audio_io_handle_t output, const sp<SwAudioOutputDescriptor>& outputDesc);
         void removeOutput(audio_io_handle_t output);
@@ -383,7 +387,7 @@ protected:
         // must be called every time a condition that affects the output choice for a given strategy
         // changes: connected device, phone state, force use...
         // Must be called before updateDevicesAndOutputs()
-        void checkOutputForStrategy(routing_strategy strategy);
+        virtual void checkOutputForStrategy(routing_strategy strategy);
 
         // Same as checkOutputForStrategy() but for a all strategies in order of priority
         void checkOutputForAllStrategies();
@@ -627,7 +631,6 @@ protected:
         virtual audio_io_handle_t getOutputForDevice(
                 audio_devices_t device,
                 audio_session_t session,
-                uid_t client,
                 audio_stream_type_t stream,
                 uint32_t samplingRate,
                 audio_format_t format,

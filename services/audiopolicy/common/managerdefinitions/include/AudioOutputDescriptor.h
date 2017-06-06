@@ -130,7 +130,7 @@ public:
     sp<SwAudioOutputDescriptor> mOutput1;    // used by duplicated outputs: first output
     sp<SwAudioOutputDescriptor> mOutput2;    // used by duplicated outputs: second output
     uint32_t mDirectOpenCount; // number of clients using this output (direct outputs only)
-    uid_t mDirectClientUid; // uid of the direct output client
+    audio_session_t mDirectClientSession; // session id of the direct output client
     uint32_t mGlobalRefCount;  // non-stream-specific ref count
 };
 
@@ -178,6 +178,11 @@ public:
      * returns the A2DP output handle if it is open or 0 otherwise
      */
     audio_io_handle_t getA2dpOutput() const;
+
+    /**
+     * return true if primary HAL supports A2DP Playback
+     */
+    bool isA2dpOnPrimary() const;
 
     sp<SwAudioOutputDescriptor> getOutputFromId(audio_port_handle_t id) const;
 

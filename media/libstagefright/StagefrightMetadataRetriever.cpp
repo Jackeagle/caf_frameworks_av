@@ -166,6 +166,7 @@ static VideoFrame *extractVideoFrame(
     if (!isSeekingClosest) {
         videoFormat->setInt32("android._num-input-buffers", 1);
         videoFormat->setInt32("android._num-output-buffers", 1);
+        videoFormat->setInt32("thumbnail-mode", 1);
     }
 
     status_t err;
@@ -389,9 +390,11 @@ static VideoFrame *extractVideoFrame(
         }
     }
 
-    int32_t width, height;
+    int32_t width, height, stride, slice_height;
     CHECK(outputFormat->findInt32("width", &width));
     CHECK(outputFormat->findInt32("height", &height));
+    CHECK(outputFormat->findInt32("stride", &stride));
+    CHECK(outputFormat->findInt32("slice-height", &slice_height));
 
     int32_t crop_left, crop_top, crop_right, crop_bottom;
     if (!outputFormat->findRect("crop", &crop_left, &crop_top, &crop_right, &crop_bottom)) {
@@ -445,7 +448,7 @@ static VideoFrame *extractVideoFrame(
     if (converter.isValid()) {
         err = converter.convert(
                 (const uint8_t *)videoFrameBuffer->data(),
-                width, height,
+                stride, slice_height,
                 crop_left, crop_top, crop_right, crop_bottom,
                 frame->mData,
                 frame->mWidth,
@@ -538,7 +541,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     MediaCodecList::findMatchingCodecs(
             mime,
             false, /* encoder */
-            MediaCodecList::kPreferSoftwareCodecs,
+            0 /* MediaCodecList::kPreferSoftwareCodecs */,
             &matchingCodecs);
 
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {

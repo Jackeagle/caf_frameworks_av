@@ -2959,6 +2959,10 @@ bool AudioFlinger::PlaybackThread::threadLoop()
     // and then that string will be logged at the next convenient opportunity.
     const char *logString = NULL;
 
+    // Estimated time for next buffer to be written to hal. This is used only on
+    // suspended mode (for now) to help schedule the wait time until next iteration.
+    nsecs_t timeLoopNextNs = 0;
+
     checkSilentMode_l();
 #if 0
     int z = 0; // used in logFormat example
@@ -3324,6 +3328,29 @@ bool AudioFlinger::PlaybackThread::threadLoop()
             } else {
                 ATRACE_BEGIN("sleep");
                 Mutex::Autolock _l(mLock);
+                // suspended requires accurate metering of sleep time.
+                if (isSuspended()) {
+                    // advance by expected sleepTime
+                    timeLoopNextNs += microseconds((nsecs_t)mSleepTimeUs);
+                    const nsecs_t nowNs = systemTime();
+
+                    // compute expected next time vs current time.
+                    // (negative deltas are treated as delays).
+                    nsecs_t deltaNs = timeLoopNextNs - nowNs;
+                    if (deltaNs < -kMaxNextBufferDelayNs) {
+                        // Delays longer than the max allowed trigger a reset.
+                        ALOGV("DelayNs: %lld, resetting timeLoopNextNs", (long long) deltaNs);
+                        deltaNs = microseconds((nsecs_t)mSleepTimeUs);
+                        timeLoopNextNs = nowNs + deltaNs;
+                    } else if (deltaNs < 0) {
+                        // Delays within the max delay allowed: zero the delta/sleepTime
+                        // to help the system catch up in the next iteration(s)
+                        ALOGV("DelayNs: %lld, catching-up", (long long) deltaNs);
+                        deltaNs = 0;
+                    }
+                    // update sleep time (which is >= 0)
+                    mSleepTimeUs = deltaNs / 1000;
+                }
                 if (!mSignalPending && mConfigEvents.isEmpty() && !exitPending()) {
                     mWaitWorkCV.waitRelative(mLock, microseconds((nsecs_t)mSleepTimeUs));
                 }
@@ -3399,13 +3426,6 @@ status_t AudioFlinger::PlaybackThread::getTimestamp_l(AudioTimestamp& timestamp)
             status = ets.getBestTimestamp(&timestamp);
         }
         return status;
-    }
-    if ((mType == OFFLOAD || mType == DIRECT) && mOutput != NULL) {
-        uint64_t position64;
-        if (mOutput->getPresentationPosition(&position64, &timestamp.mTime) == OK) {
-            timestamp.mPosition = (uint32_t)position64;
-            return NO_ERROR;
-        }
     }
     return INVALID_OPERATION;
 }
@@ -4777,6 +4797,7 @@ AudioFlinger::DirectOutputThread::DirectOutputThread(const sp<AudioFlinger>& aud
         AudioStreamOut* output, audio_io_handle_t id, audio_devices_t device, bool systemReady)
     :   PlaybackThread(audioFlinger, output, id, device, DIRECT, systemReady)
         // mLeftVolFloat, mRightVolFloat
+        , mVolumeShaperActive(false), mFramesWrittenAtStandby(0)
 {
 }
 
@@ -4785,7 +4806,7 @@ AudioFlinger::DirectOutputThread::DirectOutputThread(const sp<AudioFlinger>& aud
         ThreadBase::type_t type, bool systemReady)
     :   PlaybackThread(audioFlinger, output, id, device, type, systemReady)
         // mLeftVolFloat, mRightVolFloat
-        , mVolumeShaperActive(false)
+        , mVolumeShaperActive(false), mFramesWrittenAtStandby(0)
 {
 }
 
@@ -4862,6 +4883,11 @@ void AudioFlinger::DirectOutputThread::onAddNewTrack_l()
                 mFlushPending = true;
             }
         }
+    } else if (previousTrack == 0) {
+        // there could be an old track added back during track transition for direct
+        // output, so always issues flush to flush data of the previous track if it
+        // was already destroyed with HAL paused, then flush can resume the playback
+        mFlushPending = true;
     }
     PlaybackThread::onAddNewTrack_l();
 }
@@ -5132,12 +5158,18 @@ void AudioFlinger::DirectOutputThread::threadLoop_exit()
 // must be called with thread mutex locked
 bool AudioFlinger::DirectOutputThread::shouldStandby_l()
 {
+    bool standbyForDirectPcm = false;
+    bool standbyWhenIdle = false;
+
     bool trackPaused = false;
     bool trackStopped = false;
 
-    if ((mType == DIRECT) && audio_is_linear_pcm(mFormat) && !usesHwAvSync()) {
-        return !mStandby;
+    if (mStandby) {
+        return false; // already in standby
     }
+
+    // allowing DIRECT linear pcm track to be in standby even when active
+    standbyForDirectPcm = (mType == DIRECT) && audio_is_linear_pcm(mFormat) && !usesHwAvSync();
 
     // do not put the HAL in standby when paused. AwesomePlayer clear the offloaded AudioTrack
     // after a timeout and we will enter standby then.
@@ -5146,8 +5178,18 @@ bool AudioFlinger::DirectOutputThread::shouldStandby_l()
         trackStopped = mTracks[mTracks.size() - 1]->isStopped() ||
                            mTracks[mTracks.size() - 1]->mState == TrackBase::IDLE;
     }
-
-    return !mStandby && !(trackPaused || (mHwPaused && !trackStopped));
+    standbyWhenIdle = trackStopped || (!trackPaused && !mHwPaused);
+    // store position when entering standby in idle/stopped state for DIRECT linear pcm tracks.
+    // This is required because presentation position for a DIRECT linear pcm track is not reset
+    // on standby, and must be reset on track stop.
+    if (standbyForDirectPcm && standbyWhenIdle) {
+        uint64_t position64;
+        struct timespec ts;
+        if (NO_ERROR == mOutput->getPresentationPosition(&position64, &ts)) {
+            mFramesWrittenAtStandby = position64;
+        }
+    }
+    return standbyForDirectPcm || standbyWhenIdle;
 }
 
 // getTrackName_l() must be called with ThreadBase::mLock held
@@ -5271,6 +5313,20 @@ void AudioFlinger::DirectOutputThread::flushHw_l()
     mOutput->flush();
     mHwPaused = false;
     mFlushPending = false;
+    mFramesWrittenAtStandby = 0;
+}
+
+status_t AudioFlinger::DirectOutputThread::getTimestamp_l(AudioTimestamp& timestamp)
+{
+    if (mOutput != NULL) {
+        uint64_t position64;
+        if (mOutput->getPresentationPosition(&position64, &timestamp.mTime) == OK) {
+            timestamp.mPosition = (position64 <= mFramesWrittenAtStandby) ?
+                   0 : (uint32_t) (position64 - mFramesWrittenAtStandby);
+            return NO_ERROR;
+        }
+    }
+    return INVALID_OPERATION;
 }
 
 int64_t AudioFlinger::DirectOutputThread::computeWaitTimeNs_l() const {
@@ -8293,22 +8349,24 @@ void AudioFlinger::MmapPlaybackThread::processVolume_l()
             mEffectChains[0]->setVolume_l(&vol, &vol);
             volume = (float)vol / (1 << 24);
         }
-
-        mOutput->stream->setVolume(volume, volume);
-
-        sp<MmapStreamCallback> callback = mCallback.promote();
-        if (callback != 0) {
-            int channelCount;
-            if (isOutput()) {
-                channelCount = audio_channel_count_from_out_mask(mChannelMask);
+        // Try to use HW volume control and fall back to SW control if not implemented
+        if (mOutput->stream->setVolume(volume, volume) != NO_ERROR) {
+            sp<MmapStreamCallback> callback = mCallback.promote();
+            if (callback != 0) {
+                int channelCount;
+                if (isOutput()) {
+                    channelCount = audio_channel_count_from_out_mask(mChannelMask);
+                } else {
+                    channelCount = audio_channel_count_from_in_mask(mChannelMask);
+                }
+                Vector<float> values;
+                for (int i = 0; i < channelCount; i++) {
+                    values.add(volume);
+                }
+                callback->onVolumeChanged(mChannelMask, values);
             } else {
-                channelCount = audio_channel_count_from_in_mask(mChannelMask);
+                ALOGW("Could not set MMAP stream volume: no volume callback!");
             }
-            Vector<float> values;
-            for (int i = 0; i < channelCount; i++) {
-                values.add(volume);
-            }
-            callback->onVolumeChanged(mChannelMask, values);
         }
     }
 }

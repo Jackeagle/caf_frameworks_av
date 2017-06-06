@@ -39,10 +39,13 @@ LOCAL_SRC_FILES = \
     utility/FixedBlockAdapter.cpp \
     utility/FixedBlockReader.cpp \
     utility/FixedBlockWriter.cpp \
+    utility/LinearRamp.cpp \
     fifo/FifoBuffer.cpp \
     fifo/FifoControllerBase.cpp \
     client/AudioEndpoint.cpp \
     client/AudioStreamInternal.cpp \
+    client/AudioStreamInternalCapture.cpp \
+    client/AudioStreamInternalPlay.cpp \
     client/IsochronousClockModel.cpp \
     binding/AudioEndpointParcelable.cpp \
     binding/AAudioBinderClient.cpp \
@@ -93,10 +96,13 @@ LOCAL_SRC_FILES = core/AudioStream.cpp \
     utility/FixedBlockAdapter.cpp \
     utility/FixedBlockReader.cpp \
     utility/FixedBlockWriter.cpp \
+    utility/LinearRamp.cpp \
     fifo/FifoBuffer.cpp \
     fifo/FifoControllerBase.cpp \
     client/AudioEndpoint.cpp \
     client/AudioStreamInternal.cpp \
+    client/AudioStreamInternalCapture.cpp \
+    client/AudioStreamInternalPlay.cpp \
     client/IsochronousClockModel.cpp \
     binding/AudioEndpointParcelable.cpp \
     binding/AAudioBinderClient.cpp \

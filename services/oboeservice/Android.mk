@@ -29,6 +29,8 @@ LOCAL_SRC_FILES += \
     AAudioMixer.cpp \
     AAudioService.cpp \
     AAudioServiceEndpoint.cpp \
+    AAudioServiceEndpointCapture.cpp \
+    AAudioServiceEndpointPlay.cpp \
     AAudioServiceStreamBase.cpp \
     AAudioServiceStreamMMAP.cpp \
     AAudioServiceStreamShared.cpp \
@@ -48,8 +50,7 @@ LOCAL_SHARED_LIBRARIES :=  \
     libcutils \
     libmediautils \
     libutils \
-    liblog \
-    libtinyalsa
+    liblog
 
 include $(BUILD_SHARED_LIBRARY)
 

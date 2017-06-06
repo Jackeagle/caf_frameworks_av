@@ -329,7 +329,7 @@ sp<MediaCodecSource> MediaCodecSource::Create(
         uint32_t flags) {
     sp<MediaCodecSource> mediaSource = new MediaCodecSource(
             looper, format, source, persistentSurface, flags);
-
+    AVUtils::get()->getHFRParams(&mediaSource->mIsHFR, &mediaSource->mBatchSize, format);
     if (mediaSource->init() == OK) {
         return mediaSource;
     }
@@ -434,16 +434,24 @@ MediaCodecSource::MediaCodecSource(
       mFirstSampleSystemTimeUs(-1ll),
       mPausePending(false),
       mFirstSampleTimeUs(-1ll),
-      mGeneration(0) {
+      mGeneration(0),
+      mPrevBufferTimestampUs(0),
+      mIsHFR(false),
+      mBatchSize(0) {
     CHECK(mLooper != NULL);
 
     AString mime;
+    int32_t storeMeta = kMetadataBufferTypeInvalid;
     CHECK(mOutputFormat->findString("mime", &mime));
 
     if (!strncasecmp("video/", mime.c_str(), 6)) {
         mIsVideo = true;
     }
 
+    if (mOutputFormat->findInt32("android._input-metadata-buffer-type", &storeMeta)
+            && storeMeta == kMetadataBufferTypeNativeHandleSource) {
+        mFlags |= FLAG_USE_METADATA_INPUT;
+    }
     if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
         mPuller = new Puller(source);
     }
@@ -675,13 +683,15 @@ status_t MediaCodecSource::feedEncoderInputBuffers() {
                     return OK;
                 }
             }
-
+            mInputBufferTimeOffsetUs = AVUtils::get()->overwriteTimeOffset(mIsHFR,
+                mInputBufferTimeOffsetUs, &mPrevBufferTimestampUs, timeUs, mBatchSize);
             timeUs += mInputBufferTimeOffsetUs;
 
             // push decoding time for video, or drift time for audio
             if (mIsVideo) {
                 mDecodingTimeQueue.push_back(timeUs);
                 if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
+                    mbuf->meta_data()->setInt64(kKeyTime, timeUs);
                     AVUtils::get()->addDecodingTimesFromBatch(mbuf, mDecodingTimeQueue);
                 }
             } else {

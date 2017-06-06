@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef AAUDIO_AUDIO_ENDPOINT_H
-#define AAUDIO_AUDIO_ENDPOINT_H
+#ifndef ANDROID_AAUDIO_AUDIO_ENDPOINT_H
+#define ANDROID_AAUDIO_AUDIO_ENDPOINT_H
 
 #include <aaudio/AAudio.h>
 
@@ -54,7 +54,15 @@ public:
      */
     aaudio_result_t writeDataNow(const void *buffer, int32_t numFrames);
 
-    void getEmptyRoomAvailable(android::WrappingBuffer *wrappingBuffer);
+    void getEmptyFramesAvailable(android::WrappingBuffer *wrappingBuffer);
+
+    int32_t getEmptyFramesAvailable();
+
+    void getFullFramesAvailable(android::WrappingBuffer *wrappingBuffer);
+
+    int32_t getFullFramesAvailable();
+
+    void advanceReadIndex(int32_t deltaFrames);
 
     void advanceWriteIndex(int32_t deltaFrames);
 
@@ -62,18 +70,20 @@ public:
      * Set the read index in the downData queue.
      * This is needed if the reader is not updating the index itself.
      */
-    void setDownDataReadCounter(android::fifo_counter_t framesRead);
-    android::fifo_counter_t getDownDataReadCounter();
+    void setDataReadCounter(android::fifo_counter_t framesRead);
 
-    void setDownDataWriteCounter(android::fifo_counter_t framesWritten);
-    android::fifo_counter_t getDownDataWriteCounter();
+    android::fifo_counter_t getDataReadCounter();
+
+    void setDataWriteCounter(android::fifo_counter_t framesWritten);
+
+    android::fifo_counter_t getDataWriteCounter();
 
     /**
      * The result is not valid until after configure() is called.
      *
      * @return true if the output buffer read position is not updated, eg. DMA
      */
-    bool isOutputFreeRunning() const { return mOutputFreeRunning; }
+    bool isFreeRunning() const { return mFreeRunning; }
 
     int32_t setBufferSizeInFrames(int32_t requestedFrames,
                                   int32_t *actualFrames);
@@ -81,16 +91,14 @@ public:
 
     int32_t getBufferCapacityInFrames() const;
 
-    int32_t getFullFramesAvailable();
-
 private:
     android::FifoBuffer    *mUpCommandQueue;
-    android::FifoBuffer    *mDownDataQueue;
-    bool                    mOutputFreeRunning;
+    android::FifoBuffer    *mDataQueue;
+    bool                    mFreeRunning;
     android::fifo_counter_t mDataReadCounter; // only used if free-running
     android::fifo_counter_t mDataWriteCounter; // only used if free-running
 };
 
 } // namespace aaudio
 
-#endif //AAUDIO_AUDIO_ENDPOINT_H
+#endif //ANDROID_AAUDIO_AUDIO_ENDPOINT_H

@@ -623,6 +623,12 @@ public:
     // 14 tracks max per client allows for 2 misbehaving application leaving 4 available tracks.
     static const uint32_t kMaxTracksPerUid = 14;
 
+    // Maximum delay (in nanoseconds) for upcoming buffers in suspend mode, otherwise
+    // if delay is greater, the estimated time for timeLoopNextNs is reset.
+    // This allows for catch-up to be done for small delays, while resetting the estimate
+    // for initial conditions or large delays.
+    static const nsecs_t kMaxNextBufferDelayNs = 100000000;
+
     PlaybackThread(const sp<AudioFlinger>& audioFlinger, AudioStreamOut* output,
                    audio_io_handle_t id, audio_devices_t device, type_t type, bool systemReady);
     virtual             ~PlaybackThread();
@@ -756,7 +762,7 @@ public:
 
     virtual     size_t      frameCount() const { return mNormalFrameCount; }
 
-                status_t    getTimestamp_l(AudioTimestamp& timestamp);
+    virtual     status_t    getTimestamp_l(AudioTimestamp& timestamp);
 
                 void        addPatchTrack(const sp<PatchTrack>& track);
                 void        deletePatchTrack(const sp<PatchTrack>& track);
@@ -1123,10 +1129,14 @@ protected:
 
     wp<Track>               mPreviousTrack;         // used to detect track switch
 
+    uint64_t                mFramesWrittenAtStandby;// used to reset frames on track reset
+
 public:
     virtual     bool        hasFastMixer() const { return false; }
 
     virtual     int64_t     computeWaitTimeNs_l() const override;
+
+    virtual     status_t    getTimestamp_l(AudioTimestamp& timestamp) override;
 };
 
 class OffloadThread : public DirectOutputThread {

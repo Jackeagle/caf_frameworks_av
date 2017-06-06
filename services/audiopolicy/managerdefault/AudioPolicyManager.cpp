@@ -638,6 +638,9 @@ void AudioPolicyManager::setForceUse(audio_policy_force_use_t usage,
                                          audio_policy_forced_cfg_t config)
 {
     ALOGV("setForceUse() usage %d, config %d, mPhoneState %d", usage, config, mEngine->getPhoneState());
+    if (config == mEngine->getForceUse(usage)) {
+        return;
+    }
 
     if (mEngine->setForceUse(usage, config) != NO_ERROR) {
         ALOGW("setForceUse() could not set force cfg %d for usage %d", config, usage);
@@ -755,9 +758,8 @@ audio_io_handle_t AudioPolicyManager::getOutput(audio_stream_type_t stream,
     ALOGV("getOutput() device %d, stream %d, samplingRate %d, format %x, channelMask %x, flags %x",
           device, stream, samplingRate, format, channelMask, flags);
 
-    return getOutputForDevice(device, AUDIO_SESSION_ALLOCATE, uid_t{0} /*Invalid uid*/,
-                              stream, samplingRate,format, channelMask,
-                              flags, offloadInfo);
+    return getOutputForDevice(device, AUDIO_SESSION_ALLOCATE, stream, samplingRate, format,
+                              channelMask, flags, offloadInfo);
 }
 
 status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
@@ -835,7 +837,7 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
     ALOGV("getOutputForAttr() device 0x%x, samplingRate %d, format %x, channelMask %x, flags %x",
           device, config->sample_rate, config->format, config->channel_mask, flags);
 
-    *output = getOutputForDevice(device, session, uid, *stream,
+    *output = getOutputForDevice(device, session, *stream,
                                  config->sample_rate, config->format, config->channel_mask,
                                  flags, &config->offload_info);
     if (*output == AUDIO_IO_HANDLE_NONE) {
@@ -848,8 +850,7 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
 
 audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         audio_devices_t device,
-        audio_session_t session __unused,
-        uid_t clientUid,
+        audio_session_t session,
         audio_stream_type_t stream,
         uint32_t samplingRate,
         audio_format_t format,
@@ -962,14 +963,15 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
                 if ((samplingRate == outputDesc->mSamplingRate) &&
                     audio_formats_match(format, outputDesc->mFormat) &&
                     (channelMask == outputDesc->mChannelMask)) {
-                  if (clientUid == outputDesc->mDirectClientUid) {
+                  if (session == outputDesc->mDirectClientSession) {
                       outputDesc->mDirectOpenCount++;
-                      ALOGV("getOutput() reusing direct output %d", mOutputs.keyAt(i));
+                      ALOGV("getOutput() reusing direct output %d for session %d",
+                            mOutputs.keyAt(i), session);
                       return mOutputs.keyAt(i);
                   } else {
-                      ALOGV("getOutput() do not reuse direct output because current client (%ld) "
-                            "is not the same as requesting client (%ld)",
-                            (long)outputDesc->mDirectClientUid, (long)clientUid);
+                      ALOGV("getOutput() do not reuse direct output because current client (%d) "
+                            "is not the same as requesting client (%d)",
+                            outputDesc->mDirectClientSession, session);
                       goto non_direct_output;
                   }
                 }
@@ -1007,11 +1009,14 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         if (offloadInfo != NULL) {
             config.offload_info = *offloadInfo;
         }
+        DeviceVector outputDevices = mAvailableOutputDevices.getDevicesFromType(device);
+        String8 address = outputDevices.size() > 0 ? outputDevices.itemAt(0)->mAddress
+                : String8("");
         status = mpClientInterface->openOutput(profile->getModuleHandle(),
                                                &output,
                                                &config,
                                                &outputDesc->mDevice,
-                                               String8(""),
+                                               address,
                                                &outputDesc->mLatency,
                                                outputDesc->mFlags);
 
@@ -1039,7 +1044,8 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         outputDesc->mRefCount[stream] = 0;
         outputDesc->mStopTime[stream] = 0;
         outputDesc->mDirectOpenCount = 1;
-        outputDesc->mDirectClientUid = clientUid;
+        outputDesc->mDirectClientSession = session;
+
         addOutput(output, outputDesc);
         mPreviousOutputs = mOutputs;
         ALOGV("getOutput() returns new direct output %d", output);
@@ -1698,6 +1704,12 @@ audio_io_handle_t AudioPolicyManager::getInputForDevice(audio_devices_t device,
     config.sample_rate = profileSamplingRate;
     config.channel_mask = profileChannelMask;
     config.format = profileFormat;
+
+    if (address == "") {
+        DeviceVector inputDevices = mAvailableInputDevices.getDevicesFromType(device);
+        //   the inputs vector must be of size 1, but we don't want to crash here
+        address = inputDevices.size() > 0 ? inputDevices.itemAt(0)->mAddress : String8("");
+    }
 
     status_t status = mpClientInterface->openInput(profile->getModuleHandle(),
                                                    &input,
@@ -4524,7 +4536,9 @@ void AudioPolicyManager::checkOutputForAllStrategies()
 void AudioPolicyManager::checkA2dpSuspend()
 {
     audio_io_handle_t a2dpOutput = mOutputs.getA2dpOutput();
-    if (a2dpOutput == 0) {
+    bool a2dpOnPrimary = mOutputs.isA2dpOnPrimary();
+
+    if ((a2dpOutput == 0) && !a2dpOnPrimary) {
         mA2dpSuspended = false;
         return;
     }
@@ -4535,11 +4549,13 @@ void AudioPolicyManager::checkA2dpSuspend()
             ((mAvailableOutputDevices.types() & AUDIO_DEVICE_OUT_ALL_SCO) != 0);
 
     // if suspended, restore A2DP output if:
+    //      (A2DP output is present and not on primary output) &&
     //      ((SCO device is NOT connected) ||
     //       ((forced usage communication is NOT SCO) && (forced usage for record is NOT SCO) &&
     //        (phone state is NOT in call) && (phone state is NOT ringing)))
     //
     // if not suspended, suspend A2DP output if:
+    //      (A2DP output is present and not on primary output) &&
     //      (SCO device is connected) &&
     //       ((forced usage for communication is SCO) || (forced usage for record is SCO) ||
     //       ((phone state is in call) || (phone state is ringing)))
@@ -4553,7 +4569,9 @@ void AudioPolicyManager::checkA2dpSuspend()
               (mEngine->getPhoneState() != AUDIO_MODE_IN_CALL) &&
               (mEngine->getPhoneState() != AUDIO_MODE_RINGTONE))) {
 
-            mpClientInterface->restoreOutput(a2dpOutput);
+            if ((a2dpOutput != 0) && !a2dpOnPrimary) {
+                mpClientInterface->restoreOutput(a2dpOutput);
+            }
             mA2dpSuspended = false;
         }
     } else {
@@ -4565,7 +4583,9 @@ void AudioPolicyManager::checkA2dpSuspend()
               (mEngine->getPhoneState() == AUDIO_MODE_IN_CALL) ||
               (mEngine->getPhoneState() == AUDIO_MODE_RINGTONE))) {
 
-            mpClientInterface->suspendOutput(a2dpOutput);
+            if ((a2dpOutput != 0) && !a2dpOnPrimary) {
+                mpClientInterface->suspendOutput(a2dpOutput);
+            }
             mA2dpSuspended = true;
         }
     }

@@ -92,7 +92,7 @@ public:
                                        aaudio_audio_thread_proc_t threadProc,
                                        void *threadArg);
 
-    virtual aaudio_result_t joinThread(void **returnArg, int64_t timeoutNanoseconds);
+    aaudio_result_t joinThread(void **returnArg, int64_t timeoutNanoseconds);
 
     virtual aaudio_result_t registerThread() {
         return AAUDIO_OK;
@@ -130,8 +130,12 @@ public:
         return AAUDIO_ERROR_UNIMPLEMENTED;
     }
 
-    bool isPlaying() const {
+    bool isActive() const {
         return mState == AAUDIO_STREAM_STATE_STARTING || mState == AAUDIO_STREAM_STATE_STARTED;
+    }
+
+    virtual bool isMMap() {
+        return false;
     }
 
     aaudio_result_t getSampleRate() const {
@@ -146,6 +150,14 @@ public:
         return mSamplesPerFrame;
     }
 
+    virtual int32_t getPerformanceMode() const {
+        return mPerformanceMode;
+    }
+
+    void setPerformanceMode(aaudio_performance_mode_t performanceMode) {
+        mPerformanceMode = performanceMode;
+    }
+
     int32_t getDeviceId() const {
         return mDeviceId;
     }
@@ -158,9 +170,7 @@ public:
         return mSharingModeMatchRequired;
     }
 
-    aaudio_direction_t getDirection() const {
-        return mDirection;
-    }
+    virtual aaudio_direction_t getDirection() const = 0;
 
     /**
      * This is only valid after setSamplesPerFrame() and setFormat() have been called.
@@ -203,7 +213,7 @@ public:
     }
 
     bool isDataCallbackActive() {
-        return (mDataCallbackProc != nullptr) && isPlaying();
+        return (mDataCallbackProc != nullptr) && isActive();
     }
 
     // ============== I/O ===========================
@@ -223,11 +233,11 @@ public:
 protected:
 
     virtual int64_t incrementFramesWritten(int32_t frames) {
-        return static_cast<int64_t>(mFramesWritten.increment(frames));
+        return mFramesWritten.increment(frames);
     }
 
     virtual int64_t incrementFramesRead(int32_t frames) {
-        return static_cast<int64_t>(mFramesRead.increment(frames));
+        return mFramesRead.increment(frames);
     }
 
     /**
@@ -290,8 +300,9 @@ private:
     aaudio_sharing_mode_t  mSharingMode = AAUDIO_SHARING_MODE_SHARED;
     bool                   mSharingModeMatchRequired = false; // must match sharing mode requested
     aaudio_audio_format_t  mFormat = AAUDIO_FORMAT_UNSPECIFIED;
-    aaudio_direction_t     mDirection = AAUDIO_DIRECTION_OUTPUT;
     aaudio_stream_state_t  mState = AAUDIO_STREAM_STATE_UNINITIALIZED;
+
+    aaudio_performance_mode_t mPerformanceMode = AAUDIO_PERFORMANCE_MODE_NONE;
 
     // callback ----------------------------------
 
