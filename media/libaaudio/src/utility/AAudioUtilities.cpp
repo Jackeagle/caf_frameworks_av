@@ -24,7 +24,9 @@
 #include <utils/Errors.h>
 
 #include "aaudio/AAudio.h"
-#include "AAudioUtilities.h"
+#include <aaudio/AAudioTesting.h>
+
+#include "utility/AAudioUtilities.h"
 
 using namespace android;
 
@@ -33,7 +35,7 @@ using namespace android;
 #define MAX_HEADROOM (1.41253754f)
 #define MIN_HEADROOM (0 - MAX_HEADROOM)
 
-int32_t AAudioConvert_formatToSizeInBytes(aaudio_audio_format_t format) {
+int32_t AAudioConvert_formatToSizeInBytes(aaudio_format_t format) {
     int32_t size = AAUDIO_ERROR_ILLEGAL_ARGUMENT;
     switch (format) {
         case AAUDIO_FORMAT_PCM_I16:
@@ -275,7 +277,7 @@ aaudio_result_t AAudioConvert_androidToAAudioResult(status_t status) {
     return result;
 }
 
-audio_format_t AAudioConvert_aaudioToAndroidDataFormat(aaudio_audio_format_t aaudioFormat) {
+audio_format_t AAudioConvert_aaudioToAndroidDataFormat(aaudio_format_t aaudioFormat) {
     audio_format_t androidFormat;
     switch (aaudioFormat) {
     case AAUDIO_FORMAT_PCM_I16:
@@ -292,8 +294,8 @@ audio_format_t AAudioConvert_aaudioToAndroidDataFormat(aaudio_audio_format_t aau
     return androidFormat;
 }
 
-aaudio_audio_format_t AAudioConvert_androidToAAudioDataFormat(audio_format_t androidFormat) {
-    aaudio_audio_format_t aaudioFormat = AAUDIO_FORMAT_INVALID;
+aaudio_format_t AAudioConvert_androidToAAudioDataFormat(audio_format_t androidFormat) {
+    aaudio_format_t aaudioFormat = AAUDIO_FORMAT_INVALID;
     switch (androidFormat) {
     case AUDIO_FORMAT_PCM_16_BIT:
         aaudioFormat = AAUDIO_FORMAT_PCM_I16;
@@ -327,11 +329,12 @@ int32_t AAudioConvert_framesToBytes(int32_t numFrames,
 static int32_t AAudioProperty_getMMapProperty(const char *propName,
                                               int32_t defaultValue,
                                               const char * caller) {
-    int32_t prop = property_get_int32(AAUDIO_PROP_MMAP_ENABLED, defaultValue);
+    int32_t prop = property_get_int32(propName, defaultValue);
     switch (prop) {
-        case AAUDIO_USE_NEVER:
-        case AAUDIO_USE_ALWAYS:
-        case AAUDIO_USE_AUTO:
+        case AAUDIO_UNSPECIFIED:
+        case AAUDIO_POLICY_NEVER:
+        case AAUDIO_POLICY_ALWAYS:
+        case AAUDIO_POLICY_AUTO:
             break;
         default:
             ALOGE("%s: invalid = %d", caller, prop);
@@ -341,20 +344,20 @@ static int32_t AAudioProperty_getMMapProperty(const char *propName,
     return prop;
 }
 
-int32_t AAudioProperty_getMMapEnabled() {
-    return AAudioProperty_getMMapProperty(AAUDIO_PROP_MMAP_ENABLED,
-                                          AAUDIO_USE_NEVER, __func__);
+int32_t AAudioProperty_getMMapPolicy() {
+    return AAudioProperty_getMMapProperty(AAUDIO_PROP_MMAP_POLICY,
+                                          AAUDIO_UNSPECIFIED, __func__);
 }
 
-int32_t AAudioProperty_getMMapExclusiveEnabled() {
-    return AAudioProperty_getMMapProperty(AAUDIO_PROP_MMAP_EXCLUSIVE_ENABLED,
-                                          AAUDIO_USE_NEVER, __func__);
+int32_t AAudioProperty_getMMapExclusivePolicy() {
+    return AAudioProperty_getMMapProperty(AAUDIO_PROP_MMAP_EXCLUSIVE_POLICY,
+                                          AAUDIO_UNSPECIFIED, __func__);
 }
 
 int32_t AAudioProperty_getMixerBursts() {
-    const int32_t defaultBursts = 2; // arbitrary
+    const int32_t defaultBursts = 2; // arbitrary, use 2 for double buffered
     const int32_t maxBursts = 1024; // arbitrary
-    int32_t prop = property_get_int32(AAUDIO_PROP_MIXER_BURSTS, defaultBursts); // use 2 for double buffered
+    int32_t prop = property_get_int32(AAUDIO_PROP_MIXER_BURSTS, defaultBursts);
     if (prop < 1 || prop > maxBursts) {
         ALOGE("AAudioProperty_getMixerBursts: invalid = %d", prop);
         prop = defaultBursts;

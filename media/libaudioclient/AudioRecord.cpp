@@ -488,12 +488,14 @@ status_t AudioRecord::setInputDevice(audio_port_handle_t deviceId) {
     AutoMutex lock(mLock);
     if (mSelectedDeviceId != deviceId) {
         mSelectedDeviceId = deviceId;
-        // stop capture so that audio policy manager does not reject the new instance start request
-        // as only one capture can be active at a time.
-        if (mAudioRecord != 0 && mActive) {
-            mAudioRecord->stop();
+        if (mStatus == NO_ERROR) {
+            // stop capture so that audio policy manager does not reject the new instance start request
+            // as only one capture can be active at a time.
+            if (mAudioRecord != 0 && mActive) {
+                mAudioRecord->stop();
+            }
+            android_atomic_or(CBLK_INVALID, &mCblk->mFlags);
         }
-        android_atomic_or(CBLK_INVALID, &mCblk->mFlags);
     }
     return NO_ERROR;
 }
@@ -583,10 +585,17 @@ status_t AudioRecord::openRecord_l(const Modulo<uint32_t> &epoch, const String16
     // Client can only express a preference for FAST.  Server will perform additional tests.
     if (mFlags & AUDIO_INPUT_FLAG_FAST) {
         bool useCaseAllowed =
-            // either of these use cases:
+            // any of these use cases:
             // use case 1: callback transfer mode
             (mTransfer == TRANSFER_CALLBACK) ||
-            // use case 2: obtain/release mode
+            // use case 2: blocking read mode
+            // The default buffer capacity at 48 kHz is 2048 frames, or ~42.6 ms.
+            // That's enough for double-buffering with our standard 20 ms rule of thumb for
+            // the minimum period of a non-SCHED_FIFO thread.
+            // This is needed so that AAudio apps can do a low latency non-blocking read from a
+            // callback running with SCHED_FIFO.
+            (mTransfer == TRANSFER_SYNC) ||
+            // use case 3: obtain/release mode
             (mTransfer == TRANSFER_OBTAIN);
         // sample rates must also match
         bool fastAllowed = useCaseAllowed && (mSampleRate == afSampleRate);
