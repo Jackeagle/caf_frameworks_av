@@ -45,6 +45,7 @@ AudioOutputDescriptor::AudioOutputDescriptor(const sp<AudioPort>& port,
     }
     for (int i = 0; i < NUM_STRATEGIES; i++) {
         mStrategyMutedByDevice[i] = false;
+        mStrategyMutedByA2dpSuspended[i] = false;
     }
     if (port != NULL) {
         port->pickAudioProfile(mSamplingRate, mChannelMask, mFormat);
