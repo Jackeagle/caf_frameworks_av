@@ -439,7 +439,9 @@ status_t CameraClient::startRecordingMode() {
 
     // start recording mode
     enableMsgType(CAMERA_MSG_VIDEO_FRAME);
+#ifdef __ANDROID
     mCameraService->playSound(CameraService::SOUND_RECORDING_START);
+#endif
     result = mHardware->startRecording();
     if (result != NO_ERROR) {
         ALOGE("mHardware->startRecording() failed with status %d", result);
@@ -468,7 +470,9 @@ void CameraClient::stopRecording() {
 
     disableMsgType(CAMERA_MSG_VIDEO_FRAME);
     mHardware->stopRecording();
+#ifdef __ANDROID
     mCameraService->playSound(CameraService::SOUND_RECORDING_STOP);
+#endif
 
     mPreviewBuffer.clear();
 }
