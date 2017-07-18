@@ -146,6 +146,11 @@ static int32_t getColorFormat(const char* colorFormat) {
         return OMX_COLOR_FormatAndroidOpaque;
     }
 
+    if(!strcmp(colorFormat, "h264")) {
+        ALOGD("get the h264 data from camera....");
+        return OMX_COLOR_FormatUnused;
+    }
+
     ALOGE("Uknown color format (%s), please add it to "
          "CameraSource::getColorFormat", colorFormat);
 
@@ -700,14 +705,24 @@ status_t CameraSource::initWithCameraAccess(
     // XXX: query camera for the stride and slice height
     // when the capability becomes available.
     mMeta = new MetaData;
-    mMeta->setCString(kKeyMIMEType,  MEDIA_MIMETYPE_VIDEO_RAW);
-    mMeta->setInt32(kKeyColorFormat, mColorFormat);
-    mMeta->setInt32(kKeyWidth,       mVideoSize.width);
-    mMeta->setInt32(kKeyHeight,      mVideoSize.height);
-    mMeta->setInt32(kKeyStride,      mVideoSize.width);
-    mMeta->setInt32(kKeySliceHeight, mVideoSize.height);
-    mMeta->setInt32(kKeyFrameRate,   mVideoFrameRate);
-    AVUtils::get()->extractCustomCameraKeys(params, mMeta);
+    if(mColorFormat == OMX_COLOR_FormatUnused) {
+        mMeta->setCString(kKeyMIMEType,  MEDIA_MIMETYPE_VIDEO_AVC);
+        mMeta->setInt32(kKeyWidth,       mVideoSize.width);
+        mMeta->setInt32(kKeyHeight,      mVideoSize.height);
+        mMeta->setInt32(kKeyStride,      mVideoSize.width);
+        mMeta->setInt32(kKeySliceHeight, mVideoSize.height);
+        mReportSPS = false;
+        mReportPPS = false;
+    } else {
+        mMeta->setCString(kKeyMIMEType,  MEDIA_MIMETYPE_VIDEO_RAW);
+        mMeta->setInt32(kKeyColorFormat, mColorFormat);
+        mMeta->setInt32(kKeyWidth,       mVideoSize.width);
+        mMeta->setInt32(kKeyHeight,      mVideoSize.height);
+        mMeta->setInt32(kKeyStride,      mVideoSize.width);
+        mMeta->setInt32(kKeySliceHeight, mVideoSize.height);
+        mMeta->setInt32(kKeyFrameRate,   mVideoFrameRate);
+        AVUtils::get()->extractCustomCameraKeys(params, mMeta);
+    }
 
     return OK;
 }
@@ -1021,7 +1036,10 @@ void CameraSource::signalBufferReturned(MediaBuffer *buffer) {
     Mutex::Autolock autoLock(mLock);
     for (List<sp<IMemory> >::iterator it = mFramesBeingEncoded.begin();
          it != mFramesBeingEncoded.end(); ++it) {
-        if ((*it)->pointer() ==  buffer->data()) {
+        if ((*it)->pointer() ==  buffer->data() ||
+            (mColorFormat == OMX_COLOR_FormatUnused &&
+            buffer->data() >= (*it)->pointer() &&
+            (((char*)((*it)->pointer()) + (*it)->size()) >=  buffer->data()))) {
             releaseOneRecordingFrame((*it));
             mFramesBeingEncoded.erase(it);
             ++mNumFramesEncoded;
@@ -1032,6 +1050,67 @@ void CameraSource::signalBufferReturned(MediaBuffer *buffer) {
         }
     }
     CHECK(!"signalBufferReturned: bogus buffer");
+}
+
+enum H264_UNIT_TYPE{
+    H264_UNIT_SPS_PPS = 0,
+    H264_UNIT_FRAME,
+};
+#define MAX_UNIT_NUMBER 3
+
+static bool getDataIndex(unsigned char* data, int len, int type, unsigned char** unitData, int* unitType, int* unitLen)
+{
+    int i = 0;
+    int count = 0;
+    bool find = false;
+    int tmpUnitType = 0;
+    for(i = 0; i < len - 4; i++) {
+        if(data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0 && data[i + 3] == 1) {
+            tmpUnitType = data[i + 4] & 0x1F;
+        } else {
+            continue;
+        }
+        switch(type) {
+            case H264_UNIT_SPS_PPS:
+                if(tmpUnitType == 7 || tmpUnitType == 8) {
+                    if(!find) {
+                        *unitType = tmpUnitType;
+                        find = true;
+                        *unitData = data + i;
+                    }
+                } else {
+                    if(find) {
+                        *unitLen = data + i - *unitData;
+                        return find;
+                    }
+                }
+                break;
+            case H264_UNIT_FRAME:
+                if(tmpUnitType == 1 || tmpUnitType == 5) {
+                    *unitType = tmpUnitType;
+                    find = true;
+                    *unitData = data + i;
+                } else {
+                    if(find) {
+                        *unitLen = data + i - *unitData;
+                        return find;
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+        count++;
+        if(count >= MAX_UNIT_NUMBER) {
+            if(find) {
+                *unitLen = len - i;
+                return find;
+            }
+            break;
+        }
+        i += 3;
+    }
+    return find;
 }
 
 status_t CameraSource::read(
@@ -1068,15 +1147,50 @@ status_t CameraSource::read(
             return OK;
         }
         frame = *mFramesReceived.begin();
-        mFramesReceived.erase(mFramesReceived.begin());
-
         frameTime = *mFrameTimes.begin();
-        mFrameTimes.erase(mFrameTimes.begin());
-        mFramesBeingEncoded.push_back(frame);
-        *buffer = new MediaBuffer(frame->pointer(), frame->size());
-        (*buffer)->setObserver(this);
-        (*buffer)->add_ref();
-        (*buffer)->meta_data()->setInt64(kKeyTime, frameTime);
+        if(mColorFormat == OMX_COLOR_FormatUnused) {
+            //parse the h264 data
+            unsigned int* size = (unsigned int*)frame->pointer();
+            unsigned char* data = (unsigned char*)frame->pointer() + sizeof(unsigned int);
+            unsigned int isSyncFram = 0;
+            unsigned int isCodecConfig = 0;
+            unsigned char* unitData;
+            int unitType;
+            int unitLen;
+            if(!mReportSPS) {
+                if(getDataIndex(data, *size, H264_UNIT_SPS_PPS, &unitData, &unitType, &unitLen)) {
+                    mReportSPS = true;
+                    isCodecConfig = 1;
+                }
+            } else {
+                if(getDataIndex(data, *size, H264_UNIT_FRAME, &unitData, &unitType, &unitLen)) {
+
+                }
+                isSyncFram = (unitType == 5 ? 1 : 0);
+                mFramesReceived.erase(mFramesReceived.begin());
+                mFrameTimes.erase(mFrameTimes.begin());
+                mFramesBeingEncoded.push_back(frame);
+            }
+            ALOGD("get new h264 frame [size: %d], [unit type: %d][unit len: %d]", *size, unitType, unitLen);
+            *buffer = new MediaBuffer(unitData, unitLen);
+            if(isCodecConfig == 0) {
+                (*buffer)->setObserver(this);
+                (*buffer)->add_ref();
+            }
+            (*buffer)->meta_data()->setInt64(kKeyTime, frameTime);
+            (*buffer)->meta_data()->setInt64(kKeyDecodingTime, frameTime);
+            (*buffer)->meta_data()->setInt32(kKeyFrameRate, 30);
+            (*buffer)->meta_data()->setInt32(kKeyIsSyncFrame, isSyncFram);
+            (*buffer)->meta_data()->setInt32(kKeyIsCodecConfig, isCodecConfig);
+        } else {
+            mFramesReceived.erase(mFramesReceived.begin());
+            mFrameTimes.erase(mFrameTimes.begin());
+            mFramesBeingEncoded.push_back(frame);
+            *buffer = new MediaBuffer(frame->pointer(), frame->size());
+            (*buffer)->setObserver(this);
+            (*buffer)->add_ref();
+            (*buffer)->meta_data()->setInt64(kKeyTime, frameTime);
+        }
     }
     return OK;
 }

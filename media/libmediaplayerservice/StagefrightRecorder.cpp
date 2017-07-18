@@ -1728,14 +1728,22 @@ status_t StagefrightRecorder::setupMPEG4orWEBMRecording() {
             return err;
         }
 
-        sp<MediaCodecSource> encoder;
-        err = setupVideoEncoder(mediaSource, &encoder);
-        if (err != OK) {
-            return err;
-        }
+        const char *mime;
+        sp<MetaData> meta = mediaSource->getFormat();
+        CHECK(meta->findCString(kKeyMIMEType, &mime));
+        ALOGD("[%s] the camera source mime: %s", __func__, mime);
+        if(strcmp(mime, MEDIA_MIMETYPE_VIDEO_AVC)) {
+            sp<MediaCodecSource> encoder;
+            err = setupVideoEncoder(mediaSource, &encoder);
+            if (err != OK) {
+                return err;
+            }
 
-        writer->addSource(encoder);
-        mVideoEncoderSource = encoder;
+            writer->addSource(encoder);
+            mVideoEncoderSource = encoder;
+        } else {
+            writer->addSource(mediaSource);
+        }
         mTotalBitRate += mVideoBitRate;
     }
 
