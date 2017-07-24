@@ -1222,7 +1222,7 @@ status_t ACodec::allocateOutputMetadataBuffers() {
     OMX_U32 bufferCount, bufferSize, minUndequeuedBuffers;
     status_t err = configureOutputBuffersFromNativeWindow(
             &bufferCount, &bufferSize, &minUndequeuedBuffers,
-            mLegacyAdaptiveExperiment /* preregister */);
+            mLegacyAdaptiveExperiment /* preregister */ || (mFlags & kFlagIsSecure));
     if (err != 0)
         return err;
     mNumUndequeuedBuffers = minUndequeuedBuffers;

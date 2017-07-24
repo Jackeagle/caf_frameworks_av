@@ -1605,13 +1605,13 @@ status_t StagefrightRecorder::setupVideoEncoder(
 
     if (mCaptureFpsEnable) {
         format->setFloat("operating-rate", mCaptureFps);
+        format->setInt32("capture-fps-enable", 1); //both time-lapse and HFR is covered
 
         // enable layering for all time lapse and high frame rate recordings
         if (mFrameRate / mCaptureFps >= 1.9) { // time lapse
             preferBFrames = false;
             tsLayers = 2; // use at least two layers as resulting video will likely be sped up
         } else if (mCaptureFps > maxPlaybackFps) { // slow-mo
-            format->setInt32("high-frame-rate", 1);
             maxPlaybackFps = mCaptureFps; // assume video will be played back at full capture speed
             preferBFrames = false;
         }
