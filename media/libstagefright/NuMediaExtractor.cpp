@@ -573,7 +573,9 @@ bool NuMediaExtractor::getCachedDuration(
         size_t cachedDataRemaining =
             cachedSource->approxDataRemaining(&finalStatus);
 
-        *durationUs = cachedDataRemaining * 8000000ll / bitrate;
+	if (bitrate != 0) {
+		*durationUs = cachedDataRemaining * 8000000ll / bitrate;
+	}
         *eos = (finalStatus != OK);
         return true;
     }
