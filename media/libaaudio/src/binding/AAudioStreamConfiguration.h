@@ -58,11 +58,11 @@ public:
         mSamplesPerFrame = samplesPerFrame;
     }
 
-    aaudio_audio_format_t getAudioFormat() const {
+    aaudio_format_t getAudioFormat() const {
         return mAudioFormat;
     }
 
-    void setAudioFormat(aaudio_audio_format_t audioFormat) {
+    void setAudioFormat(aaudio_format_t audioFormat) {
         mAudioFormat = audioFormat;
     }
 
@@ -91,11 +91,11 @@ public:
     void dump() const;
 
 private:
-    int32_t               mDeviceId        = AAUDIO_DEVICE_UNSPECIFIED;
+    int32_t               mDeviceId        = AAUDIO_UNSPECIFIED;
     int32_t               mSampleRate      = AAUDIO_UNSPECIFIED;
     int32_t               mSamplesPerFrame = AAUDIO_UNSPECIFIED;
     aaudio_sharing_mode_t mSharingMode     = AAUDIO_SHARING_MODE_SHARED;
-    aaudio_audio_format_t mAudioFormat     = AAUDIO_FORMAT_UNSPECIFIED;
+    aaudio_format_t       mAudioFormat     = AAUDIO_FORMAT_UNSPECIFIED;
     int32_t               mBufferCapacity  = AAUDIO_UNSPECIFIED;
 };
 

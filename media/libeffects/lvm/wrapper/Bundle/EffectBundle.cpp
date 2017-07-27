@@ -14,7 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+#ifndef LVM_FLOAT
+typedef float LVM_FLOAT;
+#endif
 #define LOG_TAG "Bundle"
 #define ARRAY_SIZE(array) (sizeof (array) / sizeof (array)[0])
 //#define LOG_NDEBUG 0
@@ -148,7 +150,10 @@ int  Virtualizer_getParameter  (EffectContext *pContext,
                                void           *pParam,
                                uint32_t       *pValueSize,
                                void           *pValue);
-int  Equalizer_setParameter    (EffectContext *pContext, void *pParam, void *pValue);
+int  Equalizer_setParameter    (EffectContext *pContext,
+                               void *pParam,
+                               uint32_t valueSize,
+                               void *pValue);
 int  Equalizer_getParameter    (EffectContext *pContext,
                                 void          *pParam,
                                 uint32_t      *pValueSize,
@@ -268,7 +273,10 @@ extern "C" int EffectCreate(const effect_uuid_t *uuid,
         pContext->pBundledContext->SamplesToExitCountVirt   = 0;
         pContext->pBundledContext->SamplesToExitCountBb     = 0;
         pContext->pBundledContext->SamplesToExitCountEq     = 0;
-
+#ifdef BUILD_FLOAT
+        pContext->pBundledContext->pInputBuffer             = NULL;
+        pContext->pBundledContext->pOutputBuffer            = NULL;
+#endif
         for (int i = 0; i < FIVEBAND_NUMBANDS; i++) {
             pContext->pBundledContext->bandGaindB[i] = EQNB_5BandSoftPresets[i];
         }
@@ -436,6 +444,14 @@ extern "C" int EffectRelease(effect_handle_t handle){
         if (pContext->pBundledContext->workBuffer != NULL) {
             free(pContext->pBundledContext->workBuffer);
         }
+#ifdef BUILD_FLOAT
+        if (pContext->pBundledContext->pInputBuffer != NULL) {
+            free(pContext->pBundledContext->pInputBuffer);
+        }
+        if (pContext->pBundledContext->pOutputBuffer != NULL) {
+            free(pContext->pBundledContext->pOutputBuffer);
+        }
+#endif
         delete pContext->pBundledContext;
         pContext->pBundledContext = LVM_NULL;
     }
@@ -692,7 +708,47 @@ int LvmBundle_init(EffectContext *pContext){
     return 0;
 }   /* end LvmBundle_init */
 
+#ifdef BUILD_FLOAT
+/**********************************************************************************
+   FUNCTION INT16LTOFLOAT
+***********************************************************************************/
+// Todo: need to write function descriptor
+static void Int16ToFloat(const LVM_INT16 *src, LVM_FLOAT *dst, size_t n) {
+    size_t ii;
+    src += n-1;
+    dst += n-1;
+    for (ii = n; ii != 0; ii--) {
+        *dst = ((LVM_FLOAT)((LVM_INT16)*src)) / 32768.0f;
+        src--;
+        dst--;
+    }
+    return;
+}
+/**********************************************************************************
+   FUNCTION FLOATTOINT16_SAT
+***********************************************************************************/
+// Todo : Need to write function descriptor
+static void FloatToInt16_SAT(const LVM_FLOAT *src, LVM_INT16 *dst, size_t n) {
+    size_t ii;
+    LVM_INT32 temp;
 
+    src += n-1;
+    dst += n-1;
+    for (ii = n; ii != 0; ii--) {
+        temp = (LVM_INT32)((*src) * 32768.0f);
+        if (temp >= 32767) {
+            *dst = 32767;
+        } else if (temp <= -32768) {
+            *dst = -32768;
+        } else {
+            *dst = (LVM_INT16)temp;
+        }
+        src--;
+        dst--;
+    }
+    return;
+}
+#endif
 //----------------------------------------------------------------------------
 // LvmBundle_process()
 //----------------------------------------------------------------------------
@@ -710,7 +766,99 @@ int LvmBundle_init(EffectContext *pContext){
 //  pOut:       pointer to updated stereo 16 bit output data
 //
 //----------------------------------------------------------------------------
+#ifdef BUILD_FLOAT
+int LvmBundle_process(LVM_INT16        *pIn,
+                      LVM_INT16        *pOut,
+                      int              frameCount,
+                      EffectContext    *pContext){
 
+
+    //LVM_ControlParams_t     ActiveParams;                           /* Current control Parameters */
+    LVM_ReturnStatus_en     LvmStatus = LVM_SUCCESS;                /* Function call status */
+    LVM_INT16               *pOutTmp;
+    LVM_FLOAT               *pInputBuff;
+    LVM_FLOAT               *pOutputBuff;
+
+    if (pContext->pBundledContext->pInputBuffer == NULL ||
+            pContext->pBundledContext->frameCount < frameCount) {
+        if (pContext->pBundledContext->pInputBuffer != NULL) {
+            free(pContext->pBundledContext->pInputBuffer);
+        }
+        pContext->pBundledContext->pInputBuffer = (LVM_FLOAT *)malloc(frameCount * \
+                                                                      sizeof(LVM_FLOAT) * FCC_2);
+    }
+
+    if (pContext->pBundledContext->pOutputBuffer == NULL ||
+            pContext->pBundledContext->frameCount < frameCount) {
+        if (pContext->pBundledContext->pOutputBuffer != NULL) {
+            free(pContext->pBundledContext->pOutputBuffer);
+        }
+        pContext->pBundledContext->pOutputBuffer = (LVM_FLOAT *)malloc(frameCount * \
+                                                                       sizeof(LVM_FLOAT) * FCC_2);
+    }
+
+    if ((pContext->pBundledContext->pInputBuffer == NULL) ||
+                                    (pContext->pBundledContext->pOutputBuffer == NULL)) {
+        ALOGV("LVM_ERROR : LvmBundle_process memory allocation for float buffer's failed");
+        return -EINVAL;
+    }
+
+    pInputBuff = pContext->pBundledContext->pInputBuffer;
+    pOutputBuff = pContext->pBundledContext->pOutputBuffer;
+
+    if (pContext->config.outputCfg.accessMode == EFFECT_BUFFER_ACCESS_WRITE){
+        pOutTmp = pOut;
+    } else if (pContext->config.outputCfg.accessMode == EFFECT_BUFFER_ACCESS_ACCUMULATE){
+        if (pContext->pBundledContext->frameCount != frameCount) {
+            if (pContext->pBundledContext->workBuffer != NULL) {
+                free(pContext->pBundledContext->workBuffer);
+            }
+            pContext->pBundledContext->workBuffer =
+                    (LVM_INT16 *)calloc(frameCount, sizeof(LVM_INT16) * FCC_2);
+            if (pContext->pBundledContext->workBuffer == NULL) {
+                return -ENOMEM;
+            }
+            pContext->pBundledContext->frameCount = frameCount;
+        }
+        pOutTmp = pContext->pBundledContext->workBuffer;
+    } else {
+        ALOGV("LVM_ERROR : LvmBundle_process invalid access mode");
+        return -EINVAL;
+    }
+
+    #ifdef LVM_PCM
+    fwrite(pIn, frameCount*sizeof(LVM_INT16) * FCC_2, 1, pContext->pBundledContext->PcmInPtr);
+    fflush(pContext->pBundledContext->PcmInPtr);
+    #endif
+
+    /* Converting input data from fixed point to float point */
+    Int16ToFloat(pIn, pInputBuff, frameCount * 2);
+
+    /* Process the samples */
+    LvmStatus = LVM_Process(pContext->pBundledContext->hInstance, /* Instance handle */
+                            pInputBuff,                           /* Input buffer */
+                            pOutputBuff,                          /* Output buffer */
+                            (LVM_UINT16)frameCount,               /* Number of samples to read */
+                            0);                                   /* Audo Time */
+
+    LVM_ERROR_CHECK(LvmStatus, "LVM_Process", "LvmBundle_process")
+    if(LvmStatus != LVM_SUCCESS) return -EINVAL;
+
+    /* Converting output data from float point to fixed point */
+    FloatToInt16_SAT(pOutputBuff, pOutTmp, (LVM_UINT16)frameCount * 2);
+    #ifdef LVM_PCM
+    fwrite(pOutTmp, frameCount*sizeof(LVM_INT16) * FCC_2, 1, pContext->pBundledContext->PcmOutPtr);
+    fflush(pContext->pBundledContext->PcmOutPtr);
+    #endif
+
+    if (pContext->config.outputCfg.accessMode == EFFECT_BUFFER_ACCESS_ACCUMULATE){
+        for (int i = 0; i < frameCount * 2; i++){
+            pOut[i] = clamp16((LVM_INT32)pOut[i] + (LVM_INT32)pOutTmp[i]);
+        }
+    }
+    return 0;
+}    /* end LvmBundle_process */
+#else
 int LvmBundle_process(LVM_INT16        *pIn,
                       LVM_INT16        *pOut,
                       int              frameCount,
@@ -768,7 +916,7 @@ int LvmBundle_process(LVM_INT16        *pIn,
     }
     return 0;
 }    /* end LvmBundle_process */
-
+#endif
 
 //----------------------------------------------------------------------------
 // EqualizerUpdateActiveParams()
@@ -1123,6 +1271,16 @@ int Effect_setConfig(EffectContext *pContext, effect_config_t *pConfig){
         SampleRate = LVM_FS_48000;
         pContext->pBundledContext->SamplesPerSecond = 48000*2; // 2 secs Stereo
         break;
+#if defined(BUILD_FLOAT) && defined(HIGHER_FS)
+    case 96000:
+        SampleRate = LVM_FS_96000;
+        pContext->pBundledContext->SamplesPerSecond = 96000*2; // 2 secs Stereo
+        break;
+    case 192000:
+        SampleRate = LVM_FS_192000;
+        pContext->pBundledContext->SamplesPerSecond = 192000*2; // 2 secs Stereo
+        break;
+#endif
     default:
         ALOGV("\tEffect_setConfig invalid sampling rate %d", pConfig->inputCfg.samplingRate);
         return -EINVAL;
@@ -2431,6 +2589,13 @@ int Equalizer_getParameter(EffectContext     *pContext,
             }
             break;
         }
+
+        if (*pValueSize < 1) {
+            status = -EINVAL;
+            android_errorWriteLog(0x534e4554, "37536407");
+            break;
+        }
+
         name = (char *)pValue;
         strncpy(name, EqualizerGetPresetName(param2), *pValueSize - 1);
         name[*pValueSize - 1] = 0;
@@ -2468,12 +2633,17 @@ int Equalizer_getParameter(EffectContext     *pContext,
 // Inputs:
 //  pEqualizer    - handle to instance data
 //  pParam        - pointer to parameter
+//  valueSize     - value size
 //  pValue        - pointer to value
+
 //
 // Outputs:
 //
 //----------------------------------------------------------------------------
-int Equalizer_setParameter (EffectContext *pContext, void *pParam, void *pValue){
+int Equalizer_setParameter (EffectContext *pContext,
+                            void *pParam,
+                            uint32_t valueSize,
+                            void *pValue) {
     int status = 0;
     int32_t preset;
     int32_t band;
@@ -2485,6 +2655,10 @@ int Equalizer_setParameter (EffectContext *pContext, void *pParam, void *pValue)
     //ALOGV("\tEqualizer_setParameter start");
     switch (param) {
     case EQ_PARAM_CUR_PRESET:
+        if (valueSize < sizeof(int16_t)) {
+          status = -EINVAL;
+          break;
+        }
         preset = (int32_t)(*(uint16_t *)pValue);
 
         //ALOGV("\tEqualizer_setParameter() EQ_PARAM_CUR_PRESET %d", preset);
@@ -2495,6 +2669,10 @@ int Equalizer_setParameter (EffectContext *pContext, void *pParam, void *pValue)
         EqualizerSetPreset(pContext, preset);
         break;
     case EQ_PARAM_BAND_LEVEL:
+        if (valueSize < sizeof(int16_t)) {
+          status = -EINVAL;
+          break;
+        }
         band =  *pParamTemp;
         level = (int32_t)(*(int16_t *)pValue);
         //ALOGV("\tEqualizer_setParameter() EQ_PARAM_BAND_LEVEL band %d, level %d", band, level);
@@ -2510,6 +2688,10 @@ int Equalizer_setParameter (EffectContext *pContext, void *pParam, void *pValue)
         break;
     case EQ_PARAM_PROPERTIES: {
         //ALOGV("\tEqualizer_setParameter() EQ_PARAM_PROPERTIES");
+        if (valueSize < sizeof(int16_t)) {
+          status = -EINVAL;
+          break;
+        }
         int16_t *p = (int16_t *)pValue;
         if ((int)p[0] >= EqualizerGetNumPresets()) {
             status = -EINVAL;
@@ -2518,6 +2700,13 @@ int Equalizer_setParameter (EffectContext *pContext, void *pParam, void *pValue)
         if (p[0] >= 0) {
             EqualizerSetPreset(pContext, (int)p[0]);
         } else {
+            if (valueSize < (2 + FIVEBAND_NUMBANDS) * sizeof(int16_t)) {
+              android_errorWriteLog(0x534e4554, "37563371");
+              ALOGE("\tERROR Equalizer_setParameter() EQ_PARAM_PROPERTIES valueSize %d < %d",
+                    (int)valueSize, (int)((2 + FIVEBAND_NUMBANDS) * sizeof(int16_t)));
+              status = -EINVAL;
+              break;
+            }
             if ((int)p[1] != FIVEBAND_NUMBANDS) {
                 status = -EINVAL;
                 break;
@@ -3290,7 +3479,8 @@ int Effect_command(effect_handle_t  self,
 
                 *(int *)pReplyData = android::Equalizer_setParameter(pContext,
                                                                     (void *)p->data,
-                                                                     p->data + p->psize);
+                                                                    p->vsize,
+                                                                    p->data + p->psize);
             }
             if(pContext->EffectType == LVM_VOLUME){
                 //ALOGV("\tVolume_command cmdCode Case: EFFECT_CMD_SET_PARAM start");

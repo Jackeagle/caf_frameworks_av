@@ -16,6 +16,9 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "MediaCodec"
+#define TRACE_SUBMODULE VTRACE_SUBMODULE_CODEC
+#define __CLASS__ "MediaCodec"
+
 #include <inttypes.h>
 
 #include "include/avc_utils.h"
@@ -23,7 +26,8 @@
 #include "include/SharedMemoryBuffer.h"
 #include "include/SoftwareRenderer.h"
 
-#include <android/media/IDescrambler.h>
+#include <android/hardware/cas/native/1.0/IDescrambler.h>
+
 #include <binder/IMemory.h>
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
@@ -186,6 +190,7 @@ void MediaCodec::ResourceManagerServiceProxy::removeResource(int64_t clientId) {
 
 bool MediaCodec::ResourceManagerServiceProxy::reclaimResource(
         const Vector<MediaResource> &resources) {
+    VTRACE_METHOD();
     Mutex::Autolock _l(mLock);
     if (mService == NULL) {
         return false;
@@ -407,6 +412,7 @@ void CodecCallback::onOutputBuffersChanged() {
 sp<MediaCodec> MediaCodec::CreateByType(
         const sp<ALooper> &looper, const AString &mime, bool encoder, status_t *err, pid_t pid,
         uid_t uid) {
+    VTRACE_CALL();
     sp<MediaCodec> codec = new MediaCodec(looper, pid, uid);
 
     const status_t ret = codec->init(mime, true /* nameIsType */, encoder);
@@ -419,6 +425,7 @@ sp<MediaCodec> MediaCodec::CreateByType(
 // static
 sp<MediaCodec> MediaCodec::CreateByComponentName(
         const sp<ALooper> &looper, const AString &name, status_t *err, pid_t pid, uid_t uid) {
+    VTRACE_CALL();
     sp<MediaCodec> codec = new MediaCodec(looper, pid, uid);
 
     const status_t ret = codec->init(name, false /* nameIsType */, false /* encoder */);
@@ -446,6 +453,7 @@ status_t MediaCodec::QueryCapabilities(
 
 // static
 sp<PersistentSurface> MediaCodec::CreatePersistentInputSurface() {
+    VTRACE_CALL();
     OMXClient client;
     if (client.connect() != OK) {
         ALOGE("Failed to connect to OMX to create persistent input surface.");
@@ -558,6 +566,7 @@ sp<CodecBase> MediaCodec::GetCodecBase(const AString &name, bool nameIsType) {
 }
 
 status_t MediaCodec::init(const AString &name, bool nameIsType, bool encoder) {
+    VTRACE_METHOD();
     mResourceManagerService->init();
 
     // save init parameters for reset
@@ -667,6 +676,7 @@ status_t MediaCodec::init(const AString &name, bool nameIsType, bool encoder) {
             break;
         }
     }
+    VTRACE_STRING(mIsVideo? "type: video" : "type: audio");
     return err;
 }
 
@@ -698,6 +708,7 @@ status_t MediaCodec::configure(
         const sp<ICrypto> &crypto,
         const sp<IDescrambler> &descrambler,
         uint32_t flags) {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatConfigure, this);
 
     if (mIsVideo) {
@@ -735,6 +746,8 @@ status_t MediaCodec::configure(
             // XXX: save indication that it's crypto in some way...
             mAnalyticsItem->setInt32(kCodecCrypto, 1);
         }
+    } else if (mFlags & kFlagIsSecure) {
+        ALOGW("Crypto or descrambler should be given for secure codec");
     }
 
     // save msg for reset
@@ -882,6 +895,7 @@ void MediaCodec::addResource(
 }
 
 status_t MediaCodec::start() {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatStart, this);
 
     status_t err;
@@ -924,6 +938,7 @@ status_t MediaCodec::start() {
 }
 
 status_t MediaCodec::stop() {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatStop, this);
 
     sp<AMessage> response;
@@ -956,6 +971,7 @@ status_t MediaCodec::reclaim(bool force) {
 }
 
 status_t MediaCodec::release() {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatRelease, this);
 
     sp<AMessage> response;
@@ -1004,6 +1020,8 @@ status_t MediaCodec::queueInputBuffer(
         int64_t presentationTimeUs,
         uint32_t flags,
         AString *errorDetailMsg) {
+    VTRACE_METHOD();
+    VTRACE_ASYNC_BEGIN(mIsVideo? "codec-video" : "codec-audio", (int)presentationTimeUs);
     if (errorDetailMsg != NULL) {
         errorDetailMsg->clear();
     }
@@ -1032,6 +1050,8 @@ status_t MediaCodec::queueSecureInputBuffer(
         int64_t presentationTimeUs,
         uint32_t flags,
         AString *errorDetailMsg) {
+    VTRACE_METHOD();
+    VTRACE_ASYNC_BEGIN(mIsVideo? "codec-video" : "codec-audio", (int)presentationTimeUs);
     if (errorDetailMsg != NULL) {
         errorDetailMsg->clear();
     }
@@ -1057,6 +1077,7 @@ status_t MediaCodec::queueSecureInputBuffer(
 }
 
 status_t MediaCodec::dequeueInputBuffer(size_t *index, int64_t timeoutUs) {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatDequeueInputBuffer, this);
     msg->setInt64("timeoutUs", timeoutUs);
 
@@ -1078,6 +1099,7 @@ status_t MediaCodec::dequeueOutputBuffer(
         int64_t *presentationTimeUs,
         uint32_t *flags,
         int64_t timeoutUs) {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatDequeueOutputBuffer, this);
     msg->setInt64("timeoutUs", timeoutUs);
 
@@ -1092,11 +1114,13 @@ status_t MediaCodec::dequeueOutputBuffer(
     CHECK(response->findSize("size", size));
     CHECK(response->findInt64("timeUs", presentationTimeUs));
     CHECK(response->findInt32("flags", (int32_t *)flags));
+    VTRACE_ASYNC_END(mIsVideo? "codec-video" : "codec-audio", (int)(*presentationTimeUs));
 
     return OK;
 }
 
 status_t MediaCodec::renderOutputBufferAndRelease(size_t index) {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatReleaseOutputBuffer, this);
     msg->setSize("index", index);
     msg->setInt32("render", true);
@@ -1106,6 +1130,7 @@ status_t MediaCodec::renderOutputBufferAndRelease(size_t index) {
 }
 
 status_t MediaCodec::renderOutputBufferAndRelease(size_t index, int64_t timestampNs) {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatReleaseOutputBuffer, this);
     msg->setSize("index", index);
     msg->setInt32("render", true);
@@ -1116,6 +1141,7 @@ status_t MediaCodec::renderOutputBufferAndRelease(size_t index, int64_t timestam
 }
 
 status_t MediaCodec::releaseOutputBuffer(size_t index) {
+    VTRACE_METHOD();
     sp<AMessage> msg = new AMessage(kWhatReleaseOutputBuffer, this);
     msg->setSize("index", index);
 
@@ -1384,6 +1410,7 @@ bool MediaCodec::handleDequeueOutputBuffer(const sp<AReplyToken> &replyID, bool 
 }
 
 void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
+    VTRACE_METHOD();
     switch (msg->what()) {
         case kWhatCodecNotify:
         {
@@ -2594,6 +2621,10 @@ status_t MediaCodec::queueCSDInputBuffer(size_t bufferIndex) {
     if (csd->size() > codecInputData->capacity()) {
         return -EINVAL;
     }
+    if (codecInputData->data() == NULL) {
+        ALOGV("Input buffer %zu is not properly allocated", bufferIndex);
+        return -EINVAL;
+    }
 
     memcpy(codecInputData->data(), csd->data(), csd->size());
 
@@ -2905,6 +2936,7 @@ status_t MediaCodec::onReleaseOutputBuffer(const sp<AMessage> &msg) {
 }
 
 ssize_t MediaCodec::dequeuePortBuffer(int32_t portIndex) {
+    VTRACE_METHOD();
     CHECK(portIndex == kPortIndexInput || portIndex == kPortIndexOutput);
 
     List<size_t> *availBuffers = &mAvailPortBuffers[portIndex];
@@ -3029,6 +3061,7 @@ void MediaCodec::onOutputBufferAvailable() {
 
         int64_t timeUs;
         CHECK(buffer->meta()->findInt64("timeUs", &timeUs));
+        VTRACE_ASYNC_END(mIsVideo? "codec-video" : "codec-audio", (int)(timeUs));
 
         msg->setInt64("timeUs", timeUs);
 

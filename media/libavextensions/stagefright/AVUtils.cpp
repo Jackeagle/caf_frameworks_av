@@ -30,6 +30,7 @@
 #define LOG_TAG "AVUtils"
 #include <utils/Log.h>
 
+#include <media/IMediaExtractor.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/ABuffer.h>
@@ -52,6 +53,11 @@ status_t AVUtils::convertMetaDataToMessage(
     return OK;
 }
 
+status_t AVUtils::convertMessageToMetaData(
+        const sp<AMessage> &, sp<MetaData> &) {
+    return OK;
+}
+
 status_t AVUtils::mapMimeToAudioFormat(
         audio_format_t&, const char* ) {
     return OK;
@@ -62,6 +68,13 @@ status_t AVUtils::sendMetaDataToHal(
     return OK;
 }
 
+bool AVUtils::hasAudioSampleBits(const sp<MetaData> &) {
+    return false;
+}
+
+bool AVUtils::hasAudioSampleBits(const sp<AMessage> &) {
+    return false;
+}
 
 int AVUtils::getAudioSampleBits(const sp<MetaData> &) {
     return 16;
@@ -154,6 +167,14 @@ const char *AVUtils::getComponentRole(bool isEncoder, const char *mime) {
 
 bool AVUtils::IsHevcIDR(const sp<ABuffer> &) {
    return false;
+}
+
+sp<DataSource> AVUtils::wrapTraceDataSource(const sp<DataSource> &dataSource) {
+    return dataSource;
+}
+
+sp<IMediaExtractor> AVUtils::wrapTraceMediaExtractor(const sp<IMediaExtractor> &extractor) {
+    return extractor;
 }
 
 // ----- NO TRESSPASSING BEYOND THIS LINE ------

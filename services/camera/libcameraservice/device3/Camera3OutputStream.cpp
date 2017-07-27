@@ -43,7 +43,8 @@ Camera3OutputStream::Camera3OutputStream(int id,
         mTraceFirstBuffer(true),
         mUseBufferManager(false),
         mTimestampOffset(timestampOffset),
-        mConsumerUsage(0) {
+        mConsumerUsage(0),
+        mDequeueBufferLatency(kDequeueLatencyBinSize) {
 
     if (mConsumer == NULL) {
         ALOGE("%s: Consumer is NULL!", __FUNCTION__);
@@ -68,7 +69,8 @@ Camera3OutputStream::Camera3OutputStream(int id,
         mUseMonoTimestamp(false),
         mUseBufferManager(false),
         mTimestampOffset(timestampOffset),
-        mConsumerUsage(0) {
+        mConsumerUsage(0),
+        mDequeueBufferLatency(kDequeueLatencyBinSize) {
 
     if (format != HAL_PIXEL_FORMAT_BLOB && format != HAL_PIXEL_FORMAT_RAW_OPAQUE) {
         ALOGE("%s: Bad format for size-only stream: %d", __FUNCTION__,
@@ -97,7 +99,8 @@ Camera3OutputStream::Camera3OutputStream(int id,
         mTraceFirstBuffer(true),
         mUseBufferManager(false),
         mTimestampOffset(timestampOffset),
-        mConsumerUsage(consumerUsage) {
+        mConsumerUsage(consumerUsage),
+        mDequeueBufferLatency(kDequeueLatencyBinSize) {
     // Deferred consumer only support preview surface format now.
     if (format != HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED) {
         ALOGE("%s: Deferred consumer only supports IMPLEMENTATION_DEFINED format now!",
@@ -134,7 +137,8 @@ Camera3OutputStream::Camera3OutputStream(int id, camera3_stream_type_t type,
         mUseMonoTimestamp(false),
         mUseBufferManager(false),
         mTimestampOffset(timestampOffset),
-        mConsumerUsage(consumerUsage) {
+        mConsumerUsage(consumerUsage),
+        mDequeueBufferLatency(kDequeueLatencyBinSize) {
 
     if (setId > CAMERA3_STREAM_SET_ID_INVALID) {
         mBufferReleasedListener = new BufferReleasedListener(this);
@@ -290,6 +294,9 @@ void Camera3OutputStream::dump(int fd, const Vector<String16> &args) const {
     write(fd, lines.string(), lines.size());
 
     Camera3IOStreamBase::dump(fd, args);
+
+    mDequeueBufferLatency.dump(fd,
+        "      DequeueBuffer latency histogram:");
 }
 
 status_t Camera3OutputStream::setTransform(int transform) {
@@ -529,7 +536,11 @@ status_t Camera3OutputStream::getBufferLockedCommon(ANativeWindowBuffer** anb, i
         sp<ANativeWindow> currentConsumer = mConsumer;
         mLock.unlock();
 
+        nsecs_t dequeueStart = systemTime(SYSTEM_TIME_MONOTONIC);
         res = currentConsumer->dequeueBuffer(currentConsumer.get(), anb, fenceFd);
+        nsecs_t dequeueEnd = systemTime(SYSTEM_TIME_MONOTONIC);
+        mDequeueBufferLatency.add(dequeueStart, dequeueEnd);
+
         mLock.lock();
         if (res != OK) {
             ALOGE("%s: Stream %d: Can't dequeue next output buffer: %s (%d)",
@@ -611,6 +622,9 @@ status_t Camera3OutputStream::disconnectLocked() {
 
     mState = (mState == STATE_IN_RECONFIG) ? STATE_IN_CONFIG
                                            : STATE_CONSTRUCTED;
+
+    mDequeueBufferLatency.log("Stream %d dequeueBuffer latency histogram", mId);
+    mDequeueBufferLatency.reset();
     return OK;
 }
 
@@ -691,12 +705,23 @@ void Camera3OutputStream::BufferReleasedListener::onBufferReleased() {
     }
 
     ALOGV("Stream %d: Buffer released", stream->getId());
+    bool shouldFreeBuffer = false;
     status_t res = stream->mBufferManager->onBufferReleased(
-        stream->getId(), stream->getStreamSetId());
+        stream->getId(), stream->getStreamSetId(), &shouldFreeBuffer);
     if (res != OK) {
         ALOGE("%s: signaling buffer release to buffer manager failed: %s (%d).", __FUNCTION__,
                 strerror(-res), res);
         stream->mState = STATE_ERROR;
+    }
+
+    if (shouldFreeBuffer) {
+        sp<GraphicBuffer> buffer;
+        // Detach and free a buffer (when buffer goes out of scope)
+        stream->detachBufferLocked(&buffer, /*fenceFd*/ nullptr);
+        if (buffer.get() != nullptr) {
+            stream->mBufferManager->notifyBufferRemoved(
+                    stream->getId(), stream->getStreamSetId());
+        }
     }
 }
 
@@ -712,7 +737,10 @@ void Camera3OutputStream::onBuffersRemovedLocked(
 
 status_t Camera3OutputStream::detachBuffer(sp<GraphicBuffer>* buffer, int* fenceFd) {
     Mutex::Autolock l(mLock);
+    return detachBufferLocked(buffer, fenceFd);
+}
 
+status_t Camera3OutputStream::detachBufferLocked(sp<GraphicBuffer>* buffer, int* fenceFd) {
     ALOGV("Stream %d: detachBuffer", getId());
     if (buffer == nullptr) {
         return BAD_VALUE;

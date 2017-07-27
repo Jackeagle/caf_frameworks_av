@@ -411,8 +411,11 @@ status_t DrmHal::destroyPlugin() {
     }
 
     setListener(NULL);
-    mPlugin->setListener(NULL);
+    if (mPlugin != NULL) {
+        mPlugin->setListener(NULL);
+    }
     mPlugin.clear();
+    mInitCheck = NO_INIT;
 
     return OK;
 }
@@ -958,12 +961,13 @@ status_t DrmHal::signRSA(Vector<uint8_t> const &sessionId,
 
 void DrmHal::binderDied(const wp<IBinder> &the_late_who __unused)
 {
-    mEventLock.lock();
-    mListener.clear();
-    mEventLock.unlock();
-
     Mutex::Autolock autoLock(mLock);
+    setListener(NULL);
+    if (mPlugin != NULL) {
+        mPlugin->setListener(NULL);
+    }
     mPlugin.clear();
+    mInitCheck = NO_INIT;
 }
 
 void DrmHal::writeByteArray(Parcel &obj, hidl_vec<uint8_t> const &vec)

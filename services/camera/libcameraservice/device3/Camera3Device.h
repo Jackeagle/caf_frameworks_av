@@ -40,6 +40,7 @@
 #include "device3/StatusTracker.h"
 #include "device3/Camera3BufferManager.h"
 #include "utils/TagMonitor.h"
+#include "utils/LatencyHistogram.h"
 #include <camera_metadata_hidden.h>
 
 /**
@@ -188,7 +189,7 @@ class Camera3Device :
     static const size_t        kDumpSleepDuration = 100000; // 0.10 sec
     static const nsecs_t       kShutdownTimeout   = 5000000000; // 5 sec
     static const nsecs_t       kActiveTimeout     = 500000000;  // 500 ms
-    static const size_t        kInFlightWarnLimit = 20;
+    static const size_t        kInFlightWarnLimit = 30;
     static const size_t        kInFlightWarnLimitHighSpeed = 256; // batch size 32 * pipe depth 8
     // SCHED_FIFO priority for request submission thread in HFR mode
     static const int           kRequestThreadPriority = 1;
@@ -699,6 +700,11 @@ class Camera3Device :
          */
         bool isStreamPending(sp<camera3::Camera3StreamInterface>& stream);
 
+        // dump processCaptureRequest latency
+        void dumpCaptureRequestLatency(int fd, const char* name) {
+            mRequestLatency.dump(fd, name);
+        }
+
       protected:
 
         virtual bool threadLoop();
@@ -820,6 +826,9 @@ class Camera3Device :
 
         // Flag indicating if we should prepare video stream for video requests.
         bool               mPrepareVideoStream;
+
+        static const int32_t kRequestLatencyBinSize = 40; // in ms
+        CameraLatencyHistogram mRequestLatency;
     };
     sp<RequestThread> mRequestThread;
 

@@ -20,7 +20,6 @@
 #include <assert.h>
 #include <cctype>
 #include <math.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -339,10 +338,10 @@ int main(int argc, const char **argv)
     const int requestedOutputChannelCount = AAUDIO_UNSPECIFIED;
     const int requestedSampleRate = SAMPLE_RATE;
     int actualSampleRate = 0;
-    const aaudio_audio_format_t requestedInputFormat = AAUDIO_FORMAT_PCM_I16;
-    const aaudio_audio_format_t requestedOutputFormat = AAUDIO_FORMAT_PCM_FLOAT;
-    aaudio_audio_format_t actualInputFormat;
-    aaudio_audio_format_t actualOutputFormat;
+    const aaudio_format_t requestedInputFormat = AAUDIO_FORMAT_PCM_I16;
+    const aaudio_format_t requestedOutputFormat = AAUDIO_FORMAT_PCM_FLOAT;
+    aaudio_format_t actualInputFormat;
+    aaudio_format_t actualOutputFormat;
 
     const aaudio_sharing_mode_t requestedSharingMode = AAUDIO_SHARING_MODE_EXCLUSIVE;
     //const aaudio_sharing_mode_t requestedSharingMode = AAUDIO_SHARING_MODE_SHARED;

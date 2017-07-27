@@ -22,6 +22,7 @@
 #include <pthread.h>
 
 #include <aaudio/AAudio.h>
+#include <aaudio/AAudioTesting.h>
 
 #include "AudioStreamBuilder.h"
 #include "AudioStream.h"
@@ -50,13 +51,13 @@ AAUDIO_API const char * AAudio_convertResultToText(aaudio_result_t returnCode) {
         AAUDIO_CASE_ENUM(AAUDIO_OK);
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_DISCONNECTED);
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_ILLEGAL_ARGUMENT);
-        AAUDIO_CASE_ENUM(AAUDIO_ERROR_INCOMPATIBLE);
+        // reserved
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_INTERNAL);
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_INVALID_STATE);
-        AAUDIO_CASE_ENUM(AAUDIO_ERROR_UNEXPECTED_STATE);
-        AAUDIO_CASE_ENUM(AAUDIO_ERROR_UNEXPECTED_VALUE);
+        // reserved
+        // reserved
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_INVALID_HANDLE);
-        AAUDIO_CASE_ENUM(AAUDIO_ERROR_INVALID_QUERY);
+         // reserved
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_UNIMPLEMENTED);
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_UNAVAILABLE);
         AAUDIO_CASE_ENUM(AAUDIO_ERROR_NO_FREE_HANDLES);
@@ -94,6 +95,13 @@ AAUDIO_API const char * AAudio_convertStreamStateToText(aaudio_stream_state_t st
 
 #undef AAUDIO_CASE_ENUM
 
+
+/******************************************
+ * Static globals.
+ */
+static aaudio_policy_t s_MMapPolicy = AAUDIO_UNSPECIFIED;
+
+
 static AudioStream *convertAAudioStreamToAudioStream(AAudioStream* stream)
 {
     return (AudioStream*) stream;
@@ -106,7 +114,7 @@ static AudioStreamBuilder *convertAAudioBuilderToStreamBuilder(AAudioStreamBuild
 
 AAUDIO_API aaudio_result_t AAudio_createStreamBuilder(AAudioStreamBuilder** builder)
 {
-    AudioStreamBuilder *audioStreamBuilder =  new AudioStreamBuilder();
+    AudioStreamBuilder *audioStreamBuilder =  new(std::nothrow) AudioStreamBuilder();
     if (audioStreamBuilder == nullptr) {
         return AAUDIO_ERROR_NO_MEMORY;
     }
@@ -142,13 +150,6 @@ AAUDIO_API void AAudioStreamBuilder_setChannelCount(AAudioStreamBuilder* builder
     streamBuilder->setSamplesPerFrame(channelCount);
 }
 
-AAUDIO_API void AAudioStreamBuilder_setSamplesPerFrame(AAudioStreamBuilder* builder,
-                                                       int32_t samplesPerFrame)
-{
-    AudioStreamBuilder *streamBuilder = convertAAudioBuilderToStreamBuilder(builder);
-    streamBuilder->setSamplesPerFrame(samplesPerFrame);
-}
-
 AAUDIO_API void AAudioStreamBuilder_setDirection(AAudioStreamBuilder* builder,
                                              aaudio_direction_t direction)
 {
@@ -157,7 +158,7 @@ AAUDIO_API void AAudioStreamBuilder_setDirection(AAudioStreamBuilder* builder,
 }
 
 AAUDIO_API void AAudioStreamBuilder_setFormat(AAudioStreamBuilder* builder,
-                                                   aaudio_audio_format_t format)
+                                                   aaudio_format_t format)
 {
     AudioStreamBuilder *streamBuilder = convertAAudioBuilderToStreamBuilder(builder);
     streamBuilder->setFormat(format);
@@ -227,7 +228,7 @@ AAUDIO_API aaudio_result_t  AAudioStreamBuilder_delete(AAudioStreamBuilder* buil
         delete streamBuilder;
         return AAUDIO_OK;
     }
-    return AAUDIO_ERROR_INVALID_HANDLE;
+    return AAUDIO_ERROR_NULL;
 }
 
 AAUDIO_API aaudio_result_t  AAudioStream_close(AAudioStream* stream)
@@ -239,14 +240,16 @@ AAUDIO_API aaudio_result_t  AAudioStream_close(AAudioStream* stream)
         delete audioStream;
         return AAUDIO_OK;
     }
-    return AAUDIO_ERROR_INVALID_HANDLE;
+    return AAUDIO_ERROR_NULL;
 }
 
 AAUDIO_API aaudio_result_t  AAudioStream_requestStart(AAudioStream* stream)
 {
     AudioStream *audioStream = convertAAudioStreamToAudioStream(stream);
-    ALOGD("AAudioStream_requestStart(%p)", stream);
-    return audioStream->requestStart();
+    ALOGD("AAudioStream_requestStart(%p) called --------------", stream);
+    aaudio_result_t result = audioStream->requestStart();
+    ALOGD("AAudioStream_requestStart(%p) returned ------------", stream);
+    return result;
 }
 
 AAUDIO_API aaudio_result_t  AAudioStream_requestPause(AAudioStream* stream)
@@ -347,19 +350,13 @@ AAUDIO_API int32_t AAudioStream_getChannelCount(AAudioStream* stream)
     return audioStream->getSamplesPerFrame();
 }
 
-AAUDIO_API int32_t AAudioStream_getSamplesPerFrame(AAudioStream* stream)
-{
-    AudioStream *audioStream = convertAAudioStreamToAudioStream(stream);
-    return audioStream->getSamplesPerFrame();
-}
-
 AAUDIO_API aaudio_stream_state_t AAudioStream_getState(AAudioStream* stream)
 {
     AudioStream *audioStream = convertAAudioStreamToAudioStream(stream);
     return audioStream->getState();
 }
 
-AAUDIO_API aaudio_audio_format_t AAudioStream_getFormat(AAudioStream* stream)
+AAUDIO_API aaudio_format_t AAudioStream_getFormat(AAudioStream* stream)
 {
     AudioStream *audioStream = convertAAudioStreamToAudioStream(stream);
     return audioStream->getFormat();
@@ -453,4 +450,30 @@ AAUDIO_API aaudio_result_t AAudioStream_getTimestamp(AAudioStream* stream,
     }
 
     return audioStream->getTimestamp(clockid, framePosition, timeNanoseconds);
+}
+
+AAUDIO_API aaudio_policy_t AAudio_getMMapPolicy() {
+    return s_MMapPolicy;
+}
+
+AAUDIO_API aaudio_result_t AAudio_setMMapPolicy(aaudio_policy_t policy) {
+    aaudio_result_t result = AAUDIO_OK;
+    switch(policy) {
+        case AAUDIO_UNSPECIFIED:
+        case AAUDIO_POLICY_NEVER:
+        case AAUDIO_POLICY_AUTO:
+        case AAUDIO_POLICY_ALWAYS:
+            s_MMapPolicy = policy;
+            break;
+        default:
+            result = AAUDIO_ERROR_ILLEGAL_ARGUMENT;
+            break;
+    }
+    return result;
+}
+
+AAUDIO_API bool AAudioStream_isMMapUsed(AAudioStream* stream)
+{
+    AudioStream *audioStream = convertAAudioStreamToAudioStream(stream);
+    return audioStream->isMMap();
 }

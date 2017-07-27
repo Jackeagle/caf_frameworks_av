@@ -16,6 +16,8 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "GenericSource"
+#define TRACE_SUBMODULE VTRACE_SUBMODULE_EXTRACT
+#define __CLASS__ "GenericSource"
 
 #include "GenericSource.h"
 #include "NuPlayerDrm.h"
@@ -83,6 +85,7 @@ void NuPlayer::GenericSource::resetDataSource() {
     mHttpSource.clear();
     mUri.clear();
     mUriHeaders.clear();
+    mSources.clear();
     if (mFd >= 0) {
         close(mFd);
         mFd = -1;
@@ -558,6 +561,7 @@ status_t NuPlayer::GenericSource::feedMoreTSData() {
 }
 
 void NuPlayer::GenericSource::onMessageReceived(const sp<AMessage> &msg) {
+    VTRACE_METHOD();
     switch (msg->what()) {
       case kWhatPrepareAsync:
       {
@@ -1385,6 +1389,7 @@ void NuPlayer::GenericSource::onReadBuffer(const sp<AMessage>& msg) {
 void NuPlayer::GenericSource::readBuffer(
         media_track_type trackType, int64_t seekTimeUs, MediaPlayerSeekMode mode,
         int64_t *actualTimeUs, bool formatChange) {
+    VTRACE_METHOD();
     // Do not read data if Widevine source is stopped
     //
     // TODO: revisit after widevine is removed.  May be able to
@@ -1993,7 +1998,8 @@ status_t NuPlayer::GenericSource::onPrepareDrm(const sp<AMessage> &msg)
     // The legacy mDecryptHandle!=NULL check (for FLAG_PROTECTED) is equivalent to mIsDrmProtected.
     notifyFlagsChanged(
             (mIsSecure ? FLAG_SECURE : 0) |
-            (mIsDrmProtected ? FLAG_PROTECTED : 0) |
+            // Setting "protected screen" only for L1: b/38390836
+            (mIsSecure ? FLAG_PROTECTED : 0) |
             FLAG_CAN_PAUSE |
             FLAG_CAN_SEEK_BACKWARD |
             FLAG_CAN_SEEK_FORWARD |

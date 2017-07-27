@@ -35,7 +35,7 @@
 #include "omx/OMXUtils.h"
 #include <OMX_Component.h>
 #include <OMX_IndexExt.h>
-#include "OMXBuffer.h"
+#include "media/OMXBuffer.h"
 
 #include <inttypes.h>
 #include "FrameDropper.h"
@@ -264,6 +264,7 @@ GraphicBufferSource::GraphicBufferSource() :
     mLastDataspace(HAL_DATASPACE_UNKNOWN),
     mExecuting(false),
     mSuspended(false),
+    mLastFrameTimestampUs(-1),
     mStopTimeUs(-1),
     mLastActionTimeUs(-1ll),
     mSkipFramesBeforeNs(-1ll),
@@ -649,6 +650,7 @@ bool GraphicBufferSource::fillCodecBuffer_l() {
         }
         ALOGV("buffer submitted [slot=%d, useCount=%ld] acquired=%d",
                 item.mBuffer->getSlot(), item.mBuffer.use_count(), mNumOutstandingAcquires);
+        mLastFrameTimestampUs = itemTimeUs;
     }
 
     return true;
@@ -731,7 +733,7 @@ bool GraphicBufferSource::calculateCodecTimestamp_l(
         } else {
             // snap to nearest capture point
             int64_t nFrames = std::llround(
-                    (timeUs - mPrevCaptureUs) * mCaptureFps);
+                    (timeUs - mPrevCaptureUs) / 1000000 * mCaptureFps + 0.5);
             if (nFrames <= 0) {
                 // skip this frame as it's too close to previous capture
                 ALOGV("skipping frame, timeUs %lld", static_cast<long long>(timeUs));
@@ -739,9 +741,9 @@ bool GraphicBufferSource::calculateCodecTimestamp_l(
             }
             mFrameCount += nFrames;
             mPrevCaptureUs = mBaseCaptureUs + std::llround(
-                    mFrameCount / mCaptureFps);
+                    1000000 * mFrameCount / mCaptureFps);
             mPrevFrameUs = mBaseFrameUs + std::llround(
-                    mFrameCount / mFps);
+                    1000000 * mFrameCount / mFps);
         }
 
         ALOGV("timeUs %lld, captureUs %lld, frameUs %lld",
@@ -827,6 +829,10 @@ void GraphicBufferSource::submitEndOfInputStream_l() {
         ssize_t cbix = mSubmittedCodecBuffers.add(codecBufferId, nullptr);
         ALOGV("submitEndOfInputStream_l: buffer submitted, bufferId=%u@%zd", codecBufferId, cbix);
         mEndOfStreamSent = true;
+
+        // no need to hold onto any buffers for frame repeating
+        ++mRepeatLastFrameGeneration;
+        mLatestBuffer.mBuffer.reset();
     }
 }
 
@@ -1216,10 +1222,21 @@ status_t GraphicBufferSource::setStopTimeUs(int64_t stopTimeUs) {
     return OK;
 }
 
+status_t GraphicBufferSource::getStopTimeOffsetUs(int64_t *stopTimeOffsetUs) {
+    ALOGV("getStopTimeOffsetUs");
+    Mutex::Autolock autoLock(mMutex);
+    if (mStopTimeUs == -1) {
+        ALOGW("Fail to return stopTimeOffsetUs as stop time is not set");
+        return INVALID_OPERATION;
+    }
+    *stopTimeOffsetUs =
+        mLastFrameTimestampUs == -1 ? 0 : mStopTimeUs - mLastFrameTimestampUs;
+    return OK;
+}
+
 status_t GraphicBufferSource::setTimeLapseConfig(double fps, double captureFps) {
     ALOGV("setTimeLapseConfig: fps=%lg, captureFps=%lg",
             fps, captureFps);
-
     Mutex::Autolock autoLock(mMutex);
 
     if (mExecuting || !(fps > 0) || !(captureFps > 0)) {

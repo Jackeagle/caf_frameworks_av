@@ -25,6 +25,7 @@
 
 #include "hardware/camera3.h"
 
+#include "utils/LatencyHistogram.h"
 #include "Camera3StreamBufferListener.h"
 #include "Camera3StreamInterface.h"
 
@@ -307,8 +308,10 @@ class Camera3Stream :
      * For bidirectional streams, this method applies to the input-side
      * buffers.
      *
+     * Normally this call will block until the handed out buffer count is less than the stream
+     * max buffer count; if respectHalLimit is set to false, this is ignored.
      */
-    status_t         getInputBuffer(camera3_stream_buffer *buffer);
+    status_t         getInputBuffer(camera3_stream_buffer *buffer, bool respectHalLimit = true);
 
     /**
      * Return a buffer to the stream after use by the HAL.
@@ -349,7 +352,7 @@ class Camera3Stream :
     /**
      * Debug dump of the stream's state.
      */
-    virtual void     dump(int fd, const Vector<String16> &args) const = 0;
+    virtual void     dump(int fd, const Vector<String16> &args) const;
 
     /**
      * Add a camera3 buffer listener. Adding the same listener twice has
@@ -502,6 +505,10 @@ class Camera3Stream :
     // Outstanding buffers dequeued from the stream's buffer queue.
     List<buffer_handle_t> mOutstandingBuffers;
 
+    // Latency histogram of the wait time for handout buffer count to drop below
+    // max_buffers.
+    static const int32_t kBufferLimitLatencyBinSize = 33; //in ms
+    CameraLatencyHistogram mBufferLimitLatency;
 }; // class Camera3Stream
 
 }; // namespace camera3

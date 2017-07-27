@@ -115,7 +115,11 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
 
     ALOGD("AudioStreamTrack::open(), request notificationFrames = %d, frameCount = %u",
           notificationFrames, (uint)frameCount);
-    mAudioTrack = new AudioTrack(
+    mAudioTrack = new AudioTrack();
+    if (getDeviceId() != AAUDIO_UNSPECIFIED) {
+        mAudioTrack->setOutputDevice(getDeviceId());
+    }
+    mAudioTrack->set(
             (audio_stream_type_t) AUDIO_STREAM_MUSIC,
             getSampleRate(),
             format,
@@ -125,6 +129,8 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
             callback,
             callbackData,
             notificationFrames,
+            0 /*sharedBuffer*/,
+            false /*threadCanCallJava*/,
             AUDIO_SESSION_ALLOCATE,
             streamTransferType
             );
@@ -137,9 +143,12 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
         return AAudioConvert_androidToAAudioResult(status);
     }
 
+    //TrackPlayerBase init
+    init(mAudioTrack.get(), PLAYER_TYPE_AAUDIO, AUDIO_USAGE_MEDIA);
+
     // Get the actual values from the AudioTrack.
     setSamplesPerFrame(mAudioTrack->channelCount());
-    aaudio_audio_format_t aaudioFormat =
+    aaudio_format_t aaudioFormat =
             AAudioConvert_androidToAAudioDataFormat(mAudioTrack->format());
     setFormat(aaudioFormat);
 
@@ -160,6 +169,7 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
 
     setState(AAUDIO_STREAM_STATE_OPEN);
     setDeviceId(mAudioTrack->getRoutedDeviceId());
+    mAudioTrack->addAudioDeviceCallback(mDeviceCallback);
 
     // Update performance mode based on the actual stream.
     // For example, if the sample rate is not allowed then you won't get a FAST track.
@@ -187,7 +197,7 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
 aaudio_result_t AudioStreamTrack::close()
 {
     if (getState() != AAUDIO_STREAM_STATE_CLOSED) {
-        mAudioTrack.clear();
+        destroy();
         setState(AAUDIO_STREAM_STATE_CLOSED);
     }
     mFixedBlockReader.close();
@@ -225,10 +235,11 @@ aaudio_result_t AudioStreamTrack::requestStart()
         return AAudioConvert_androidToAAudioResult(err);
     }
 
-    err = mAudioTrack->start();
+    err = startWithStatus();
     if (err != OK) {
         return AAudioConvert_androidToAAudioResult(err);
     } else {
+        onStart();
         setState(AAUDIO_STREAM_STATE_STARTING);
     }
     return AAUDIO_OK;
@@ -246,8 +257,9 @@ aaudio_result_t AudioStreamTrack::requestPause()
               AAudio_convertStreamStateToText(getState()));
         return AAUDIO_ERROR_INVALID_STATE;
     }
+    onStop();
     setState(AAUDIO_STREAM_STATE_PAUSING);
-    mAudioTrack->pause();
+    pause();
     status_t err = mAudioTrack->getPosition(&mPositionWhenPausing);
     if (err != OK) {
         return AAudioConvert_androidToAAudioResult(err);
@@ -276,9 +288,10 @@ aaudio_result_t AudioStreamTrack::requestStop() {
     if (mAudioTrack.get() == nullptr) {
         return AAUDIO_ERROR_INVALID_STATE;
     }
+    onStop();
     setState(AAUDIO_STREAM_STATE_STOPPING);
     incrementFramesRead(getFramesWritten() - getFramesRead()); // TODO review
-    mAudioTrack->stop();
+    stop();
     mFramesWritten.reset32();
     return AAUDIO_OK;
 }
@@ -339,6 +352,10 @@ aaudio_result_t AudioStreamTrack::write(const void *buffer,
         return result;
     }
 
+    if (getState() == AAUDIO_STREAM_STATE_DISCONNECTED) {
+        return AAUDIO_ERROR_DISCONNECTED;
+    }
+
     // TODO add timeout to AudioTrack
     bool blocking = timeoutNanoseconds > 0;
     ssize_t bytesWritten = mAudioTrack->write(buffer, numBytes, blocking);
@@ -346,6 +363,12 @@ aaudio_result_t AudioStreamTrack::write(const void *buffer,
         return 0;
     } else if (bytesWritten < 0) {
         ALOGE("invalid write, returned %d", (int)bytesWritten);
+        // in this context, a DEAD_OBJECT is more likely to be a disconnect notification due to
+        // AudioTrack invalidation
+        if (bytesWritten == DEAD_OBJECT) {
+            setState(AAUDIO_STREAM_STATE_DISCONNECTED);
+            return AAUDIO_ERROR_DISCONNECTED;
+        }
         return AAudioConvert_androidToAAudioResult(bytesWritten);
     }
     int32_t framesWritten = (int32_t)(bytesWritten / bytesPerFrame);
@@ -400,7 +423,7 @@ int64_t AudioStreamTrack::getFramesRead() {
     default:
         break;
     }
-    return AudioStream::getFramesRead();
+    return AudioStreamLegacy::getFramesRead();
 }
 
 aaudio_result_t AudioStreamTrack::getTimestamp(clockid_t clockId,

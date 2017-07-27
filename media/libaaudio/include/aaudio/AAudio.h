@@ -42,7 +42,6 @@ extern "C" {
  * and would accept whatever it was given.
  */
 #define AAUDIO_UNSPECIFIED           0
-#define AAUDIO_DEVICE_UNSPECIFIED    0
 
 enum {
     AAUDIO_DIRECTION_OUTPUT,
@@ -58,25 +57,19 @@ enum {
 };
 typedef int32_t aaudio_format_t;
 
-/**
- * @deprecated use aaudio_format_t instead
- * TODO remove when tests and examples are updated
- */
-typedef int32_t aaudio_audio_format_t;
-
 enum {
     AAUDIO_OK,
     AAUDIO_ERROR_BASE = -900, // TODO review
     AAUDIO_ERROR_DISCONNECTED,
     AAUDIO_ERROR_ILLEGAL_ARGUMENT,
-    AAUDIO_ERROR_INCOMPATIBLE,
-    AAUDIO_ERROR_INTERNAL, // an underlying API returned an error code
+    // reserved
+    AAUDIO_ERROR_INTERNAL = AAUDIO_ERROR_ILLEGAL_ARGUMENT + 2,
     AAUDIO_ERROR_INVALID_STATE,
-    AAUDIO_ERROR_UNEXPECTED_STATE,
-    AAUDIO_ERROR_UNEXPECTED_VALUE,
-    AAUDIO_ERROR_INVALID_HANDLE,
-    AAUDIO_ERROR_INVALID_QUERY,
-    AAUDIO_ERROR_UNIMPLEMENTED,
+    // reserved
+    // reserved
+    AAUDIO_ERROR_INVALID_HANDLE = AAUDIO_ERROR_INVALID_STATE + 3,
+    // reserved
+    AAUDIO_ERROR_UNIMPLEMENTED = AAUDIO_ERROR_INVALID_HANDLE + 2,
     AAUDIO_ERROR_UNAVAILABLE,
     AAUDIO_ERROR_NO_FREE_HANDLES,
     AAUDIO_ERROR_NO_MEMORY,
@@ -197,11 +190,11 @@ AAUDIO_API aaudio_result_t AAudio_createStreamBuilder(AAudioStreamBuilder** buil
  * Request an audio device identified device using an ID.
  * On Android, for example, the ID could be obtained from the Java AudioManager.
  *
- * The default, if you do not call this function, is AAUDIO_DEVICE_UNSPECIFIED,
+ * The default, if you do not call this function, is AAUDIO_UNSPECIFIED,
  * in which case the primary device will be used.
  *
  * @param builder reference provided by AAudio_createStreamBuilder()
- * @param deviceId device identifier or AAUDIO_DEVICE_UNSPECIFIED
+ * @param deviceId device identifier or AAUDIO_UNSPECIFIED
  */
 AAUDIO_API void AAudioStreamBuilder_setDeviceId(AAudioStreamBuilder* builder,
                                                      int32_t deviceId);
@@ -241,14 +234,6 @@ AAUDIO_API void AAudioStreamBuilder_setChannelCount(AAudioStreamBuilder* builder
                                                    int32_t channelCount);
 
 /**
- *
- * @deprecated use AAudioStreamBuilder_setChannelCount()
- */
-// TODO remove as soon as the NDK and OS are in sync, before RC1
-AAUDIO_API void AAudioStreamBuilder_setSamplesPerFrame(AAudioStreamBuilder* builder,
-                                                       int32_t samplesPerFrame);
-
-/**
  * Request a sample data format, for example AAUDIO_FORMAT_PCM_I16.
  *
  * The default, if you do not call this function, is AAUDIO_UNSPECIFIED.
@@ -263,7 +248,7 @@ AAUDIO_API void AAudioStreamBuilder_setSamplesPerFrame(AAudioStreamBuilder* buil
  * @param format common formats are AAUDIO_FORMAT_PCM_FLOAT and AAUDIO_FORMAT_PCM_I16.
  */
 AAUDIO_API void AAudioStreamBuilder_setFormat(AAudioStreamBuilder* builder,
-                                                   aaudio_audio_format_t format);
+                                                   aaudio_format_t format);
 
 /**
  * Request a mode for sharing the device.
@@ -736,15 +721,6 @@ AAUDIO_API int32_t AAudioStream_getSampleRate(AAudioStream* stream);
 AAUDIO_API int32_t AAudioStream_getChannelCount(AAudioStream* stream);
 
 /**
- * The samplesPerFrame is also known as channelCount.
- *
- * @deprecated use AAudioStream_getChannelCount()
- * @param stream reference provided by AAudioStreamBuilder_openStream()
- * @return actual samples per frame
- */
-AAUDIO_API int32_t AAudioStream_getSamplesPerFrame(AAudioStream* stream);
-
-/**
  * @param stream reference provided by AAudioStreamBuilder_openStream()
  * @return actual device ID
  */
@@ -754,7 +730,7 @@ AAUDIO_API int32_t AAudioStream_getDeviceId(AAudioStream* stream);
  * @param stream reference provided by AAudioStreamBuilder_openStream()
  * @return actual data format
  */
-AAUDIO_API aaudio_audio_format_t AAudioStream_getFormat(AAudioStream* stream);
+AAUDIO_API aaudio_format_t AAudioStream_getFormat(AAudioStream* stream);
 
 /**
  * Provide actual sharing mode.

@@ -21,6 +21,7 @@
 #include <gui/IProducerListener.h>
 #include <gui/Surface.h>
 
+#include "utils/LatencyHistogram.h"
 #include "Camera3Stream.h"
 #include "Camera3IOStreamBase.h"
 #include "Camera3OutputStreamInterface.h"
@@ -263,7 +264,14 @@ class Camera3OutputStream :
 
     virtual status_t getEndpointUsage(uint32_t *usage) const;
 
+    /**
+     * Private methods
+     */
     void onBuffersRemovedLocked(const std::vector<sp<GraphicBuffer>>&);
+    status_t detachBufferLocked(sp<GraphicBuffer>* buffer, int* fenceFd);
+
+    static const int32_t kDequeueLatencyBinSize = 5; // in ms
+    CameraLatencyHistogram mDequeueBufferLatency;
 
 }; // class Camera3OutputStream
 

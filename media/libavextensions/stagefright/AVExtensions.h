@@ -43,6 +43,7 @@ namespace android {
 struct ACodec;
 struct MediaCodec;
 struct ALooper;
+class IMediaExtractor;
 class MediaExtractor;
 class AudioParameter;
 class MetaData;
@@ -111,12 +112,16 @@ struct AVUtils {
     virtual status_t convertMetaDataToMessage(
             const sp<MetaData> &meta, sp<AMessage> *format);
     virtual MediaExtractor::SnifferFunc getExtendedSniffer();
+    virtual status_t convertMessageToMetaData(
+            const sp<AMessage> &msg, sp<MetaData> &meta);
     virtual status_t mapMimeToAudioFormat( audio_format_t& format, const char* mime);
     virtual status_t sendMetaDataToHal(const sp<MetaData>& meta, AudioParameter *param);
     virtual sp<MediaCodec> createCustomComponentByName(const sp<ALooper> &looper,
                 const char* mime, bool encoder, const sp<AMessage> &format);
     virtual bool isEnhancedExtension(const char *extension);
 
+    virtual bool hasAudioSampleBits(const sp<MetaData> &);
+    virtual bool hasAudioSampleBits(const sp<AMessage> &);
     virtual int getAudioSampleBits(const sp<MetaData> &);
     virtual int getAudioSampleBits(const sp<AMessage> &);
     virtual audio_format_t updateAudioFormat(audio_format_t audioFormat,
@@ -162,6 +167,9 @@ struct AVUtils {
 
     // Used by ATSParser
     virtual bool IsHevcIDR(const sp<ABuffer> &accessUnit);
+
+    virtual sp<DataSource> wrapTraceDataSource(const sp<DataSource> &dataSource);
+    virtual sp<IMediaExtractor> wrapTraceMediaExtractor(const sp<IMediaExtractor> &extractor);
 
     // ----- NO TRESSPASSING BEYOND THIS LINE ------
     DECLARE_LOADABLE_SINGLETON(AVUtils);

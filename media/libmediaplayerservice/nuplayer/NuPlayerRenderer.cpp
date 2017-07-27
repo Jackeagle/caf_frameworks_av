@@ -16,6 +16,8 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayerRenderer"
+#define TRACE_SUBMODULE VTRACE_SUBMODULE_RENDER
+#define __CLASS__ "NuPlayer::Renderer"
 #include <utils/Log.h>
 
 #include "NuPlayerRenderer.h"
@@ -132,6 +134,7 @@ NuPlayer::Renderer::Renderer(
       mLastAudioBufferDrained(0),
       mUseAudioCallback(false),
       mWakeLock(new AWakeLock()) {
+    VTRACE_METHOD();
     mMediaClock = new MediaClock;
     mPlaybackRate = mPlaybackSettings.mSpeed;
     mMediaClock->setPlaybackRate(mPlaybackRate);
@@ -161,6 +164,10 @@ void NuPlayer::Renderer::queueBuffer(
         bool audio,
         const sp<MediaCodecBuffer> &buffer,
         const sp<AMessage> &notifyConsumed) {
+    int64_t mediaTimeUs = -1;
+    buffer->meta()->findInt64("timeUs", &mediaTimeUs);
+    VTRACE_ASYNC_BEGIN(audio? "render-audio" : "render-video", (int)mediaTimeUs);
+
     sp<AMessage> msg = new AMessage(kWhatQueueBuffer, this);
     msg->setInt32("queueGeneration", getQueueGeneration(audio));
     msg->setInt32("audio", static_cast<int32_t>(audio));
@@ -451,6 +458,7 @@ void NuPlayer::Renderer::changeAudioFormat(
 }
 
 void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
+    VTRACE_METHOD();
     switch (msg->what()) {
         case kWhatOpenAudioSink:
         {
@@ -547,9 +555,11 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
 
             if (onDrainAudioQueue()) {
                 uint32_t numFramesPlayed;
-                CHECK_EQ(mAudioSink->getPosition(&numFramesPlayed),
-                         (status_t)OK);
-
+                if (mAudioSink->getPosition(&numFramesPlayed) != OK) {
+                    ALOGE("Error in time stamp query, return from here.\
+                             Fillbuffer is called as part of session recreation");
+                    break;
+                }
                 uint32_t numFramesPendingPlayout =
                     mNumFramesWritten - numFramesPlayed;
 
@@ -872,6 +882,8 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
             CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
             ALOGV("fillAudioBuffer: rendering audio at media time %.2f secs", mediaTimeUs / 1E6);
             setAudioFirstAnchorTimeIfNeeded_l(mediaTimeUs);
+            VTRACE_INT("drop-audio", 0);
+            VTRACE_ASYNC_END("render-audio", (int)mediaTimeUs);
         }
 
         size_t copy = entry->mBuffer->size() - entry->mOffset;
@@ -897,10 +909,16 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
 
     if (mAudioFirstAnchorTimeMediaUs >= 0) {
         int64_t nowUs = ALooper::GetNowUs();
-        int64_t nowMediaUs =
-            mAudioFirstAnchorTimeMediaUs + mAudioSink->getPlayedOutDurationUs(nowUs);
+        int64_t nowMediaUs = -1;
+        int64_t playedDuration = mAudioSink->getPlayedOutDurationUs(nowUs);
+        if (playedDuration >= 0) {
+            nowMediaUs = mAudioFirstAnchorTimeMediaUs + playedDuration;
+        } else {
+            mMediaClock->getMediaTime(nowUs, &nowMediaUs);
+        }
         // we don't know how much data we are queueing for offloaded tracks.
         mMediaClock->updateAnchor(nowMediaUs, nowUs, INT64_MAX);
+        mAnchorTimeMediaUs = nowMediaUs;
     }
 
     // for non-offloaded audio, we need to compute the frames written because
@@ -1047,6 +1065,8 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
             ALOGV("onDrainAudioQueue: rendering audio at media time %.2f secs",
                     mediaTimeUs / 1E6);
             onNewAudioMediaTime(mediaTimeUs);
+            VTRACE_INT("drop-audio", 0);
+            VTRACE_ASYNC_END("render-audio", (int)mediaTimeUs);
         }
 
         size_t copy = entry->mBuffer->size() - entry->mOffset;
@@ -1112,7 +1132,7 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
             // (Case 1)
             // Must be a multiple of the frame size.  If it is not a multiple of a frame size, it
             // needs to fail, as we should not carry over fractional frames between calls.
-            CHECK_EQ(copy % mAudioSink->frameSize(), 0);
+            CHECK_EQ(copy % mAudioSink->frameSize(), 0u);
 
             // (Case 2, 3, 4)
             // Return early to the caller.
@@ -1340,6 +1360,7 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
     int64_t mediaTimeUs = -1;
     if (mFlags & FLAG_REAL_TIME) {
         CHECK(entry->mBuffer->meta()->findInt64("timeUs", &realTimeUs));
+        mediaTimeUs = realTimeUs; // for trace purpose only
     } else {
         CHECK(entry->mBuffer->meta()->findInt64("timeUs", &mediaTimeUs));
 
@@ -1389,6 +1410,8 @@ void NuPlayer::Renderer::onDrainVideoQueue() {
     entry->mNotifyConsumed->setInt32("render", !tooLate);
     entry->mNotifyConsumed->post();
     mVideoQueue.erase(mVideoQueue.begin());
+    VTRACE_INT("drop-video", (int)tooLate);
+    VTRACE_ASYNC_END("render-video", (int)mediaTimeUs);
     entry = NULL;
 
     mVideoSampleReceived = true;
@@ -1515,6 +1538,8 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
 
         (*mAudioQueue.begin()).mNotifyConsumed->post();
         mAudioQueue.erase(mAudioQueue.begin());
+        VTRACE_INT("drop-audio", 1);
+        VTRACE_ASYNC_END("render-audio", (int)firstAudioTimeUs);
         return;
     }
 
@@ -1748,6 +1773,7 @@ void NuPlayer::Renderer::onPause() {
 
     mDrainAudioQueuePending = false;
     mDrainVideoQueuePending = false;
+    mVideoRenderingStarted = false; // force-notify NOTE_INFO MEDIA_INFO_RENDERING_START after resume
 
     // Note: audio data may not have been decoded, and the AudioSink may not be opened.
     mAudioSink->pause();

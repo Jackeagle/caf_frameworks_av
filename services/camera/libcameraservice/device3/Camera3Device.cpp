@@ -613,6 +613,11 @@ status_t Camera3Device::dump(int fd, const Vector<String16> &args) {
     }
     write(fd, lines.string(), lines.size());
 
+    if (mRequestThread != NULL) {
+        mRequestThread->dumpCaptureRequestLatency(fd,
+                "    ProcessCaptureRequest latency histogram:");
+    }
+
     {
         lines = String8("    Last request sent:\n");
         write(fd, lines.string(), lines.size());
@@ -2321,7 +2326,11 @@ status_t Camera3Device::registerInFlight(uint32_t frameNumber,
     if (res < 0) return res;
 
     if (mInFlightMap.size() == 1) {
-        mStatusTracker->markComponentActive(mInFlightStatusId);
+        // hold mLock to prevent race with disconnect
+        Mutex::Autolock l(mLock);
+        if (mStatusTracker != nullptr) {
+            mStatusTracker->markComponentActive(mInFlightStatusId);
+        }
     }
 
     return OK;
@@ -2348,7 +2357,11 @@ void Camera3Device::removeInFlightMapEntryLocked(int idx) {
 
     // Indicate idle inFlightMap to the status tracker
     if (mInFlightMap.size() == 0) {
-        mStatusTracker->markComponentIdle(mInFlightStatusId, Fence::NO_FENCE);
+        // hold mLock to prevent race with disconnect
+        Mutex::Autolock l(mLock);
+        if (mStatusTracker != nullptr) {
+            mStatusTracker->markComponentIdle(mInFlightStatusId, Fence::NO_FENCE);
+        }
     }
 }
 
@@ -2360,6 +2373,25 @@ void Camera3Device::removeInFlightRequestIfReadyLocked(int idx) {
     nsecs_t sensorTimestamp = request.sensorTimestamp;
     nsecs_t shutterTimestamp = request.shutterTimestamp;
 
+    bool skipResultMetadata = false;
+    if (request.requestStatus != OK) {
+        switch (request.requestStatus) {
+            case CAMERA3_MSG_ERROR_DEVICE:
+            case CAMERA3_MSG_ERROR_REQUEST:
+            case CAMERA3_MSG_ERROR_RESULT:
+                skipResultMetadata = true;
+                break;
+            case CAMERA3_MSG_ERROR_BUFFER:
+                //Result metadata should return in this case.
+                skipResultMetadata = false;
+                break;
+            default:
+                SET_ERR("Unknown error message: %d", request.requestStatus);
+                skipResultMetadata = false;
+                break;
+        }
+    }
+
     // Check if it's okay to remove the request from InFlightMap:
     // In the case of a successful request:
     //      all input and output buffers, all result metadata, shutter callback
@@ -2367,7 +2399,7 @@ void Camera3Device::removeInFlightRequestIfReadyLocked(int idx) {
     // In the case of a unsuccessful request:
     //      all input and output buffers arrived.
     if (request.numBuffersLeft == 0 &&
-            (request.requestStatus != OK ||
+            (skipResultMetadata ||
             (request.haveResultMetadata && shutterTimestamp != 0))) {
         ATRACE_ASYNC_END("frame capture", frameNumber);
 
@@ -3407,7 +3439,8 @@ Camera3Device::RequestThread::RequestThread(wp<Camera3Device> parent,
         mCurrentPreCaptureTriggerId(0),
         mRepeatingLastFrameNumber(
             hardware::camera2::ICameraDeviceUser::NO_IN_FLIGHT_REPEATING_FRAMES),
-        mPrepareVideoStream(false) {
+        mPrepareVideoStream(false),
+        mRequestLatency(kRequestLatencyBinSize) {
     mStatusId = statusTracker->addComponent();
 }
 
@@ -3565,7 +3598,8 @@ status_t Camera3Device::RequestThread::clear(
             // Abort the input buffers for reprocess requests.
             if ((*it)->mInputStream != NULL) {
                 camera3_stream_buffer_t inputBuffer;
-                status_t res = (*it)->mInputStream->getInputBuffer(&inputBuffer);
+                status_t res = (*it)->mInputStream->getInputBuffer(&inputBuffer,
+                        /*respectHalLimit*/ false);
                 if (res != OK) {
                     ALOGW("%s: %d: couldn't get input buffer while clearing the request "
                             "list: %s (%d)", __FUNCTION__, __LINE__, strerror(-res), res);
@@ -3632,6 +3666,9 @@ void Camera3Device::RequestThread::requestExit() {
     // The exit from any possible waits
     mDoPauseSignal.signal();
     mRequestSignal.signal();
+
+    mRequestLatency.log("ProcessCaptureRequest latency histogram");
+    mRequestLatency.reset();
 }
 
 void Camera3Device::RequestThread::checkAndStopRepeatingRequest() {
@@ -3848,11 +3885,14 @@ bool Camera3Device::RequestThread::threadLoop() {
             mNextRequests.size());
 
     bool submitRequestSuccess = false;
+    nsecs_t tRequestStart = systemTime(SYSTEM_TIME_MONOTONIC);
     if (mInterface->supportBatchRequest()) {
         submitRequestSuccess = sendRequestsBatch();
     } else {
         submitRequestSuccess = sendRequestsOneByOne();
     }
+    nsecs_t tRequestEnd = systemTime(SYSTEM_TIME_MONOTONIC);
+    mRequestLatency.add(tRequestStart, tRequestEnd);
 
     if (useFlushLock) {
         mFlushLock.unlock();
