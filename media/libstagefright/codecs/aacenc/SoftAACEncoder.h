@@ -74,6 +74,9 @@ private:
     status_t setAudioSpecificConfigData();
     status_t setAudioParams();
 
+
+    void onReset();
+
     DISALLOW_EVIL_CONSTRUCTORS(SoftAACEncoder);
 };
 

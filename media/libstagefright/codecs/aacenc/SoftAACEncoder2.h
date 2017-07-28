@@ -68,6 +68,7 @@ private:
     status_t initEncoder();
 
     status_t setAudioParams();
+    void onReset();
 
     DISALLOW_EVIL_CONSTRUCTORS(SoftAACEncoder2);
 };
