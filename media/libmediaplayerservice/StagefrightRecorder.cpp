@@ -1859,7 +1859,7 @@ status_t StagefrightRecorder::resume() {
         mTotalPausedDurationUs += (systemTime() / 1000) - mPauseStartTimeUs - 30000;
     }
     double timeOffset = -mTotalPausedDurationUs;
-    if (mCaptureFpsEnable) {
+    if (mCaptureFpsEnable && mVideoSource != VIDEO_SOURCE_SURFACE) {
         timeOffset *= mCaptureFps / mFrameRate;
     }
     for (const auto &source : { mAudioEncoderSource, mVideoEncoderSource }) {
