@@ -195,11 +195,33 @@ int32_t AAudioProperty_getMMapExclusivePolicy();
 
 /**
  * Read system property.
- * @return number of bursts per mixer cycle
+ * @return number of bursts per AAudio service mixer cycle
  */
 int32_t AAudioProperty_getMixerBursts();
 
 #define AAUDIO_PROP_HW_BURST_MIN_USEC      "aaudio.hw_burst_min_usec"
+
+/**
+ * Read a system property that specifies the number of extra microseconds that a thread
+ * should sleep when waiting for another thread to service a FIFO. This is used
+ * to avoid the waking thread from being overly optimistic about the other threads
+ * wakeup timing. This value should be set high enough to cover typical scheduling jitter
+ * for a real-time thread.
+ *
+ * @return number of microseconds to delay the wakeup.
+ */
+int32_t AAudioProperty_getWakeupDelayMicros();
+
+#define AAUDIO_PROP_WAKEUP_DELAY_USEC      "aaudio.wakeup_delay_usec"
+
+/**
+ * Read a system property that specifies the minimum sleep time when polling the FIFO.
+ *
+ * @return minimum number of microseconds to sleep.
+ */
+int32_t AAudioProperty_getMinimumSleepMicros();
+
+#define AAUDIO_PROP_MINIMUM_SLEEP_USEC      "aaudio.minimum_sleep_usec"
 
 /**
  * Read system property.
@@ -235,5 +257,75 @@ static inline bool AAudio_tryUntilTrue(
         usleep(sleepMs * US_PER_MS);
     }
 }
+
+
+/**
+ * Simple double buffer for a structure that can be written occasionally and read occasionally.
+ * This allows a SINGLE writer with multiple readers.
+ *
+ * It is OK if the FIFO overflows and we lose old values.
+ * It is also OK if we read an old value.
+ * Thread may return a non-atomic result if the other thread is rapidly writing
+ * new values on another core.
+ */
+template <class T>
+class SimpleDoubleBuffer {
+public:
+    SimpleDoubleBuffer()
+            : mValues()
+            , mCounter(0) {}
+
+    __attribute__((no_sanitize("integer")))
+    void write(T value) {
+        int index = mCounter.load() & 1;
+        mValues[index] = value;
+        mCounter++; // Increment AFTER updating storage, OK if it wraps.
+    }
+
+    T read() const {
+        T result;
+        int before;
+        int after;
+        int timeout = 3;
+        do {
+            // Check to see if a write occurred while were reading.
+            before = mCounter.load();
+            int index = (before & 1) ^ 1;
+            result = mValues[index];
+            after = mCounter.load();
+        } while ((after != before) && --timeout > 0);
+        return result;
+    }
+
+    /**
+     * @return true if at least one value has been written
+     */
+    bool isValid() const {
+        return mCounter.load() > 0;
+    }
+
+private:
+    T                    mValues[2];
+    std::atomic<int>     mCounter;
+};
+
+class Timestamp {
+public:
+    Timestamp()
+            : mPosition(0)
+            , mNanoseconds(0) {}
+    Timestamp(int64_t position, int64_t nanoseconds)
+            : mPosition(position)
+            , mNanoseconds(nanoseconds) {}
+
+    int64_t getPosition() const { return mPosition; }
+
+    int64_t getNanoseconds() const { return mNanoseconds; }
+
+private:
+    // These cannot be const because we need to implement the copy assignment operator.
+    int64_t mPosition;
+    int64_t mNanoseconds;
+};
 
 #endif //UTILITY_AAUDIO_UTILITIES_H

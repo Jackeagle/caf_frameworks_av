@@ -234,6 +234,15 @@ AAUDIO_API void AAudioStreamBuilder_setChannelCount(AAudioStreamBuilder* builder
                                                    int32_t channelCount);
 
 /**
+ * Identical to AAudioStreamBuilder_setChannelCount().
+ *
+ * @param builder reference provided by AAudio_createStreamBuilder()
+ * @param samplesPerFrame Number of samples in a frame.
+ */
+AAUDIO_API void AAudioStreamBuilder_setSamplesPerFrame(AAudioStreamBuilder* builder,
+                                                       int32_t samplesPerFrame);
+
+/**
  * Request a sample data format, for example AAUDIO_FORMAT_PCM_I16.
  *
  * The default, if you do not call this function, is AAUDIO_UNSPECIFIED.
@@ -721,6 +730,14 @@ AAUDIO_API int32_t AAudioStream_getSampleRate(AAudioStream* stream);
 AAUDIO_API int32_t AAudioStream_getChannelCount(AAudioStream* stream);
 
 /**
+ * Identical to AAudioStream_getChannelCount().
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream()
+ * @return actual number of samples frame
+ */
+AAUDIO_API int32_t AAudioStream_getSamplesPerFrame(AAudioStream* stream);
+
+/**
  * @param stream reference provided by AAudioStreamBuilder_openStream()
  * @return actual device ID
  */
@@ -793,7 +810,7 @@ AAUDIO_API int64_t AAudioStream_getFramesRead(AAudioStream* stream);
  * The position and time passed back are monotonically increasing.
  *
  * @param stream reference provided by AAudioStreamBuilder_openStream()
- * @param clockid AAUDIO_CLOCK_MONOTONIC or AAUDIO_CLOCK_BOOTTIME
+ * @param clockid CLOCK_MONOTONIC or CLOCK_BOOTTIME
  * @param framePosition pointer to a variable to receive the position
  * @param timeNanoseconds pointer to a variable to receive the time
  * @return AAUDIO_OK or a negative error
