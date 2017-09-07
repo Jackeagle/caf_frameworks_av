@@ -799,7 +799,7 @@ int64_t GraphicBufferSource::getTimestamp(const BufferItem &item) {
 
     if (mTimePerCaptureUs > 0ll
             && (mTimePerCaptureUs > 2 * mTimePerFrameUs
-            || mTimePerFrameUs > 2 * mTimePerCaptureUs)) {
+            || mTimePerFrameUs > mTimePerCaptureUs)) {
         // Time lapse or slow motion mode
         if (mPrevCaptureUs < 0ll) {
             // first capture
