@@ -354,6 +354,10 @@ MPEG4Extractor::MPEG4Extractor(const sp<DataSource> &source)
 }
 
 MPEG4Extractor::~MPEG4Extractor() {
+    release();
+}
+
+void MPEG4Extractor::release() {
     Track *track = mFirstTrack;
     while (track) {
         Track *next = track->next;
@@ -374,6 +378,12 @@ MPEG4Extractor::~MPEG4Extractor() {
 
     for (size_t i = 0; i < mPssh.size(); i++) {
         delete [] mPssh[i].data;
+    }
+    mPssh.clear();
+
+    if (mDataSource != NULL) {
+        mDataSource->close();
+        mDataSource.clear();
     }
 }
 
@@ -5224,6 +5234,7 @@ MPEG4Extractor::Track *MPEG4Extractor::findTrackByMimePrefix(
 
 void MPEG4Extractor::populateMetrics() {
     ALOGV("MPEG4Extractor::populateMetrics");
+    // write into mAnalyticsItem
 }
 
 static bool LegacySniffMPEG4(
