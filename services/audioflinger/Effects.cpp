@@ -571,7 +571,6 @@ status_t AudioFlinger::EffectModule::stop_l()
 // must be called with EffectChain::mLock held
 void AudioFlinger::EffectModule::release_l()
 {
-    Mutex::Autolock _l(mLock);
     if (mEffectInterface != 0) {
         remove_effect_from_hal_l();
         // release effect engine
@@ -1340,6 +1339,24 @@ status_t AudioFlinger::EffectHandle::command(uint32_t cmdCode,
 {
     ALOGVV("command(), cmdCode: %d, mHasControl: %d, mEffect: %p",
             cmdCode, mHasControl, mEffect.unsafe_get());
+
+    // reject commands reserved for internal use by audio framework if coming from outside
+    // of audioserver
+    switch(cmdCode) {
+        case EFFECT_CMD_ENABLE:
+        case EFFECT_CMD_DISABLE:
+        case EFFECT_CMD_SET_PARAM:
+        case EFFECT_CMD_SET_PARAM_DEFERRED:
+        case EFFECT_CMD_SET_PARAM_COMMIT:
+        case EFFECT_CMD_GET_PARAM:
+            break;
+        default:
+            if (cmdCode >= EFFECT_CMD_FIRST_PROPRIETARY) {
+                break;
+            }
+            android_errorWriteLog(0x534e4554, "62019992");
+            return BAD_VALUE;
+    }
 
     if (cmdCode == EFFECT_CMD_ENABLE) {
         if (*replySize < sizeof(int)) {
