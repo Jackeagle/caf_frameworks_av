@@ -3658,7 +3658,7 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
                         sp<DeviceDescriptor> devDesc = mAvailableInputDevices[index];
                         if (!devDesc->isAttached()) {
                             devDesc->attach(mHwModules[i]);
-                            devDesc->importAudioPort(inProfile, true);
+                            devDesc->importAudioPort(inProfile);
                         }
                     }
                 }
@@ -4021,8 +4021,8 @@ status_t AudioPolicyManager::checkOutputsForDevice(const sp<DeviceDescriptor>& d
                 continue;
             }
 
-            ALOGV("opening output for device %08x with params %s profile %p name %s",
-                  device, address.string(), profile.get(), profile->getName().string());
+            ALOGV("opening output for device %08x with params %s profile %p",
+                                                      device, address.string(), profile.get());
             desc = new SwAudioOutputDescriptor(profile, mpClientInterface);
             desc->mDevice = device;
             audio_config_t config = AUDIO_CONFIG_INITIALIZER;
@@ -4271,10 +4271,6 @@ status_t AudioPolicyManager::checkInputsForDevice(const sp<DeviceDescriptor>& de
             config.channel_mask = desc->mChannelMask;
             config.format = desc->mFormat;
             audio_io_handle_t input = AUDIO_IO_HANDLE_NONE;
-
-            ALOGV("opening inputput for device %08x with params %s profile %p name %s",
-                  desc->mDevice, address.string(), profile.get(), profile->getName().string());
-
             status_t status = mpClientInterface->openInput(profile->getModuleHandle(),
                                                            &input,
                                                            &config,

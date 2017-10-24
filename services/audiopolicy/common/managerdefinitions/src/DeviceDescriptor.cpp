@@ -263,10 +263,7 @@ void DeviceDescriptor::toAudioPort(struct audio_port *port) const
     strncpy(port->ext.device.address, mAddress.string(), AUDIO_DEVICE_MAX_ADDRESS_LEN);
 }
 
-void DeviceDescriptor::importAudioPort(const sp<AudioPort>& port, bool force) {
-    if (!force && !port->hasDynamicAudioProfile()) {
-        return;
-    }
+void DeviceDescriptor::importAudioPort(const sp<AudioPort>& port) {
     AudioPort::importAudioPort(port);
     port->pickAudioProfile(mSamplingRate, mChannelMask, mFormat);
 }
