@@ -1472,6 +1472,7 @@ OMXCodec::OMXCodec(
       mSignalledEOS(false),
       mNoMoreOutputData(false),
       mOutputPortSettingsHaveChanged(false),
+      mOutputPortSettingsHandled(0),
       mSeekTimeUs(-1),
       mSeekMode(ReadOptions::SEEK_CLOSEST_SYNC),
       mTargetTimeUs(-1),
@@ -2356,6 +2357,16 @@ void OMXCodec::onEvent(OMX_EVENTTYPE event, OMX_U32 data1, OMX_U32 data2) {
                        data1, data2);
 
             if (data2 == 0 || data2 == OMX_IndexParamPortDefinition) {
+                if (!mIsVideo) {
+                    mOutputPortSettingsHandled++;
+                    if (mOutputPortSettingsHandled > 1) {
+                    mFinalStatus = ERROR_UNSUPPORTED;
+                    mOutputPortSettingsHaveChanged = true;
+                    mBufferFilled.signal();
+                    CODEC_LOGW ("Dynamic port reconfiguration not supported !\n");
+                    break;
+                    }
+                }
                 onPortSettingsChanged(data1);
             } else if (data1 == kPortIndexOutput &&
                         (data2 == OMX_IndexConfigCommonOutputCrop ||
@@ -3627,6 +3638,7 @@ status_t OMXCodec::start(MetaData *meta) {
     mSignalledEOS = false;
     mNoMoreOutputData = false;
     mOutputPortSettingsHaveChanged = false;
+    mOutputPortSettingsHandled = 0;
     mSeekTimeUs = -1;
     mSeekMode = ReadOptions::SEEK_CLOSEST_SYNC;
     mTargetTimeUs = -1;
@@ -3793,6 +3805,12 @@ status_t OMXCodec::read(
         return UNKNOWN_ERROR;
     }
 
+    if (!mIsVideo && mFinalStatus == ERROR_UNSUPPORTED && mOutputPortSettingsHaveChanged) {
+        CODEC_LOGW ("Port setting change handled already \n");
+        mOutputPortSettingsHandled = 0;
+        mOutputPortSettingsHaveChanged = false;
+        return mFinalStatus;
+    }
     bool seeking = false;
     int64_t seekTimeUs;
     ReadOptions::SeekMode seekMode;
@@ -3866,7 +3884,14 @@ status_t OMXCodec::read(
 
     while (mState != ERROR && !mNoMoreOutputData && mFilledBuffers.empty()) {
         if ((err = waitForBufferFilled_l()) != OK) {
-            return err;
+            if (!mIsVideo && mFinalStatus == ERROR_UNSUPPORTED) {
+                CODEC_LOGE ("ERROR_UNSUPPORTED \n");
+                mOutputPortSettingsHandled = 0;
+                mOutputPortSettingsHaveChanged = false;
+                return mFinalStatus;
+            }
+            else
+                return err;
         }
     }
 

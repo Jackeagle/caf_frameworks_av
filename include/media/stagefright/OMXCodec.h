@@ -218,6 +218,7 @@ private:
     status_t mFinalStatus;
     bool mNoMoreOutputData;
     bool mOutputPortSettingsHaveChanged;
+    uint32_t mOutputPortSettingsHandled;
     int64_t mSeekTimeUs;
     ReadOptions::SeekMode mSeekMode;
     int64_t mTargetTimeUs;
