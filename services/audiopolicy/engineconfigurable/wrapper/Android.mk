@@ -8,17 +8,15 @@ include $(CLEAR_VARS)
 
 LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/include \
-    $(TOPDIR)frameworks/av/services/audiopolicy/engineconfigurable/include \
-    $(TOPDIR)frameworks/av/services/audiopolicy/engineconfigurable/interface \
-    $(TOPDIR)frameworks/av/services/audiopolicy/utilities/convert \
+    frameworks/av/services/audiopolicy/engineconfigurable/include \
+    frameworks/av/services/audiopolicy/engineconfigurable/interface \
+    frameworks/av/services/audiopolicy/utilities/convert \
 
 LOCAL_SRC_FILES:= ParameterManagerWrapper.cpp
 
-LOCAL_STATIC_LIBRARIES := \
-    libmedia_helper \
-
 LOCAL_SHARED_LIBRARIES := \
     libparameter \
+    libmedia_helper
 
 LOCAL_MULTILIB := $(AUDIOSERVER_MULTILIB)
 

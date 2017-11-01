@@ -81,7 +81,7 @@ bool AudioOutputDescriptor::sharesHwModuleWith(
         return sharesHwModuleWith(outputDesc->subOutput1()) ||
                     sharesHwModuleWith(outputDesc->subOutput2());
     } else {
-        return (getModuleHandle() == outputDesc->getModuleHandle());
+        return hasSameHwModuleAs(outputDesc);
     }
 }
 
@@ -223,7 +223,8 @@ SwAudioOutputDescriptor::SwAudioOutputDescriptor(const sp<IOProfile>& profile,
     : AudioOutputDescriptor(profile, clientInterface),
     mProfile(profile), mIoHandle(0), mLatency(0),
     mFlags((audio_output_flags_t)0), mPolicyMix(NULL),
-    mOutput1(0), mOutput2(0), mDirectOpenCount(0), mGlobalRefCount(0)
+    mOutput1(0), mOutput2(0), mDirectOpenCount(0),
+    mDirectClientSession(AUDIO_SESSION_NONE), mGlobalRefCount(0)
 {
     if (profile != NULL) {
         mFlags = (audio_output_flags_t)profile->getFlags();

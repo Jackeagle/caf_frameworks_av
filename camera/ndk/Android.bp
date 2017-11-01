@@ -17,8 +17,16 @@
 // frameworks/av/include.
 
 ndk_library {
-    name: "libcamera2ndk.ndk",
+    name: "libcamera2ndk",
     symbol_file: "libcamera2ndk.map.txt",
     first_version: "24",
     unversioned_until: "current",
+}
+
+ndk_headers {
+    name: "libcamera2ndk_headers",
+    from: "include/camera",
+    to: "camera",
+    srcs: ["include/camera/**/*.h"],
+    license: "NOTICE",
 }

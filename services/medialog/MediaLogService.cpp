@@ -26,7 +26,24 @@
 
 namespace android {
 
-static const char kDeadlockedString[] = "MediaLogService may be deadlocked\n";
+ static const char kDeadlockedString[] = "MediaLogService may be deadlocked\n";
+MediaLogService::MediaLogService() :
+    BnMediaLogService(),
+    mMergerShared((NBLog::Shared*) malloc(NBLog::Timeline::sharedSize(kMergeBufferSize))),
+    mMerger(mMergerShared, kMergeBufferSize),
+    mMergeReader(mMergerShared, kMergeBufferSize, mMerger),
+    mMergeThread(new NBLog::MergeThread(mMerger))
+{
+    mMergeThread->run("MergeThread");
+}
+
+MediaLogService::~MediaLogService()
+{
+    mMergeThread->requestExit();
+    mMergeThread->setTimeoutUs(0);
+    mMergeThread->join();
+    free(mMergerShared);
+}
 
 void MediaLogService::registerWriter(const sp<IMemory>& shared, size_t size, const char *name)
 {
@@ -35,10 +52,11 @@ void MediaLogService::registerWriter(const sp<IMemory>& shared, size_t size, con
             shared->size() < NBLog::Timeline::sharedSize(size)) {
         return;
     }
-    sp<NBLog::Reader> reader(new NBLog::Reader(size, shared));
-    NamedReader namedReader(reader, name);
+    sp<NBLog::Reader> reader(new NBLog::Reader(shared, size));
+    NBLog::NamedReader namedReader(reader, name);
     Mutex::Autolock _l(mLock);
     mNamedReaders.add(namedReader);
+    mMerger.addReader(namedReader);
 }
 
 void MediaLogService::unregisterWriter(const sp<IMemory>& shared)
@@ -81,33 +99,40 @@ status_t MediaLogService::dump(int fd, const Vector<String16>& args __unused)
         return NO_ERROR;
     }
 
-    Vector<NamedReader> namedReaders;
-    {
-        bool locked = dumpTryLock(mLock);
+    if (args.size() > 0) {
+        const String8 arg0(args[0]);
+        if (!strcmp(arg0.string(), "-r")) {
+            // needed because mNamedReaders is protected by mLock
+            bool locked = dumpTryLock(mLock);
 
-        // failed to lock - MediaLogService is probably deadlocked
-        if (!locked) {
-            String8 result(kDeadlockedString);
-            if (fd >= 0) {
-                write(fd, result.string(), result.size());
-            } else {
-                ALOGW("%s:", result.string());
+            // failed to lock - MediaLogService is probably deadlocked
+            if (!locked) {
+                String8 result(kDeadlockedString);
+                if (fd >= 0) {
+                    write(fd, result.string(), result.size());
+                } else {
+                    ALOGW("%s:", result.string());
+                }
+                // TODO should we instead proceed to mMergeReader.dump? does it need lock?
+                return NO_ERROR;
             }
-            return NO_ERROR;
+
+            for (const auto& namedReader : mNamedReaders) {
+                if (fd >= 0) {
+                    dprintf(fd, "\n%s:\n", namedReader.name());
+                } else {
+                    ALOGI("%s:", namedReader.name());
+                }
+                // TODO This code is for testing, remove it when done
+                // namedReader.reader()->dump(fd, 0 /*indent*/);
+            }
+
+            mLock.unlock();
         }
-        namedReaders = mNamedReaders;
-        mLock.unlock();
     }
 
-    for (size_t i = 0; i < namedReaders.size(); i++) {
-        const NamedReader& namedReader = namedReaders[i];
-        if (fd >= 0) {
-            dprintf(fd, "\n%s:\n", namedReader.name());
-        } else {
-            ALOGI("%s:", namedReader.name());
-        }
-        namedReader.reader()->dump(fd, 0 /*indent*/);
-    }
+    // FIXME request merge to make sure log is up to date
+    mMergeReader.dump(fd);
     return NO_ERROR;
 }
 
@@ -115,6 +140,10 @@ status_t MediaLogService::onTransact(uint32_t code, const Parcel& data, Parcel* 
         uint32_t flags)
 {
     return BnMediaLogService::onTransact(code, data, reply, flags);
+}
+
+void MediaLogService::requestMergeWakeup() {
+    mMergeThread->wakeup();
 }
 
 }   // namespace android

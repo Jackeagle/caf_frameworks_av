@@ -85,13 +85,13 @@ sp<MediaCodecInfo::Capabilities> MediaCodecInfo::Capabilities::FromParcel(
 }
 
 status_t MediaCodecInfo::Capabilities::writeToParcel(Parcel *parcel) const {
-    CHECK_LE(mProfileLevels.size(), INT32_MAX);
+    CHECK_LE(mProfileLevels.size(), static_cast<size_t>(INT32_MAX));
     parcel->writeInt32(mProfileLevels.size());
     for (size_t i = 0; i < mProfileLevels.size(); i++) {
         parcel->writeInt32(mProfileLevels.itemAt(i).mProfile);
         parcel->writeInt32(mProfileLevels.itemAt(i).mLevel);
     }
-    CHECK_LE(mColorFormats.size(), INT32_MAX);
+    CHECK_LE(mColorFormats.size(), static_cast<size_t>(INT32_MAX));
     parcel->writeInt32(mColorFormats.size());
     for (size_t i = 0; i < mColorFormats.size(); i++) {
         parcel->writeInt32(mColorFormats.itemAt(i));
@@ -121,9 +121,11 @@ bool MediaCodecInfo::isEncoder() const {
 }
 
 bool MediaCodecInfo::hasQuirk(const char *name) const {
-    for (size_t ix = 0; ix < mQuirks.size(); ix++) {
-        if (mQuirks.itemAt(ix).equalsIgnoreCase(name)) {
-            return true;
+    if (name) {
+        for (size_t ix = 0; ix < mQuirks.size(); ix++) {
+            if (mQuirks.itemAt(ix).equalsIgnoreCase(name)) {
+                return true;
+            }
         }
     }
     return false;
@@ -190,9 +192,11 @@ status_t MediaCodecInfo::writeToParcel(Parcel *parcel) const {
 }
 
 ssize_t MediaCodecInfo::getCapabilityIndex(const char *mime) const {
-    for (size_t ix = 0; ix < mCaps.size(); ix++) {
-        if (mCaps.keyAt(ix).equalsIgnoreCase(mime)) {
-            return ix;
+    if (mime) {
+        for (size_t ix = 0; ix < mCaps.size(); ix++) {
+            if (mCaps.keyAt(ix).equalsIgnoreCase(mime)) {
+                return ix;
+            }
         }
     }
     return -1;

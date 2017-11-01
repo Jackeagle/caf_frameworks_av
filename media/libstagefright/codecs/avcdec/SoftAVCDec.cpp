@@ -27,10 +27,9 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/MediaDefs.h>
 #include <OMX_VideoExt.h>
+#include <inttypes.h>
 
 namespace android {
-
-#define PRINT_TIME  ALOGV
 
 #define componentName                   "video_decoder.avc"
 #define codingType                      OMX_VIDEO_CodingAVC
@@ -49,58 +48,10 @@ namespace android {
         (IVD_CONTROL_API_COMMAND_TYPE_T)IH264D_CMD_CTL_SET_NUM_CORES
 
 static const CodecProfileLevel kProfileLevels[] = {
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel1  },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel1b },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel11 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel12 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel13 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel2  },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel21 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel22 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel3  },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel31 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel32 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel4  },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel41 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel42 },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel5  },
-    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel51 },
     { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel52 },
 
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel1  },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel1b },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel11 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel12 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel13 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel2  },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel21 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel22 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel3  },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel31 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel32 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel4  },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel41 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel42 },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel5  },
-    { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel51 },
     { OMX_VIDEO_AVCProfileMain,     OMX_VIDEO_AVCLevel52 },
 
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel1  },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel1b },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel11 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel12 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel13 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel2  },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel21 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel22 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel3  },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel31 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel32 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel4  },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel41 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel42 },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel5  },
-    { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel51 },
     { OMX_VIDEO_AVCProfileHigh,     OMX_VIDEO_AVCLevel52 },
 };
 
@@ -126,7 +77,7 @@ SoftAVC::SoftAVC(
             1 /* numMinInputBuffers */, kNumBuffers, INPUT_BUF_SIZE,
             1 /* numMinOutputBuffers */, kNumBuffers, CODEC_MIME_TYPE);
 
-    GETTIME(&mTimeStart, NULL);
+    mTimeStart = mTimeEnd = systemTime();
 
     // If input dump is enabled, then open create an empty file
     GENERATE_FILE_NAMES();
@@ -221,8 +172,7 @@ status_t SoftAVC::resetPlugin() {
     memset(mTimeStampsValid, 0, sizeof(mTimeStampsValid));
 
     /* Initialize both start and end times */
-    gettimeofday(&mTimeStart, NULL);
-    gettimeofday(&mTimeEnd, NULL);
+    mTimeStart = mTimeEnd = systemTime();
 
     return OK;
 }
@@ -606,7 +556,7 @@ void SoftAVC::onQueueFilled(OMX_U32 portIndex) {
         {
             ivd_video_decode_ip_t s_dec_ip;
             ivd_video_decode_op_t s_dec_op;
-            WORD32 timeDelay, timeTaken;
+            nsecs_t timeDelay, timeTaken;
             size_t sizeY, sizeUV;
 
             if (!setDecodeArgs(&s_dec_ip, &s_dec_op, inHeader, outHeader, timeStampIx)) {
@@ -618,10 +568,10 @@ void SoftAVC::onQueueFilled(OMX_U32 portIndex) {
             // If input dump is enabled, then write to file
             DUMP_TO_FILE(mInFile, s_dec_ip.pv_stream_buffer, s_dec_ip.u4_num_Bytes, mInputOffset);
 
-            GETTIME(&mTimeStart, NULL);
+            mTimeStart = systemTime();
             /* Compute time elapsed between end of previous decode()
              * to start of current decode() */
-            TIME_DIFF(mTimeEnd, mTimeStart, timeDelay);
+            timeDelay = mTimeStart - mTimeEnd;
 
             IV_API_CALL_STATUS_T status;
             status = ivdec_api_function(mCodecCtx, (void *)&s_dec_ip, (void *)&s_dec_op);
@@ -649,11 +599,12 @@ void SoftAVC::onQueueFilled(OMX_U32 portIndex) {
 
             getVUIParams();
 
-            GETTIME(&mTimeEnd, NULL);
+            mTimeEnd = systemTime();
             /* Compute time taken for decode() */
-            TIME_DIFF(mTimeStart, mTimeEnd, timeTaken);
+            timeTaken = mTimeEnd - mTimeStart;
 
-            PRINT_TIME("timeTaken=%6d delay=%6d numBytes=%6d", timeTaken, timeDelay,
+            ALOGV("timeTaken=%6lldus delay=%6lldus numBytes=%6d",
+                    (long long) (timeTaken / 1000ll), (long long) (timeDelay / 1000ll),
                    s_dec_op.u4_num_bytes_consumed);
             if (s_dec_op.u4_frame_decoded_flag && !mFlushNeeded) {
                 mFlushNeeded = true;
@@ -693,6 +644,7 @@ void SoftAVC::onQueueFilled(OMX_U32 portIndex) {
                 handlePortSettingsChange(&portWillReset, width, height);
                 if (portWillReset) {
                     resetDecoder();
+                    resetPlugin();
                     return;
                 }
             } else if (mUpdateColorAspects) {

@@ -66,6 +66,8 @@ public:
 protected:
     virtual ~MPEG4Extractor();
 
+    virtual void populateMetrics();
+
 private:
 
     struct PsshInfo {
@@ -80,6 +82,9 @@ private:
         sp<SampleTable> sampleTable;
         bool includes_expensive_metadata;
         bool skipTrack;
+        bool has_elst;
+        int64_t elst_media_time;
+        uint64_t elst_segment_duration;
     };
 
     Vector<SidxEntry> mSidxEntries;
@@ -139,6 +144,9 @@ private:
     status_t parseSegmentIndex(off64_t data_offset, size_t data_size);
 
     Track *findTrackByMimePrefix(const char *mimePrefix);
+
+    status_t parseAC3SampleEntry(off64_t offset);
+    status_t parseAC3SpecificBox(off64_t offset, uint16_t sampleRate);
 
     MPEG4Extractor(const MPEG4Extractor &);
     MPEG4Extractor &operator=(const MPEG4Extractor &);

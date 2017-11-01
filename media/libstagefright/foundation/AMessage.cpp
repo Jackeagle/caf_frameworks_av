@@ -22,8 +22,8 @@
 
 #include "AMessage.h"
 
-#include <android/log.h>
 #include <binder/Parcel.h>
+#include <log/log.h>
 
 #include "AAtomizer.h"
 #include "ABuffer.h"
@@ -232,6 +232,24 @@ bool AMessage::findAsFloat(const char *name, float *value) const {
                 return true;
             case kTypeSize:
                 *value = (float)item->u.sizeValue;
+                return true;
+            default:
+                return false;
+        }
+    }
+    return false;
+}
+
+bool AMessage::findAsInt64(const char *name, int64_t *value) const {
+    size_t i = findItemIndex(name, strlen(name));
+    if (i < mNumItems) {
+        const Item *item = &mItems[i];
+        switch (item->mType) {
+            case kTypeInt64:
+                *value = item->u.int64Value;
+                return true;
+            case kTypeInt32:
+                *value = item->u.int32Value;
                 return true;
             default:
                 return false;

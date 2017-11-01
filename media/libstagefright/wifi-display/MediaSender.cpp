@@ -420,12 +420,14 @@ status_t MediaSender::packetizeAccessUnit(
             CHECK(accessUnit->meta()->findInt32("rangeLength", &rangeLength));
             CHECK(accessUnit->meta()->findMessage("notify", &notify)
                     && notify != NULL);
-            CHECK_GE(accessUnit->size(), rangeLength);
+            CHECK_GE((int32_t)accessUnit->size(), rangeLength);
 
             sp<GraphicBuffer> grbuf(new GraphicBuffer(
-                    rangeOffset + rangeLength, 1, HAL_PIXEL_FORMAT_Y8,
-                    GRALLOC_USAGE_HW_VIDEO_ENCODER, rangeOffset + rangeLength,
-                    handle, false));
+                    rangeOffset + rangeLength /* width */, 1 /* height */,
+                    HAL_PIXEL_FORMAT_Y8, 1 /* layerCount */,
+                    GRALLOC_USAGE_HW_VIDEO_ENCODER,
+                    rangeOffset + rangeLength /* stride */, handle,
+                    false /* keepOwnership */));
 
             err = mHDCP->encryptNative(
                     grbuf, rangeOffset, rangeLength,

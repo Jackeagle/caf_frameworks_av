@@ -19,7 +19,7 @@
 #include <utils/RefBase.h>
 #include <media/AudioPolicy.h>
 #include <utils/KeyedVector.h>
-#include <hardware/audio.h>
+#include <system/audio.h>
 #include <utils/String8.h>
 
 namespace android {
@@ -42,6 +42,8 @@ public:
     android::AudioMix *getMix();
 
     void setMix(AudioMix &mix);
+
+    status_t dump(int fd, int spaces, int index) const;
 
 private:
     AudioMix    mMix;                   // Audio policy mix descriptor
@@ -77,6 +79,8 @@ public:
                                                   AudioMix **policyMix);
 
     status_t getInputMixForAttr(audio_attributes_t attr, AudioMix **policyMix);
+
+    status_t dump(int fd) const;
 };
 
 }; // namespace android

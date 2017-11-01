@@ -22,9 +22,15 @@ LOCAL_SRC_FILES:= \
 LOCAL_SHARED_LIBRARIES := \
 	libcameraservice \
 	liblog \
-	libcutils \
 	libutils \
+	libui \
+	libgui \
 	libbinder \
+	libhidltransport \
+	android.hardware.camera.common@1.0 \
+	android.hardware.camera.provider@2.4 \
+	android.hardware.camera.device@1.0 \
+	android.hardware.camera.device@3.2
 
 LOCAL_MODULE:= cameraserver
 LOCAL_32_BIT_ONLY := true

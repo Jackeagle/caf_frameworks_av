@@ -19,12 +19,13 @@
 
 #include <assert.h>
 #include <math.h>
-#include <new>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#include <android/log.h>
+#include <new>
+
+#include <log/log.h>
 
 #include <audio_effects/effect_loudnessenhancer.h>
 #include "dsp/core/dynamic_range_compression.h"
@@ -197,7 +198,6 @@ int LELib_Create(const effect_uuid_t *uuid,
                          effect_handle_t *pHandle) {
     ALOGV("LELib_Create()");
     int ret;
-    int i;
 
     if (pHandle == NULL || uuid == NULL) {
         return -EINVAL;
@@ -314,7 +314,6 @@ int LE_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
         void *pCmdData, uint32_t *replySize, void *pReplyData) {
 
     LoudnessEnhancerContext * pContext = (LoudnessEnhancerContext *)self;
-    int retsize;
 
     if (pContext == NULL || pContext->mState == LOUDNESS_ENHANCER_STATE_UNINITIALIZED) {
         return -EINVAL;
