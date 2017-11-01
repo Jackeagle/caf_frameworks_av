@@ -21,11 +21,11 @@
 #define LOG_TAG "MediaDrmService"
 
 #include "MediaDrmService.h"
-
 #include <binder/IServiceManager.h>
-#include <media/Crypto.h>
-#include <media/Drm.h>
 #include <utils/Log.h>
+
+#include <media/CryptoHal.h>
+#include <media/DrmHal.h>
 
 namespace android {
 
@@ -35,11 +35,11 @@ void MediaDrmService::instantiate() {
 }
 
 sp<ICrypto> MediaDrmService::makeCrypto() {
-    return new Crypto;
+    return new CryptoHal;
 }
 
 sp<IDrm> MediaDrmService::makeDrm() {
-    return new Drm;
+    return new DrmHal;
 }
 
 } // namespace android

@@ -20,16 +20,16 @@
 #include "HwModule.h"
 #include "IOProfile.h"
 #include "AudioGain.h"
-#include <hardware/audio.h>
 #include <policy.h>
+#include <system/audio.h>
 
 namespace android {
 
-HwModule::HwModule(const char *name, uint32_t halVersion)
+HwModule::HwModule(const char *name, uint32_t halVersionMajor, uint32_t halVersionMinor)
     : mName(String8(name)),
-      mHandle(AUDIO_MODULE_HANDLE_NONE),
-      mHalVersion(halVersion)
+      mHandle(AUDIO_MODULE_HANDLE_NONE)
 {
+    setHalVersion(halVersionMajor, halVersionMinor);
 }
 
 HwModule::~HwModule()
@@ -42,8 +42,8 @@ HwModule::~HwModule()
     }
 }
 
-status_t HwModule::addOutputProfile(const String8 &name, const audio_config_t *config,
-                                    audio_devices_t device, const String8 &address)
+status_t HwModule::addOutputProfile(const String8& name, const audio_config_t *config,
+                                    audio_devices_t device, const String8& address)
 {
     sp<IOProfile> profile = new OutputProfile(name);
 
@@ -227,7 +227,7 @@ void HwModule::dump(int fd)
     result.append(buffer);
     snprintf(buffer, SIZE, "  - handle: %d\n", mHandle);
     result.append(buffer);
-    snprintf(buffer, SIZE, "  - version: %u.%u\n", mHalVersion >> 8, mHalVersion & 0xFF);
+    snprintf(buffer, SIZE, "  - version: %u.%u\n", getHalVersionMajor(), getHalVersionMinor());
     result.append(buffer);
     write(fd, result.string(), result.size());
     if (mOutputProfiles.size()) {

@@ -85,6 +85,9 @@ status_t Camera3InputStream::getInputBufferLocked(
                         /*releaseFence*/-1, CAMERA3_BUFFER_STATUS_OK, /*output*/false);
     mBuffersInFlight.push_back(bufferItem);
 
+    mFrameCount++;
+    mLastTimestamp = bufferItem.mTimestamp;
+
     return OK;
 }
 
@@ -220,6 +223,7 @@ status_t Camera3InputStream::configureQueueLocked() {
 
     mHandoutTotalBufferCount = 0;
     mFrameCount = 0;
+    mLastTimestamp = 0;
 
     if (mConsumer.get() == 0) {
         sp<IGraphicBufferProducer> producer;
@@ -259,6 +263,8 @@ status_t Camera3InputStream::configureQueueLocked() {
         mConsumer->setName(String8::format("Camera3-InputStream-%d", mId));
 
         mProducer = producer;
+
+        mConsumer->setBufferFreedListener(this);
     }
 
     res = mConsumer->setDefaultBufferSize(camera3_stream::width,
@@ -282,6 +288,27 @@ status_t Camera3InputStream::getEndpointUsage(uint32_t *usage) const {
     // Per HAL3 spec, input streams have 0 for their initial usage field.
     *usage = 0;
     return OK;
+}
+
+void Camera3InputStream::onBufferFreed(const wp<GraphicBuffer>& gb) {
+    const sp<GraphicBuffer> buffer = gb.promote();
+    if (buffer != nullptr) {
+        camera3_stream_buffer streamBuffer =
+                {nullptr, &buffer->handle, 0, -1, -1};
+        // Check if this buffer is outstanding.
+        if (isOutstandingBuffer(streamBuffer)) {
+            ALOGV("%s: Stream %d: Trying to free a buffer that is still being "
+                    "processed.", __FUNCTION__, mId);
+            return;
+        }
+
+        sp<Camera3StreamBufferFreedListener> callback = mBufferFreedListener.promote();
+        if (callback != nullptr) {
+            callback->onBufferFreed(mId, buffer->handle);
+        }
+    } else {
+        ALOGE("%s: GraphicBuffer is freed before onBufferFreed callback finishes!", __FUNCTION__);
+    }
 }
 
 }; // namespace camera3

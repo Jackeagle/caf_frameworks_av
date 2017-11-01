@@ -172,7 +172,7 @@ status_t SampleIterator::findChunkRange(uint32_t sampleIndex) {
         if (mSampleToChunkIndex + 1 < mTable->mNumSampleToChunkOffsets) {
             mStopChunk = entry[1].startChunk;
 
-            if (mStopChunk < mFirstChunk ||
+            if (mSamplesPerChunk == 0 || mStopChunk < mFirstChunk ||
                 (mStopChunk - mFirstChunk) > UINT32_MAX / mSamplesPerChunk ||
                 ((mStopChunk - mFirstChunk) * mSamplesPerChunk >
                  UINT32_MAX - mFirstChunkSampleIndex)) {
@@ -282,7 +282,7 @@ status_t SampleIterator::getSampleSizeDirect(
 
         default:
         {
-            CHECK_EQ(mTable->mSampleSizeFieldSize, 4);
+            CHECK_EQ(mTable->mSampleSizeFieldSize, 4u);
 
             uint8_t x;
             if (mTable->mDataSource->readAt(
@@ -305,8 +305,16 @@ status_t SampleIterator::findSampleTimeAndDuration(
         return ERROR_OUT_OF_RANGE;
     }
 
-    while (sampleIndex >= mTTSSampleIndex + mTTSCount) {
-        if (mTimeToSampleIndex == mTable->mTimeToSampleCount) {
+    while (true) {
+        if (mTTSSampleIndex > UINT32_MAX - mTTSCount) {
+            return ERROR_OUT_OF_RANGE;
+        }
+        if(sampleIndex < mTTSSampleIndex + mTTSCount) {
+            break;
+        }
+        if (mTimeToSampleIndex == mTable->mTimeToSampleCount ||
+            (mTTSDuration != 0 && mTTSCount > UINT32_MAX / mTTSDuration) ||
+            mTTSSampleTime > UINT32_MAX - (mTTSCount * mTTSDuration)) {
             return ERROR_OUT_OF_RANGE;
         }
 

@@ -19,6 +19,7 @@
 
 #include <utils/Log.h>
 #include <binder/IServiceManager.h>
+#include <binder/ProcessState.h>
 #include <media/AudioSystem.h>
 #include <media/IAudioFlinger.h>
 #include <media/IAudioPolicyService.h>
@@ -68,6 +69,8 @@ const sp<IAudioFlinger> AudioSystem::get_audio_flinger()
             gAudioFlinger = interface_cast<IAudioFlinger>(binder);
             LOG_ALWAYS_FATAL_IF(gAudioFlinger == 0);
             afc = gAudioFlingerClient;
+            // Make sure callbacks can be received by gAudioFlingerClient
+            ProcessState::self()->startThreadPool();
         }
         af = gAudioFlinger;
     }
@@ -554,7 +557,8 @@ void AudioSystem::AudioFlingerClient::ioConfigChanged(audio_io_config_event even
                     "channel mask %#x frameCount %zu frameCountHAL %zu deviceId %d",
                     event == AUDIO_OUTPUT_CONFIG_CHANGED ? "output" : "input",
                     ioDesc->mIoHandle, ioDesc->mSamplingRate, ioDesc->mFormat,
-                    ioDesc->mChannelMask, ioDesc->mFrameCount, ioDesc->mFrameCountHAL, ioDesc->getDeviceId());
+                    ioDesc->mChannelMask, ioDesc->mFrameCount, ioDesc->mFrameCountHAL,
+                    ioDesc->getDeviceId());
 
         } break;
         }
@@ -710,6 +714,8 @@ const sp<IAudioPolicyService> AudioSystem::get_audio_policy_service()
             gAudioPolicyService = interface_cast<IAudioPolicyService>(binder);
             LOG_ALWAYS_FATAL_IF(gAudioPolicyService == 0);
             apc = gAudioPolicyServiceClient;
+            // Make sure callbacks can be received by gAudioPolicyServiceClient
+            ProcessState::self()->startThreadPool();
         }
         ap = gAudioPolicyService;
     }
@@ -811,18 +817,16 @@ status_t AudioSystem::getOutputForAttr(const audio_attributes_t *attr,
                                         audio_session_t session,
                                         audio_stream_type_t *stream,
                                         uid_t uid,
-                                        uint32_t samplingRate,
-                                        audio_format_t format,
-                                        audio_channel_mask_t channelMask,
+                                        const audio_config_t *config,
                                         audio_output_flags_t flags,
-                                        audio_port_handle_t selectedDeviceId,
-                                        const audio_offload_info_t *offloadInfo)
+                                        audio_port_handle_t *selectedDeviceId,
+                                        audio_port_handle_t *portId)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return NO_INIT;
     return aps->getOutputForAttr(attr, output, session, stream, uid,
-                                 samplingRate, format, channelMask,
-                                 flags, selectedDeviceId, offloadInfo);
+                                 config,
+                                 flags, selectedDeviceId, portId);
 }
 
 status_t AudioSystem::startOutput(audio_io_handle_t output,
@@ -857,17 +861,16 @@ status_t AudioSystem::getInputForAttr(const audio_attributes_t *attr,
                                 audio_session_t session,
                                 pid_t pid,
                                 uid_t uid,
-                                uint32_t samplingRate,
-                                audio_format_t format,
-                                audio_channel_mask_t channelMask,
+                                const audio_config_base_t *config,
                                 audio_input_flags_t flags,
-                                audio_port_handle_t selectedDeviceId)
+                                audio_port_handle_t *selectedDeviceId,
+                                audio_port_handle_t *portId)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return NO_INIT;
     return aps->getInputForAttr(
             attr, input, session, pid, uid,
-            samplingRate, format, channelMask, flags, selectedDeviceId);
+            config, flags, selectedDeviceId, portId);
 }
 
 status_t AudioSystem::startInput(audio_io_handle_t input,
@@ -1194,14 +1197,14 @@ status_t AudioSystem::registerPolicyMixes(const Vector<AudioMix>& mixes, bool re
 
 status_t AudioSystem::startAudioSource(const struct audio_port_config *source,
                                        const audio_attributes_t *attributes,
-                                       audio_io_handle_t *handle)
+                                       audio_patch_handle_t *handle)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return PERMISSION_DENIED;
     return aps->startAudioSource(source, attributes, handle);
 }
 
-status_t AudioSystem::stopAudioSource(audio_io_handle_t handle)
+status_t AudioSystem::stopAudioSource(audio_patch_handle_t handle)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return PERMISSION_DENIED;
@@ -1220,6 +1223,13 @@ status_t AudioSystem::getMasterMono(bool *mono)
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return PERMISSION_DENIED;
     return aps->getMasterMono(mono);
+}
+
+float AudioSystem::getStreamVolumeDB(audio_stream_type_t stream, int index, audio_devices_t device)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return NAN;
+    return aps->getStreamVolumeDB(stream, index, device);
 }
 
 // ---------------------------------------------------------------------------

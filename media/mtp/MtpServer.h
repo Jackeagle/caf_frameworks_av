@@ -43,12 +43,6 @@ private:
     // appear as a PTP device
     bool                mPtp;
 
-    // group to own new files and folders
-    int                 mFileGroup;
-    // permissions for new files and directories
-    int                 mFilePermission;
-    int                 mDirectoryPermission;
-
     // Manufacturer to report in DeviceInfo
     MtpString           mDeviceInfoManufacturer;
     // Model to report in DeviceInfo
@@ -78,6 +72,7 @@ private:
     MtpObjectFormat     mSendObjectFormat;
     MtpString           mSendObjectFilePath;
     size_t              mSendObjectFileSize;
+    time_t              mSendObjectModifiedTime;
 
     Mutex               mMutex;
 
@@ -104,7 +99,6 @@ private:
 
 public:
                         MtpServer(MtpDatabase* database, bool ptp,
-                                    int fileGroup, int filePerm, int directoryPerm,
                                     const MtpString& deviceInfoManufacturer,
                                     const MtpString& deviceInfoModel,
                                     const MtpString& deviceInfoDeviceVersion,
@@ -160,6 +154,8 @@ private:
     MtpResponseCode     doSendObjectInfo();
     MtpResponseCode     doSendObject();
     MtpResponseCode     doDeleteObject();
+    MtpResponseCode     doMoveObject();
+    MtpResponseCode     doCopyObject();
     MtpResponseCode     doGetObjectPropDesc();
     MtpResponseCode     doGetDevicePropDesc();
     MtpResponseCode     doSendPartialObject();

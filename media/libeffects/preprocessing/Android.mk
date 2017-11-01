@@ -3,10 +3,12 @@ LOCAL_PATH:= $(call my-dir)
 # audio preprocessing wrapper
 include $(CLEAR_VARS)
 
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE:= libaudiopreprocessing
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := soundfx
 
+LOCAL_VENDOR_MODULE := true
 LOCAL_SRC_FILES:= \
     PreProcessing.cpp
 
@@ -28,5 +30,7 @@ LOCAL_CFLAGS += \
     -DWEBRTC_POSIX
 
 LOCAL_CFLAGS += -fvisibility=hidden
+LOCAL_CFLAGS += -Wall -Werror
 
+LOCAL_HEADER_LIBRARIES += libhardware_headers
 include $(BUILD_SHARED_LIBRARY)

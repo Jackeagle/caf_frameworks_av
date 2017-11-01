@@ -67,7 +67,7 @@ protected:
 
 class BpMediaSource : public BpInterface<IMediaSource> {
 public:
-    BpMediaSource(const sp<IBinder>& impl)
+    explicit BpMediaSource(const sp<IBinder>& impl)
         : BpInterface<IMediaSource>(impl), mBuffersSinceStop(0)
     {
     }
@@ -389,7 +389,7 @@ status_t BnMediaSource::onTransact(
                     }
                 }
                 if (transferBuf != nullptr) { // Using shared buffers.
-                    if (!transferBuf->isObserved()) {
+                    if (!transferBuf->isObserved() && transferBuf != buf) {
                         // Transfer buffer must be part of a MediaBufferGroup.
                         ALOGV("adding shared memory buffer %p to local group", transferBuf);
                         mGroup->add_buffer(transferBuf);

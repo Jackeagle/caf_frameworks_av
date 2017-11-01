@@ -18,6 +18,7 @@
 
 #define LIVE_SESSION_H_
 
+#include <media/BufferingSettings.h>
 #include <media/stagefright/foundation/AHandler.h>
 #include <media/mediaplayer.h>
 
@@ -72,6 +73,8 @@ struct LiveSession : public AHandler {
             uint32_t flags,
             const sp<IMediaHTTPService> &httpService);
 
+    void setBufferingSettings(const BufferingSettings &buffering);
+
     int64_t calculateMediaTimeUs(int64_t firstTimeUs, int64_t timeUs, int32_t discontinuitySeq);
     status_t dequeueAccessUnit(StreamType stream, sp<ABuffer> *accessUnit);
 
@@ -86,7 +89,7 @@ struct LiveSession : public AHandler {
     status_t disconnect();
 
     // Blocks until seek is complete.
-    status_t seekTo(int64_t timeUs);
+    status_t seekTo(int64_t timeUs, MediaPlayerSeekMode mode);
 
     status_t getDuration(int64_t *durationUs) const;
     size_t getTrackCount() const;
@@ -129,6 +132,7 @@ private:
         kWhatChangeConfiguration2       = 'chC2',
         kWhatChangeConfiguration3       = 'chC3',
         kWhatPollBuffering              = 'poll',
+        kWhatSetBufferingSettings       = 'sBuS',
     };
 
     // Bandwidth Switch Mark Defaults
@@ -138,9 +142,7 @@ private:
     static const int64_t kResumeThresholdUs;
 
     // Buffer Prepare/Ready/Underflow Marks
-    static const int64_t kReadyMarkUs;
-    static const int64_t kPrepareMarkUs;
-    static const int64_t kUnderflowMarkUs;
+    BufferingSettings mBufferingSettings;
 
     struct BandwidthEstimator;
     struct BandwidthItem {

@@ -27,8 +27,8 @@
 
 #include <media/ICrypto.h>
 #include <media/IMediaHTTPService.h>
+#include <media/MediaCodecBuffer.h>
 
-#include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/ColorConverter.h>
@@ -44,7 +44,7 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 
-#include <CharacterEncodingDetector.h>
+#include <media/CharacterEncodingDetector.h>
 
 namespace android {
 
@@ -55,8 +55,6 @@ StagefrightMetadataRetriever::StagefrightMetadataRetriever()
     : mParsedMetaData(false),
       mAlbumArt(NULL) {
     ALOGV("StagefrightMetadataRetriever()");
-
-    DataSource::RegisterDefaultSniffers();
 }
 
 StagefrightMetadataRetriever::~StagefrightMetadataRetriever() {
@@ -223,7 +221,7 @@ static VideoFrame *extractVideoFrame(
         return NULL;
     }
 
-    Vector<sp<ABuffer> > inputBuffers;
+    Vector<sp<MediaCodecBuffer> > inputBuffers;
     err = decoder->getInputBuffers(&inputBuffers);
     if (err != OK) {
         ALOGW("failed to get input buffers: %d (%s)", err, asString(err));
@@ -232,7 +230,7 @@ static VideoFrame *extractVideoFrame(
         return NULL;
     }
 
-    Vector<sp<ABuffer> > outputBuffers;
+    Vector<sp<MediaCodecBuffer> > outputBuffers;
     err = decoder->getOutputBuffers(&outputBuffers);
     if (err != OK) {
         ALOGW("failed to get output buffers: %d (%s)", err, asString(err));
@@ -264,7 +262,7 @@ static VideoFrame *extractVideoFrame(
         size_t inputIndex = -1;
         int64_t ptsUs = 0ll;
         uint32_t flags = 0;
-        sp<ABuffer> codecBuffer = NULL;
+        sp<MediaCodecBuffer> codecBuffer = NULL;
 
         while (haveMoreInputs) {
             err = decoder->dequeueInputBuffer(&inputIndex, kBufferTimeOutUs);
@@ -376,7 +374,7 @@ static VideoFrame *extractVideoFrame(
     }
 
     ALOGV("successfully decoded video frame.");
-    sp<ABuffer> videoFrameBuffer = outputBuffers.itemAt(index);
+    sp<MediaCodecBuffer> videoFrameBuffer = outputBuffers.itemAt(index);
 
     if (thumbNailTime >= 0) {
         if (timeUs != thumbNailTime) {
@@ -418,6 +416,22 @@ static VideoFrame *extractVideoFrame(
             && trackMeta->findInt32(kKeySARHeight, &sarHeight)
             && sarHeight != 0) {
         frame->mDisplayWidth = (frame->mDisplayWidth * sarWidth) / sarHeight;
+    } else {
+        int32_t width, height;
+        if (trackMeta->findInt32(kKeyDisplayWidth, &width)
+                && trackMeta->findInt32(kKeyDisplayHeight, &height)
+                && frame->mDisplayWidth > 0 && frame->mDisplayHeight > 0
+                && width > 0 && height > 0) {
+            if (frame->mDisplayHeight * (int64_t)width / height > (int64_t)frame->mDisplayWidth) {
+                frame->mDisplayHeight =
+                        (int32_t)(height * (int64_t)frame->mDisplayWidth / width);
+            } else {
+                frame->mDisplayWidth =
+                        (int32_t)(frame->mDisplayHeight * (int64_t)width / height);
+            }
+            ALOGV("thumbNail width and height are overridden to %d x %d",
+                    frame->mDisplayWidth, frame->mDisplayHeight);
+        }
     }
 
     int32_t srcFormat;
@@ -754,9 +768,9 @@ void StagefrightMetadataRetriever::parseMetaData() {
 
     if (numTracks == 1) {
         const char *fileMIME;
-        CHECK(meta->findCString(kKeyMIMEType, &fileMIME));
 
-        if (!strcasecmp(fileMIME, "video/x-matroska")) {
+        if (meta->findCString(kKeyMIMEType, &fileMIME) &&
+                !strcasecmp(fileMIME, "video/x-matroska")) {
             sp<MetaData> trackMeta = mExtractor->getTrackMetaData(0);
             const char *trackMIME;
             CHECK(trackMeta->findCString(kKeyMIMEType, &trackMIME));
@@ -768,11 +782,6 @@ void StagefrightMetadataRetriever::parseMetaData() {
                         METADATA_KEY_MIMETYPE, String8("audio/x-matroska"));
             }
         }
-    }
-
-    // To check whether the media file is drm-protected
-    if (mExtractor->getDrmFlag()) {
-        mMetaData.add(METADATA_KEY_IS_DRM, String8("1"));
     }
 }
 

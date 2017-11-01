@@ -17,7 +17,7 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 
-LOCAL_SRC_FILES:=               \
+LOCAL_SRC_FILES:= \
     RadioService.cpp
 
 LOCAL_SHARED_LIBRARIES:= \
@@ -29,6 +29,26 @@ LOCAL_SHARED_LIBRARIES:= \
     libhardware \
     libradio \
     libradio_metadata
+
+ifeq ($(USE_LEGACY_LOCAL_AUDIO_HAL),true)
+# libhardware configuration
+LOCAL_SRC_FILES +=               \
+    RadioHalLegacy.cpp
+else
+# Treble configuration
+
+LOCAL_SRC_FILES += \
+    HidlUtils.cpp \
+    RadioHalHidl.cpp
+
+LOCAL_SHARED_LIBRARIES += \
+    libhwbinder \
+    libhidlbase \
+    libhidltransport \
+    libbase \
+    libaudiohal \
+    android.hardware.broadcastradio@1.0
+endif
 
 LOCAL_CFLAGS += -Wall -Wextra -Werror
 

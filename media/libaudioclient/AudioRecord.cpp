@@ -66,9 +66,11 @@ status_t AudioRecord::getMinFrameCount(
 // ---------------------------------------------------------------------------
 
 AudioRecord::AudioRecord(const String16 &opPackageName)
-    : mActive(false), mStatus(NO_INIT), mOpPackageName(opPackageName), mSessionId(AUDIO_SESSION_ALLOCATE),
+    : mActive(false), mStatus(NO_INIT), mOpPackageName(opPackageName),
+      mSessionId(AUDIO_SESSION_ALLOCATE),
       mPreviousPriority(ANDROID_PRIORITY_NORMAL), mPreviousSchedulingGroup(SP_DEFAULT),
-      mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE)
+      mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE), mRoutedDeviceId(AUDIO_PORT_HANDLE_NONE),
+      mPortId(AUDIO_PORT_HANDLE_NONE)
 {
 }
 
@@ -85,7 +87,7 @@ AudioRecord::AudioRecord(
         audio_session_t sessionId,
         transfer_type transferType,
         audio_input_flags_t flags,
-        int uid,
+        uid_t uid,
         pid_t pid,
         const audio_attributes_t* pAttributes)
     : mActive(false),
@@ -95,7 +97,8 @@ AudioRecord::AudioRecord(
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
       mProxy(NULL),
-      mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE)
+      mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE),
+      mPortId(AUDIO_PORT_HANDLE_NONE)
 {
     mStatus = set(inputSource, sampleRate, format, channelMask, frameCount, cbf, user,
             notificationFrames, false /*threadCanCallJava*/, sessionId, transferType, flags,
@@ -143,7 +146,7 @@ status_t AudioRecord::set(
         audio_session_t sessionId,
         transfer_type transferType,
         audio_input_flags_t flags,
-        int uid,
+        uid_t uid,
         pid_t pid,
         const audio_attributes_t* pAttributes)
 {
@@ -236,7 +239,7 @@ status_t AudioRecord::set(
 
     int callingpid = IPCThreadState::self()->getCallingPid();
     int mypid = getpid();
-    if (uid == -1 || (callingpid != mypid)) {
+    if (uid == AUDIO_UID_INVALID || (callingpid != mypid)) {
         mClientUid = IPCThreadState::self()->getCallingUid();
     } else {
         mClientUid = uid;
@@ -479,12 +482,14 @@ status_t AudioRecord::setInputDevice(audio_port_handle_t deviceId) {
     AutoMutex lock(mLock);
     if (mSelectedDeviceId != deviceId) {
         mSelectedDeviceId = deviceId;
-        // stop capture so that audio policy manager does not reject the new instance start request
-        // as only one capture can be active at a time.
-        if (mAudioRecord != 0 && mActive) {
-            mAudioRecord->stop();
+        if (mStatus == NO_ERROR) {
+            // stop capture so that audio policy manager does not reject the new instance start request
+            // as only one capture can be active at a time.
+            if (mAudioRecord != 0 && mActive) {
+                mAudioRecord->stop();
+            }
+            android_atomic_or(CBLK_INVALID, &mCblk->mFlags);
         }
-        android_atomic_or(CBLK_INVALID, &mCblk->mFlags);
     }
     return NO_ERROR;
 }
@@ -499,10 +504,29 @@ audio_port_handle_t AudioRecord::getRoutedDeviceId() {
     if (mInput == AUDIO_IO_HANDLE_NONE) {
         return AUDIO_PORT_HANDLE_NONE;
     }
-    return AudioSystem::getDeviceIdForIo(mInput);
+    // if the input stream does not have an active audio patch, use either the device initially
+    // selected by audio policy manager or the last routed device
+    audio_port_handle_t deviceId = AudioSystem::getDeviceIdForIo(mInput);
+    if (deviceId == AUDIO_PORT_HANDLE_NONE) {
+        deviceId = mRoutedDeviceId;
+    }
+    mRoutedDeviceId = deviceId;
+    return deviceId;
 }
 
 // -------------------------------------------------------------------------
+// TODO Move this macro to a common header file for enum to string conversion in audio framework.
+#define MEDIA_CASE_ENUM(name) case name: return #name
+const char * AudioRecord::convertTransferToText(transfer_type transferType) {
+    switch (transferType) {
+        MEDIA_CASE_ENUM(TRANSFER_DEFAULT);
+        MEDIA_CASE_ENUM(TRANSFER_CALLBACK);
+        MEDIA_CASE_ENUM(TRANSFER_OBTAIN);
+        MEDIA_CASE_ENUM(TRANSFER_SYNC);
+        default:
+            return "UNRECOGNIZED";
+    }
+}
 
 // must be called with mLock held
 status_t AudioRecord::openRecord_l(const Modulo<uint32_t> &epoch, const String16& opPackageName)
@@ -529,14 +553,19 @@ status_t AudioRecord::openRecord_l(const Modulo<uint32_t> &epoch, const String16
     // The sp<> references will be dropped when re-entering scope.
     // The lack of indentation is deliberate, to reduce code churn and ease merges.
     for (;;) {
-
+    audio_config_base_t config  = {
+            .sample_rate = mSampleRate,
+            .channel_mask = mChannelMask,
+            .format = mFormat
+        };
+    mRoutedDeviceId = mSelectedDeviceId;
     status = AudioSystem::getInputForAttr(&mAttributes, &input,
                                         mSessionId,
                                         // FIXME compare to AudioTrack
                                         mClientPid,
                                         mClientUid,
-                                        mSampleRate, mFormat, mChannelMask,
-                                        mFlags, mSelectedDeviceId);
+                                        &config,
+                                        mFlags, &mRoutedDeviceId, &mPortId);
 
     if (status != NO_ERROR || input == AUDIO_IO_HANDLE_NONE) {
         ALOGE("Could not get audio input for session %d, record source %d, sample rate %u, "
@@ -570,17 +599,32 @@ status_t AudioRecord::openRecord_l(const Modulo<uint32_t> &epoch, const String16
     // Client can only express a preference for FAST.  Server will perform additional tests.
     if (mFlags & AUDIO_INPUT_FLAG_FAST) {
         bool useCaseAllowed =
-            // either of these use cases:
+            // any of these use cases:
             // use case 1: callback transfer mode
             (mTransfer == TRANSFER_CALLBACK) ||
-            // use case 2: obtain/release mode
+            // use case 2: blocking read mode
+            // The default buffer capacity at 48 kHz is 2048 frames, or ~42.6 ms.
+            // That's enough for double-buffering with our standard 20 ms rule of thumb for
+            // the minimum period of a non-SCHED_FIFO thread.
+            // This is needed so that AAudio apps can do a low latency non-blocking read from a
+            // callback running with SCHED_FIFO.
+            (mTransfer == TRANSFER_SYNC) ||
+            // use case 3: obtain/release mode
             (mTransfer == TRANSFER_OBTAIN);
+        if (!useCaseAllowed) {
+            ALOGW("AUDIO_INPUT_FLAG_FAST denied, incompatible transfer = %s",
+                  convertTransferToText(mTransfer));
+        }
+
         // sample rates must also match
-        bool fastAllowed = useCaseAllowed && (mSampleRate == afSampleRate);
+        bool sampleRateAllowed = mSampleRate == afSampleRate;
+        if (!sampleRateAllowed) {
+            ALOGW("AUDIO_INPUT_FLAG_FAST denied, rates do not match %u Hz, require %u Hz",
+                  mSampleRate, afSampleRate);
+        }
+
+        bool fastAllowed = useCaseAllowed && sampleRateAllowed;
         if (!fastAllowed) {
-            ALOGW("AUDIO_INPUT_FLAG_FAST denied by client; transfer %d, "
-                "track %u Hz, input %u Hz",
-                mTransfer, mSampleRate, afSampleRate);
             mFlags = (audio_input_flags_t) (mFlags & ~(AUDIO_INPUT_FLAG_FAST |
                     AUDIO_INPUT_FLAG_RAW));
             AudioSystem::releaseInput(input, mSessionId);
@@ -622,7 +666,8 @@ status_t AudioRecord::openRecord_l(const Modulo<uint32_t> &epoch, const String16
                                                        &notificationFrames,
                                                        iMem,
                                                        bufferMem,
-                                                       &status);
+                                                       &status,
+                                                       mPortId);
     ALOGE_IF(originalSessionId != AUDIO_SESSION_ALLOCATE && mSessionId != originalSessionId,
             "session ID changed from %d to %d", originalSessionId, mSessionId);
 
@@ -638,10 +683,10 @@ status_t AudioRecord::openRecord_l(const Modulo<uint32_t> &epoch, const String16
     mAwaitBoost = false;
     if (mFlags & AUDIO_INPUT_FLAG_FAST) {
         if (flags & AUDIO_INPUT_FLAG_FAST) {
-            ALOGI("AUDIO_INPUT_FLAG_FAST successful; frameCount %zu", frameCount);
+            ALOGI("AUDIO_INPUT_FLAG_FAST successful; frameCount %zu -> %zu", frameCount, temp);
             mAwaitBoost = true;
         } else {
-            ALOGW("AUDIO_INPUT_FLAG_FAST denied by server; frameCount %zu", frameCount);
+            ALOGW("AUDIO_INPUT_FLAG_FAST denied by server; frameCount %zu -> %zu", frameCount, temp);
             mFlags = (audio_input_flags_t) (mFlags & ~(AUDIO_INPUT_FLAG_FAST |
                     AUDIO_INPUT_FLAG_RAW));
             continue;   // retry
@@ -1256,6 +1301,7 @@ bool AudioRecord::AudioRecordThread::threadLoop()
     {
         AutoMutex _l(mMyLock);
         if (mPaused) {
+            // TODO check return value and handle or log
             mMyCond.wait(mMyLock);
             // caller will check for exitPending()
             return true;
@@ -1266,13 +1312,18 @@ bool AudioRecord::AudioRecordThread::threadLoop()
         }
         if (mPausedInt) {
             if (mPausedNs > 0) {
+                // TODO check return value and handle or log
                 (void) mMyCond.waitRelative(mMyLock, mPausedNs);
             } else {
+                // TODO check return value and handle or log
                 mMyCond.wait(mMyLock);
             }
             mPausedInt = false;
             return true;
         }
+    }
+    if (exitPending()) {
+        return false;
     }
     nsecs_t ns =  mReceiver.processAudioBuffer();
     switch (ns) {

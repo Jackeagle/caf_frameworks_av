@@ -72,6 +72,8 @@ public:
     virtual bool            recordingEnabled();
     virtual void            releaseRecordingFrame(const sp<IMemory>& mem);
     virtual void            releaseRecordingFrameHandle(native_handle_t *handle);
+    virtual void            releaseRecordingFrameHandleBatch(
+                                    const std::vector<native_handle_t*>& handles);
     virtual status_t        autoFocus();
     virtual status_t        cancelAutoFocus();
     virtual status_t        takePicture(int msgType);
@@ -98,7 +100,7 @@ public:
 
     virtual ~Camera2Client();
 
-    status_t initialize(CameraModule *module);
+    virtual status_t initialize(sp<CameraProviderManager> manager) override;
 
     virtual status_t dump(int fd, const Vector<String16>& args);
 
@@ -219,6 +221,9 @@ private:
 
     // Video snapshot jpeg size overriding helper function
     status_t overrideVideoSnapshotSize(Parameters &params);
+
+    template<typename TProviderPtr>
+    status_t initializeImpl(TProviderPtr providerPtr);
 };
 
 }; // namespace android

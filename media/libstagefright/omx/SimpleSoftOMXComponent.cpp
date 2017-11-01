@@ -77,19 +77,34 @@ bool SimpleSoftOMXComponent::isSetParameterAllowed(
     switch (index) {
         case OMX_IndexParamPortDefinition:
         {
-            portIndex = ((OMX_PARAM_PORTDEFINITIONTYPE *)params)->nPortIndex;
+            const OMX_PARAM_PORTDEFINITIONTYPE *portDefs =
+                    (const OMX_PARAM_PORTDEFINITIONTYPE *) params;
+            if (!isValidOMXParam(portDefs)) {
+                return false;
+            }
+            portIndex = portDefs->nPortIndex;
             break;
         }
 
         case OMX_IndexParamAudioPcm:
         {
-            portIndex = ((OMX_AUDIO_PARAM_PCMMODETYPE *)params)->nPortIndex;
+            const OMX_AUDIO_PARAM_PCMMODETYPE *pcmMode =
+                    (const OMX_AUDIO_PARAM_PCMMODETYPE *) params;
+            if (!isValidOMXParam(pcmMode)) {
+                return false;
+            }
+            portIndex = pcmMode->nPortIndex;
             break;
         }
 
         case OMX_IndexParamAudioAac:
         {
-            portIndex = ((OMX_AUDIO_PARAM_AACPROFILETYPE *)params)->nPortIndex;
+            const OMX_AUDIO_PARAM_AACPROFILETYPE *aacMode =
+                    (const OMX_AUDIO_PARAM_AACPROFILETYPE *) params;
+            if (!isValidOMXParam(aacMode)) {
+                return false;
+            }
+            portIndex = aacMode->nPortIndex;
             break;
         }
 
@@ -199,6 +214,13 @@ OMX_ERRORTYPE SimpleSoftOMXComponent::useBuffer(
     Mutex::Autolock autoLock(mLock);
     CHECK_LT(portIndex, mPorts.size());
 
+    PortInfo *port = &mPorts.editItemAt(portIndex);
+    if (size < port->mDef.nBufferSize) {
+        ALOGE("b/63522430, Buffer size is too small.");
+        android_errorWriteLog(0x534e4554, "63522430");
+        return OMX_ErrorBadParameter;
+    }
+
     *header = new OMX_BUFFERHEADERTYPE;
     (*header)->nSize = sizeof(OMX_BUFFERHEADERTYPE);
     (*header)->nVersion.s.nVersionMajor = 1;
@@ -220,8 +242,6 @@ OMX_ERRORTYPE SimpleSoftOMXComponent::useBuffer(
     (*header)->nFlags = 0;
     (*header)->nOutputPortIndex = portIndex;
     (*header)->nInputPortIndex = portIndex;
-
-    PortInfo *port = &mPorts.editItemAt(portIndex);
 
     CHECK(mState == OMX_StateLoaded || port->mDef.bEnabled == OMX_FALSE);
 
@@ -439,7 +459,12 @@ void SimpleSoftOMXComponent::onChangeState(OMX_STATETYPE state) {
         state = OMX_StateLoaded;
     }
 
-    CHECK_EQ((int)mState, (int)mTargetState);
+    if (mState != mTargetState) {
+        ALOGE("State change to state %d requested while still transitioning from state %d to %d",
+                state, mState, mTargetState);
+        notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
+        return;
+    }
 
     switch (mState) {
         case OMX_StateLoaded:

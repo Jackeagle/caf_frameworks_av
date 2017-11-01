@@ -114,12 +114,10 @@ public:
                                           audio_session_t session,
                                           audio_stream_type_t *stream,
                                           uid_t uid,
-                                          uint32_t samplingRate,
-                                          audio_format_t format,
-                                          audio_channel_mask_t channelMask,
+                                          const audio_config_t *config,
                                           audio_output_flags_t flags,
-                                          audio_port_handle_t selectedDeviceId,
-                                          const audio_offload_info_t *offloadInfo);
+                                          audio_port_handle_t *selectedDeviceId,
+                                          audio_port_handle_t *portId);
         virtual status_t startOutput(audio_io_handle_t output,
                                      audio_stream_type_t stream,
                                      audio_session_t session);
@@ -133,16 +131,16 @@ public:
                                          audio_io_handle_t *input,
                                          audio_session_t session,
                                          uid_t uid,
-                                         uint32_t samplingRate,
-                                         audio_format_t format,
-                                         audio_channel_mask_t channelMask,
+                                         const audio_config_base_t *config,
                                          audio_input_flags_t flags,
-                                         audio_port_handle_t selectedDeviceId,
-                                         input_type_t *inputType);
+                                         audio_port_handle_t *selectedDeviceId,
+                                         input_type_t *inputType,
+                                         audio_port_handle_t *portId);
 
         // indicates to the audio policy manager that the input starts being used.
         virtual status_t startInput(audio_io_handle_t input,
-                                    audio_session_t session);
+                                    audio_session_t session,
+                                    concurrency_type__mask_t *concurrency);
 
         // indicates to the audio policy manager that the input stops being used.
         virtual status_t stopInput(audio_io_handle_t input,
@@ -230,12 +228,14 @@ public:
 
         virtual status_t startAudioSource(const struct audio_port_config *source,
                                           const audio_attributes_t *attributes,
-                                          audio_io_handle_t *handle,
+                                          audio_patch_handle_t *handle,
                                           uid_t uid);
-        virtual status_t stopAudioSource(audio_io_handle_t handle);
+        virtual status_t stopAudioSource(audio_patch_handle_t handle);
 
         virtual status_t setMasterMono(bool mono);
         virtual status_t getMasterMono(bool *mono);
+        virtual float    getStreamVolumeDB(
+                    audio_stream_type_t stream, int index, audio_devices_t device);
 
         // return the strategy corresponding to a given stream type
         routing_strategy getStrategy(audio_stream_type_t stream) const;
@@ -408,7 +408,7 @@ protected:
         void updateDevicesAndOutputs();
 
         // selects the most appropriate device on input for current state
-        audio_devices_t getNewInputDevice(audio_io_handle_t input);
+        audio_devices_t getNewInputDevice(const sp<AudioInputDescriptor>& inputDesc);
 
         virtual uint32_t getMaxEffectsCpuLoad()
         {
@@ -454,7 +454,7 @@ protected:
                                                        audio_channel_mask_t channelMask,
                                                        audio_output_flags_t flags);
 
-        audio_io_handle_t selectOutputForEffects(const SortedVector<audio_io_handle_t>& outputs);
+        audio_io_handle_t selectOutputForMusicEffects();
 
         virtual status_t addAudioPatch(audio_patch_handle_t handle, const sp<AudioPatch>& patch)
         {
@@ -509,6 +509,10 @@ protected:
 
         void clearAudioSources(uid_t uid);
 
+        static bool isConcurrentSource(audio_source_t source);
+
+        bool isConcurentCaptureAllowed(const sp<AudioInputDescriptor>& inputDesc,
+                const sp<AudioSession>& audioSession);
 
         static bool streamsMatchForvolume(audio_stream_type_t stream1,
                                           audio_stream_type_t stream2);
@@ -568,6 +572,8 @@ protected:
 
         bool mMasterMono;               // true if we wish to force all outputs to mono
         AudioPolicyMixCollection mPolicyMixes; // list of registered mixes
+        audio_io_handle_t mMusicEffectOutput;     // output selected for music effects
+
 
 #ifdef AUDIO_POLICY_TEST
         Mutex   mLock;
@@ -662,9 +668,13 @@ private:
                                                           const char *device_name);
         void updateMono(audio_io_handle_t output) {
             AudioParameter param;
-            param.addInt(String8(AUDIO_PARAMETER_MONO_OUTPUT), (int)mMasterMono);
+            param.addInt(String8(AudioParameter::keyMonoOutput), (int)mMasterMono);
             mpClientInterface->setParameters(output, param.toString());
         }
+
+        bool soundTriggerSupportsConcurrentCapture();
+        bool mSoundTriggerSupportsConcurrentCapture;
+        bool mHasComputedSoundTriggerSupportsConcurrentCapture;
 };
 
 };

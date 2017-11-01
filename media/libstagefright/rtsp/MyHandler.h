@@ -25,6 +25,7 @@
 #endif
 
 #include <utils/Log.h>
+#include <cutils/properties.h> // for property_get
 
 #include "APacketSource.h"
 #include "ARTPConnection.h"
@@ -32,6 +33,7 @@
 #include "ASessionDescription.h"
 
 #include <ctype.h>
+#include <cutils/properties.h>
 
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
@@ -134,7 +136,7 @@ struct MyHandler : public AHandler {
           mCheckPending(false),
           mCheckGeneration(0),
           mCheckTimeoutGeneration(0),
-          mTryTCPInterleaving(false),
+          mTryTCPInterleaving(property_get_bool("rtp.transport.TCP", false)),
           mTryFakeRTCP(false),
           mReceivedFirstRTCPPacket(false),
           mReceivedFirstRTPPacket(false),
@@ -807,11 +809,7 @@ struct MyHandler : public AHandler {
                         result = UNKNOWN_ERROR;
                     } else {
                         parsePlayResponse(response);
-
-                        sp<AMessage> timeout = new AMessage('tiou', this);
-                        mCheckTimeoutGeneration++;
-                        timeout->setInt32("tioucheck", mCheckTimeoutGeneration);
-                        timeout->post(kStartupTimeoutUs);
+                        postTimeout();
                     }
                 }
 
@@ -1153,10 +1151,7 @@ struct MyHandler : public AHandler {
 
                         // Post new timeout in order to make sure to use
                         // fake timestamps if no new Sender Reports arrive
-                        sp<AMessage> timeout = new AMessage('tiou', this);
-                        mCheckTimeoutGeneration++;
-                        timeout->setInt32("tioucheck", mCheckTimeoutGeneration);
-                        timeout->post(kStartupTimeoutUs);
+                        postTimeout();
                     }
                 }
 
@@ -1248,10 +1243,7 @@ struct MyHandler : public AHandler {
 
                 // Start new timeoutgeneration to avoid getting timeout
                 // before PLAY response arrive
-                sp<AMessage> timeout = new AMessage('tiou', this);
-                mCheckTimeoutGeneration++;
-                timeout->setInt32("tioucheck", mCheckTimeoutGeneration);
-                timeout->post(kStartupTimeoutUs);
+                postTimeout();
 
                 int64_t timeUs;
                 CHECK(msg->findInt64("time", &timeUs));
@@ -1305,10 +1297,7 @@ struct MyHandler : public AHandler {
 
                         // Post new timeout in order to make sure to use
                         // fake timestamps if no new Sender Reports arrive
-                        sp<AMessage> timeout = new AMessage('tiou', this);
-                        mCheckTimeoutGeneration++;
-                        timeout->setInt32("tioucheck", mCheckTimeoutGeneration);
-                        timeout->post(kStartupTimeoutUs);
+                        postTimeout();
 
                         ssize_t i = response->mHeaders.indexOfKey("rtp-info");
                         CHECK_GE(i, 0);
@@ -1962,6 +1951,16 @@ private:
         msg->setInt32("rtpTime", rtpTime);
         msg->setInt64("nptUs", nptUs);
         msg->post();
+    }
+
+    void postTimeout() {
+        sp<AMessage> timeout = new AMessage('tiou', this);
+        mCheckTimeoutGeneration++;
+        timeout->setInt32("tioucheck", mCheckTimeoutGeneration);
+
+        int64_t startupTimeoutUs;
+        startupTimeoutUs = property_get_int64("media.rtsp.timeout-us", kStartupTimeoutUs);
+        timeout->post(startupTimeoutUs);
     }
 
     DISALLOW_EVIL_CONSTRUCTORS(MyHandler);

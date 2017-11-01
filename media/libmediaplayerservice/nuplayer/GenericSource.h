@@ -28,7 +28,6 @@
 namespace android {
 
 class DecryptHandle;
-class DrmManagerClient;
 struct AnotherPacketSource;
 struct ARTSPController;
 class DataSource;
@@ -37,9 +36,10 @@ struct IMediaHTTPService;
 struct MediaSource;
 class MediaBuffer;
 struct NuCachedSource2;
-class WVMExtractor;
 
-struct NuPlayer::GenericSource : public NuPlayer::Source {
+struct NuPlayer::GenericSource : public NuPlayer::Source,
+                                 public MediaBufferObserver // Modular DRM
+{
     GenericSource(const sp<AMessage> &notify, bool uidValid, uid_t uid);
 
     status_t setDataSource(
@@ -50,6 +50,10 @@ struct NuPlayer::GenericSource : public NuPlayer::Source {
     status_t setDataSource(int fd, int64_t offset, int64_t length);
 
     status_t setDataSource(const sp<DataSource>& dataSource);
+
+    virtual status_t getDefaultBufferingSettings(
+            BufferingSettings* buffering /* nonnull */) override;
+    virtual status_t setBufferingSettings(const BufferingSettings& buffering) override;
 
     virtual void prepareAsync();
 
@@ -71,13 +75,24 @@ struct NuPlayer::GenericSource : public NuPlayer::Source {
     virtual sp<AMessage> getTrackInfo(size_t trackIndex) const;
     virtual ssize_t getSelectedTrack(media_track_type type) const;
     virtual status_t selectTrack(size_t trackIndex, bool select, int64_t timeUs);
-    virtual status_t seekTo(int64_t seekTimeUs);
+    virtual status_t seekTo(
+        int64_t seekTimeUs,
+        MediaPlayerSeekMode mode = MediaPlayerSeekMode::SEEK_PREVIOUS_SYNC) override;
 
     virtual status_t setBuffers(bool audio, Vector<MediaBuffer *> &buffers);
 
     virtual bool isStreaming() const;
 
     virtual void setOffloadAudio(bool offload);
+
+    // Modular DRM
+    virtual void signalBufferReturned(MediaBuffer *buffer);
+
+    virtual status_t prepareDrm(
+            const uint8_t uuid[16], const Vector<uint8_t> &drmSessionId, sp<ICrypto> *crypto);
+
+    virtual status_t releaseDrm();
+
 
 protected:
     virtual ~GenericSource();
@@ -101,10 +116,12 @@ private:
         kWhatSelectTrack,
         kWhatSeek,
         kWhatReadBuffer,
-        kWhatStopWidevine,
         kWhatStart,
         kWhatResume,
         kWhatSecureDecodersInstantiated,
+        // Modular DRM
+        kWhatPrepareDrm,
+        kWhatReleaseDrm,
     };
 
     struct Track {
@@ -119,9 +136,11 @@ private:
     public:
         explicit BufferingMonitor(const sp<AMessage> &notify);
 
+        void getDefaultBufferingSettings(BufferingSettings *buffering /* nonnull */);
+        status_t setBufferingSettings(const BufferingSettings &buffering);
+
         // Set up state.
         void prepare(const sp<NuCachedSource2> &cachedSource,
-                const sp<WVMExtractor> &wvmExtractor,
                 int64_t durationUs,
                 int64_t bitrate,
                 bool isStreaming);
@@ -155,7 +174,6 @@ private:
         sp<AMessage> mNotify;
 
         sp<NuCachedSource2> mCachedSource;
-        sp<WVMExtractor> mWVMExtractor;
         int64_t mDurationUs;
         int64_t mBitrate;
         bool mIsStreaming;
@@ -169,13 +187,13 @@ private:
 
         mutable Mutex mLock;
 
+        BufferingSettings mSettings;
         bool mOffloadAudio;
         int64_t mFirstDequeuedBufferRealUs;
         int64_t mFirstDequeuedBufferMediaUs;
         int64_t mlastDequeuedBufferMediaUs;
 
         void prepare_l(const sp<NuCachedSource2> &cachedSource,
-                const sp<WVMExtractor> &wvmExtractor,
                 int64_t durationUs,
                 int64_t bitrate,
                 bool isStreaming);
@@ -204,7 +222,7 @@ private:
     int32_t mFetchTimedTextDataGeneration;
     int64_t mDurationUs;
     bool mAudioIsVorbis;
-    bool mIsWidevine;
+    // Secure codec is required.
     bool mIsSecure;
     bool mIsStreaming;
     bool mUIDValid;
@@ -219,10 +237,7 @@ private:
     sp<DataSource> mDataSource;
     sp<NuCachedSource2> mCachedSource;
     sp<DataSource> mHttpSource;
-    sp<WVMExtractor> mWVMExtractor;
     sp<MetaData> mFileMeta;
-    DrmManagerClient *mDrmManagerClient;
-    sp<DecryptHandle> mDecryptHandle;
     bool mStarted;
     bool mStopRead;
     int64_t mBitrate;
@@ -239,9 +254,7 @@ private:
     void resetDataSource();
 
     status_t initFromDataSource();
-    void checkDrmStatus(const sp<DataSource>& dataSource);
     int64_t getLastReadPosition();
-    void setDrmPlaybackStatusIfNeeded(int playbackStatus, int64_t position);
 
     void notifyPreparedAndCleanup(status_t err);
     void onSecureDecodersInstantiated(status_t err);
@@ -251,6 +264,9 @@ private:
     void onGetFormatMeta(const sp<AMessage>& msg) const;
     sp<MetaData> doGetFormatMeta(bool audio) const;
 
+    void onGetTrackInfo(const sp<AMessage>& msg) const;
+    sp<AMessage> doGetTrackInfo(size_t trackIndex) const;
+
     void onGetSelectedTrack(const sp<AMessage>& msg) const;
     ssize_t doGetSelectedTrack(media_track_type type) const;
 
@@ -258,7 +274,7 @@ private:
     status_t doSelectTrack(size_t trackIndex, bool select, int64_t timeUs);
 
     void onSeek(const sp<AMessage>& msg);
-    status_t doSeek(int64_t seekTimeUs);
+    status_t doSeek(int64_t seekTimeUs, MediaPlayerSeekMode mode);
 
     void onPrepareAsync();
 
@@ -276,18 +292,34 @@ private:
 
     sp<ABuffer> mediaBufferToABuffer(
             MediaBuffer *mbuf,
-            media_track_type trackType,
-            int64_t seekTimeUs,
-            int64_t *actualTimeUs = NULL);
+            media_track_type trackType);
 
     void postReadBuffer(media_track_type trackType);
     void onReadBuffer(const sp<AMessage>& msg);
+    // When |mode| is MediaPlayerSeekMode::SEEK_CLOSEST, the buffer read shall
+    // include an item indicating skipping rendering all buffers with timestamp
+    // earlier than |seekTimeUs|.
+    // For other modes, the buffer read will not include the item as above in order
+    // to facilitate fast seek operation.
     void readBuffer(
             media_track_type trackType,
-            int64_t seekTimeUs = -1ll, int64_t *actualTimeUs = NULL, bool formatChange = false);
+            int64_t seekTimeUs = -1ll,
+            MediaPlayerSeekMode mode = MediaPlayerSeekMode::SEEK_PREVIOUS_SYNC,
+            int64_t *actualTimeUs = NULL, bool formatChange = false);
 
     void queueDiscontinuityIfNeeded(
             bool seeking, bool formatChange, media_track_type trackType, Track *track);
+
+    // Modular DRM
+    // The source is DRM protected and is prepared for DRM.
+    bool mIsDrmProtected;
+    // releaseDrm has been processed.
+    bool mIsDrmReleased;
+    Vector<String8> mMimes;
+
+    status_t checkDrmInfo();
+    status_t onPrepareDrm(const sp<AMessage> &msg);
+    status_t onReleaseDrm();
 
     DISALLOW_EVIL_CONSTRUCTORS(GenericSource);
 };

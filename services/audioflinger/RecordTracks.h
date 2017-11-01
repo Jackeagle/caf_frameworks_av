@@ -30,9 +30,10 @@ public:
                                 size_t frameCount,
                                 void *buffer,
                                 audio_session_t sessionId,
-                                int uid,
+                                uid_t uid,
                                 audio_input_flags_t flags,
-                                track_type type);
+                                track_type type,
+                                audio_port_handle_t portId = AUDIO_PORT_HANDLE_NONE);
     virtual             ~RecordTrack();
     virtual status_t    initCheck() const;
 
@@ -41,7 +42,7 @@ public:
 
             void        destroy();
 
-            void        invalidate();
+    virtual void        invalidate();
             // clear the buffer overflow flag
             void        clearOverflow() { mOverflow = false; }
             // set the buffer overflow flag and return previous value
@@ -64,8 +65,7 @@ public:
 private:
     friend class AudioFlinger;  // for mState
 
-                        RecordTrack(const RecordTrack&);
-                        RecordTrack& operator = (const RecordTrack&);
+    DISALLOW_COPY_AND_ASSIGN(RecordTrack);
 
     // AudioBufferProvider interface
     virtual status_t getNextBuffer(AudioBufferProvider::Buffer* buffer);

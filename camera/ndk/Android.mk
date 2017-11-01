@@ -33,9 +33,8 @@ LOCAL_SRC_FILES:=                  \
 
 LOCAL_MODULE:= libcamera2ndk
 
-LOCAL_C_INCLUDES := \
-    frameworks/av/include/camera/ndk \
-    frameworks/av/include/ndk
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 
 LOCAL_CFLAGS += -fvisibility=hidden -D EXPORT='__attribute__ ((visibility ("default")))'
 LOCAL_CFLAGS += -Wall -Wextra -Werror
@@ -49,9 +48,8 @@ LOCAL_SHARED_LIBRARIES := \
     libcamera_client \
     libstagefright_foundation \
     libcutils \
-    libcamera_metadata
-
-LOCAL_CLANG := true
+    libcamera_metadata \
+    libmediandk
 
 include $(BUILD_SHARED_LIBRARY)
 

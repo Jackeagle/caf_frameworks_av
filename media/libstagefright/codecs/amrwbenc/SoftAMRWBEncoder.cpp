@@ -59,7 +59,7 @@ SoftAMRWBEncoder::SoftAMRWBEncoder(
 
 SoftAMRWBEncoder::~SoftAMRWBEncoder() {
     if (mEncoderHandle != NULL) {
-        CHECK_EQ(VO_ERR_NONE, mApiHandle->Uninit(mEncoderHandle));
+        CHECK_EQ((VO_U32)VO_ERR_NONE, mApiHandle->Uninit(mEncoderHandle));
         mEncoderHandle = NULL;
     }
 
@@ -264,10 +264,6 @@ OMX_ERRORTYPE SoftAMRWBEncoder::internalSetParameter(
                 return OMX_ErrorUndefined;
             }
 
-            if (formatParams->nIndex > 0) {
-                return OMX_ErrorNoMore;
-            }
-
             if ((formatParams->nPortIndex == 0
                         && formatParams->eEncoding != OMX_AUDIO_CodingPCM)
                 || (formatParams->nPortIndex == 1
@@ -435,7 +431,7 @@ void SoftAMRWBEncoder::onQueueFilled(OMX_U32 /* portIndex */) {
         inputData.Buffer = (unsigned char *) mInputFrame;
         inputData.Length = mInputSize;
 
-        CHECK_EQ(VO_ERR_NONE,
+        CHECK_EQ((VO_U32)VO_ERR_NONE,
                  mApiHandle->SetInputData(mEncoderHandle, &inputData));
 
         VO_CODECBUFFER outputData;

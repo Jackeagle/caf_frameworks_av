@@ -20,17 +20,17 @@
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
-#include "drm_framework_common.h"
+#include <drm/drm_framework_common.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <DrmRights.h>
-#include <DrmConstraints.h>
-#include <DrmMetadata.h>
-#include <DrmInfo.h>
-#include <DrmInfoStatus.h>
-#include <DrmInfoRequest.h>
-#include <DrmSupportInfo.h>
-#include <DrmConvertedStatus.h>
+#include <drm/DrmRights.h>
+#include <drm/DrmConstraints.h>
+#include <drm/DrmMetadata.h>
+#include <drm/DrmInfo.h>
+#include <drm/DrmInfoStatus.h>
+#include <drm/DrmInfoRequest.h>
+#include <drm/DrmSupportInfo.h>
+#include <drm/DrmConvertedStatus.h>
 #include <utils/String8.h>
 #include "FwdLockConv.h"
 #include "FwdLockFile.h"
@@ -502,8 +502,8 @@ status_t FwdLockEngine::onOpenDecryptSession(int /* uniqueId */,
         int retVal = FwdLockFile_CheckHeaderIntegrity(fileDesc);
         DecodeSession* decodeSession = new DecodeSession(fileDesc);
 
-        if (retVal && NULL != decodeSession) {
-            decodeSessionMap.addValue(decryptHandle->decryptId, decodeSession);
+        if (retVal && NULL != decodeSession &&
+            decodeSessionMap.addValue(decryptHandle->decryptId, decodeSession)) {
             const char *pmime= FwdLockFile_GetContentType(fileDesc);
             String8 contentType = String8(pmime == NULL ? "" : pmime);
             contentType.toLower();
@@ -513,7 +513,11 @@ status_t FwdLockEngine::onOpenDecryptSession(int /* uniqueId */,
             decryptHandle->decryptInfo = NULL;
             result = DRM_NO_ERROR;
         } else {
-            LOG_VERBOSE("FwdLockEngine::onOpenDecryptSession Integrity Check failed for the fd");
+            if (retVal && NULL != decodeSession) {
+              LOG_VERBOSE("FwdLockEngine::onOpenDecryptSession Integrity Check failed for the fd");
+            } else {
+              LOG_VERBOSE("FwdLockEngine::onOpenDecryptSession DecodeSesssion insertion failed");
+            }
             FwdLockFile_detach(fileDesc);
             delete decodeSession;
         }
@@ -631,7 +635,7 @@ ssize_t FwdLockEngine::onRead(int /* uniqueId */,
     ssize_t size = -1;
 
     if (NULL != decryptHandle &&
-       decodeSessionMap.isCreated(decryptHandle->decryptId) &&
+        decodeSessionMap.isCreated(decryptHandle->decryptId) &&
         NULL != buffer &&
         numBytes > -1) {
         DecodeSession* session = decodeSessionMap.getValue(decryptHandle->decryptId);

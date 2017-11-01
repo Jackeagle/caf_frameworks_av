@@ -37,17 +37,23 @@ void *WebmFrameThread::wrap(void *arg) {
 }
 
 status_t WebmFrameThread::start() {
+    status_t err = OK;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    pthread_create(&mThread, &attr, WebmFrameThread::wrap, this);
+    if ((err = pthread_create(&mThread, &attr, WebmFrameThread::wrap, this))) {
+        mThread = 0;
+    }
     pthread_attr_destroy(&attr);
-    return OK;
+    return err;
 }
 
 status_t WebmFrameThread::stop() {
-    void *status;
-    pthread_join(mThread, &status);
+    void *status = nullptr;
+    if (mThread) {
+        pthread_join(mThread, &status);
+        mThread = 0;
+    }
     return (status_t)(intptr_t)status;
 }
 
@@ -118,7 +124,7 @@ void WebmFrameSinkThread::initCluster(
 
 void WebmFrameSinkThread::writeCluster(List<sp<WebmElement> >& children) {
     // children must contain at least one simpleblock and its timecode
-    CHECK_GE(children.size(), 2);
+    CHECK_GE(children.size(), 2u);
 
     uint64_t size;
     sp<WebmElement> cluster = new WebmMaster(kMkvCluster, children);
@@ -149,7 +155,7 @@ void WebmFrameSinkThread::flushFrames(List<const sp<WebmFrame> >& frames, bool l
         // flushing the second to last frame before we check its type. A audio frame
         // should precede the aforementioned video key frame in the next sequence, a video
         // frame should be the last frame in the current (to-be-flushed) sequence.
-        CHECK_GE(n, 2);
+        CHECK_GE(n, 2u);
         n -= 2;
     }
 

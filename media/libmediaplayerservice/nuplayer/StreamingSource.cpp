@@ -51,6 +51,22 @@ NuPlayer::StreamingSource::~StreamingSource() {
     }
 }
 
+status_t NuPlayer::StreamingSource::getDefaultBufferingSettings(
+        BufferingSettings *buffering /* nonnull */) {
+    *buffering = BufferingSettings();
+    return OK;
+}
+
+status_t NuPlayer::StreamingSource::setBufferingSettings(
+        const BufferingSettings &buffering) {
+    if (buffering.mInitialBufferingMode != BUFFERING_MODE_NONE
+            || buffering.mRebufferingMode != BUFFERING_MODE_NONE) {
+        return BAD_VALUE;
+    }
+
+    return OK;
+}
+
 void NuPlayer::StreamingSource::prepareAsync() {
     if (mLooper == NULL) {
         mLooper = new ALooper;
@@ -234,8 +250,7 @@ sp<AMessage> NuPlayer::StreamingSource::getFormat(bool audio) {
     }
     status_t err = convertMetaDataToMessage(meta, &format);
     if (err != OK) { // format may have been cleared on error
-        format = new AMessage;
-        format->setInt32("err", err);
+        return NULL;
     }
     return format;
 }
