@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 - 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013 - 2015,2017 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -38,6 +38,7 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/ACodec.h>
 #include <media/stagefright/MediaCodec.h>
+#include <cutils/properties.h>
 
 #include "common/ExtensionsLoader.hpp"
 #include "stagefright/AVExtensions.h"
@@ -166,6 +167,11 @@ void AVUtils::cacheCaptureBuffers(sp<ICamera>, video_encoder) {
 }
 
 const char *AVUtils::getCustomCodecsLocation() {
+    char value[PROPERTY_VALUE_MAX] = {0};
+    if (property_get("media.msm8905.version", value, "0") &&
+                atoi(value)) {
+        return "/etc/media_codecs_8905.xml";
+    }
     return "/etc/media_codecs.xml";
 }
 
