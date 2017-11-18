@@ -151,7 +151,7 @@ status_t LWOmxNode::allocateSecureBuffer(
                     hidl_handle const& outNativeHandle) {
                 fnStatus = toStatusT(status);
                 *buffer = outBuffer;
-                 *native_handle =  outNativeHandle == nullptr ?
+                *native_handle = outNativeHandle == nullptr ?
                                nullptr : NativeHandle::create(
                                native_handle_clone(outNativeHandle), true);
             }));
