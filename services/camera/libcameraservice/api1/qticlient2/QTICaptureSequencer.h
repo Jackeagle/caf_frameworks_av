@@ -1,3 +1,6 @@
+/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ */
 /*
  * Copyright (C) 2012 The Android Open Source Project
  *
@@ -14,8 +17,8 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_SERVERS_CAMERA_CAMERA2_CAPTURESEQUENCER_H
-#define ANDROID_SERVERS_CAMERA_CAMERA2_CAPTURESEQUENCER_H
+#ifndef ANDROID_SERVERS_CAMERA_CAMERA2_QTICAPTURESEQUENCER_H
+#define ANDROID_SERVERS_CAMERA_CAMERA2_QTICAPTURESEQUENCER_H
 
 #include <binder/MemoryBase.h>
 #include <utils/Thread.h>
@@ -28,6 +31,8 @@
 #include "Parameters.h"
 #include "FrameProcessor.h"
 
+#define MAX_BURST_COUNT_PER_SHUTTER 8
+
 namespace android {
 
 class Camera2Client;
@@ -35,25 +40,23 @@ class Camera2Client;
 namespace camera2 {
 
 class ZslProcessor;
-class QTICaptureSequencer;
 
 /**
  * Manages the still image capture process for
  * zero-shutter-lag, regular, and video snapshots.
  */
-class CaptureSequencer:
+class QTICaptureSequencer:
             virtual public Thread,
             virtual public FrameProcessor::FilteredListener {
   public:
-    sp<QTICaptureSequencer> mQTICaptureSequencer;
-    explicit CaptureSequencer(wp<Camera2Client> client);
-    ~CaptureSequencer();
+    QTICaptureSequencer(wp<Camera2Client> client);
+    ~QTICaptureSequencer();
 
     // Get reference to the ZslProcessor, which holds the ZSL buffers and frames
-    void setZslProcessor(const wp<ZslProcessor>& processor);
+    void setZslProcessor(wp<ZslProcessor> processor);
 
     // Begin still image capture
-    status_t startCapture(int msgType);
+    status_t startCapture(int msgType, bool& useQTISequencer);
 
     // Wait until current image capture completes; returns immediately if no
     // capture is active. Returns TIMED_OUT if capture does not complete during
@@ -71,9 +74,13 @@ class CaptureSequencer:
     virtual void onResultAvailable(const CaptureResult &result);
 
     // Notifications from the JPEG processor
-    void onCaptureAvailable(nsecs_t timestamp, const sp<MemoryBase>& captureBuffer, bool captureError);
+    void onCaptureAvailable(nsecs_t timestamp, sp<MemoryBase> captureBuffer, bool captureError);
 
-    void dump(int fd, const Vector<String16>& args);
+    void onRawCaptureAvailable(nsecs_t timestamp, sp<MemoryBase> captureBuffer, bool captureError);
+
+    void dump(int fd);
+
+    bool threadLoop();
 
   private:
     /**
@@ -91,20 +98,29 @@ class CaptureSequencer:
     Condition mNewNotifySignal;
 
     bool mNewFrameReceived;
-    int32_t mNewFrameId;
-    CameraMetadata mNewFrame;
+    int32_t mNewFrameId[MAX_BURST_COUNT_PER_SHUTTER];
+    CameraMetadata mNewFrame[MAX_BURST_COUNT_PER_SHUTTER];
     Condition mNewFrameSignal;
 
     bool mNewCaptureReceived;
+    bool mNewRawCaptureReceived;
     int32_t mNewCaptureErrorCnt;
-    nsecs_t mCaptureTimestamp;
-    sp<MemoryBase> mCaptureBuffer;
+    int32_t mNewRawCaptureErrorCnt;
+    nsecs_t mCaptureTimestamp[MAX_BURST_COUNT_PER_SHUTTER];
+    nsecs_t mRawCaptureTimestamp;
+    sp<MemoryBase> mCaptureBuffer[MAX_BURST_COUNT_PER_SHUTTER];
+    sp<MemoryBase> mRawCaptureBuffer;
     Condition mNewCaptureSignal;
+    Condition mNewRawCaptureSignal;
 
     bool mShutterNotified; // Has CaptureSequencer sent shutter to Client
     bool mHalNotifiedShutter; // Has HAL sent shutter to CaptureSequencer
     int32_t mShutterCaptureId; // The captureId which is waiting for shutter notification
     Condition mShutterNotifySignal;
+
+    uint8_t mCaptureReceivedCount;
+    uint8_t mResultCount;
+    uint8_t mBurstCount;
 
     /**
      * Internal to CaptureSequencer
@@ -117,8 +133,6 @@ class CaptureSequencer:
 
     wp<Camera2Client> mClient;
     wp<ZslProcessor> mZslProcessor;
-
-    bool mUseQTICaptureSequencer;
 
     enum CaptureState {
         IDLE,
@@ -139,10 +153,10 @@ class CaptureSequencer:
     Mutex mStateMutex; // Guards mCaptureState
     Condition mStateChanged;
 
-    typedef CaptureState (CaptureSequencer::*StateManager)(sp<Camera2Client> &client);
+    typedef CaptureState (QTICaptureSequencer::*StateManager)(sp<Camera2Client> &client);
     static const StateManager kStateManagers[];
 
-    CameraMetadata mCaptureRequest;
+    Vector<CameraMetadata> mCaptureRequests;
 
     int mTriggerId;
     int mTimeoutCount;
@@ -151,9 +165,9 @@ class CaptureSequencer:
     int32_t mCaptureId;
     int mMsgType;
 
-    // Main internal methods
+    sp<MemoryHeapBase> mCaptureHeap[MAX_BURST_COUNT_PER_SHUTTER];
 
-    virtual bool threadLoop();
+    // Main internal methods
 
     CaptureState manageIdle(sp<Camera2Client> &client);
     CaptureState manageStart(sp<Camera2Client> &client);
@@ -176,7 +190,7 @@ class CaptureSequencer:
 
     // Emit Shutter/Raw callback to java, and maybe play a shutter sound
     static void shutterNotifyLocked(const Parameters &params,
-            const sp<Camera2Client>& client, int msgType);
+            sp<Camera2Client> client, int msgType);
 };
 
 }; // namespace camera2
