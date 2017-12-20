@@ -28,6 +28,7 @@
 #include "api1/qticlient2/CaptureSequencer.h"
 #include "api1/qticlient2/Parameters.h"
 #include "api1/qticlient2/ZslProcessor.h"
+#include "api1/qticlient2/QTICaptureSequencer.h"
 
 namespace android {
 namespace camera2 {
@@ -53,15 +54,26 @@ CaptureSequencer::CaptureSequencer(wp<Camera2Client> client):
         mCaptureId(Camera2Client::kCaptureRequestIdStart),
         mMsgType(0) {
     ALOGV("%s", __FUNCTION__);
+
+    mUseQTICaptureSequencer = false;
+    mQTICaptureSequencer = new QTICaptureSequencer(client);
+    mQTICaptureSequencer->run("QTICaptureSeq");
 }
 
 CaptureSequencer::~CaptureSequencer() {
     ALOGV("%s: Exit", __FUNCTION__);
+    if (mQTICaptureSequencer != NULL) {
+        mQTICaptureSequencer->requestExit();
+        ALOGV("%s: Waiting for thread", __FUNCTION__);
+        mQTICaptureSequencer->join();
+    }
+
 }
 
 void CaptureSequencer::setZslProcessor(const wp<ZslProcessor>& processor) {
     Mutex::Autolock l(mInputMutex);
     mZslProcessor = processor;
+    mQTICaptureSequencer->setZslProcessor(processor);
 }
 
 status_t CaptureSequencer::startCapture(int msgType) {
@@ -72,6 +84,13 @@ status_t CaptureSequencer::startCapture(int msgType) {
         ALOGE("%s: Already busy capturing!", __FUNCTION__);
         return INVALID_OPERATION;
     }
+
+    mQTICaptureSequencer->startCapture(msgType, mUseQTICaptureSequencer);
+    if(mUseQTICaptureSequencer) {
+        // Use QTI specific capture sequencer
+        return OK;
+    }
+
     if (!mStartCapture) {
         mMsgType = msgType;
         mStartCapture = true;
@@ -82,6 +101,10 @@ status_t CaptureSequencer::startCapture(int msgType) {
 
 status_t CaptureSequencer::waitUntilIdle(nsecs_t timeout) {
     ATRACE_CALL();
+    if(mUseQTICaptureSequencer) {
+        // Use QTI specific capture sequencer
+        return mQTICaptureSequencer->waitUntilIdle(timeout);
+    }
     ALOGV("%s: Waiting for idle", __FUNCTION__);
     Mutex::Autolock l(mStateMutex);
     status_t res = -1;
@@ -106,11 +129,17 @@ void CaptureSequencer::notifyAutoExposure(uint8_t newState, int triggerId) {
         mNewAEState = true;
         mNewNotifySignal.signal();
     }
+
+    mQTICaptureSequencer->notifyAutoExposure(newState, triggerId);
 }
 
 void CaptureSequencer::notifyShutter(const CaptureResultExtras& resultExtras,
                                      nsecs_t timestamp) {
     ATRACE_CALL();
+    if(mUseQTICaptureSequencer) {
+        // Use QTI specific capture sequencer
+        return mQTICaptureSequencer->notifyShutter(resultExtras, timestamp);
+    }
     (void) timestamp;
     Mutex::Autolock l(mInputMutex);
     if (!mHalNotifiedShutter && resultExtras.requestId == mShutterCaptureId) {
@@ -121,6 +150,10 @@ void CaptureSequencer::notifyShutter(const CaptureResultExtras& resultExtras,
 
 void CaptureSequencer::onResultAvailable(const CaptureResult &result) {
     ATRACE_CALL();
+    if(mUseQTICaptureSequencer) {
+        // Use QTI specific capture sequencer
+        return mQTICaptureSequencer->onResultAvailable(result);
+    }
     ALOGV("%s: New result available.", __FUNCTION__);
     Mutex::Autolock l(mInputMutex);
     mNewFrameId = result.mResultExtras.requestId;
@@ -134,6 +167,10 @@ void CaptureSequencer::onResultAvailable(const CaptureResult &result) {
 void CaptureSequencer::onCaptureAvailable(nsecs_t timestamp,
         const sp<MemoryBase>& captureBuffer, bool captureError) {
     ATRACE_CALL();
+    if(mUseQTICaptureSequencer) {
+        // Use QTI specific capture sequencer
+        return mQTICaptureSequencer->onCaptureAvailable(timestamp, captureBuffer, captureError);
+    }
     ALOGV("%s", __FUNCTION__);
     Mutex::Autolock l(mInputMutex);
     mCaptureTimestamp = timestamp;
@@ -152,6 +189,10 @@ void CaptureSequencer::onCaptureAvailable(nsecs_t timestamp,
 
 void CaptureSequencer::dump(int fd, const Vector<String16>& /*args*/) {
     String8 result;
+    if(mUseQTICaptureSequencer) {
+        // Use QTI specific capture sequencer
+        return mQTICaptureSequencer->dump(fd);
+    }
     if (mCaptureRequest.entryCount() != 0) {
         result = "    Capture request:\n";
         write(fd, result.string(), result.size());
