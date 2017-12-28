@@ -578,6 +578,10 @@ status_t MyOpusExtractor::readNextPacket(MediaBuffer **out) {
             }
             // First two pages are header pages.
             if (err == ERROR_END_OF_STREAM || mCurrentPage.mPageNo > 2) {
+                if (mBuf != NULL) {
+                    mBuf->release();
+                    mBuf = NULL;
+                }
                 break;
             }
             curGranulePosition = mCurrentPage.mGranulePosition;
@@ -697,7 +701,21 @@ status_t MyOggExtractor::_readNextPacket(MediaBuffer **out, bool calcVorbisTimes
             if (buffer != NULL) {
                 fullSize += buffer->range_length();
             }
-            MediaBuffer *tmp = new MediaBuffer(fullSize);
+            if (fullSize > 16 * 1024 * 1024) { // arbitrary limit of 16 MB packet size
+                if (buffer != NULL) {
+                    buffer->release();
+                }
+                ALOGE("b/36592202");
+                return ERROR_MALFORMED;
+            }
+            MediaBuffer *tmp = new (std::nothrow) MediaBuffer(fullSize);
+            if (tmp == NULL) {
+                if (buffer != NULL) {
+                    buffer->release();
+                }
+                ALOGE("b/36592202");
+                return ERROR_MALFORMED;
+            }
             if (buffer != NULL) {
                 memcpy(tmp->data(), buffer->data(), buffer->range_length());
                 tmp->set_range(0, buffer->range_length());
