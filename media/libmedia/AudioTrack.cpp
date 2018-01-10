@@ -2105,7 +2105,9 @@ nsecs_t AudioTrack::processAudioBuffer()
             misalignment = 0;
         }
 
-        releaseBuffer(&audioBuffer);
+        if (sequence == mSequence) {
+            releaseBuffer(&audioBuffer);
+        }
 
         // FIXME here is where we would repeat EVENT_MORE_DATA again on same advanced buffer
         // if callback doesn't like to accept the full chunk
