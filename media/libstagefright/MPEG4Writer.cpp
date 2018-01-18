@@ -51,6 +51,8 @@
 #include "include/ESDS.h"
 #include "include/HevcUtils.h"
 
+#include <stagefright/AVExtensions.h>
+
 #ifndef __predict_false
 #define __predict_false(exp) __builtin_expect((exp) != 0, 0)
 #endif
@@ -615,9 +617,14 @@ status_t MPEG4Writer::addSource(const sp<MediaSource> &source) {
 
     const char *mime;
     source->getFormat()->findCString(kKeyMIMEType, &mime);
-
+    bool isAudio = !strncasecmp(mime, "audio/", 6);
     if (Track::getFourCCForMime(mime) == NULL) {
         ALOGE("Unsupported mime '%s'", mime);
+        return ERROR_UNSUPPORTED;
+    }
+
+    if (isAudio && !AVUtils::get()->isAudioMuxFormatSupported(mime)) {
+        ALOGE("Muxing is not supported for %s", mime);
         return ERROR_UNSUPPORTED;
     }
 
@@ -736,7 +743,7 @@ int64_t MPEG4Writer::estimateMoovBoxSize(int32_t bitRate) {
 
     // If the estimation is wrong, we will pay the price of wasting
     // some reserved space. This should not happen so often statistically.
-    static const int32_t factor = mUse32BitOffset? 1: 2;
+    int32_t factor = mUse32BitOffset? 1: 2;
     static const int64_t MIN_MOOV_BOX_SIZE = 3 * 1024;  // 3 KB
     static const int64_t MAX_MOOV_BOX_SIZE = (180 * 3000000 * 6LL / 8000);
     int64_t size = MIN_MOOV_BOX_SIZE;
@@ -1391,7 +1398,7 @@ off64_t MPEG4Writer::addSample_l(
     return old_offset;
 }
 
-static void StripStartcode(MediaBuffer *buffer) {
+void MPEG4Writer:: StripStartcode(MediaBuffer *buffer) {
     if (buffer->range_length() < 4) {
         return;
     }

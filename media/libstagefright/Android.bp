@@ -180,6 +180,7 @@ cc_library {
         "libbinder",
         "libcamera_client",
         "libcutils",
+        "libcrypto",
         "libdl",
         "libdl_android",
         "libdrmframework",
@@ -219,6 +220,10 @@ cc_library {
         "libFLAC",
     ],
 
+    whole_static_libs: [
+        "libavextensions"
+    ],
+
     header_libs:[
         "libnativeloader-dummy-headers",
         "libstagefright_xmlparser_headers",
@@ -234,6 +239,12 @@ cc_library {
 
     export_include_dirs: [
         "include",
+
+    ],
+
+    include_dirs: [
+        "frameworks/av/media/libavextensions",
+        "frameworks/av/media/libstagefright/mpeg2ts",
     ],
 
     cflags: [
