@@ -4830,6 +4830,7 @@ AudioFlinger::DirectOutputThread::DirectOutputThread(const sp<AudioFlinger>& aud
     :   PlaybackThread(audioFlinger, output, id, device, DIRECT, systemReady)
         // mLeftVolFloat, mRightVolFloat
         , mVolumeShaperActive(false), mFramesWrittenAtStandby(0)
+        , mFramesWrittenForSleep(0)
 {
 }
 
@@ -4839,6 +4840,7 @@ AudioFlinger::DirectOutputThread::DirectOutputThread(const sp<AudioFlinger>& aud
     :   PlaybackThread(audioFlinger, output, id, device, type, systemReady)
         // mLeftVolFloat, mRightVolFloat
         , mVolumeShaperActive(false), mFramesWrittenAtStandby(0)
+        , mFramesWrittenForSleep(0)
 {
 }
 
@@ -5173,6 +5175,7 @@ void AudioFlinger::DirectOutputThread::threadLoop_sleepTime()
     } else if (mBytesWritten != 0 && audio_has_proportional_frames(mFormat)) {
         memset(mSinkBuffer, 0, mFrameCount * mFrameSize);
         mSleepTimeUs = 0;
+        mFramesWrittenForSleep += mFrameCount;
     }
 }
 
@@ -5225,6 +5228,8 @@ bool AudioFlinger::DirectOutputThread::shouldStandby_l()
         struct timespec ts;
         if (NO_ERROR == mOutput->getPresentationPosition(&position64, &ts)) {
             mFramesWrittenAtStandby = position64;
+            // reset mFramesWrittenForSleep as mFramesWrittenAtStandby includes it
+            mFramesWrittenForSleep = 0;
         }
     }
     return standbyForDirectPcm || standbyWhenIdle;
@@ -5352,6 +5357,7 @@ void AudioFlinger::DirectOutputThread::flushHw_l()
     mHwPaused = false;
     mFlushPending = false;
     mFramesWrittenAtStandby = 0;
+    mFramesWrittenForSleep = 0;
 }
 
 status_t AudioFlinger::DirectOutputThread::getTimestamp_l(AudioTimestamp& timestamp)
@@ -5360,7 +5366,7 @@ status_t AudioFlinger::DirectOutputThread::getTimestamp_l(AudioTimestamp& timest
         uint64_t position64;
         if (mOutput->getPresentationPosition(&position64, &timestamp.mTime) == OK) {
             timestamp.mPosition = (position64 <= mFramesWrittenAtStandby) ?
-                   0 : (uint32_t) (position64 - mFramesWrittenAtStandby);
+                   0 : (uint32_t) (position64 - mFramesWrittenAtStandby-mFramesWrittenForSleep);
             return NO_ERROR;
         }
     }
