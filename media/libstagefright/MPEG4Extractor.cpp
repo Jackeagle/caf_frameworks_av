@@ -931,6 +931,12 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 ALOGE("moov: depth %d", depth);
                 return ERROR_MALFORMED;
             }
+
+            if (chunk_type == FOURCC('m', 'o', 'o', 'v') && mInitCheck == OK) {
+                ALOGE("duplicate moov");
+                return ERROR_MALFORMED;
+            }
+
             if (chunk_type == FOURCC('s', 't', 'b', 'l')) {
                 ALOGV("sampleTable chunk is %d bytes long.", (size_t)chunk_size);
 
@@ -995,6 +1001,12 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 if (!mLastTrack->meta->findInt32(kKeyTrackID, &trackId)) {
                     mLastTrack->skipTrack = true;
                 }
+
+                status_t err = verifyTrack(mLastTrack);
+                if (err != OK) {
+                    mLastTrack->skipTrack = true;
+                }
+
                 if (mLastTrack->skipTrack) {
                     Track *cur = mFirstTrack;
 
@@ -1011,12 +1023,6 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                     }
 
                     return OK;
-                }
-
-                status_t err = verifyTrack(mLastTrack);
-
-                if (err != OK) {
-                    return err;
                 }
             } else if (chunk_type == FOURCC('m', 'o', 'o', 'v')) {
                 mInitCheck = OK;
