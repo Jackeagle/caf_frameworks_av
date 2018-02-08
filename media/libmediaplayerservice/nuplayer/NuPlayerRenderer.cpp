@@ -1927,6 +1927,7 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
             offloadInfo.sample_rate = sampleRate;
             offloadInfo.channel_mask = channelMask;
             offloadInfo.format = audioFormat;
+            offloadInfo.bit_width = bitWidth;
             offloadInfo.stream_type = AUDIO_STREAM_MUSIC;
             offloadInfo.bit_rate = avgBitRate;
             offloadInfo.has_video = hasVideo;

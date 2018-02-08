@@ -35,9 +35,8 @@ bool IOProfile::isCompatibleProfile(audio_devices_t device,
                                     audio_format_t *updatedFormat,
                                     audio_channel_mask_t channelMask,
                                     audio_channel_mask_t *updatedChannelMask,
-                                    // FIXME type punning here
                                     uint32_t flags,
-                                    bool exactMatchRequiredForInputFlags) const
+                                    bool checkExactFormat) const
 {
     const bool isPlaybackThread =
             getType() == AUDIO_PORT_TYPE_MIX && getRole() == AUDIO_PORT_ROLE_SOURCE;
@@ -69,7 +68,7 @@ bool IOProfile::isCompatibleProfile(audio_devices_t device,
     if (isRecordThread)
     {
         if (checkCompatibleAudioProfile(
-                myUpdatedSamplingRate, myUpdatedChannelMask, myUpdatedFormat) != NO_ERROR) {
+                myUpdatedSamplingRate, myUpdatedChannelMask, myUpdatedFormat, checkExactFormat) != NO_ERROR) {
             return false;
         }
     } else {
@@ -92,7 +91,7 @@ bool IOProfile::isCompatibleProfile(audio_devices_t device,
     // An existing normal stream is compatible with a fast track request,
     // but the fast request will be denied by AudioFlinger and converted to normal track.
     if (isRecordThread && ((getFlags() ^ flags) &
-            ~(exactMatchRequiredForInputFlags ? AUDIO_INPUT_FLAG_NONE : AUDIO_INPUT_FLAG_FAST))) {
+            ~(AUDIO_INPUT_FLAG_FAST))) {
         return false;
     }
 
