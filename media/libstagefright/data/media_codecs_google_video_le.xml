@@ -45,7 +45,7 @@
         </MediaCodec>
         <MediaCodec name="OMX.google.hevc.decoder" type="video/hevc">
             <!-- profiles and levels:  ProfileMain : MainTierLevel51 -->
-            <Limit name="size" min="2x2" max="1280x1280" />
+            <Limit name="size" min="2x2" max="720x480" />
             <Limit name="alignment" value="2x2" />
             <Limit name="block-size" value="8x8" />
             <Limit name="block-count" range="1-139264" />
