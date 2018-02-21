@@ -61,6 +61,7 @@
 #include <utils/Log.h>
 #include <utils/Singleton.h>
 #include <stagefright/AVExtensions.h>
+#include <common/LogOverride.h>
 
 namespace android {
 
@@ -756,6 +757,9 @@ status_t MediaCodec::configure(
     msg->setMessage("format", format);
     msg->setInt32("flags", flags);
     msg->setObject("surface", surface);
+    if (flags & CONFIGURE_FLAG_ENCODE) {
+        msg->setInt32("encoder", 1);
+    }
 
     if (crypto != NULL || descrambler != NULL) {
         if (crypto != NULL) {
