@@ -673,7 +673,10 @@ void MediaPlayerService::Client::disconnect()
         p->reset();
     }
 
-    disconnectNativeWindow();
+    {
+        Mutex::Autolock l(mLock);
+        disconnectNativeWindow_l();
+    }
 
     IPCThreadState::self()->flushCommands();
 }
@@ -759,29 +762,29 @@ sp<MediaPlayerBase> MediaPlayerService::Client::setDataSource_pre(
     return p;
 }
 
-void MediaPlayerService::Client::setDataSource_post(
+status_t MediaPlayerService::Client::setDataSource_post(
         const sp<MediaPlayerBase>& p,
         status_t status)
 {
     ALOGV(" setDataSource");
-    mStatus = status;
-    if (mStatus != OK) {
-        ALOGE("  error: %d", mStatus);
-        return;
+    if (status != OK) {
+        ALOGE("  error: %d", status);
+        return status;
     }
 
     // Set the re-transmission endpoint if one was chosen.
     if (mRetransmitEndpointValid) {
-        mStatus = p->setRetransmitEndpoint(&mRetransmitEndpoint);
-        if (mStatus != NO_ERROR) {
-            ALOGE("setRetransmitEndpoint error: %d", mStatus);
+        status = p->setRetransmitEndpoint(&mRetransmitEndpoint);
+        if (status != NO_ERROR) {
+            ALOGE("setRetransmitEndpoint error: %d", status);
         }
     }
 
-    if (mStatus == OK) {
-        Mutex::Autolock l(mLock);
+    if (status == OK) {
+        Mutex::Autolock lock(mLock);
         mPlayer = p;
     }
+    return status;
 }
 
 status_t MediaPlayerService::Client::setDataSource(
@@ -812,9 +815,9 @@ status_t MediaPlayerService::Client::setDataSource(
             ALOGE("Couldn't open fd for %s", url);
             return UNKNOWN_ERROR;
         }
-        setDataSource(fd, 0, 0x7fffffffffLL); // this sets mStatus
+        status_t status = setDataSource(fd, 0, 0x7fffffffffLL); // this sets mStatus
         close(fd);
-        return mStatus;
+        return mStatus = status;
     } else {
         player_type playerType = MediaPlayerFactory::getPlayerType(this, url);
         sp<MediaPlayerBase> p = setDataSource_pre(playerType);
@@ -822,8 +825,9 @@ status_t MediaPlayerService::Client::setDataSource(
             return NO_INIT;
         }
 
-        setDataSource_post(p, p->setDataSource(httpService, url, headers));
-        return mStatus;
+        return mStatus =
+                setDataSource_post(
+                p, p->setDataSource(httpService, url, headers));
     }
 }
 
@@ -862,8 +866,7 @@ status_t MediaPlayerService::Client::setDataSource(int fd, int64_t offset, int64
     }
 
     // now set data source
-    setDataSource_post(p, p->setDataSource(fd, offset, length));
-    return mStatus;
+    return mStatus = setDataSource_post(p, p->setDataSource(fd, offset, length));
 }
 
 status_t MediaPlayerService::Client::setDataSource(
@@ -876,8 +879,7 @@ status_t MediaPlayerService::Client::setDataSource(
     }
 
     // now set data source
-    setDataSource_post(p, p->setDataSource(source));
-    return mStatus;
+    return mStatus = setDataSource_post(p, p->setDataSource(source));
 }
 
 status_t MediaPlayerService::Client::setDataSource(
@@ -889,11 +891,10 @@ status_t MediaPlayerService::Client::setDataSource(
         return NO_INIT;
     }
     // now set data source
-    setDataSource_post(p, p->setDataSource(dataSource));
-    return mStatus;
+    return mStatus = setDataSource_post(p, p->setDataSource(dataSource));
 }
 
-void MediaPlayerService::Client::disconnectNativeWindow() {
+void MediaPlayerService::Client::disconnectNativeWindow_l() {
     if (mConnectedWindow != NULL) {
         status_t err = native_window_api_disconnect(mConnectedWindow.get(),
                 NATIVE_WINDOW_API_MEDIA);
@@ -931,7 +932,8 @@ status_t MediaPlayerService::Client::setVideoSurfaceTexture(
             // ANW, which may result in errors.
             reset();
 
-            disconnectNativeWindow();
+            Mutex::Autolock lock(mLock);
+            disconnectNativeWindow_l();
 
             return err;
         }
@@ -942,14 +944,22 @@ status_t MediaPlayerService::Client::setVideoSurfaceTexture(
     // on the disconnected ANW, which may result in errors.
     status_t err = p->setVideoSurfaceTexture(bufferProducer);
 
-    disconnectNativeWindow();
-
-    mConnectedWindow = anw;
+    mLock.lock();
+    disconnectNativeWindow_l();
 
     if (err == OK) {
+        mConnectedWindow = anw;
         mConnectedWindowBinder = binder;
+        mLock.unlock();
     } else {
-        disconnectNativeWindow();
+        mLock.unlock();
+        status_t err = native_window_api_disconnect(
+                anw.get(), NATIVE_WINDOW_API_MEDIA);
+
+        if (err != OK) {
+            ALOGW("native_window_api_disconnect returned an error: %s (%d)",
+                    strerror(-err), err);
+        }
     }
 
     return err;
@@ -1305,9 +1315,11 @@ status_t MediaPlayerService::Client::setRetransmitEndpoint(
     if (p != 0) return INVALID_OPERATION;
 
     if (NULL != endpoint) {
+        Mutex::Autolock lock(mLock);
         mRetransmitEndpoint = *endpoint;
         mRetransmitEndpointValid = true;
     } else {
+        Mutex::Autolock lock(mLock);
         mRetransmitEndpointValid = false;
     }
 
@@ -1325,6 +1337,7 @@ status_t MediaPlayerService::Client::getRetransmitEndpoint(
     if (p != NULL)
         return p->getRetransmitEndpoint(endpoint);
 
+    Mutex::Autolock lock(mLock);
     if (!mRetransmitEndpointValid)
         return NO_INIT;
 
