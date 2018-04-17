@@ -2143,6 +2143,7 @@ void AudioPolicyManager::closeAllInputs() {
         }
         inputDesc->close();
     }
+    mInputRoutes.clear();
     mInputs.clear();
     SoundTrigger::setCaptureState(false);
     nextAudioPortGeneration();
@@ -3787,6 +3788,16 @@ status_t AudioPolicyManager::initialize() {
         ALOGE("Default device %08x is unreachable", mDefaultOutputDevice->type());
         status = NO_INIT;
     }
+    // If microphones address is empty, set it according to device type
+    for (size_t i = 0; i  < mAvailableInputDevices.size(); i++) {
+        if (mAvailableInputDevices[i]->mAddress.isEmpty()) {
+            if (mAvailableInputDevices[i]->type() == AUDIO_DEVICE_IN_BUILTIN_MIC) {
+                mAvailableInputDevices[i]->mAddress = String8(AUDIO_BOTTOM_MICROPHONE_ADDRESS);
+            } else if (mAvailableInputDevices[i]->type() == AUDIO_DEVICE_IN_BACK_MIC) {
+                mAvailableInputDevices[i]->mAddress = String8(AUDIO_BACK_MICROPHONE_ADDRESS);
+            }
+        }
+    }
 
     if (mPrimaryOutput == 0) {
         ALOGE("Failed to open primary output");
@@ -5144,7 +5155,8 @@ float AudioPolicyManager::computeVolume(audio_stream_type_t stream,
     }
 
     // in-call: always cap earpiece volume by voice volume + some low headroom
-    if ((stream != AUDIO_STREAM_VOICE_CALL) && (device & AUDIO_DEVICE_OUT_EARPIECE) && isInCall()) {
+    if ((stream != AUDIO_STREAM_VOICE_CALL) && (device & AUDIO_DEVICE_OUT_EARPIECE) &&
+            (isInCall() || mOutputs.isStreamActiveLocally(AUDIO_STREAM_VOICE_CALL))) {
         switch (stream) {
         case AUDIO_STREAM_SYSTEM:
         case AUDIO_STREAM_RING:
@@ -5154,8 +5166,11 @@ float AudioPolicyManager::computeVolume(audio_stream_type_t stream,
         case AUDIO_STREAM_ENFORCED_AUDIBLE:
         case AUDIO_STREAM_DTMF:
         case AUDIO_STREAM_ACCESSIBILITY: {
-            const float maxVoiceVolDb = computeVolume(AUDIO_STREAM_VOICE_CALL, index, device)
-                    + IN_CALL_EARPIECE_HEADROOM_DB;
+            int voiceVolumeIndex =
+                mVolumeCurves->getVolumeIndex(AUDIO_STREAM_VOICE_CALL, AUDIO_DEVICE_OUT_EARPIECE);
+            const float maxVoiceVolDb =
+                computeVolume(AUDIO_STREAM_VOICE_CALL, voiceVolumeIndex, AUDIO_DEVICE_OUT_EARPIECE)
+                + IN_CALL_EARPIECE_HEADROOM_DB;
             if (volumeDB > maxVoiceVolDb) {
                 ALOGV("computeVolume() stream %d at vol=%f overriden by stream %d at vol=%f",
                         stream, volumeDB, AUDIO_STREAM_VOICE_CALL, maxVoiceVolDb);
