@@ -105,7 +105,7 @@ NuPlayerDriver::NuPlayerDriver(pid_t pid)
 
     mLooper->registerHandler(mPlayer);
 
-    mPlayer->setDriver(this);
+    mPlayer->init(this);
 }
 
 NuPlayerDriver::~NuPlayerDriver() {
@@ -669,6 +669,11 @@ status_t NuPlayerDriver::reset() {
 
     if (mState != STATE_STOPPED) {
         notifyListener_l(MEDIA_STOPPED);
+    }
+
+    if (property_get_bool("persist.debug.sf.stats", false)) {
+        Vector<String16> args;
+        dump(-1, args);
     }
 
     mState = STATE_RESET_IN_PROGRESS;
