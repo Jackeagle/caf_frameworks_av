@@ -1773,6 +1773,11 @@ status_t StagefrightRecorder::setupVideoEncoder(
         format->setInt32("android._input-metadata-buffer-type", mMetaDataStoredInVideoBuffers);
     }
 
+    if (mOutputFormat == OUTPUT_FORMAT_MPEG_4) {
+        format->setInt32("feature-nal-length-bitstream", 1);
+        format->setInt32("nal-length-in-bytes", 4);
+    }
+
     uint32_t flags = 0;
     if (cameraSource == NULL) {
         flags |= MediaCodecSource::FLAG_USE_SURFACE_INPUT;
@@ -1842,7 +1847,7 @@ status_t StagefrightRecorder::setupMPEG4orWEBMRecording() {
     if (mOutputFormat == OUTPUT_FORMAT_WEBM) {
         writer = new WebmWriter(mOutputFd);
     } else {
-        writer = mp4writer = AVFactory::get()->CreateMPEG4Writer(mOutputFd);
+        writer = mp4writer = new MPEG4Writer(mOutputFd);
     }
 
     if (mVideoSource < VIDEO_SOURCE_LIST_END) {

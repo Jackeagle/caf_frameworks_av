@@ -228,6 +228,7 @@ enum {
     kKeyExifOffset       = 'exof', // int64_t, Exif data offset
     kKeyExifSize         = 'exsz', // int64_t, Exif data size
     kKeyIsExif           = 'exif', // bool (int32_t) buffer contains exif data block
+    kKeyFeatureNalLengthBitstream = 'nlbs', // int32_t key to check nal length bistream
 };
 
 enum {
