@@ -321,8 +321,13 @@ static const char *FourCC2MIME(uint32_t fourcc) {
         case FOURCC('h', 'e', 'v', '1'):
             return MEDIA_MIMETYPE_VIDEO_HEVC;
         default:
-            CHECK(!"should not be here.");
-            return NULL;
+            ALOGW("Unknown fourcc: %c%c%c%c",
+                   (fourcc >> 24) & 0xff,
+                   (fourcc >> 16) & 0xff,
+                   (fourcc >> 8) & 0xff,
+                   fourcc & 0xff
+                   );
+            return "application/octet-stream";
     }
 }
 
@@ -1123,19 +1128,33 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
 
         case FOURCC('t', 'r', 'e', 'f'):
         {
-            *offset += chunk_size;
-
-            if (mLastTrack == NULL) {
+            off64_t stop_offset = *offset + chunk_size;
+            *offset = data_offset;
+            while (*offset < stop_offset) {
+                status_t err = parseChunk(offset, depth + 1);
+                if (err != OK) {
+                    return err;
+                }
+            }
+            if (*offset != stop_offset) {
                 return ERROR_MALFORMED;
             }
+            break;
+        }
 
-            // Skip thumbnail track for now since we don't have an
-            // API to retrieve it yet.
-            // The thumbnail track can't be accessed by negative index or time,
-            // because each timed sample has its own corresponding thumbnail
-            // in the thumbnail track. We'll need a dedicated API to retrieve
-            // thumbnail at time instead.
-            mLastTrack->skipTrack = true;
+        case FOURCC('t', 'h', 'm', 'b'):
+        {
+            *offset += chunk_size;
+
+            if (mLastTrack != NULL) {
+                // Skip thumbnail track for now since we don't have an
+                // API to retrieve it yet.
+                // The thumbnail track can't be accessed by negative index or time,
+                // because each timed sample has its own corresponding thumbnail
+                // in the thumbnail track. We'll need a dedicated API to retrieve
+                // thumbnail at time instead.
+                mLastTrack->skipTrack = true;
+            }
 
             break;
         }
@@ -2353,7 +2372,9 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                     // This means that the file should have moov box.
                     // It could be any iso files (mp4, heifs, etc.)
                     mHasMoovBox = true;
-                    ALOGV("identified HEIF image with other tracks");
+                    if (mIsHeif) {
+                        ALOGV("identified HEIF image with other tracks");
+                    }
                 }
             }
 

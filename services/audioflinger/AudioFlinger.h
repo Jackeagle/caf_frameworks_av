@@ -19,8 +19,11 @@
 #define ANDROID_AUDIO_FLINGER_H
 
 #include "Configuration.h"
+#include <atomic>
+#include <mutex>
 #include <deque>
 #include <map>
+#include <vector>
 #include <stdint.h>
 #include <sys/types.h>
 #include <limits.h>
@@ -794,6 +797,8 @@ private:
     void        setAudioHwSyncForSession_l(PlaybackThread *thread, audio_session_t sessionId);
 
     status_t    checkStreamType(audio_stream_type_t stream) const;
+
+    void        filterReservedParameters(String8& keyValuePairs, uid_t callingUid);
 
 #ifdef TEE_SINK
     // all record threads serially share a common tee sink, which is re-created on format change

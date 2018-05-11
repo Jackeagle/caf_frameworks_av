@@ -498,7 +498,8 @@ protected:
     status_t setupHEVCEncoderParameters(const sp<AMessage> &msg, sp<AMessage> &outputFormat);
     status_t setupVPXEncoderParameters(const sp<AMessage> &msg, sp<AMessage> &outputFormat);
 
-    status_t verifySupportForProfileAndLevel(int32_t profile, int32_t level);
+    status_t verifySupportForProfileAndLevel(
+            OMX_U32 portIndex, int32_t profile, int32_t level);
 
     status_t configureImageGrid(const sp<AMessage> &msg, sp<AMessage> &outputFormat);
     status_t configureBitrate(
@@ -573,6 +574,10 @@ protected:
 
     virtual status_t getVQZIPInfo(const sp<AMessage> &msg __unused) {
         return OK;
+    }
+
+    virtual bool getDSModeHint(const sp<AMessage>& msg __unused, int64_t timeUs __unused) {
+       return false;
     }
 
     sp<IOMXObserver> createObserver();

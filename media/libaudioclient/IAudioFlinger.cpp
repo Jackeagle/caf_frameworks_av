@@ -24,6 +24,7 @@
 
 #include <binder/IPCThreadState.h>
 #include <binder/Parcel.h>
+#include <cutils/multiuser.h>
 #include <media/TimeCheck.h>
 #include <private/android_filesystem_config.h>
 
@@ -87,7 +88,7 @@ enum {
     GET_AUDIO_HW_SYNC_FOR_SESSION,
     SYSTEM_READY,
     FRAME_COUNT_HAL,
-    LIST_MICROPHONES,
+    GET_MICROPHONES,
 };
 
 #define MAX_ITEMS_PER_LIST 1024
@@ -849,7 +850,7 @@ public:
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
-        status_t status = remote()->transact(LIST_MICROPHONES, data, &reply);
+        status_t status = remote()->transact(GET_MICROPHONES, data, &reply);
         if (status != NO_ERROR ||
                 (status = (status_t)reply.readInt32()) != NO_ERROR) {
             return status;
@@ -904,8 +905,7 @@ status_t BnAudioFlinger::onTransact(
         case SET_MIC_MUTE:
         case SET_LOW_RAM_DEVICE:
         case SYSTEM_READY: {
-            uid_t multiUserClientUid = IPCThreadState::self()->getCallingUid() % AID_USER_OFFSET;
-            if (multiUserClientUid >= AID_APP_START) {
+            if (multiuser_get_app_id(IPCThreadState::self()->getCallingUid()) >= AID_APP_START) {
                 ALOGW("%s: transaction %d received from PID %d unauthorized UID %d",
                       __func__, code, IPCThreadState::self()->getCallingPid(),
                       IPCThreadState::self()->getCallingUid());
@@ -1444,7 +1444,7 @@ status_t BnAudioFlinger::onTransact(
             reply->writeInt64( frameCountHAL((audio_io_handle_t) data.readInt32()) );
             return NO_ERROR;
         } break;
-        case LIST_MICROPHONES: {
+        case GET_MICROPHONES: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
             std::vector<media::MicrophoneInfo> microphones;
             status_t status = getMicrophones(&microphones);

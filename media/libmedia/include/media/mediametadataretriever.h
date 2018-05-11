@@ -66,6 +66,8 @@ enum {
     METADATA_KEY_IMAGE_HEIGHT    = 30,
     METADATA_KEY_IMAGE_ROTATION  = 31,
     METADATA_KEY_VIDEO_FRAME_COUNT  = 32,
+    METADATA_KEY_EXIF_OFFSET     = 33,
+    METADATA_KEY_EXIF_LENGTH     = 34,
 
     // Add more here...
 };
@@ -88,7 +90,7 @@ public:
     sp<IMemory> getFrameAtTime(int64_t timeUs, int option,
             int colorFormat = HAL_PIXEL_FORMAT_RGB_565, bool metaOnly = false);
     sp<IMemory> getImageAtIndex(int index,
-            int colorFormat = HAL_PIXEL_FORMAT_RGB_565, bool metaOnly = false);
+            int colorFormat = HAL_PIXEL_FORMAT_RGB_565, bool metaOnly = false, bool thumbnail = false);
     status_t getFrameAtIndex(
             std::vector<sp<IMemory> > *frames, int frameIndex, int numFrames = 1,
             int colorFormat = HAL_PIXEL_FORMAT_RGB_565, bool metaOnly = false);
