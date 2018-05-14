@@ -33,10 +33,12 @@
 #include <media/stagefright/foundation/ByteUtils.h>
 #include <media/stagefright/foundation/MediaKeys.h>
 #include <media/stagefright/foundation/avc_utils.h>
+#include <media/stagefright/DataURISource.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/MetaDataUtils.h>
 #include <media/stagefright/Utils.h>
+#include <stagefright/AVExtensions.h>
 
 #include <ctype.h>
 #include <inttypes.h>
@@ -347,6 +349,16 @@ status_t PlaylistFetcher::decryptBuffer(
     sp<ABuffer> key;
     if (index >= 0) {
         key = mAESKeyForURI.valueAt(index);
+    } else if (keyURI.startsWith("data:")) {
+        sp<DataSource> keySrc = DataURISource::Create(keyURI.c_str());
+        off64_t keyLen;
+        if (keySrc == NULL || keySrc->getSize(&keyLen) != OK || keyLen < 0) {
+            ALOGE("Malformed cipher key data uri.");
+            return ERROR_MALFORMED;
+        }
+        key = new ABuffer(keyLen);
+        keySrc->readAt(0, key->data(), keyLen);
+        key->setRange(0, keyLen);
     } else {
         ssize_t err = mHTTPDownloader->fetchFile(keyURI.c_str(), &key);
 
@@ -1514,6 +1526,10 @@ void PlaylistFetcher::onDownloadNext() {
         }
     }
 
+    if (checkSwitchBandwidth()) {
+        return;
+    }
+
     ++mSeqNumber;
 
     // if adapting, pause after found the next starting point
@@ -1809,7 +1825,8 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
         const char *mime;
         sp<MetaData> format  = source->getFormat();
         bool isAvc = format != NULL && format->findCString(kKeyMIMEType, &mime)
-                && !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC);
+                && (!strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC) ||
+                    !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC));
 
         sp<ABuffer> accessUnit;
         status_t finalResult;
@@ -1831,7 +1848,8 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
                             (long long)timeUs - mStartTimeUs,
                             mIDRFound);
                     if (isAvc) {
-                        if (IsIDR(accessUnit->data(), accessUnit->size())) {
+                        if (IsIDR(accessUnit->data(), accessUnit->size()) ||
+                                AVUtils::get()->IsHevcIDR(accessUnit)) {
                             mVideoBuffer->clear();
                             FSLOGV(stream, "found IDR, clear mVideoBuffer");
                             mIDRFound = true;

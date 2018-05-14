@@ -39,11 +39,11 @@ struct NuPlayer : public AHandler {
 
     void setUID(uid_t uid);
 
-    void setDriver(const wp<NuPlayerDriver> &driver);
+    void init(const wp<NuPlayerDriver> &driver);
 
     void setDataSourceAsync(const sp<IStreamSource> &source);
 
-    void setDataSourceAsync(
+    virtual void setDataSourceAsync(
             const sp<IMediaHTTPService> &httpService,
             const char *url,
             const KeyedVector<String8, String8> *headers);
@@ -162,6 +162,7 @@ protected:
         kWhatSetBufferingSettings       = 'sBuS',
         kWhatPrepareDrm                 = 'pDrm',
         kWhatReleaseDrm                 = 'rDrm',
+        kWhatMediaClockNotify           = 'mckN',
     };
 
     wp<NuPlayerDriver> mDriver;
@@ -328,7 +329,7 @@ protected:
     void performSetSurface(const sp<Surface> &wrapper);
     void performResumeDecoders(bool needNotify);
 
-    void onSourceNotify(const sp<AMessage> &msg);
+    virtual void onSourceNotify(const sp<AMessage> &msg);
     void onClosedCaptionNotify(const sp<AMessage> &msg);
 
     void queueDecoderShutdown(

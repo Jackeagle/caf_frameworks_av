@@ -127,11 +127,11 @@ status_t StagefrightMetadataRetriever::setDataSource(
     return OK;
 }
 
-VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
-        int index, int colorFormat, bool metaOnly) {
+sp<IMemory> StagefrightMetadataRetriever::getImageAtIndex(
+        int index, int colorFormat, bool metaOnly, bool thumbnail) {
 
-    ALOGV("getImageAtIndex: index: %d colorFormat: %d, metaOnly: %d",
-            index, colorFormat, metaOnly);
+    ALOGV("getImageAtIndex: index(%d) colorFormat(%d) metaOnly(%d) thumbnail(%d)",
+            index, colorFormat, metaOnly, thumbnail);
 
     if (mExtractor.get() == NULL) {
         ALOGE("no extractor.");
@@ -166,6 +166,10 @@ VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
 
     sp<MetaData> trackMeta = mExtractor->getTrackMetaData(i);
 
+    if (metaOnly) {
+        return FrameDecoder::getMetadataOnly(trackMeta, colorFormat, thumbnail);
+    }
+
     sp<IMediaSource> source = mExtractor->getTrack(i);
 
     if (source.get() == NULL) {
@@ -192,8 +196,8 @@ VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
         const AString &componentName = matchingCodecs[i];
         ImageDecoder decoder(componentName, trackMeta, source);
-        VideoFrame* frame = decoder.extractFrame(
-                0 /*frameTimeUs*/, 0 /*seekMode*/, colorFormat, metaOnly);
+        sp<IMemory> frame = decoder.extractFrame(
+                thumbnail ? -1 : 0 /*frameTimeUs*/, 0 /*seekMode*/, colorFormat);
 
         if (frame != NULL) {
             return frame;
@@ -204,19 +208,19 @@ VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
     return NULL;
 }
 
-VideoFrame* StagefrightMetadataRetriever::getFrameAtTime(
+sp<IMemory> StagefrightMetadataRetriever::getFrameAtTime(
         int64_t timeUs, int option, int colorFormat, bool metaOnly) {
     ALOGV("getFrameAtTime: %" PRId64 " us option: %d colorFormat: %d, metaOnly: %d",
             timeUs, option, colorFormat, metaOnly);
 
-    VideoFrame *frame;
+    sp<IMemory> frame;
     status_t err = getFrameInternal(
             timeUs, 1, option, colorFormat, metaOnly, &frame, NULL /*outFrames*/);
     return (err == OK) ? frame : NULL;
 }
 
 status_t StagefrightMetadataRetriever::getFrameAtIndex(
-        std::vector<VideoFrame*>* frames,
+        std::vector<sp<IMemory> >* frames,
         int frameIndex, int numFrames, int colorFormat, bool metaOnly) {
     ALOGV("getFrameAtIndex: frameIndex %d, numFrames %d, colorFormat: %d, metaOnly: %d",
             frameIndex, numFrames, colorFormat, metaOnly);
@@ -228,7 +232,7 @@ status_t StagefrightMetadataRetriever::getFrameAtIndex(
 
 status_t StagefrightMetadataRetriever::getFrameInternal(
         int64_t timeUs, int numFrames, int option, int colorFormat, bool metaOnly,
-        VideoFrame **outFrame, std::vector<VideoFrame*>* outFrames) {
+        sp<IMemory>* outFrame, std::vector<sp<IMemory> >* outFrames) {
     if (mExtractor.get() == NULL) {
         ALOGE("no extractor.");
         return NO_INIT;
@@ -268,6 +272,16 @@ status_t StagefrightMetadataRetriever::getFrameInternal(
     sp<MetaData> trackMeta = mExtractor->getTrackMetaData(
             i, MediaExtractor::kIncludeExtensiveMetaData);
 
+    if (metaOnly) {
+        if (outFrame != NULL) {
+            *outFrame = FrameDecoder::getMetadataOnly(trackMeta, colorFormat);
+            if (*outFrame != NULL) {
+                return OK;
+            }
+        }
+        return UNKNOWN_ERROR;
+    }
+
     sp<IMediaSource> source = mExtractor->getTrack(i);
 
     if (source.get() == NULL) {
@@ -290,15 +304,14 @@ status_t StagefrightMetadataRetriever::getFrameInternal(
     MediaCodecList::findMatchingCodecs(
             mime,
             false, /* encoder */
-            MediaCodecList::kPreferSoftwareCodecs,
+            0/*MediaCodecList::kPreferSoftwareCodecs*/,
             &matchingCodecs);
 
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
         const AString &componentName = matchingCodecs[i];
         VideoFrameDecoder decoder(componentName, trackMeta, source);
         if (outFrame != NULL) {
-            *outFrame = decoder.extractFrame(
-                    timeUs, option, colorFormat, metaOnly);
+            *outFrame = decoder.extractFrame(timeUs, option, colorFormat);
             if (*outFrame != NULL) {
                 return OK;
             }
@@ -439,6 +452,15 @@ void StagefrightMetadataRetriever::parseMetaData() {
     if (meta->findFloat(kKeyCaptureFramerate, &captureFps)) {
         sprintf(tmp, "%f", captureFps);
         mMetaData.add(METADATA_KEY_CAPTURE_FRAMERATE, String8(tmp));
+    }
+
+    int64_t exifOffset, exifSize;
+    if (meta->findInt64(kKeyExifOffset, &exifOffset)
+     && meta->findInt64(kKeyExifSize, &exifSize)) {
+        sprintf(tmp, "%lld", (long long)exifOffset);
+        mMetaData.add(METADATA_KEY_EXIF_OFFSET, String8(tmp));
+        sprintf(tmp, "%lld", (long long)exifSize);
+        mMetaData.add(METADATA_KEY_EXIF_LENGTH, String8(tmp));
     }
 
     bool hasAudio = false;

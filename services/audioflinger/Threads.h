@@ -425,6 +425,9 @@ protected:
                 // check if some effects must be suspended when an effect chain is added
                 void checkSuspendOnAddEffectChain_l(const sp<EffectChain>& chain);
 
+                // sends the metadata of the active tracks to the HAL
+    virtual     void        updateMetadata_l() = 0;
+
                 String16 getWakeLockTag();
 
     virtual     void        preExit() { }
@@ -563,6 +566,10 @@ protected:
                     // periodically called in the threadLoop() to update power state uids.
                     void            updatePowerState(sp<ThreadBase> thread, bool force = false);
 
+                    /** @return true if one or move active tracks was added or removed since the
+                     *          last time this function was called or the vector was created. */
+                    bool            readAndClearHasChanged();
+
                 private:
                     void            logTrack(const char *funcName, const sp<T> &track) const;
 
@@ -581,6 +588,8 @@ protected:
                     int                 mLastActiveTracksGeneration;
                     wp<T>               mLatestActiveTrack; // latest track added to ActiveTracks
                     SimpleLog * const   mLocalLog;
+                    // If the vector has changed since last call to readAndClearHasChanged
+                    bool                mHasChanged = false;
                 };
 
                 SimpleLog mLocalLog;
@@ -707,6 +716,7 @@ public:
                 sp<Track>   createTrack_l(
                                 const sp<AudioFlinger::Client>& client,
                                 audio_stream_type_t streamType,
+                                const audio_attributes_t& attr,
                                 uint32_t *sampleRate,
                                 audio_format_t format,
                                 audio_channel_mask_t channelMask,
@@ -918,6 +928,8 @@ private:
     void        removeTrack_l(const sp<Track>& track);
 
     void        readOutputParameters_l();
+    void        updateMetadata_l() final;
+    virtual void sendMetadataToBackend_l(const StreamOutHalInterface::SourceMetadata& metadata);
 
     virtual void dumpInternals(int fd, const Vector<String16>& args);
     void        dumpTracks(int fd, const Vector<String16>& args);
@@ -1285,6 +1297,9 @@ public:
                 void        addOutputTrack(MixerThread* thread);
                 void        removeOutputTrack(MixerThread* thread);
                 uint32_t    waitTimeMs() const { return mWaitTimeMs; }
+
+                void        sendMetadataToBackend_l(
+                        const StreamOutHalInterface::SourceMetadata& metadata) override;
 protected:
     virtual     uint32_t    activeSleepTimeUs() const;
 
@@ -1397,6 +1412,7 @@ public:
 
             sp<AudioFlinger::RecordThread::RecordTrack>  createRecordTrack_l(
                     const sp<AudioFlinger::Client>& client,
+                    const audio_attributes_t& attr,
                     uint32_t *pSampleRate,
                     audio_format_t format,
                     audio_channel_mask_t channelMask,
@@ -1470,6 +1486,8 @@ public:
             void        setRecordSilenced(uid_t uid, bool silenced);
 
             status_t    getActiveMicrophones(std::vector<media::MicrophoneInfo>* activeMicrophones);
+
+            void        updateMetadata_l() override;
 
 private:
             // Enter standby if not already in standby, and set mStandby flag
@@ -1581,6 +1599,7 @@ class MmapThread : public ThreadBase
     virtual     void        threadLoop_exit();
     virtual     void        threadLoop_standby();
     virtual     bool        shouldStandby_l() { return false; }
+    virtual     status_t    exitStandby();
 
     virtual     status_t    initCheck() const { return (mHalStream == 0) ? NO_INIT : NO_ERROR; }
     virtual     size_t      frameCount() const { return mFrameCount; }
@@ -1613,6 +1632,9 @@ class MmapThread : public ThreadBase
 
     virtual     void        invalidateTracks(audio_stream_type_t streamType __unused) {}
 
+                // Sets the UID records silence
+    virtual     void        setRecordSilenced(uid_t uid __unused, bool silenced __unused) {}
+
                 void        dump(int fd, const Vector<String16>& args);
     virtual     void        dumpInternals(int fd, const Vector<String16>& args);
                 void        dumpTracks(int fd, const Vector<String16>& args);
@@ -1629,6 +1651,10 @@ class MmapThread : public ThreadBase
                 sp<DeviceHalInterface>  mHalDevice;
                 AudioHwDevice* const    mAudioHwDev;
                 ActiveTracks<MmapTrack> mActiveTracks;
+                float                   mHalVolFloat;
+
+                int32_t                 mNoCallbackWarningCount;
+     static     constexpr int32_t       kMaxNoCallbackWarnings = 5;
 };
 
 class MmapPlaybackThread : public MmapThread, public VolumeInterface
@@ -1662,11 +1688,13 @@ public:
 
     virtual     audio_stream_type_t streamType() { return mStreamType; }
     virtual     void        checkSilentMode_l();
-    virtual     void        processVolume_l();
+                void        processVolume_l() override;
 
     virtual     void        dumpInternals(int fd, const Vector<String16>& args);
 
     virtual     bool        isOutput() const override { return true; }
+
+                void        updateMetadata_l() override;
 
 protected:
 
@@ -1675,9 +1703,6 @@ protected:
                 float                       mStreamVolume;
                 bool                        mMasterMute;
                 bool                        mStreamMute;
-                float                       mHalVolFloat;
-                int32_t                     mNoCallbackWarningCount;
-     static     constexpr int32_t           kMaxNoCallbackWarnings = 5;
                 AudioStreamOut*             mOutput;
 };
 
@@ -1692,7 +1717,12 @@ public:
 
                 AudioStreamIn* clearInput();
 
+                status_t       exitStandby() override;
     virtual     bool           isOutput() const override { return false; }
+
+                void           updateMetadata_l() override;
+                void           processVolume_l() override;
+                void           setRecordSilenced(uid_t uid, bool silenced) override;
 
 protected:
 
