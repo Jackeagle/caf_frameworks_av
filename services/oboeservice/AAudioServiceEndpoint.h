@@ -49,9 +49,9 @@ public:
 
     virtual aaudio_result_t close() = 0;
 
-    virtual aaudio_result_t registerStream(android::sp<AAudioServiceStreamBase> stream);
+    aaudio_result_t registerStream(android::sp<AAudioServiceStreamBase> stream);
 
-    virtual aaudio_result_t unregisterStream(android::sp<AAudioServiceStreamBase> stream);
+    aaudio_result_t unregisterStream(android::sp<AAudioServiceStreamBase> stream);
 
     virtual aaudio_result_t startStream(android::sp<AAudioServiceStreamBase> stream,
                                         audio_port_handle_t *clientHandle) = 0;
@@ -102,6 +102,13 @@ public:
     }
 
 protected:
+
+    /**
+     * @param portHandle
+     * @return return true if a stream with the given portHandle is registered
+     */
+    bool                     isStreamRegistered(audio_port_handle_t portHandle);
+
     void                     disconnectRegisteredStreams();
 
     mutable std::mutex       mLockStreams;
@@ -116,7 +123,6 @@ protected:
     int32_t                  mRequestedDeviceId = 0;
 
     std::atomic<bool>        mConnected{true};
-
 };
 
 } /* namespace aaudio */

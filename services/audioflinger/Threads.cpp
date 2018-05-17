@@ -6704,13 +6704,27 @@ reacquire_wakelock:
         if (mPipeSource != 0) {
             size_t framesToRead = mBufferSize / mFrameSize;
             framesToRead = min(mRsmpInFramesOA - rear, mRsmpInFramesP2 / 2);
-            framesRead = mPipeSource->read((uint8_t*)mRsmpInBuffer + rear * mFrameSize,
-                    framesToRead);
-            // since pipe is non-blocking, simulate blocking input by waiting for 1/2 of
-            // buffer size or at least for 20ms.
-            size_t sleepFrames = max(
-                    min(mPipeFramesP2, mRsmpInFramesP2) / 2, FMS_20 * mSampleRate / 1000);
-            if (framesRead <= (ssize_t) sleepFrames) {
+
+            // The audio fifo read() returns OVERRUN on overflow, and advances the read pointer
+            // to the full buffer point (clearing the overflow condition).  Upon OVERRUN error,
+            // we immediately retry the read() to get data and prevent another overflow.
+            for (int retries = 0; retries <= 2; ++retries) {
+                ALOGW_IF(retries > 0, "overrun on read from pipe, retry #%d", retries);
+                framesRead = mPipeSource->read((uint8_t*)mRsmpInBuffer + rear * mFrameSize,
+                        framesToRead);
+                if (framesRead != OVERRUN) break;
+            }
+
+            const ssize_t availableToRead = mPipeSource->availableToRead();
+            if (availableToRead >= 0) {
+                // PipeSource is the master clock.  It is up to the AudioRecord client to keep up.
+                LOG_ALWAYS_FATAL_IF((size_t)availableToRead > mPipeFramesP2,
+                        "more frames to read than fifo size, %zd > %zu",
+                        availableToRead, mPipeFramesP2);
+                const size_t pipeFramesFree = mPipeFramesP2 - availableToRead;
+                const size_t sleepFrames = min(pipeFramesFree, mRsmpInFramesP2) / 2;
+                ALOGVV("mPipeFramesP2:%zu mRsmpInFramesP2:%zu sleepFrames:%zu availableToRead:%zd",
+                        mPipeFramesP2, mRsmpInFramesP2, sleepFrames, availableToRead);
                 sleepUs = (sleepFrames * 1000000LL) / mSampleRate;
             }
             if (framesRead < 0) {
@@ -7999,7 +8013,9 @@ AudioFlinger::MmapThread::MmapThread(
       mSessionId(AUDIO_SESSION_NONE),
       mDeviceId(AUDIO_PORT_HANDLE_NONE), mPortId(AUDIO_PORT_HANDLE_NONE),
       mHalStream(stream), mHalDevice(hwDev->hwDevice()), mAudioHwDev(hwDev),
-      mActiveTracks(&this->mLocalLog)
+      mActiveTracks(&this->mLocalLog),
+      mHalVolFloat(-1.0f), // Initialize to illegal value so it always gets set properly later.
+      mNoCallbackWarningCount(0)
 {
     mStandby = true;
     readHalParameters_l();
@@ -8017,7 +8033,14 @@ void AudioFlinger::MmapThread::onFirstRef()
 
 void AudioFlinger::MmapThread::disconnect()
 {
-    for (const sp<MmapTrack> &t : mActiveTracks) {
+    ActiveTracks<MmapTrack> activeTracks;
+    {
+        Mutex::Autolock _l(mLock);
+        for (const sp<MmapTrack> &t : mActiveTracks) {
+            activeTracks.add(t);
+        }
+    }
+    for (const sp<MmapTrack> &t : activeTracks) {
         stop(t->portId());
     }
     // This will decrement references and may cause the destruction of this thread.
@@ -8062,6 +8085,17 @@ status_t AudioFlinger::MmapThread::getMmapPosition(struct audio_mmap_position *p
     return mHalStream->getMmapPosition(position);
 }
 
+status_t AudioFlinger::MmapThread::exitStandby()
+{
+    status_t ret = mHalStream->start();
+    if (ret != NO_ERROR) {
+        ALOGE("%s: error mHalStream->start() = %d for first track", __FUNCTION__, ret);
+        return ret;
+    }
+    mStandby = false;
+    return NO_ERROR;
+}
+
 status_t AudioFlinger::MmapThread::start(const AudioClient& client,
                                          audio_port_handle_t *handle)
 {
@@ -8075,13 +8109,7 @@ status_t AudioFlinger::MmapThread::start(const AudioClient& client,
 
     if (*handle == mPortId) {
         // for the first track, reuse portId and session allocated when the stream was opened
-        ret = mHalStream->start();
-        if (ret != NO_ERROR) {
-            ALOGE("%s: error mHalStream->start() = %d for first track", __FUNCTION__, ret);
-            return ret;
-        }
-        mStandby = false;
-        return NO_ERROR;
+        return exitStandby();
     }
 
     audio_port_handle_t portId = AUDIO_PORT_HANDLE_NONE;
@@ -8129,33 +8157,46 @@ status_t AudioFlinger::MmapThread::start(const AudioClient& client,
         return BAD_VALUE;
     }
 
+    bool silenced = false;
     if (isOutput()) {
         ret = AudioSystem::startOutput(mId, streamType(), mSessionId);
     } else {
-        // TODO: Block recording for idle UIDs (b/72134552)
-        bool silenced;
         ret = AudioSystem::startInput(portId, &silenced);
     }
 
+    Mutex::Autolock _l(mLock);
     // abort if start is rejected by audio policy manager
     if (ret != NO_ERROR) {
         ALOGE("%s: error start rejected by AudioPolicyManager = %d", __FUNCTION__, ret);
         if (mActiveTracks.size() != 0) {
+            mLock.unlock();
             if (isOutput()) {
                 AudioSystem::releaseOutput(mId, streamType(), mSessionId);
             } else {
                 AudioSystem::releaseInput(portId);
             }
+            mLock.lock();
         } else {
             mHalStream->stop();
         }
         return PERMISSION_DENIED;
     }
 
+    if (isOutput()) {
+        // force volume update when a new track is added
+        mHalVolFloat = -1.0f;
+    } else if (!silenced) {
+        for (const sp<MmapTrack> &track : mActiveTracks) {
+            if (track->isSilenced_l() && track->uid() != client.clientUid)
+                track->invalidate();
+        }
+    }
+
     // Given that MmapThread::mAttr is mutable, should a MmapTrack have attributes ?
     sp<MmapTrack> track = new MmapTrack(this, mAttr, mSampleRate, mFormat, mChannelMask, mSessionId,
                                         client.clientUid, client.clientPid, portId);
 
+    track->setSilenced_l(silenced);
     mActiveTracks.add(track);
     sp<EffectChain> chain = getEffectChain_l(mSessionId);
     if (chain != 0) {
@@ -8185,6 +8226,8 @@ status_t AudioFlinger::MmapThread::stop(audio_port_handle_t handle)
         return NO_ERROR;
     }
 
+    Mutex::Autolock _l(mLock);
+
     sp<MmapTrack> track;
     for (const sp<MmapTrack> &t : mActiveTracks) {
         if (handle == t->portId()) {
@@ -8198,6 +8241,7 @@ status_t AudioFlinger::MmapThread::stop(audio_port_handle_t handle)
 
     mActiveTracks.remove(track);
 
+    mLock.unlock();
     if (isOutput()) {
         AudioSystem::stopOutput(mId, streamType(), track->sessionId());
         AudioSystem::releaseOutput(mId, streamType(), track->sessionId());
@@ -8205,6 +8249,7 @@ status_t AudioFlinger::MmapThread::stop(audio_port_handle_t handle)
         AudioSystem::stopInput(track->portId());
         AudioSystem::releaseInput(track->portId());
     }
+    mLock.lock();
 
     sp<EffectChain> chain = getEffectChain_l(track->sessionId());
     if (chain != 0) {
@@ -8456,7 +8501,9 @@ status_t AudioFlinger::MmapThread::createAudioPatch_l(const struct audio_patch *
         sendIoConfigEvent_l(AUDIO_OUTPUT_CONFIG_CHANGED);
         sp<MmapStreamCallback> callback = mCallback.promote();
         if (mDeviceId != deviceId && callback != 0) {
+            mLock.unlock();
             callback->onRoutingChanged(deviceId);
+            mLock.lock();
         }
         mDeviceId = deviceId;
     }
@@ -8465,7 +8512,9 @@ status_t AudioFlinger::MmapThread::createAudioPatch_l(const struct audio_patch *
         sendIoConfigEvent_l(AUDIO_INPUT_CONFIG_CHANGED);
         sp<MmapStreamCallback> callback = mCallback.promote();
         if (mDeviceId != deviceId && callback != 0) {
+            mLock.unlock();
             callback->onRoutingChanged(deviceId);
+            mLock.lock();
         }
         mDeviceId = deviceId;
     }
@@ -8631,9 +8680,13 @@ void AudioFlinger::MmapThread::checkInvalidTracks_l()
         if (track->isInvalid()) {
             sp<MmapStreamCallback> callback = mCallback.promote();
             if (callback != 0) {
-                callback->onTearDown();
+                mLock.unlock();
+                callback->onTearDown(track->portId());
+                mLock.lock();
+            } else if (mNoCallbackWarningCount < kMaxNoCallbackWarnings) {
+                ALOGW("Could not notify MMAP stream tear down: no onTearDown callback!");
+                mNoCallbackWarningCount++;
             }
-            break;
         }
     }
 }
@@ -8687,8 +8740,6 @@ AudioFlinger::MmapPlaybackThread::MmapPlaybackThread(
       mStreamType(AUDIO_STREAM_MUSIC),
       mStreamVolume(1.0),
       mStreamMute(false),
-      mHalVolFloat(-1.0f), // Initialize to illegal value so it always gets set properly later.
-      mNoCallbackWarningCount(0),
       mOutput(output)
 {
     snprintf(mThreadName, kThreadNameLength, "AudioMmapOut_%X", id);
@@ -8825,9 +8876,11 @@ void AudioFlinger::MmapPlaybackThread::processVolume_l()
                 for (int i = 0; i < channelCount; i++) {
                     values.add(volume);
                 }
-                callback->onVolumeChanged(mChannelMask, values);
                 mHalVolFloat = volume; // SW volume control worked, so update value.
                 mNoCallbackWarningCount = 0;
+                mLock.unlock();
+                callback->onVolumeChanged(mChannelMask, values);
+                mLock.lock();
             } else {
                 if (mNoCallbackWarningCount < kMaxNoCallbackWarnings) {
                     ALOGW("Could not set MMAP stream volume: no volume callback!");
@@ -8893,12 +8946,46 @@ AudioFlinger::MmapCaptureThread::MmapCaptureThread(
     mChannelCount = audio_channel_count_from_in_mask(mChannelMask);
 }
 
+status_t AudioFlinger::MmapCaptureThread::exitStandby()
+{
+    mInput->stream->setGain(1.0f);
+    return MmapThread::exitStandby();
+}
+
 AudioFlinger::AudioStreamIn* AudioFlinger::MmapCaptureThread::clearInput()
 {
     Mutex::Autolock _l(mLock);
     AudioStreamIn *input = mInput;
     mInput = NULL;
     return input;
+}
+
+
+void AudioFlinger::MmapCaptureThread::processVolume_l()
+{
+    bool changed = false;
+    bool silenced = false;
+
+    sp<MmapStreamCallback> callback = mCallback.promote();
+    if (callback == 0) {
+        if (mNoCallbackWarningCount < kMaxNoCallbackWarnings) {
+            ALOGW("Could not set MMAP stream silenced: no onStreamSilenced callback!");
+            mNoCallbackWarningCount++;
+        }
+    }
+
+    // After a change occurred in track silenced state, mute capture in audio DSP if at least one
+    // track is silenced and unmute otherwise
+    for (size_t i = 0; i < mActiveTracks.size() && !silenced; i++) {
+        if (!mActiveTracks[i]->getAndSetSilencedNotified_l()) {
+            changed = true;
+            silenced = mActiveTracks[i]->isSilenced_l();
+        }
+    }
+
+    if (changed) {
+        mInput->stream->setGain(silenced ? 0.0f: 1.0f);
+    }
 }
 
 void AudioFlinger::MmapCaptureThread::updateMetadata_l()
@@ -8916,6 +9003,17 @@ void AudioFlinger::MmapCaptureThread::updateMetadata_l()
         });
     }
     mInput->stream->updateSinkMetadata(metadata);
+}
+
+void AudioFlinger::MmapCaptureThread::setRecordSilenced(uid_t uid, bool silenced)
+{
+    Mutex::Autolock _l(mLock);
+    for (size_t i = 0; i < mActiveTracks.size() ; i++) {
+        if (mActiveTracks[i]->uid() == uid) {
+            mActiveTracks[i]->setSilenced_l(silenced);
+            broadcast_l();
+        }
+    }
 }
 
 } // namespace android
