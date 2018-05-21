@@ -127,11 +127,11 @@ status_t StagefrightMetadataRetriever::setDataSource(
     return OK;
 }
 
-VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
-        int index, int colorFormat, bool metaOnly) {
+sp<IMemory> StagefrightMetadataRetriever::getImageAtIndex(
+        int index, int colorFormat, bool metaOnly, bool thumbnail) {
 
-    ALOGV("getImageAtIndex: index: %d colorFormat: %d, metaOnly: %d",
-            index, colorFormat, metaOnly);
+    ALOGV("getImageAtIndex: index(%d) colorFormat(%d) metaOnly(%d) thumbnail(%d)",
+            index, colorFormat, metaOnly, thumbnail);
 
     if (mExtractor.get() == NULL) {
         ALOGE("no extractor.");
@@ -166,6 +166,10 @@ VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
 
     sp<MetaData> trackMeta = mExtractor->getTrackMetaData(i);
 
+    if (metaOnly) {
+        return FrameDecoder::getMetadataOnly(trackMeta, colorFormat, thumbnail);
+    }
+
     sp<IMediaSource> source = mExtractor->getTrack(i);
 
     if (source.get() == NULL) {
@@ -192,11 +196,13 @@ VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
         const AString &componentName = matchingCodecs[i];
         ImageDecoder decoder(componentName, trackMeta, source);
-        VideoFrame* frame = decoder.extractFrame(
-                0 /*frameTimeUs*/, 0 /*seekMode*/, colorFormat, metaOnly);
+        int64_t frameTimeUs = thumbnail ? -1 : 0;
+        if (decoder.init(frameTimeUs, 1 /*numFrames*/, 0 /*option*/, colorFormat) == OK) {
+            sp<IMemory> frame = decoder.extractFrame();
 
-        if (frame != NULL) {
-            return frame;
+            if (frame != NULL) {
+                return frame;
+            }
         }
         ALOGV("%s failed to extract thumbnail, trying next decoder.", componentName.c_str());
     }
@@ -204,19 +210,19 @@ VideoFrame* StagefrightMetadataRetriever::getImageAtIndex(
     return NULL;
 }
 
-VideoFrame* StagefrightMetadataRetriever::getFrameAtTime(
+sp<IMemory> StagefrightMetadataRetriever::getFrameAtTime(
         int64_t timeUs, int option, int colorFormat, bool metaOnly) {
     ALOGV("getFrameAtTime: %" PRId64 " us option: %d colorFormat: %d, metaOnly: %d",
             timeUs, option, colorFormat, metaOnly);
 
-    VideoFrame *frame;
+    sp<IMemory> frame;
     status_t err = getFrameInternal(
             timeUs, 1, option, colorFormat, metaOnly, &frame, NULL /*outFrames*/);
     return (err == OK) ? frame : NULL;
 }
 
 status_t StagefrightMetadataRetriever::getFrameAtIndex(
-        std::vector<VideoFrame*>* frames,
+        std::vector<sp<IMemory> >* frames,
         int frameIndex, int numFrames, int colorFormat, bool metaOnly) {
     ALOGV("getFrameAtIndex: frameIndex %d, numFrames %d, colorFormat: %d, metaOnly: %d",
             frameIndex, numFrames, colorFormat, metaOnly);
@@ -228,7 +234,7 @@ status_t StagefrightMetadataRetriever::getFrameAtIndex(
 
 status_t StagefrightMetadataRetriever::getFrameInternal(
         int64_t timeUs, int numFrames, int option, int colorFormat, bool metaOnly,
-        VideoFrame **outFrame, std::vector<VideoFrame*>* outFrames) {
+        sp<IMemory>* outFrame, std::vector<sp<IMemory> >* outFrames) {
     if (mExtractor.get() == NULL) {
         ALOGE("no extractor.");
         return NO_INIT;
@@ -268,6 +274,16 @@ status_t StagefrightMetadataRetriever::getFrameInternal(
     sp<MetaData> trackMeta = mExtractor->getTrackMetaData(
             i, MediaExtractor::kIncludeExtensiveMetaData);
 
+    if (metaOnly) {
+        if (outFrame != NULL) {
+            *outFrame = FrameDecoder::getMetadataOnly(trackMeta, colorFormat);
+            if (*outFrame != NULL) {
+                return OK;
+            }
+        }
+        return UNKNOWN_ERROR;
+    }
+
     sp<IMediaSource> source = mExtractor->getTrack(i);
 
     if (source.get() == NULL) {
@@ -296,17 +312,17 @@ status_t StagefrightMetadataRetriever::getFrameInternal(
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
         const AString &componentName = matchingCodecs[i];
         VideoFrameDecoder decoder(componentName, trackMeta, source);
-        if (outFrame != NULL) {
-            *outFrame = decoder.extractFrame(
-                    timeUs, option, colorFormat, metaOnly);
-            if (*outFrame != NULL) {
-                return OK;
-            }
-        } else if (outFrames != NULL) {
-            status_t err = decoder.extractFrames(
-                    timeUs, numFrames, option, colorFormat, outFrames);
-            if (err == OK) {
-                return OK;
+        if (decoder.init(timeUs, numFrames, option, colorFormat) == OK) {
+            if (outFrame != NULL) {
+                *outFrame = decoder.extractFrame();
+                if (*outFrame != NULL) {
+                    return OK;
+                }
+            } else if (outFrames != NULL) {
+                status_t err = decoder.extractFrames(outFrames);
+                if (err == OK) {
+                    return OK;
+                }
             }
         }
         ALOGV("%s failed to extract frame, trying next decoder.", componentName.c_str());

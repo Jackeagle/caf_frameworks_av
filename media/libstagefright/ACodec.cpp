@@ -62,6 +62,7 @@
 
 #include <stagefright/AVExtensions.h>
 
+#define QTI_FLAC_DECODER
 namespace android {
 
 using binder::Status;
@@ -1318,7 +1319,7 @@ status_t ACodec::allocateOutputMetadataBuffers() {
     OMX_U32 bufferCount, bufferSize, minUndequeuedBuffers;
     status_t err = configureOutputBuffersFromNativeWindow(
             &bufferCount, &bufferSize, &minUndequeuedBuffers,
-            false /* preregister */);
+            mFlags & kFlagIsSecure /* preregister */);
     if (err != OK)
         return err;
     mNumUndequeuedBuffers = minUndequeuedBuffers;
@@ -2160,6 +2161,10 @@ status_t ACodec::configureCodec(
                 // value is unknown
                 drc.targetRefLevel = -1;
             }
+            if (!msg->findInt32("aac-drc-effect-type", &drc.effectType)) {
+                // value is unknown
+                drc.effectType = -2; // valid values are -1 and over
+            }
 
             err = setupAACCodec(
                     encoder, numChannels, sampleRate, bitrate, aacProfile,
@@ -2801,7 +2806,7 @@ status_t ACodec::setupAACCodec(
             ? OMX_AUDIO_AACStreamFormatMP4ADTS
             : OMX_AUDIO_AACStreamFormatMP4FF;
 
-    OMX_AUDIO_PARAM_ANDROID_AACPRESENTATIONTYPE presentation;
+    OMX_AUDIO_PARAM_ANDROID_AACDRCPRESENTATIONTYPE presentation;
     InitOMXParams(&presentation);
     presentation.nMaxOutputChannels = maxOutputChannelCount;
     presentation.nDrcCut = drc.drcCut;
@@ -2810,14 +2815,29 @@ status_t ACodec::setupAACCodec(
     presentation.nTargetReferenceLevel = drc.targetRefLevel;
     presentation.nEncodedTargetLevel = drc.encodedTargetLevel;
     presentation.nPCMLimiterEnable = pcmLimiterEnable;
+    presentation.nDrcEffectType = drc.effectType;
 
     status_t res = mOMXNode->setParameter(
             OMX_IndexParamAudioAac, &profile, sizeof(profile));
     if (res == OK) {
         // optional parameters, will not cause configuration failure
-        mOMXNode->setParameter(
+        if (mOMXNode->setParameter(
+                (OMX_INDEXTYPE)OMX_IndexParamAudioAndroidAacDrcPresentation,
+                &presentation, sizeof(presentation)) == ERROR_UNSUPPORTED) {
+            // prior to 9.0 we used a different config structure and index
+            OMX_AUDIO_PARAM_ANDROID_AACPRESENTATIONTYPE presentation8;
+            InitOMXParams(&presentation8);
+            presentation8.nMaxOutputChannels = presentation.nMaxOutputChannels;
+            presentation8.nDrcCut = presentation.nDrcCut;
+            presentation8.nDrcBoost = presentation.nDrcBoost;
+            presentation8.nHeavyCompression = presentation.nHeavyCompression;
+            presentation8.nTargetReferenceLevel = presentation.nTargetReferenceLevel;
+            presentation8.nEncodedTargetLevel = presentation.nEncodedTargetLevel;
+            presentation8.nPCMLimiterEnable = presentation.nPCMLimiterEnable;
+            (void)mOMXNode->setParameter(
                 (OMX_INDEXTYPE)OMX_IndexParamAudioAndroidAacPresentation,
-                &presentation, sizeof(presentation));
+                &presentation8, sizeof(presentation8));
+        }
     } else {
         ALOGW("did not set AudioAndroidAacPresentation due to error %d when setting AudioAac", res);
     }
@@ -6491,15 +6511,16 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
 
     //make sure if the component name contains qcom/qti, we don't return error
     //as these components are not present in media_codecs.xml and MediaCodecList won't find
-    //these component by findCodecByName
-    if (!(componentName.find("qcom", 0) > 0 ||
-        componentName.find("qti", 0) > 0)) {
+    //these component by findCodecByName.
+    //Video and Flac decoder are present in list so exclude them.
+    if (!(componentName.find("qcom", 0) > 0 || componentName.find("qti", 0) > 0) ||
+          componentName.find("video", 0) > 0 || componentName.find("flac", 0) > 0) {
         if (info == nullptr) {
             ALOGE("Unexpected nullptr for codec information");
             mCodec->signalError(OMX_ErrorUndefined, UNKNOWN_ERROR);
             return false;
         }
-        AString owner = (info->getOwnerName() == nullptr) ? "default" : info->getOwnerName();
+        owner = (info->getOwnerName() == nullptr) ? "default" : info->getOwnerName();
     }
 
     sp<CodecObserver> observer = new CodecObserver;
@@ -6836,9 +6857,14 @@ void ACodec::LoadedState::onSetInputSurface(const sp<AMessage> &msg) {
 
     sp<RefBase> obj;
     CHECK(msg->findObject("input-surface", &obj));
+    if (obj == NULL) {
+        ALOGE("[%s] NULL input surface", mCodec->mComponentName.c_str());
+        mCodec->mCallback->onInputSurfaceDeclined(BAD_VALUE);
+        return;
+    }
+
     sp<PersistentSurface> surface = static_cast<PersistentSurface *>(obj.get());
     mCodec->mGraphicBufferSource = surface->getBufferSource();
-
     status_t err = setupInputSurface();
 
     if (err == OK) {
@@ -7680,8 +7706,10 @@ status_t ACodec::setVendorParameters(const sp<AMessage> &params) {
                 config->param[paramIndex].bSet =
                     (OMX_BOOL)params->findString(existingKey->second.c_str(), &value);
                 if (config->param[paramIndex].bSet) {
-                    strncpy((char *)config->param[paramIndex].cString, value.c_str(),
-                            sizeof(OMX_CONFIG_ANDROID_VENDOR_PARAMTYPE::cString));
+                    size_t dstSize = sizeof(config->param[paramIndex].cString);
+                    strncpy((char *)config->param[paramIndex].cString, value.c_str(), dstSize - 1);
+                    // null terminate value
+                    config->param[paramIndex].cString[dstSize - 1] = '\0';
                 }
                 break;
             }
