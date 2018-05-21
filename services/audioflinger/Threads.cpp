@@ -1354,7 +1354,7 @@ Exit:
         if (chainCreated) {
             removeEffectChain_l(chain);
         }
-        handle.clear();
+        // handle must be cleared by caller to avoid deadlock.
     }
 
     *status = lStatus;
@@ -3307,10 +3307,14 @@ bool AudioFlinger::PlaybackThread::threadLoop()
                         // 2. threadLoop_mix (significant for heavy mixing, especially
                         //                    on low tier processors)
 
-                        // it's OK if deltaMs is an overestimate.
-                        const int32_t deltaMs =
-                                (lastWriteFinished - previousLastWriteFinished) / 1000000;
-                        const int32_t throttleMs = mHalfBufferMs - deltaMs;
+                        // it's OK if deltaMs (and deltaNs) is an overestimate.
+                        nsecs_t deltaNs;
+                        // deltaNs = lastWriteFinished - previousLastWriteFinished;
+                        __builtin_sub_overflow(
+                            lastWriteFinished,previousLastWriteFinished, &deltaNs);
+                        const int32_t deltaMs = deltaNs / 1000000;
+
+                        const int32_t throttleMs = (int32_t)mHalfBufferMs - deltaMs;
                         if ((signed)mHalfBufferMs >= throttleMs && throttleMs > 0) {
                             usleep(throttleMs * 1000);
                             // notify of throttle start on verbose log
@@ -6774,7 +6778,7 @@ status_t AudioFlinger::RecordThread::start(RecordThread::RecordTrack* recordTrac
             recordTrack->clearSyncStartEvent();
         } else {
             // do not wait for the event for more than AudioSystem::kSyncRecordStartTimeOutMs
-            recordTrack->mFramesToDrop = -
+            recordTrack->mFramesToDrop = -(ssize_t)
                     ((AudioSystem::kSyncRecordStartTimeOutMs * recordTrack->mSampleRate) / 1000);
         }
     }

@@ -26,6 +26,8 @@
 
 #define AUDIO_POLICY_XML_CONFIG_FILE_PATH_MAX_LENGTH 128
 #define AUDIO_POLICY_XML_CONFIG_FILE_NAME "audio_policy_configuration.xml"
+#define AUDIO_POLICY_A2DP_OFFLOAD_DISABLED_XML_CONFIG_FILE_NAME \
+        "audio_policy_configuration_a2dp_offload_disabled.xml"
 
 #include <inttypes.h>
 #include <math.h>
@@ -1338,6 +1340,11 @@ status_t AudioPolicyManager::startSource(const sp<AudioOutputDescriptor>& output
         }
     }
 
+    if (stream == AUDIO_STREAM_ENFORCED_AUDIBLE &&
+            mEngine->getForceUse(AUDIO_POLICY_FORCE_FOR_SYSTEM) == AUDIO_POLICY_FORCE_SYSTEM_ENFORCED) {
+        setStrategyMute(STRATEGY_SONIFICATION, true, outputDesc);
+    }
+
     return NO_ERROR;
 }
 
@@ -1433,6 +1440,12 @@ status_t AudioPolicyManager::stopSource(const sp<AudioOutputDescriptor>& outputD
             // update the outputs if stopping one with a stream that can affect notification routing
             handleNotificationRoutingForStream(stream);
         }
+
+        if (stream == AUDIO_STREAM_ENFORCED_AUDIBLE &&
+                mEngine->getForceUse(AUDIO_POLICY_FORCE_FOR_SYSTEM) == AUDIO_POLICY_FORCE_SYSTEM_ENFORCED) {
+            setStrategyMute(STRATEGY_SONIFICATION, false, outputDesc);
+        }
+
         if (stream == AUDIO_STREAM_MUSIC) {
             selectOutputForMusicEffects();
         }
@@ -3561,18 +3574,25 @@ static const int kConfigLocationListSize =
 
 static status_t deserializeAudioPolicyXmlConfig(AudioPolicyConfig &config) {
     char audioPolicyXmlConfigFile[AUDIO_POLICY_XML_CONFIG_FILE_PATH_MAX_LENGTH];
+    std::vector<const char*> fileNames;
     status_t ret;
 
-    for (int i = 0; i < kConfigLocationListSize; i++) {
-        PolicySerializer serializer;
-        snprintf(audioPolicyXmlConfigFile,
-                 sizeof(audioPolicyXmlConfigFile),
-                 "%s/%s",
-                 kConfigLocationList[i],
-                 AUDIO_POLICY_XML_CONFIG_FILE_NAME);
-        ret = serializer.deserialize(audioPolicyXmlConfigFile, config);
-        if (ret == NO_ERROR) {
-            break;
+    if (property_get_bool("ro.bluetooth.a2dp_offload.supported", false) &&
+        property_get_bool("persist.bluetooth.a2dp_offload.disabled", false)) {
+        // A2DP offload supported but disabled: try to use special XML file
+        fileNames.push_back(AUDIO_POLICY_A2DP_OFFLOAD_DISABLED_XML_CONFIG_FILE_NAME);
+    }
+    fileNames.push_back(AUDIO_POLICY_XML_CONFIG_FILE_NAME);
+
+    for (const char* fileName : fileNames) {
+        for (int i = 0; i < kConfigLocationListSize; i++) {
+            PolicySerializer serializer;
+            snprintf(audioPolicyXmlConfigFile, sizeof(audioPolicyXmlConfigFile),
+                     "%s/%s", kConfigLocationList[i], fileName);
+            ret = serializer.deserialize(audioPolicyXmlConfigFile, config);
+            if (ret == NO_ERROR) {
+                return ret;
+            }
         }
     }
     return ret;
@@ -4666,7 +4686,7 @@ void AudioPolicyManager::checkOutputForAllStrategies()
 void AudioPolicyManager::checkA2dpSuspend()
 {
     audio_io_handle_t a2dpOutput = mOutputs.getA2dpOutput();
-    if (a2dpOutput == 0) {
+    if (a2dpOutput == 0 || mOutputs.isA2dpOffloadedOnPrimary()) {
         mA2dpSuspended = false;
         return;
     }
