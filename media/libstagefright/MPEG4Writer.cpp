@@ -128,7 +128,7 @@ public:
     bool isHeic() const { return mIsHeic; }
     bool isAudio() const { return mIsAudio; }
     bool isMPEG4() const { return mIsMPEG4; }
-    bool usePrefix() const { return mIsAvc || mIsHevc || mIsHeic; }
+    bool usePrefix() const { return (mIsAvc || mIsHevc || mIsHeic) && !mNalLengthBitstream; }
     bool isExifData(MediaBufferBase *buffer, uint32_t *tiffHdrOffset) const;
     void addChunkOffset(off64_t offset);
     void addItemOffsetAndSize(off64_t offset, size_t size, bool isExif);
@@ -297,6 +297,7 @@ private:
     int64_t mTrackDurationUs;
     int64_t mMaxChunkDurationUs;
     int64_t mLastDecodingTimeUs;
+    int32_t mNalLengthBitstream;
 
     int64_t mEstimatedTrackSizeBytes;
     int64_t mMdatSizeBytes;
@@ -1796,6 +1797,7 @@ MPEG4Writer::Track::Track(
       mIsMalformed(false),
       mTrackId(trackId),
       mTrackDurationUs(0),
+      mNalLengthBitstream(0),
       mEstimatedTrackSizeBytes(0),
       mSamplesHaveSameSize(true),
       mStszTableEntries(new ListTableEntries<uint32_t, 1>(1000)),
@@ -1838,6 +1840,7 @@ MPEG4Writer::Track::Track(
     mIsMPEG4 = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_MPEG4) ||
                !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC);
 
+    mMeta->findInt32(kKeyFeatureNalLengthBitstream, &mNalLengthBitstream);
     // store temporal layer count
     if (mIsVideo) {
         int32_t count;
@@ -2582,8 +2585,20 @@ const uint8_t *MPEG4Writer::Track::parseParamSet(
     CHECK(type == kNalUnitTypeSeqParamSet ||
           type == kNalUnitTypePicParamSet);
 
-    const uint8_t *nextStartCode = findNextNalStartCode(data, length);
-    *paramSetLen = nextStartCode - data;
+    const uint8_t *nextStartCode = NULL;
+    if (mNalLengthBitstream) {
+        uint32_t nalSize = 0;
+        std::copy(data, data + 4, reinterpret_cast<uint8_t *>(&nalSize));
+        nalSize = ntohl(nalSize);
+        nextStartCode = data + 4 + nalSize;
+        *paramSetLen = nalSize;
+        data = data + 4;
+    } else {
+        data = data + 4;
+        nextStartCode = findNextNalStartCode(data, length-4);
+        *paramSetLen = nextStartCode - data;
+    }
+
     if (*paramSetLen == 0) {
         ALOGE("Param set is malformed, since its length is 0");
         return NULL;
@@ -2664,7 +2679,7 @@ status_t MPEG4Writer::Track::parseAVCCodecSpecificData(
     size_t bytesLeft = size;
     size_t paramSetLen = 0;
     mCodecSpecificDataSize = 0;
-    while (bytesLeft > 4 && !memcmp("\x00\x00\x00\x01", tmp, 4)) {
+    while (bytesLeft > 4 && (!memcmp("\x00\x00\x00\x01", tmp, 4) || mNalLengthBitstream)) {
         getNalUnitType(*(tmp + 4), &type);
         if (type == kNalUnitTypeSeqParamSet) {
             if (gotPps) {
@@ -2674,7 +2689,7 @@ status_t MPEG4Writer::Track::parseAVCCodecSpecificData(
             if (!gotSps) {
                 gotSps = true;
             }
-            nextStartCode = parseParamSet(tmp + 4, bytesLeft - 4, type, &paramSetLen);
+            nextStartCode = parseParamSet(tmp, bytesLeft, type, &paramSetLen);
         } else if (type == kNalUnitTypePicParamSet) {
             if (!gotSps) {
                 ALOGE("SPS must come before PPS");
@@ -2683,7 +2698,7 @@ status_t MPEG4Writer::Track::parseAVCCodecSpecificData(
             if (!gotPps) {
                 gotPps = true;
             }
-            nextStartCode = parseParamSet(tmp + 4, bytesLeft - 4, type, &paramSetLen);
+            nextStartCode = parseParamSet(tmp, bytesLeft, type, &paramSetLen);
         } else {
             ALOGE("Only SPS and PPS Nal units are expected");
             return ERROR_MALFORMED;
@@ -2756,7 +2771,7 @@ status_t MPEG4Writer::Track::makeAVCCodecSpecificData(
     }
 
     // Data is in the form of AVCCodecSpecificData
-    if (memcmp("\x00\x00\x00\x01", data, 4)) {
+    if (memcmp("\x00\x00\x00\x01", data, 4) && !mNalLengthBitstream) {
         return copyAVCCodecSpecificData(data, size);
     }
 
@@ -2828,16 +2843,32 @@ status_t MPEG4Writer::Track::parseHEVCCodecSpecificData(
     const uint8_t *tmp = data;
     const uint8_t *nextStartCode = data;
     size_t bytesLeft = size;
-    while (bytesLeft > 4 && !memcmp("\x00\x00\x00\x01", tmp, 4)) {
-        nextStartCode = findNextNalStartCode(tmp + 4, bytesLeft - 4);
-        status_t err = paramSets.addNalUnit(tmp + 4, (nextStartCode - tmp) - 4);
-        if (err != OK) {
-            return ERROR_MALFORMED;
-        }
+    if (mNalLengthBitstream) {
+        while  (bytesLeft > 4) {
+            uint32_t nalSize = 0;
+            std::copy(tmp, tmp+4, reinterpret_cast<uint8_t *>(&nalSize));
+            nalSize = ntohl(nalSize);
 
-        // Move on to find the next parameter set
-        bytesLeft -= nextStartCode - tmp;
-        tmp = nextStartCode;
+            status_t err = paramSets.addNalUnit(tmp + 4, nalSize);
+            if (err != OK) {
+                return ERROR_MALFORMED;
+            }
+
+            bytesLeft -= (nalSize + 4);
+            tmp += nalSize + 4;
+        }
+    } else {
+        while (bytesLeft > 4 && !memcmp("\x00\x00\x00\x01", tmp, 4)) {
+            nextStartCode = findNextNalStartCode(tmp + 4, bytesLeft - 4);
+            status_t err = paramSets.addNalUnit(tmp + 4, (nextStartCode - tmp) - 4);
+            if (err != OK) {
+                return ERROR_MALFORMED;
+            }
+
+            // Move on to find the next parameter set
+            bytesLeft -= nextStartCode - tmp;
+            tmp = nextStartCode;
+        }
     }
 
     size_t csdSize = 23;
@@ -2883,7 +2914,7 @@ status_t MPEG4Writer::Track::makeHEVCCodecSpecificData(
     }
 
     // Data is in the form of HEVCCodecSpecificData
-    if (memcmp("\x00\x00\x00\x01", data, 4)) {
+    if (memcmp("\x00\x00\x00\x01", data, 4) && !mNalLengthBitstream) {
         return copyHEVCCodecSpecificData(data, size);
     }
 
