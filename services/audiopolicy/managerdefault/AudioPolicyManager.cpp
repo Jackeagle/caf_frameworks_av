@@ -825,7 +825,7 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
           "flags %#x",
           device, config->sample_rate, config->format, config->channel_mask, *flags);
 
-    *output = getOutputForDevice(device, session, *stream, *output, config, flags);
+    *output = getOutputForDevice(device, session, *stream, config, flags);
     if (*output == AUDIO_IO_HANDLE_NONE) {
         mOutputRoutes.removeRoute(session);
         return INVALID_OPERATION;
@@ -844,11 +844,10 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         audio_devices_t device,
         audio_session_t session,
         audio_stream_type_t stream,
-        audio_io_handle_t originalOutput,
         const audio_config_t *config,
         audio_output_flags_t *flags)
 {
-    audio_io_handle_t output = originalOutput;
+    audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
     status_t status;
 
     // open a direct output if required by specified parameters
@@ -911,22 +910,20 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
     }
 
     if (profile != 0) {
-        // exclude MMAP streams
-        if ((*flags & AUDIO_OUTPUT_FLAG_MMAP_NOIRQ) == 0 || output != AUDIO_IO_HANDLE_NONE) {
-            for (size_t i = 0; i < mOutputs.size(); i++) {
-                sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
-                if (!desc->isDuplicated() && (profile == desc->mProfile)) {
-                    // reuse direct output if currently open by the same client
-                    // and configured with same parameters
-                    if ((config->sample_rate == desc->mSamplingRate) &&
-                        audio_formats_match(config->format, desc->mFormat) &&
-                        (config->channel_mask == desc->mChannelMask) &&
-                        (session == desc->mDirectClientSession)) {
-                        desc->mDirectOpenCount++;
-                        ALOGI("getOutputForDevice() reusing direct output %d for session %d",
-                              mOutputs.keyAt(i), session);
-                        return mOutputs.keyAt(i);
-                    }
+        // exclusive outputs for MMAP and Offload are enforced by different session ids.
+        for (size_t i = 0; i < mOutputs.size(); i++) {
+            sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
+            if (!desc->isDuplicated() && (profile == desc->mProfile)) {
+                // reuse direct output if currently open by the same client
+                // and configured with same parameters
+                if ((config->sample_rate == desc->mSamplingRate) &&
+                    (config->format == desc->mFormat) &&
+                    (config->channel_mask == desc->mChannelMask) &&
+                    (session == desc->mDirectClientSession)) {
+                    desc->mDirectOpenCount++;
+                    ALOGI("getOutputForDevice() reusing direct output %d for session %d",
+                        mOutputs.keyAt(i), session);
+                    return mOutputs.keyAt(i);
                 }
             }
         }
@@ -947,8 +944,7 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         // only accept an output with the requested parameters
         if (status != NO_ERROR ||
             (config->sample_rate != 0 && config->sample_rate != outputDesc->mSamplingRate) ||
-            (config->format != AUDIO_FORMAT_DEFAULT &&
-                    !audio_formats_match(config->format, outputDesc->mFormat)) ||
+            (config->format != AUDIO_FORMAT_DEFAULT && config->format != outputDesc->mFormat) ||
             (config->channel_mask != 0 && config->channel_mask != outputDesc->mChannelMask)) {
             ALOGV("getOutputForDevice() failed opening direct output: output %d sample rate %d %d,"
                     "format %d %d, channel mask %04x %04x", output, config->sample_rate,
@@ -1037,7 +1033,7 @@ audio_io_handle_t AudioPolicyManager::selectOutput(const SortedVector<audio_io_h
             // if a valid format is specified, skip output if not compatible
             if (format != AUDIO_FORMAT_INVALID) {
                 if (outputDesc->mFlags & AUDIO_OUTPUT_FLAG_DIRECT) {
-                    if (!audio_formats_match(format, outputDesc->mFormat)) {
+                    if (format != outputDesc->mFormat) {
                         continue;
                     }
                 } else if (!audio_is_linear_pcm(format)) {
@@ -1118,7 +1114,7 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
         } else {
             newDevice = AUDIO_DEVICE_OUT_REMOTE_SUBMIX;
         }
-    } else if (mOutputRoutes.hasRouteChanged(session)) {
+    } else if (mOutputRoutes.getAndClearRouteChanged(session)) {
         newDevice = getNewOutputDevice(outputDesc, false /*fromCache*/);
         checkStrategyRoute(getStrategy(stream), output);
     } else {
@@ -1884,6 +1880,7 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
         if (mCallTxPatch != 0 &&
             inputDesc->getModuleHandle() == mCallTxPatch->mPatch.sources[0].ext.device.hw_module) {
             ALOGW("startInput(%d) failed: call in progress", input);
+            *concurrency |= API_INPUT_CONCURRENCY_CALL;
             return INVALID_OPERATION;
         }
 
@@ -1926,17 +1923,20 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
                         ALOGW("startInput(%d) failed for HOTWORD: "
                                 "other input %d already started for HOTWORD",
                               input, activeDesc->mIoHandle);
+                        *concurrency |= API_INPUT_CONCURRENCY_HOTWORD;
                         return INVALID_OPERATION;
                     }
                 } else {
                     ALOGV("startInput(%d) failed for HOTWORD: other input %d already started",
                           input, activeDesc->mIoHandle);
+                    *concurrency |= API_INPUT_CONCURRENCY_CAPTURE;
                     return INVALID_OPERATION;
                 }
             } else {
                 if (activeSource != AUDIO_SOURCE_HOTWORD) {
                     ALOGW("startInput(%d) failed: other input %d already started",
                           input, activeDesc->mIoHandle);
+                    *concurrency |= API_INPUT_CONCURRENCY_CAPTURE;
                     return INVALID_OPERATION;
                 }
             }
@@ -1961,6 +1961,7 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
                 audio_session_t activeSession = activeSessions.keyAt(0);
                 audio_io_handle_t activeHandle = activeDesc->mIoHandle;
                 SortedVector<audio_session_t> sessions = activeDesc->getPreemptedSessions();
+                *concurrency |= API_INPUT_CONCURRENCY_PREEMPT;
                 sessions.add(activeSession);
                 inputDesc->setPreemptedSessions(sessions);
                 stopInput(activeHandle, activeSession);
@@ -1982,7 +1983,7 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
     // Routing?
     mInputRoutes.incRouteActivity(session);
 
-    if (audioSession->activeCount() == 1 || mInputRoutes.hasRouteChanged(session)) {
+    if (audioSession->activeCount() == 1 || mInputRoutes.getAndClearRouteChanged(session)) {
         // indicate active capture to sound trigger service if starting capture from a mic on
         // primary HW module
         audio_devices_t device = getNewInputDevice(inputDesc);
@@ -4729,7 +4730,7 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
     for (size_t routeIndex = 0; routeIndex < mOutputRoutes.size(); routeIndex++) {
         sp<SessionRoute> route = mOutputRoutes.valueAt(routeIndex);
         routing_strategy routeStrategy = getStrategy(route->mStreamType);
-        if ((routeStrategy == strategy) && route->isActive() &&
+        if ((routeStrategy == strategy) && route->isActiveOrChanged() &&
                 (mAvailableOutputDevices.indexOf(route->mDeviceDescriptor) >= 0)) {
             return route->mDeviceDescriptor->type();
         }
@@ -5166,7 +5167,7 @@ audio_devices_t AudioPolicyManager::getDeviceForInputSource(audio_source_t input
     // then select this device.
     for (size_t routeIndex = 0; routeIndex < mInputRoutes.size(); routeIndex++) {
          sp<SessionRoute> route = mInputRoutes.valueAt(routeIndex);
-         if ((inputSource == route->mSource) && route->isActive() &&
+         if ((inputSource == route->mSource) && route->isActiveOrChanged() &&
                  (mAvailableInputDevices.indexOf(route->mDeviceDescriptor) >= 0)) {
              return route->mDeviceDescriptor->type();
          }
