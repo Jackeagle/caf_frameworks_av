@@ -1093,7 +1093,8 @@ status_t OMXNodeInstance::useBuffer(
         }
 
         case OMXBuffer::kBufferTypeSharedMem: {
-            if (mPortMode[portIndex] != IOMX::kPortModePresetByteBuffer) {
+            if (mPortMode[portIndex] != IOMX::kPortModePresetByteBuffer
+                    && mPortMode[portIndex] != IOMX::kPortModeDynamicANWBuffer) {
                 break;
             }
             return useBuffer_l(portIndex, omxBuffer.mMem, NULL, buffer);
@@ -1108,7 +1109,8 @@ status_t OMXNodeInstance::useBuffer(
 
         case OMXBuffer::kBufferTypeHidlMemory: {
                 if (mPortMode[portIndex] != IOMX::kPortModePresetByteBuffer
-                        && mPortMode[portIndex] != IOMX::kPortModeDynamicANWBuffer) {
+                        && mPortMode[portIndex] != IOMX::kPortModeDynamicANWBuffer
+                        && mPortMode[portIndex] != IOMX::kPortModeDynamicNativeHandle) {
                     break;
                 }
                 sp<IHidlMemory> hidlMemory = mapMemory(omxBuffer.mHidlMemory);
@@ -1123,7 +1125,8 @@ status_t OMXNodeInstance::useBuffer(
             break;
     }
 
-    ALOGE("b/77486542");
+    ALOGE("b/77486542 : bufferType = %d vs. portMode = %d",
+          omxBuffer.mBufferType, mPortMode[portIndex]);
     android_errorWriteLog(0x534e4554, "77486542");
     return INVALID_OPERATION;
 }
