@@ -38,6 +38,7 @@
 static const int kDumpLockRetries = 50;
 static const int kDumpLockSleepUs = 20000;
 #include "mediaplayerservice/AVNuExtensions.h"
+#include "mediaplayerservice/AVMediaServiceExtensions.h"
 
 namespace android {
 
@@ -776,9 +777,11 @@ status_t NuPlayerDriver::getParameter(int key, Parcel *reply) {
     if (key == FOURCC('m','t','r','X')) {
         // mtrX -- a play on 'metrics' (not matrix)
         // gather current info all together, parcel it, and send it back
-        updateMetrics("api");
-        mAnalyticsItem->writeToParcel(reply);
-        return OK;
+        if (mAnalyticsItem != NULL) {
+            updateMetrics("api");
+            mAnalyticsItem->writeToParcel(reply);
+            return OK;
+        }
     }
 
     return INVALID_OPERATION;
@@ -807,6 +810,8 @@ status_t NuPlayerDriver::getMetadata(
     meta.appendBool(
             Metadata::kSeekAvailable,
             mPlayerFlags & NuPlayer::Source::FLAG_CAN_SEEK);
+
+    AVMediaServiceUtils::get()->appendMeta(&meta);
 
     return OK;
 }
@@ -1001,7 +1006,7 @@ void NuPlayerDriver::notifyListener_l(
             // when we have an error, add it to the analytics for this playback.
             // ext1 is our primary 'error type' value. Only add ext2 when non-zero.
             // [test against msg is due to fall through from previous switch value]
-            if (msg == MEDIA_ERROR) {
+            if (msg == MEDIA_ERROR && mAnalyticsItem != NULL) {
                 mAnalyticsItem->setInt32(kPlayerError, ext1);
                 if (ext2 != 0) {
                     mAnalyticsItem->setInt32(kPlayerErrorCode, ext2);

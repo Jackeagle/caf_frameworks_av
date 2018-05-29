@@ -157,6 +157,7 @@ static void parseAacProfileFromCsd(const sp<ABuffer> &csd, sp<AMessage> &format)
         { 23, OMX_AUDIO_AACObjectLD       },
         { 29, OMX_AUDIO_AACObjectHE_PS    },
         { 39, OMX_AUDIO_AACObjectELD      },
+        { 42, OMX_AUDIO_AACObjectXHE      },
     };
 
     OMX_AUDIO_AACPROFILETYPE profile;
@@ -882,7 +883,7 @@ status_t convertMetaDataToMessage(
     } else if (meta->findData(kKeyHVCC, &type, &data, &size)) {
         const uint8_t *ptr = (const uint8_t *)data;
 
-        if (size < 23 || ptr[0] != 1) {  // configurationVersion == 1
+        if (size < 23 || (ptr[0] != 1 && ptr[0] != 0)) {  // configurationVersion == 1
             ALOGE("b/23680780");
             return BAD_VALUE;
         }
@@ -1616,6 +1617,7 @@ static const struct aac_format_conv_t profileLookup[] = {
     { OMX_AUDIO_AACObjectLD,          AUDIO_FORMAT_AAC_LD},
     { OMX_AUDIO_AACObjectHE_PS,       AUDIO_FORMAT_AAC_HE_V2},
     { OMX_AUDIO_AACObjectELD,         AUDIO_FORMAT_AAC_ELD},
+    { OMX_AUDIO_AACObjectXHE,         AUDIO_FORMAT_AAC_XHE},
     { OMX_AUDIO_AACObjectNull,        AUDIO_FORMAT_AAC},
 };
 

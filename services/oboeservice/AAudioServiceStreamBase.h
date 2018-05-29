@@ -180,6 +180,10 @@ public:
         mHandle = handle;
     }
 
+    audio_port_handle_t getPortHandle() const {
+        return mClientHandle;
+    }
+
     aaudio_stream_state_t getState() const {
         return mState;
     }
@@ -201,22 +205,33 @@ public:
 
     /**
      * Atomically increment the number of active references to the stream by AAudioService.
+     *
+     * This is called under a global lock in AAudioStreamTracker.
+     *
      * @return value after the increment
      */
-    int32_t incrementServiceReferenceCount();
+    int32_t incrementServiceReferenceCount_l();
 
     /**
      * Atomically decrement the number of active references to the stream by AAudioService.
+     * This should only be called after incrementServiceReferenceCount_l().
+     *
+     * This is called under a global lock in AAudioStreamTracker.
+     *
      * @return value after the decrement
      */
-    int32_t decrementServiceReferenceCount();
+    int32_t decrementServiceReferenceCount_l();
 
     bool isCloseNeeded() const {
         return mCloseNeeded.load();
     }
 
-    void setCloseNeeded(bool needed) {
-        mCloseNeeded.store(needed);
+    /**
+     * Mark this stream as needing to be closed.
+     * Once marked for closing, it cannot be unmarked.
+     */
+    void markCloseNeeded() {
+        mCloseNeeded.store(true);
     }
 
     virtual const char *getTypeText() const { return "Base"; }
@@ -269,19 +284,26 @@ protected:
 
     int32_t                 mFramesPerBurst = 0;
     android::AudioClient    mMmapClient; // set in open, used in MMAP start()
+    // TODO rename mClientHandle to mPortHandle to be more consistent with AudioFlinger.
     audio_port_handle_t     mClientHandle = AUDIO_PORT_HANDLE_NONE;
 
     SimpleDoubleBuffer<Timestamp>  mAtomicTimestamp;
 
     android::AAudioService &mAudioService;
+
+    // The mServiceEndpoint variable can be accessed by multiple threads.
+    // So we access it by locally promoting a weak pointer to a smart pointer,
+    // which is thread-safe.
     android::sp<AAudioServiceEndpoint> mServiceEndpoint;
+    android::wp<AAudioServiceEndpoint> mServiceEndpointWeak;
 
 private:
     aaudio_handle_t         mHandle = -1;
     bool                    mFlowing = false;
 
-    std::mutex              mCallingCountLock;
-    std::atomic<int32_t>    mCallingCount{0};
+    // This is modified under a global lock in AAudioStreamTracker.
+    int32_t                 mCallingCount = 0;
+
     std::atomic<bool>       mCloseNeeded{false};
 };
 

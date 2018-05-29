@@ -203,9 +203,16 @@ public:
     virtual float    getStreamVolumeDB(
                 audio_stream_type_t stream, int index, audio_devices_t device);
 
+    virtual status_t getSurroundFormats(unsigned int *numSurroundFormats,
+                                        audio_format_t *surroundFormats,
+                                        bool *surroundFormatsEnabled,
+                                        bool reported);
+    virtual status_t setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled);
+
             status_t doStartOutput(audio_io_handle_t output,
                                    audio_stream_type_t stream,
                                    audio_session_t session);
+                                   
             status_t doStopOutput(audio_io_handle_t output,
                                   audio_stream_type_t stream,
                                   audio_session_t session);
@@ -652,6 +659,22 @@ private:
         bool active;                   // Capture is active or inactive
         bool isConcurrent;             // is allowed to concurrent capture
         bool isVirtualDevice;          // uses vitual device: updated by APM::getInputForAttr()
+    };
+
+    // A class automatically clearing and restoring binder caller identity inside
+    // a code block (scoped variable)
+    // Declare one systematically before calling AudioPolicyManager methods so that they are
+    // executed with the same level of privilege as audioserver process.
+    class AutoCallerClear {
+    public:
+            AutoCallerClear() :
+                mToken(IPCThreadState::self()->clearCallingIdentity()) {}
+            ~AutoCallerClear() {
+                IPCThreadState::self()->restoreCallingIdentity(mToken);
+            }
+
+    private:
+        const   int64_t mToken;
     };
 
     // Internal dump utilities.

@@ -49,7 +49,6 @@ MetadataRetrieverClient::MetadataRetrieverClient(pid_t pid)
 {
     ALOGV("MetadataRetrieverClient constructor pid(%d)", pid);
     mPid = pid;
-    mThumbnail = NULL;
     mAlbumArt = NULL;
     mRetriever = NULL;
 }
@@ -78,7 +77,6 @@ void MetadataRetrieverClient::disconnect()
     ALOGV("disconnect from pid %d", mPid);
     Mutex::Autolock lock(mLock);
     mRetriever.clear();
-    mThumbnail.clear();
     mAlbumArt.clear();
     IPCThreadState::self()->flushCommands();
 }
@@ -193,25 +191,6 @@ status_t MetadataRetrieverClient::setDataSource(
 
 Mutex MetadataRetrieverClient::sLock;
 
-static sp<IMemory> getThumbnail(VideoFrame* frame) {
-    std::unique_ptr<VideoFrame> frameDeleter(frame);
-
-    size_t size = frame->getFlattenedSize();
-    sp<MemoryHeapBase> heap = new MemoryHeapBase(size, 0, "MetadataRetrieverClient");
-    if (heap == NULL) {
-        ALOGE("failed to create MemoryDealer");
-        return NULL;
-    }
-    sp<IMemory> thrumbnail = new MemoryBase(heap, 0, size);
-    if (thrumbnail == NULL) {
-        ALOGE("not enough memory for VideoFrame size=%zu", size);
-        return NULL;
-    }
-    VideoFrame *frameCopy = static_cast<VideoFrame *>(thrumbnail->pointer());
-    frameCopy->copyFlattened(*frame);
-    return thrumbnail;
-}
-
 sp<IMemory> MetadataRetrieverClient::getFrameAtTime(
         int64_t timeUs, int option, int colorFormat, bool metaOnly)
 {
@@ -219,36 +198,53 @@ sp<IMemory> MetadataRetrieverClient::getFrameAtTime(
             timeUs, option, colorFormat, metaOnly);
     Mutex::Autolock lock(mLock);
     Mutex::Autolock glock(sLock);
-    mThumbnail.clear();
     if (mRetriever == NULL) {
         ALOGE("retriever is not initialized");
         return NULL;
     }
-    VideoFrame *frame = mRetriever->getFrameAtTime(timeUs, option, colorFormat, metaOnly);
+    sp<IMemory> frame = mRetriever->getFrameAtTime(timeUs, option, colorFormat, metaOnly);
     if (frame == NULL) {
         ALOGE("failed to capture a video frame");
         return NULL;
     }
-    return getThumbnail(frame);
+    return frame;
 }
 
 sp<IMemory> MetadataRetrieverClient::getImageAtIndex(
-        int index, int colorFormat, bool metaOnly) {
-    ALOGV("getFrameAtTime: index(%d) colorFormat(%d), metaOnly(%d)",
-            index, colorFormat, metaOnly);
+        int index, int colorFormat, bool metaOnly, bool thumbnail) {
+    ALOGV("getImageAtIndex: index(%d) colorFormat(%d), metaOnly(%d) thumbnail(%d)",
+            index, colorFormat, metaOnly, thumbnail);
     Mutex::Autolock lock(mLock);
     Mutex::Autolock glock(sLock);
-    mThumbnail.clear();
     if (mRetriever == NULL) {
         ALOGE("retriever is not initialized");
         return NULL;
     }
-    VideoFrame *frame = mRetriever->getImageAtIndex(index, colorFormat, metaOnly);
+    sp<IMemory> frame = mRetriever->getImageAtIndex(index, colorFormat, metaOnly, thumbnail);
     if (frame == NULL) {
         ALOGE("failed to extract image");
         return NULL;
     }
-    return getThumbnail(frame);
+    return frame;
+}
+
+sp<IMemory> MetadataRetrieverClient::getImageRectAtIndex(
+        int index, int colorFormat, int left, int top, int right, int bottom) {
+    ALOGV("getImageRectAtIndex: index(%d) colorFormat(%d), rect {%d, %d, %d, %d}",
+            index, colorFormat, left, top, right, bottom);
+    Mutex::Autolock lock(mLock);
+    Mutex::Autolock glock(sLock);
+    if (mRetriever == NULL) {
+        ALOGE("retriever is not initialized");
+        return NULL;
+    }
+    sp<IMemory> frame = mRetriever->getImageRectAtIndex(
+            index, colorFormat, left, top, right, bottom);
+    if (frame == NULL) {
+        ALOGE("failed to extract image");
+        return NULL;
+    }
+    return frame;
 }
 
 status_t MetadataRetrieverClient::getFrameAtIndex(
@@ -263,14 +259,11 @@ status_t MetadataRetrieverClient::getFrameAtIndex(
         return INVALID_OPERATION;
     }
 
-    std::vector<VideoFrame*> videoFrames;
     status_t err = mRetriever->getFrameAtIndex(
-            &videoFrames, frameIndex, numFrames, colorFormat, metaOnly);
+            frames, frameIndex, numFrames, colorFormat, metaOnly);
     if (err != OK) {
+        frames->clear();
         return err;
-    }
-    for (size_t i = 0; i < videoFrames.size(); i++) {
-        frames->push_back(getThumbnail(videoFrames[i]));
     }
     return OK;
 }

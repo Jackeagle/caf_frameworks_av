@@ -210,6 +210,10 @@ status_t NuPlayer::Renderer::onConfigPlayback(const AudioPlaybackRate &rate /* s
             return err;
         }
     }
+
+    if (!mHasAudio) {
+        clearAnchorTime();
+    }
     mPlaybackSettings = rate;
     mPlaybackRate = rate.mSpeed;
     mMediaClock->setPlaybackRate(mPlaybackRate);
@@ -1713,6 +1717,8 @@ void NuPlayer::Renderer::onDisableOffloadAudio() {
     ++mAudioDrainGeneration;
     if (mAudioRenderingStartGeneration != -1) {
         prepareForMediaRenderingStart_l();
+        // PauseTimeout is applied to offload mode only. Cancel pending timer.
+        cancelAudioOffloadPauseTimeout();
     }
 }
 
@@ -1741,6 +1747,7 @@ void NuPlayer::Renderer::onPause() {
 
     mDrainAudioQueuePending = false;
     mDrainVideoQueuePending = false;
+    mVideoRenderingStarted = false; // force-notify NOTE_INFO MEDIA_INFO_RENDERING_START after resume
 
     // Note: audio data may not have been decoded, and the AudioSink may not be opened.
     mAudioSink->pause();
@@ -1827,6 +1834,12 @@ void NuPlayer::Renderer::onAudioTearDown(AudioTearDownReason reason) {
     if (mAudioTornDown) {
         return;
     }
+
+    // TimeoutWhenPaused is only for offload mode.
+    if (reason == kDueToTimeout && !offloadingAudio()) {
+        return;
+    }
+
     mAudioTornDown = true;
 
     int64_t currentPositionUs;

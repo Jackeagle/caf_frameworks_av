@@ -166,6 +166,12 @@ public:
     virtual status_t getMasterMono(bool *mono) = 0;
     virtual float    getStreamVolumeDB(
             audio_stream_type_t stream, int index, audio_devices_t device) = 0;
+
+    virtual status_t getSurroundFormats(unsigned int *numSurroundFormats,
+                                        audio_format_t *surroundFormats,
+                                        bool *surroundFormatsEnabled,
+                                        bool reported) = 0;
+    virtual status_t setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled) = 0;
 };
 
 
@@ -180,6 +186,8 @@ public:
                                     uint32_t flags = 0);
 private:
     void sanetizeAudioAttributes(audio_attributes_t* attr);
+    status_t sanitizeEffectDescriptor(effect_descriptor_t* desc);
+    status_t sanitizeAudioPortConfig(struct audio_port_config* config);
 };
 
 // ----------------------------------------------------------------------------

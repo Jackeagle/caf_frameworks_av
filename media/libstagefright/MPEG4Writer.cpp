@@ -123,7 +123,7 @@ public:
     bool isHeic() const { return mIsHeic; }
     bool isAudio() const { return mIsAudio; }
     bool isMPEG4() const { return mIsMPEG4; }
-    bool usePrefix() const { return mIsAvc || mIsHevc || mIsHeic; }
+    bool usePrefix() const { return (mIsAvc || mIsHevc || mIsHeic) && !mSkipStartCodeSearch; }
     void addChunkOffset(off64_t offset);
     void addItemOffsetAndSize(off64_t offset, size_t size);
     int32_t getTrackId() const { return mTrackId; }
@@ -295,6 +295,7 @@ private:
     int64_t mTrackDurationUs;
     int64_t mMaxChunkDurationUs;
     int64_t mLastDecodingTimeUs;
+    int32_t mSkipStartCodeSearch;
 
     int64_t mEstimatedTrackSizeBytes;
     int64_t mMdatSizeBytes;
@@ -498,7 +499,6 @@ void MPEG4Writer::initInternal(int fd, bool isFirstSession) {
     mStreamableFile = false;
     mTimeScale = -1;
     mHasFileLevelMeta = false;
-    mHasMoovBox = false;
     mPrimaryItemId = 0;
     mAssociationEntryCount = 0;
     mNumGrids = 0;
@@ -507,6 +507,7 @@ void MPEG4Writer::initInternal(int fd, bool isFirstSession) {
     // And they will stay the same for all the recording sessions.
     if (isFirstSession) {
         mMoovExtraSize = 0;
+        mHasMoovBox = false;
         mMetaKeys = new AMessage();
         addDeviceMeta();
         mLatitudex10000 = 0;
@@ -1756,6 +1757,7 @@ MPEG4Writer::Track::Track(
       mIsMalformed(false),
       mTrackId(trackId),
       mTrackDurationUs(0),
+      mSkipStartCodeSearch(0),
       mEstimatedTrackSizeBytes(0),
       mSamplesHaveSameSize(true),
       mStszTableEntries(new ListTableEntries<uint32_t, 1>(1000)),
@@ -1794,6 +1796,8 @@ MPEG4Writer::Track::Track(
     mIsHeic = !strcasecmp(mime, MEDIA_MIMETYPE_IMAGE_ANDROID_HEIC);
     mIsMPEG4 = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_MPEG4) ||
                !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC);
+
+    mMeta->findInt32(kKeySkipStartCodeSearch, &mSkipStartCodeSearch);
 
     // store temporal layer count
     if (mIsVideo) {
@@ -3324,7 +3328,7 @@ status_t MPEG4Writer::Track::threadEntry() {
     // if err is ERROR_IO (ex: during SSR), return OK to save the
     // recorded file successfully. Session tear down will happen as part of
     // client callback
-    if ((mIsAudio && (err == ERROR_IO)) || (err == ERROR_END_OF_STREAM)) {
+    if ((err == ERROR_IO) || (err == ERROR_END_OF_STREAM)) {
         return OK;
     }
     return err;

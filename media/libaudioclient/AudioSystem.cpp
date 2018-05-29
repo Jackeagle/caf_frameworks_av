@@ -20,6 +20,7 @@
 #include <utils/Log.h>
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
+#include <binder/IPCThreadState.h>
 #include <media/AudioResamplerPublic.h>
 #include <media/AudioSystem.h>
 #include <media/IAudioFlinger.h>
@@ -75,7 +76,9 @@ const sp<IAudioFlinger> AudioSystem::get_audio_flinger()
         af = gAudioFlinger;
     }
     if (afc != 0) {
+        int64_t token = IPCThreadState::self()->clearCallingIdentity();
         af->registerClient(afc);
+        IPCThreadState::self()->restoreCallingIdentity(token);
     }
     return af;
 }
@@ -767,7 +770,10 @@ const sp<IAudioPolicyService> AudioSystem::get_audio_policy_service()
         ap = gAudioPolicyService;
     }
     if (apc != 0) {
+        int64_t token = IPCThreadState::self()->clearCallingIdentity();
         ap->registerClient(apc);
+        ap->setAudioPortCallbacksEnabled(apc->isAudioPortCbEnabled());
+        IPCThreadState::self()->restoreCallingIdentity(token);
     }
 
     return ap;
@@ -1278,6 +1284,24 @@ status_t AudioSystem::getMicrophones(std::vector<media::MicrophoneInfo> *microph
     const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
     if (af == 0) return PERMISSION_DENIED;
     return af->getMicrophones(microphones);
+}
+
+status_t AudioSystem::getSurroundFormats(unsigned int *numSurroundFormats,
+                                         audio_format_t *surroundFormats,
+                                         bool *surroundFormatsEnabled,
+                                         bool reported)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+    return aps->getSurroundFormats(
+            numSurroundFormats, surroundFormats, surroundFormatsEnabled, reported);
+}
+
+status_t AudioSystem::setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+    return aps->setSurroundFormatEnabled(audioFormat, enabled);
 }
 
 // ---------------------------------------------------------------------------

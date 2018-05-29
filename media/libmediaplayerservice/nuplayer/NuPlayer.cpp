@@ -1819,10 +1819,21 @@ void NuPlayer::restartAudio(
     closeAudioSink();
     mRenderer->flush(true /* audio */, false /* notifyComplete */);
     if (mVideoDecoder != NULL) {
-        mRenderer->flush(false /* audio */, false /* notifyComplete */);
+        mDeferredActions.push_back(
+                new FlushDecoderAction(FLUSH_CMD_NONE /* audio */,
+                                       FLUSH_CMD_FLUSH /* video */));
     }
 
-    performSeek(currentPositionUs, MediaPlayerSeekMode::SEEK_PREVIOUS_SYNC /* mode */);
+    mDeferredActions.push_back(
+            new SeekAction(currentPositionUs, MediaPlayerSeekMode::SEEK_PREVIOUS_SYNC /* mode */));
+
+    // After a flush without shutdown, decoder is paused.
+    // Don't resume it until source seek is done, otherwise it could
+    // start pulling stale data too soon.
+    mDeferredActions.push_back(
+            new ResumeDecoderAction(false));
+
+    processDeferredActions();
 
     if (forceNonOffload) {
         mRenderer->signalDisableOffloadAudio();
@@ -2687,6 +2698,13 @@ void NuPlayer::onSourceNotify(const sp<AMessage> &msg) {
         case Source::kWhatDrmNoLicense:
         {
             notifyListener(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, ERROR_DRM_NO_LICENSE);
+            break;
+        }
+
+        case Source::kWhatRTCPByeReceived:
+        {
+            ALOGV("notify the client that Bye message is received");
+            notifyListener(MEDIA_INFO, 2000, 0);
             break;
         }
 

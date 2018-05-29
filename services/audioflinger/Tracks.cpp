@@ -1571,11 +1571,11 @@ status_t AudioFlinger::PlaybackThread::PatchTrack::obtainBuffer(Proxy::Buffer* b
     status_t status = NO_ERROR;
     static const int32_t kMaxTries = 5;
     int32_t tryCounter = kMaxTries;
-    size_t  frameCount = buffer->mFrameCount;
+    const size_t originalFrameCount = buffer->mFrameCount;
     do {
         if (status == NOT_ENOUGH_DATA) {
             restartIfDisabled();
-            buffer->mFrameCount = frameCount;
+            buffer->mFrameCount = originalFrameCount; // cleared on error, must be restored.
         }
         status = mProxy->obtainBuffer(buffer, timeOut);
     } while ((status == NOT_ENOUGH_DATA) && (tryCounter-- > 0));
@@ -1665,7 +1665,8 @@ AudioFlinger::RecordThread::RecordTrack::RecordTrack(
         mFramesToDrop(0),
         mResamplerBufferProvider(NULL), // initialize in case of early constructor exit
         mRecordBufferConverter(NULL),
-        mFlags(flags)
+        mFlags(flags),
+        mSilenced(false)
 {
     if (mCblk == NULL) {
         return;
@@ -1784,14 +1785,14 @@ void AudioFlinger::RecordThread::RecordTrack::invalidate()
 
 /*static*/ void AudioFlinger::RecordThread::RecordTrack::appendDumpHeader(String8& result)
 {
-    result.append("Active Client Session S  Flags   Format Chn mask  SRate   Server FrmCnt\n");
+    result.append("Active Client Session S  Flags   Format Chn mask  SRate   Server FrmCnt Sil\n");
 }
 
 void AudioFlinger::RecordThread::RecordTrack::appendDump(String8& result, bool active)
 {
     result.appendFormat("%c%5s %6u %7u %2s 0x%03X "
             "%08X %08X %6u "
-            "%08X %6zu\n",
+            "%08X %6zu %3c\n",
             isFastTrack() ? 'F' : ' ',
             active ? "yes" : "no",
             (mClient == 0) ? getpid_cached : mClient->pid(),
@@ -1804,7 +1805,8 @@ void AudioFlinger::RecordThread::RecordTrack::appendDump(String8& result, bool a
             mSampleRate,
 
             mCblk->mServer,
-            mFrameCount
+            mFrameCount,
+            isSilenced() ? 's' : 'n'
             );
 }
 
@@ -1947,7 +1949,7 @@ AudioFlinger::MmapThread::MmapTrack::MmapTrack(ThreadBase *thread,
                   sessionId, uid, false /* isOut */,
                   ALLOC_NONE,
                   TYPE_DEFAULT, portId),
-        mPid(pid)
+        mPid(pid), mSilenced(false), mSilencedNotified(false)
 {
 }
 
