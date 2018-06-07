@@ -80,7 +80,9 @@ enum {
     SET_AUDIO_PORT_CALLBACK_ENABLED,
     SET_MASTER_MONO,
     GET_MASTER_MONO,
-    GET_STREAM_VOLUME_DB
+    GET_STREAM_VOLUME_DB,
+    GET_SURROUND_FORMATS,
+    SET_SURROUND_FORMAT_ENABLED
 };
 
 #define MAX_ITEMS_PER_LIST 1024
@@ -829,6 +831,54 @@ public:
         }
         return reply.readFloat();
     }
+
+    virtual status_t getSurroundFormats(unsigned int *numSurroundFormats,
+                                        audio_format_t *surroundFormats,
+                                        bool *surroundFormatsEnabled,
+                                        bool reported)
+    {
+        if (numSurroundFormats == NULL || (*numSurroundFormats != 0 &&
+                (surroundFormats == NULL || surroundFormatsEnabled == NULL))) {
+            return BAD_VALUE;
+        }
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
+        unsigned int numSurroundFormatsReq = *numSurroundFormats;
+        data.writeUint32(numSurroundFormatsReq);
+        data.writeBool(reported);
+        status_t status = remote()->transact(GET_SURROUND_FORMATS, data, &reply);
+        if (status == NO_ERROR && (status = (status_t)reply.readInt32()) == NO_ERROR) {
+            *numSurroundFormats = reply.readUint32();
+        }
+        if (status == NO_ERROR) {
+            if (numSurroundFormatsReq > *numSurroundFormats) {
+                numSurroundFormatsReq = *numSurroundFormats;
+            }
+            if (numSurroundFormatsReq > 0) {
+                status = reply.read(surroundFormats,
+                                    numSurroundFormatsReq * sizeof(audio_format_t));
+                if (status != NO_ERROR) {
+                    return status;
+                }
+                status = reply.read(surroundFormatsEnabled,
+                                    numSurroundFormatsReq * sizeof(bool));
+            }
+        }
+        return status;
+    }
+
+    virtual status_t setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioPolicyService::getInterfaceDescriptor());
+        data.writeInt32(audioFormat);
+        data.writeBool(enabled);
+        status_t status = remote()->transact(SET_SURROUND_FORMAT_ENABLED, data, &reply);
+        if (status != NO_ERROR) {
+            return status;
+        }
+        return reply.readInt32();
+    }
 };
 
 IMPLEMENT_META_INTERFACE(AudioPolicyService, "android.media.IAudioPolicyService");
@@ -857,7 +907,16 @@ status_t BnAudioPolicyService::onTransact(
         case RELEASE_SOUNDTRIGGER_SESSION:
             ALOGW("%s: transaction %d received from PID %d",
                   __func__, code, IPCThreadState::self()->getCallingPid());
-            return INVALID_OPERATION;
+            // return status only for non void methods
+            switch (code) {
+                case RELEASE_OUTPUT:
+                case RELEASE_INPUT:
+                    break;
+                default:
+                    reply->writeInt32(static_cast<int32_t> (INVALID_OPERATION));
+                    break;
+            }
+            return OK;
         default:
             break;
     }
@@ -867,39 +926,29 @@ status_t BnAudioPolicyService::onTransact(
         case SET_DEVICE_CONNECTION_STATE:
         case HANDLE_DEVICE_CONFIG_CHANGE:
         case SET_PHONE_STATE:
-        case SET_RINGER_MODE:
-        case SET_FORCE_USE:
+//FIXME: Allow SET_FORCE_USE calls from system apps until a better use case routing API is available
+//      case SET_FORCE_USE:
         case INIT_STREAM_VOLUME:
         case SET_STREAM_VOLUME:
         case REGISTER_POLICY_MIXES:
         case SET_MASTER_MONO:
         case START_AUDIO_SOURCE:
-        case STOP_AUDIO_SOURCE: {
+        case STOP_AUDIO_SOURCE:
+        case GET_SURROUND_FORMATS:
+        case SET_SURROUND_FORMAT_ENABLED: {
             if (multiuser_get_app_id(IPCThreadState::self()->getCallingUid()) >= AID_APP_START) {
                 ALOGW("%s: transaction %d received from PID %d unauthorized UID %d",
                       __func__, code, IPCThreadState::self()->getCallingPid(),
                       IPCThreadState::self()->getCallingUid());
-                return INVALID_OPERATION;
+                reply->writeInt32(static_cast<int32_t> (INVALID_OPERATION));
+                return OK;
             }
         } break;
         default:
             break;
     }
 
-    // FIXME: extend timeout for SET_DEVICE_CONNECTION_STATE and HANDLE_DEVICE_CONFIG_CHANGE
-    // while we investigate why BT A2DP device connection/disconnection can sometimes
-    // take more than 5 seconds
-    uint32_t timeoutMs = TimeCheck::kDefaultTimeOutMs;
-    switch (code) {
-        case SET_DEVICE_CONNECTION_STATE:
-        case HANDLE_DEVICE_CONFIG_CHANGE:
-            timeoutMs *= 2;
-            break;
-        default:
-            break;
-    }
-
-    TimeCheck check("IAudioPolicyService", timeoutMs);
+    TimeCheck check("IAudioPolicyService");
 
     switch (code) {
         case SET_DEVICE_CONNECTION_STATE: {
@@ -1489,6 +1538,50 @@ status_t BnAudioPolicyService::onTransact(
             audio_devices_t device =
                     static_cast <audio_devices_t>(data.readUint32());
             reply->writeFloat(getStreamVolumeDB(stream, index, device));
+            return NO_ERROR;
+        }
+
+        case GET_SURROUND_FORMATS: {
+            CHECK_INTERFACE(IAudioPolicyService, data, reply);
+            unsigned int numSurroundFormatsReq = data.readUint32();
+            if (numSurroundFormatsReq > MAX_ITEMS_PER_LIST) {
+                numSurroundFormatsReq = MAX_ITEMS_PER_LIST;
+            }
+            bool reported = data.readBool();
+            unsigned int numSurroundFormats = numSurroundFormatsReq;
+            audio_format_t *surroundFormats = (audio_format_t *)calloc(
+                    numSurroundFormats, sizeof(audio_format_t));
+            bool *surroundFormatsEnabled = (bool *)calloc(numSurroundFormats, sizeof(bool));
+            if (numSurroundFormatsReq > 0 &&
+                    (surroundFormats == NULL || surroundFormatsEnabled == NULL)) {
+                free(surroundFormats);
+                free(surroundFormatsEnabled);
+                reply->writeInt32(NO_MEMORY);
+                return NO_ERROR;
+            }
+            status_t status = getSurroundFormats(
+                    &numSurroundFormats, surroundFormats, surroundFormatsEnabled, reported);
+            reply->writeInt32(status);
+
+            if (status == NO_ERROR) {
+                reply->writeUint32(numSurroundFormats);
+                if (numSurroundFormatsReq > numSurroundFormats) {
+                    numSurroundFormatsReq = numSurroundFormats;
+                }
+                reply->write(surroundFormats, numSurroundFormatsReq * sizeof(audio_format_t));
+                reply->write(surroundFormatsEnabled, numSurroundFormatsReq * sizeof(bool));
+            }
+            free(surroundFormats);
+            free(surroundFormatsEnabled);
+            return NO_ERROR;
+        }
+
+        case SET_SURROUND_FORMAT_ENABLED: {
+            CHECK_INTERFACE(IAudioPolicyService, data, reply);
+            audio_format_t audioFormat = (audio_format_t) data.readInt32();
+            bool enabled = data.readBool();
+            status_t status = setSurroundFormatEnabled(audioFormat, enabled);
+            reply->writeInt32(status);
             return NO_ERROR;
         }
 

@@ -22,7 +22,6 @@
 #include <android/hidl/manager/1.0/IServiceManager.h>
 
 #include <binder/IMemory.h>
-#include <cutils/native_handle.h>
 #include <hidlmemory/FrameworkUtils.h>
 #include <media/hardware/CryptoAPI.h>
 #include <media/stagefright/foundation/ADebug.h>
@@ -224,10 +223,14 @@ bool CryptoHal::requiresSecureDecoderComponent(const char *mime) const {
     Mutex::Autolock autoLock(mLock);
 
     if (mInitCheck != OK) {
-        return mInitCheck;
+        return false;
     }
 
-    return mPlugin->requiresSecureDecoderComponent(hidl_string(mime));
+    Return<bool> hResult = mPlugin->requiresSecureDecoderComponent(hidl_string(mime));
+    if (!hResult.isOk()) {
+        return false;
+    }
+    return hResult;
 }
 
 
@@ -245,17 +248,12 @@ int32_t CryptoHal::setHeapBase(const sp<IMemoryHeap>& heap) {
         ALOGE("setHeapBase(): heap is NULL");
         return -1;
     }
-    native_handle_t* nativeHandle = native_handle_create(1, 0);
-    if (!nativeHandle) {
-        ALOGE("setHeapBase(), failed to create native handle");
-        return -1;
-    }
 
     Mutex::Autolock autoLock(mLock);
 
     int32_t seqNum = mHeapSeqNum++;
     sp<HidlMemory> hidlMemory = fromHeap(heap);
-    mHeapBases.add(seqNum, mNextBufferId);
+    mHeapBases.add(seqNum, HeapBase(mNextBufferId, heap->getSize()));
     Return<void> hResult = mPlugin->setSharedBufferBase(*hidlMemory, mNextBufferId++);
     ALOGE_IF(!hResult.isOk(), "setSharedBufferBase(): remote call failed");
     return seqNum;
@@ -280,10 +278,26 @@ status_t CryptoHal::toSharedBuffer(const sp<IMemory>& memory, int32_t seqNum, ::
         return UNEXPECTED_NULL;
     }
 
-    // memory must be in the declared heap
-    CHECK(mHeapBases.indexOfKey(seqNum) >= 0);
+    // memory must be in one of the heaps that have been set
+    if (mHeapBases.indexOfKey(seqNum) < 0) {
+        return UNKNOWN_ERROR;
+    }
 
-    buffer->bufferId = mHeapBases.valueFor(seqNum);
+    // heap must be the same size as the one that was set in setHeapBase
+    if (mHeapBases.valueFor(seqNum).getSize() != heap->getSize()) {
+        android_errorWriteLog(0x534e4554, "76221123");
+        return UNKNOWN_ERROR;
+     }
+
+    // memory must be within the address space of the heap
+    if (memory->pointer() != static_cast<uint8_t *>(heap->getBase()) + memory->offset()  ||
+            heap->getSize() < memory->offset() + memory->size() ||
+            SIZE_MAX - memory->offset() < memory->size()) {
+        android_errorWriteLog(0x534e4554, "76221123");
+        return UNKNOWN_ERROR;
+    }
+
+    buffer->bufferId = mHeapBases.valueFor(seqNum).getBufferId();
     buffer->offset = offset >= 0 ? offset : 0;
     buffer->size = size;
     return OK;

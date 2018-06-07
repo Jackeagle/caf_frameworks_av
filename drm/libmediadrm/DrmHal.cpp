@@ -68,10 +68,12 @@ constexpr char kEqualsSign[] = "=";
 
 template<typename T>
 std::string toBase64StringNoPad(const T* data, size_t size) {
-    if (size == 0) {
+    // Note that the base 64 conversion only works with arrays of single-byte
+    // values. If the source is empty or is not an array of single-byte values,
+    // return empty string.
+    if (size == 0 || sizeof(data[0]) != 1) {
       return "";
     }
-    CHECK(sizeof(data[0] == 1));
 
     android::AString outputString;
     encodeBase64(data, size, &outputString);
@@ -1186,9 +1188,9 @@ status_t DrmHal::setCipherAlgorithm(Vector<uint8_t> const &sessionId,
 
     DrmSessionManager::Instance()->useSession(sessionId);
 
-    Status status = mPlugin->setCipherAlgorithm(toHidlVec(sessionId),
+    Return<Status> status = mPlugin->setCipherAlgorithm(toHidlVec(sessionId),
             toHidlString(algorithm));
-    return toStatusT(status);
+    return status.isOk() ? toStatusT(status) : DEAD_OBJECT;
 }
 
 status_t DrmHal::setMacAlgorithm(Vector<uint8_t> const &sessionId,
@@ -1198,9 +1200,9 @@ status_t DrmHal::setMacAlgorithm(Vector<uint8_t> const &sessionId,
 
     DrmSessionManager::Instance()->useSession(sessionId);
 
-    Status status = mPlugin->setMacAlgorithm(toHidlVec(sessionId),
+    Return<Status> status = mPlugin->setMacAlgorithm(toHidlVec(sessionId),
             toHidlString(algorithm));
-    return toStatusT(status);
+    return status.isOk() ? toStatusT(status) : DEAD_OBJECT;
 }
 
 status_t DrmHal::encrypt(Vector<uint8_t> const &sessionId,
