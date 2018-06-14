@@ -192,7 +192,6 @@ bool AudioMixer::setChannelMasks(int name,
     // always recompute for both channel masks even if only one has changed.
     const uint32_t trackChannelCount = audio_channel_count_from_out_mask(trackChannelMask);
     const uint32_t mixerChannelCount = audio_channel_count_from_out_mask(mixerChannelMask);
-    const bool mixerChannelCountChanged = track->mMixerChannelCount != mixerChannelCount;
 
     ALOG_ASSERT((trackChannelCount <= MAX_NUM_CHANNELS_TO_DOWNMIX)
             && trackChannelCount
@@ -204,17 +203,16 @@ bool AudioMixer::setChannelMasks(int name,
 
     // channel masks have changed, does this track need a downmixer?
     // update to try using our desired format (if we aren't already using it)
-    const audio_format_t prevDownmixerFormat = track->mDownmixRequiresFormat;
     const status_t status = track->prepareForDownmix();
     ALOGE_IF(status != OK,
             "prepareForDownmix error %d, track channel mask %#x, mixer channel mask %#x",
             status, track->channelMask, track->mMixerChannelMask);
 
-    if (prevDownmixerFormat != track->mDownmixRequiresFormat) {
-        track->prepareForReformat(); // because of downmixer, track format may change!
-    }
+    // always do reformat since channel mask changed,
+    // do it after downmix since track format may change!
+    track->prepareForReformat();
 
-    if (track->mResampler.get() != nullptr && mixerChannelCountChanged) {
+    if (track->mResampler.get() != nullptr) {
         // resampler channels may have changed.
         const uint32_t resetToSampleRate = track->sampleRate;
         track->mResampler.reset(nullptr);
@@ -312,6 +310,14 @@ status_t AudioMixer::Track::prepareForReformat()
                 audio_channel_count_from_out_mask(channelMask),
                 mFormat,
                 targetFormat,
+                kCopyBufferFrameCount));
+        requiresReconfigure = true;
+    } else if (mFormat == AUDIO_FORMAT_PCM_FLOAT) {
+        // Input and output are floats, make sure application did not provide > 3db samples
+        // that would break volume application (b/68099072)
+        // TODO: add a trusted source flag to avoid the overhead
+        mReformatBufferProvider.reset(new ClampFloatBufferProvider(
+                audio_channel_count_from_out_mask(channelMask),
                 kCopyBufferFrameCount));
         requiresReconfigure = true;
     }

@@ -480,6 +480,13 @@ sp<MediaCodec> MediaCodec::CreateByComponentName(
 
 // static
 sp<PersistentSurface> MediaCodec::CreatePersistentInputSurface() {
+    // allow plugin to create surface
+    sp<PersistentSurface> pluginSurface =
+        StagefrightPluginLoader::GetCCodecInstance()->createInputSurface();
+    if (pluginSurface != nullptr) {
+        return pluginSurface;
+    }
+
     OMXClient client;
     if (client.connect() != OK) {
         ALOGE("Failed to connect to OMX to create persistent input surface.");
@@ -855,14 +862,13 @@ static CodecBase *CreateCCodec() {
 
 //static
 sp<CodecBase> MediaCodec::GetCodecBase(const AString &name) {
-    static bool ccodecEnabled = property_get_bool("debug.stagefright.ccodec", false);
-    if (ccodecEnabled && name.startsWithIgnoreCase("c2.")) {
+    if (name.startsWithIgnoreCase("c2.")) {
         return CreateCCodec();
     } else if (name.startsWithIgnoreCase("omx.")) {
         // at this time only ACodec specifies a mime type.
         return AVFactory::get()->createACodec();
     } else if (name.startsWithIgnoreCase("android.filter.")) {
-        return new MediaFilter;
+        return AVFactory::get()->createMediaFilter();
     } else {
         return NULL;
     }
@@ -896,8 +902,9 @@ status_t MediaCodec::init(const AString &name, bool nameIsType) {
     //make sure if the component name contains qcom/qti, we don't return error
     //as these components are not present in media_codecs.xml and MediaCodecList won't find
     //these component by findCodecByName
-    if (!(name.find("qcom", 0) > 0 ||
-        name.find("qti", 0) > 0) || name.find("video", 0) > 0) {
+    //Video and Flac decoder are present in list so exclude them.
+    if (!(name.find("qcom", 0) > 0 || name.find("qti", 0) > 0)
+          || name.find("video", 0) > 0 || name.find("flac", 0) > 0) {
         const sp<IMediaCodecList> mcl = MediaCodecList::getInstance();
         if (mcl == NULL) {
             mCodec = NULL;  // remove the codec.
@@ -1520,6 +1527,11 @@ status_t MediaCodec::getCodecInfo(sp<MediaCodecInfo> *codecInfo) const {
 
     sp<RefBase> obj;
     CHECK(response->findObject("codecInfo", &obj));
+
+    if (static_cast<MediaCodecInfo *>(obj.get()) == nullptr) {
+        ALOGE("codec info not found");
+        return NAME_NOT_FOUND;
+    }
     *codecInfo = static_cast<MediaCodecInfo *>(obj.get());
 
     return OK;

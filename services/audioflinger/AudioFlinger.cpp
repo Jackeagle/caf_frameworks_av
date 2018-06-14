@@ -56,6 +56,7 @@
 #include <system/audio_effects/effect_aec.h>
 
 #include <audio_utils/primitives.h>
+#include <audio_utils/string.h>
 
 #include <powermanager/PowerManager.h>
 
@@ -1689,6 +1690,7 @@ sp<media::IAudioRecord> AudioFlinger::createRecord(const CreateRecordInput& inpu
         recordTrack.clear();
         AudioSystem::releaseInput(portId);
         output.inputId = AUDIO_IO_HANDLE_NONE;
+        output.selectedDeviceId = input.selectedDeviceId;
         portId = AUDIO_PORT_HANDLE_NONE;
     }
     lStatus = AudioSystem::getInputForAttr(&input.attr, &output.inputId,
@@ -1922,7 +1924,7 @@ status_t AudioFlinger::setLowRamDevice(bool isLowRamDevice, int64_t totalMemory)
 size_t AudioFlinger::getClientSharedHeapSize() const
 {
     size_t heapSizeInBytes = property_get_int32("ro.af.client_heap_size_kbyte", 0) * 1024;
-    if (heapSizeInBytes != 0) { // read-only property overrides all.
+    if (heapSizeInBytes > mClientSharedHeapSize) { // read-only property overrides all.
         return heapSizeInBytes;
     }
     return mClientSharedHeapSize;
@@ -3095,10 +3097,14 @@ sp<IEffect> AudioFlinger::createEffect(
                 goto Exit;
             }
             // look for the thread where the specified audio session is present
+            // thread with same effect session is preferable
             for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
-                if (mPlaybackThreads.valueAt(i)->hasAudioSession(sessionId) != 0) {
+                uint32_t sessionType = mPlaybackThreads.valueAt(i)->hasAudioSession(sessionId);
+                if (sessionType != 0) {
                     io = mPlaybackThreads.keyAt(i);
-                    break;
+                    if ((sessionType & ThreadBase::EFFECT_SESSION) != 0) {
+                        break;
+                    }
                 }
             }
             if (io == AUDIO_IO_HANDLE_NONE) {

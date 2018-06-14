@@ -155,7 +155,8 @@ status_t Engine::setForceUse(audio_policy_force_use_t usage, audio_policy_forced
     case AUDIO_POLICY_FORCE_FOR_ENCODED_SURROUND:
         if (config != AUDIO_POLICY_FORCE_NONE &&
                 config != AUDIO_POLICY_FORCE_ENCODED_SURROUND_NEVER &&
-                config != AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS) {
+                config != AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS &&
+                config != AUDIO_POLICY_FORCE_ENCODED_SURROUND_MANUAL) {
             ALOGW("setForceUse() invalid config %d for ENCODED_SURROUND", config);
             return BAD_VALUE;
         }
@@ -365,7 +366,6 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             // when not in a phone call, phone strategy should route STREAM_VOICE_CALL to A2DP
             if (!isInCall() &&
                     (mForceUse[AUDIO_POLICY_FORCE_FOR_MEDIA] != AUDIO_POLICY_FORCE_NO_BT_A2DP) &&
-                    (!mApmObserver->getA2dpSuspended()) &&
                     (outputs.isA2dpOnPrimary() || (outputs.isA2dpSupported()))) {
                 device = availableOutputDevicesType & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP;
                 if (device) break;
@@ -404,7 +404,6 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             // A2DP speaker when forcing to speaker output
             if (!isInCall() &&
                     (mForceUse[AUDIO_POLICY_FORCE_FOR_MEDIA] != AUDIO_POLICY_FORCE_NO_BT_A2DP) &&
-                    (!mApmObserver->getA2dpSuspended()) &&
                     (outputs.isA2dpOnPrimary() || (outputs.isA2dpSupported()))) {
                 device = availableOutputDevicesType & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER;
                 if (device) break;
@@ -473,6 +472,12 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             }
             // Use both Bluetooth SCO and phone default output when ringing in normal mode
             if (mForceUse[AUDIO_POLICY_FORCE_FOR_COMMUNICATION] == AUDIO_POLICY_FORCE_BT_SCO) {
+                if ((strategy == STRATEGY_SONIFICATION) &&
+                        (device & AUDIO_DEVICE_OUT_SPEAKER) &&
+                        (availableOutputDevicesType & AUDIO_DEVICE_OUT_SPEAKER_SAFE)) {
+                    device |= AUDIO_DEVICE_OUT_SPEAKER_SAFE;
+                    device &= ~AUDIO_DEVICE_OUT_SPEAKER;
+                }
                 if (device2 != AUDIO_DEVICE_NONE) {
                     device |= device2;
                     break;
@@ -550,7 +555,6 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
         }
         if ((device2 == AUDIO_DEVICE_NONE) &&
                 (mForceUse[AUDIO_POLICY_FORCE_FOR_MEDIA] != AUDIO_POLICY_FORCE_NO_BT_A2DP) &&
-                (!mApmObserver->getA2dpSuspended()) &&
                 (outputs.isA2dpOnPrimary() || (outputs.isA2dpSupported()))) {
             device2 = availableOutputDevicesType & AUDIO_DEVICE_OUT_BLUETOOTH_A2DP;
             if (device2 == AUDIO_DEVICE_NONE) {

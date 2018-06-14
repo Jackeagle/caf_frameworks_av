@@ -60,6 +60,26 @@ namespace android {
 // media / notification / system volume.
 constexpr float IN_CALL_EARPIECE_HEADROOM_DB = 3.f;
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+// Array of all surround formats.
+static const audio_format_t SURROUND_FORMATS[] = {
+    AUDIO_FORMAT_AC3,
+    AUDIO_FORMAT_E_AC3,
+    AUDIO_FORMAT_DTS,
+    AUDIO_FORMAT_DTS_HD,
+    AUDIO_FORMAT_AAC_LC,
+    AUDIO_FORMAT_DOLBY_TRUEHD,
+    AUDIO_FORMAT_E_AC3_JOC,
+};
+// Array of all AAC formats. When AAC is enabled by users, all AAC formats should be enabled.
+static const audio_format_t AAC_FORMATS[] = {
+    AUDIO_FORMAT_AAC_LC,
+    AUDIO_FORMAT_AAC_HE_V1,
+    AUDIO_FORMAT_AAC_HE_V2,
+    AUDIO_FORMAT_AAC_ELD,
+    AUDIO_FORMAT_AAC_XHE,
+};
+
 // ----------------------------------------------------------------------------
 // AudioPolicyInterface implementation
 // ----------------------------------------------------------------------------
@@ -348,6 +368,9 @@ status_t AudioPolicyManager::handleDeviceConfigChange(audio_devices_t device,
                                                       const char *device_name)
 {
     status_t status;
+    String8 reply;
+    AudioParameter param;
+    int isReconfigA2dpSupported = 0;
 
     ALOGV("handleDeviceConfigChange(() device: 0x%X, address %s name %s",
           device, device_address, device_name);
@@ -362,6 +385,26 @@ status_t AudioPolicyManager::handleDeviceConfigChange(audio_devices_t device,
     if (index < 0) {
         // Nothing to do: device is not connected
         return NO_ERROR;
+    }
+
+    // For offloaded A2DP, Hw modules may have the capability to
+    // configure codecs. Check if any of the loaded hw modules
+    // supports this.
+    // If supported, send a set parameter to configure A2DP codecs
+    // and return. No need to toggle device state.
+    if (device & AUDIO_DEVICE_OUT_ALL_A2DP) {
+        reply = mpClientInterface->getParameters(
+                    AUDIO_IO_HANDLE_NONE,
+                    String8(AudioParameter::keyReconfigA2dpSupported));
+        AudioParameter repliedParameters(reply);
+        repliedParameters.getInt(
+                String8(AudioParameter::keyReconfigA2dpSupported), isReconfigA2dpSupported);
+        if (isReconfigA2dpSupported) {
+            const String8 key(AudioParameter::keyReconfigA2dp);
+            param.add(key, String8("true"));
+            mpClientInterface->setParameters(AUDIO_IO_HANDLE_NONE, param.toString());
+            return NO_ERROR;
+        }
     }
 
     // Toggle the device state: UNAVAILABLE -> AVAILABLE
@@ -596,7 +639,7 @@ void AudioPolicyManager::setPhoneState(audio_mode_t state)
         sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
         audio_devices_t newDevice = getNewOutputDevice(desc, true /*fromCache*/);
         if (state != AUDIO_MODE_IN_CALL || desc != mPrimaryOutput) {
-            setOutputDevice(desc, newDevice, (newDevice != AUDIO_DEVICE_NONE), delayMs);
+            setOutputDevice(desc, newDevice, (newDevice != AUDIO_DEVICE_NONE), 0 /*delayMs*/);
         }
     }
 
@@ -825,7 +868,7 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
           "flags %#x",
           device, config->sample_rate, config->format, config->channel_mask, *flags);
 
-    *output = getOutputForDevice(device, session, *stream, *output, config, flags);
+    *output = getOutputForDevice(device, session, *stream, config, flags);
     if (*output == AUDIO_IO_HANDLE_NONE) {
         mOutputRoutes.removeRoute(session);
         return INVALID_OPERATION;
@@ -844,11 +887,10 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         audio_devices_t device,
         audio_session_t session,
         audio_stream_type_t stream,
-        audio_io_handle_t originalOutput,
         const audio_config_t *config,
         audio_output_flags_t *flags)
 {
-    audio_io_handle_t output = originalOutput;
+    audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
     status_t status;
 
     // open a direct output if required by specified parameters
@@ -911,22 +953,20 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
     }
 
     if (profile != 0) {
-        // exclude MMAP streams
-        if ((*flags & AUDIO_OUTPUT_FLAG_MMAP_NOIRQ) == 0 || output != AUDIO_IO_HANDLE_NONE) {
-            for (size_t i = 0; i < mOutputs.size(); i++) {
-                sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
-                if (!desc->isDuplicated() && (profile == desc->mProfile)) {
-                    // reuse direct output if currently open by the same client
-                    // and configured with same parameters
-                    if ((config->sample_rate == desc->mSamplingRate) &&
-                        audio_formats_match(config->format, desc->mFormat) &&
-                        (config->channel_mask == desc->mChannelMask) &&
-                        (session == desc->mDirectClientSession)) {
-                        desc->mDirectOpenCount++;
-                        ALOGI("getOutputForDevice() reusing direct output %d for session %d",
-                              mOutputs.keyAt(i), session);
-                        return mOutputs.keyAt(i);
-                    }
+        // exclusive outputs for MMAP and Offload are enforced by different session ids.
+        for (size_t i = 0; i < mOutputs.size(); i++) {
+            sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
+            if (!desc->isDuplicated() && (profile == desc->mProfile)) {
+                // reuse direct output if currently open by the same client
+                // and configured with same parameters
+                if ((config->sample_rate == desc->mSamplingRate) &&
+                    (config->format == desc->mFormat) &&
+                    (config->channel_mask == desc->mChannelMask) &&
+                    (session == desc->mDirectClientSession)) {
+                    desc->mDirectOpenCount++;
+                    ALOGI("getOutputForDevice() reusing direct output %d for session %d",
+                        mOutputs.keyAt(i), session);
+                    return mOutputs.keyAt(i);
                 }
             }
         }
@@ -947,8 +987,7 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         // only accept an output with the requested parameters
         if (status != NO_ERROR ||
             (config->sample_rate != 0 && config->sample_rate != outputDesc->mSamplingRate) ||
-            (config->format != AUDIO_FORMAT_DEFAULT &&
-                    !audio_formats_match(config->format, outputDesc->mFormat)) ||
+            (config->format != AUDIO_FORMAT_DEFAULT && config->format != outputDesc->mFormat) ||
             (config->channel_mask != 0 && config->channel_mask != outputDesc->mChannelMask)) {
             ALOGV("getOutputForDevice() failed opening direct output: output %d sample rate %d %d,"
                     "format %d %d, channel mask %04x %04x", output, config->sample_rate,
@@ -1037,7 +1076,7 @@ audio_io_handle_t AudioPolicyManager::selectOutput(const SortedVector<audio_io_h
             // if a valid format is specified, skip output if not compatible
             if (format != AUDIO_FORMAT_INVALID) {
                 if (outputDesc->mFlags & AUDIO_OUTPUT_FLAG_DIRECT) {
-                    if (!audio_formats_match(format, outputDesc->mFormat)) {
+                    if (format != outputDesc->mFormat) {
                         continue;
                     }
                 } else if (!audio_is_linear_pcm(format)) {
@@ -1120,7 +1159,9 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
         }
     } else if (mOutputRoutes.getAndClearRouteChanged(session)) {
         newDevice = getNewOutputDevice(outputDesc, false /*fromCache*/);
-        checkStrategyRoute(getStrategy(stream), output);
+        if (newDevice != outputDesc->device()) {
+            checkStrategyRoute(getStrategy(stream), output);
+        }
     } else {
         newDevice = AUDIO_DEVICE_NONE;
     }
@@ -1371,6 +1412,7 @@ status_t AudioPolicyManager::stopSource(const sp<AudioOutputDescriptor>& outputD
                         (newDevice != desc->device())) {
                     audio_devices_t newDevice2 = getNewOutputDevice(desc, false /*fromCache*/);
                     bool force = desc->device() != newDevice2;
+
                     setOutputDevice(desc,
                                     newDevice2,
                                     force,
@@ -1884,6 +1926,7 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
         if (mCallTxPatch != 0 &&
             inputDesc->getModuleHandle() == mCallTxPatch->mPatch.sources[0].ext.device.hw_module) {
             ALOGW("startInput(%d) failed: call in progress", input);
+            *concurrency |= API_INPUT_CONCURRENCY_CALL;
             return INVALID_OPERATION;
         }
 
@@ -1926,17 +1969,20 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
                         ALOGW("startInput(%d) failed for HOTWORD: "
                                 "other input %d already started for HOTWORD",
                               input, activeDesc->mIoHandle);
+                        *concurrency |= API_INPUT_CONCURRENCY_HOTWORD;
                         return INVALID_OPERATION;
                     }
                 } else {
                     ALOGV("startInput(%d) failed for HOTWORD: other input %d already started",
                           input, activeDesc->mIoHandle);
+                    *concurrency |= API_INPUT_CONCURRENCY_CAPTURE;
                     return INVALID_OPERATION;
                 }
             } else {
                 if (activeSource != AUDIO_SOURCE_HOTWORD) {
                     ALOGW("startInput(%d) failed: other input %d already started",
                           input, activeDesc->mIoHandle);
+                    *concurrency |= API_INPUT_CONCURRENCY_CAPTURE;
                     return INVALID_OPERATION;
                 }
             }
@@ -1961,6 +2007,7 @@ status_t AudioPolicyManager::startInput(audio_io_handle_t input,
                 audio_session_t activeSession = activeSessions.keyAt(0);
                 audio_io_handle_t activeHandle = activeDesc->mIoHandle;
                 SortedVector<audio_session_t> sessions = activeDesc->getPreemptedSessions();
+                *concurrency |= API_INPUT_CONCURRENCY_PREEMPT;
                 sessions.add(activeSession);
                 inputDesc->setPreemptedSessions(sessions);
                 stopInput(activeHandle, activeSession);
@@ -2776,9 +2823,32 @@ status_t AudioPolicyManager::listAudioPorts(audio_port_role_t role,
     return NO_ERROR;
 }
 
-status_t AudioPolicyManager::getAudioPort(struct audio_port *port __unused)
+status_t AudioPolicyManager::getAudioPort(struct audio_port *port)
 {
-    return NO_ERROR;
+    if (port == nullptr || port->id == AUDIO_PORT_HANDLE_NONE) {
+        return BAD_VALUE;
+    }
+    sp<DeviceDescriptor> dev = mAvailableOutputDevices.getDeviceFromId(port->id);
+    if (dev != 0) {
+        dev->toAudioPort(port);
+        return NO_ERROR;
+    }
+    dev = mAvailableInputDevices.getDeviceFromId(port->id);
+    if (dev != 0) {
+        dev->toAudioPort(port);
+        return NO_ERROR;
+    }
+    sp<SwAudioOutputDescriptor> out = mOutputs.getOutputFromId(port->id);
+    if (out != 0) {
+        out->toAudioPort(port);
+        return NO_ERROR;
+    }
+    sp<AudioInputDescriptor> in = mInputs.getInputFromId(port->id);
+    if (in != 0) {
+        in->toAudioPort(port);
+        return NO_ERROR;
+    }
+    return BAD_VALUE;
 }
 
 status_t AudioPolicyManager::createAudioPatch(const struct audio_patch *patch,
@@ -3470,6 +3540,275 @@ float AudioPolicyManager::getStreamVolumeDB(
     return computeVolume(stream, index, device);
 }
 
+status_t AudioPolicyManager::getSupportedFormats(audio_io_handle_t ioHandle,
+                                                 FormatVector& formats) {
+    if (ioHandle == AUDIO_IO_HANDLE_NONE) {
+        return BAD_VALUE;
+    }
+    String8 reply;
+    reply = mpClientInterface->getParameters(
+            ioHandle, String8(AudioParameter::keyStreamSupportedFormats));
+    ALOGV("%s: supported formats %s", __FUNCTION__, reply.string());
+    AudioParameter repliedParameters(reply);
+    if (repliedParameters.get(
+            String8(AudioParameter::keyStreamSupportedFormats), reply) != NO_ERROR) {
+        ALOGE("%s: failed to retrieve format, bailing out", __FUNCTION__);
+        return BAD_VALUE;
+    }
+    for (auto format : formatsFromString(reply.string())) {
+        // Only AUDIO_FORMAT_AAC_LC will be used in Settings UI for all AAC formats.
+        for (size_t i = 0; i < ARRAY_SIZE(AAC_FORMATS); i++) {
+            if (format == AAC_FORMATS[i]) {
+                format = AUDIO_FORMAT_AAC_LC;
+                break;
+            }
+        }
+        bool exist = false;
+        for (size_t i = 0; i < formats.size(); i++) {
+            if (format == formats[i]) {
+                exist = true;
+                break;
+            }
+        }
+        bool isSurroundFormat = false;
+        for (size_t i = 0; i < ARRAY_SIZE(SURROUND_FORMATS); i++) {
+            if (SURROUND_FORMATS[i] == format) {
+                isSurroundFormat = true;
+                break;
+            }
+        }
+        if (!exist && isSurroundFormat) {
+            formats.add(format);
+        }
+    }
+    return NO_ERROR;
+}
+
+status_t AudioPolicyManager::getSurroundFormats(unsigned int *numSurroundFormats,
+                                                audio_format_t *surroundFormats,
+                                                bool *surroundFormatsEnabled,
+                                                bool reported)
+{
+    if (numSurroundFormats == NULL || (*numSurroundFormats != 0 &&
+            (surroundFormats == NULL || surroundFormatsEnabled == NULL))) {
+        return BAD_VALUE;
+    }
+    ALOGV("getSurroundFormats() numSurroundFormats %d surroundFormats %p surroundFormatsEnabled %p",
+            *numSurroundFormats, surroundFormats, surroundFormatsEnabled);
+
+    // Only return value if there is HDMI output.
+    if ((mAvailableOutputDevices.types() & AUDIO_DEVICE_OUT_HDMI) == 0) {
+        return INVALID_OPERATION;
+    }
+
+    size_t formatsWritten = 0;
+    size_t formatsMax = *numSurroundFormats;
+    *numSurroundFormats = 0;
+    FormatVector formats;
+    if (reported) {
+        // Only get surround formats which are reported by device.
+        // First list already open outputs that can be routed to this device
+        audio_devices_t device = AUDIO_DEVICE_OUT_HDMI;
+        SortedVector<audio_io_handle_t> outputs;
+        bool reportedFormatFound = false;
+        status_t status;
+        sp<SwAudioOutputDescriptor> desc;
+        for (size_t i = 0; i < mOutputs.size(); i++) {
+            desc = mOutputs.valueAt(i);
+            if (!desc->isDuplicated() && (desc->supportedDevices() & device)) {
+                outputs.add(mOutputs.keyAt(i));
+            }
+        }
+        // Open an output to query dynamic parameters.
+        DeviceVector hdmiOutputDevices = mAvailableOutputDevices.getDevicesFromType(
+                AUDIO_DEVICE_OUT_HDMI);
+        for (size_t i = 0; i < hdmiOutputDevices.size(); i++) {
+            String8 address = hdmiOutputDevices[i]->mAddress;
+            for (const auto& hwModule : mHwModules) {
+                for (size_t i = 0; i < hwModule->getOutputProfiles().size(); i++) {
+                    sp<IOProfile> profile = hwModule->getOutputProfiles()[i];
+                    if (profile->supportDevice(AUDIO_DEVICE_OUT_HDMI) &&
+                            profile->supportDeviceAddress(address)) {
+                        size_t j;
+                        for (j = 0; j < outputs.size(); j++) {
+                            desc = mOutputs.valueFor(outputs.itemAt(j));
+                            if (!desc->isDuplicated() && desc->mProfile == profile) {
+                                break;
+                            }
+                        }
+                        if (j != outputs.size()) {
+                            status = getSupportedFormats(outputs.itemAt(j), formats);
+                            reportedFormatFound |= (status == NO_ERROR);
+                            continue;
+                        }
+
+                        if (!profile->canOpenNewIo()) {
+                            ALOGW("Max Output number %u already opened for this profile %s",
+                                  profile->maxOpenCount, profile->getTagName().c_str());
+                            continue;
+                        }
+
+                        ALOGV("opening output for device %08x with params %s profile %p name %s",
+                              device, address.string(), profile.get(), profile->getName().string());
+                        desc = new SwAudioOutputDescriptor(profile, mpClientInterface);
+                        audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
+                        status_t status = desc->open(nullptr, device, address,
+                                                     AUDIO_STREAM_DEFAULT, AUDIO_OUTPUT_FLAG_NONE,
+                                                     &output);
+
+                        if (status == NO_ERROR) {
+                            status = getSupportedFormats(output, formats);
+                            reportedFormatFound |= (status == NO_ERROR);
+                            desc->close();
+                            output = AUDIO_IO_HANDLE_NONE;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!reportedFormatFound) {
+            return UNKNOWN_ERROR;
+        }
+    } else {
+        for (size_t i = 0; i < ARRAY_SIZE(SURROUND_FORMATS); i++) {
+            formats.add(SURROUND_FORMATS[i]);
+        }
+    }
+    for (size_t i = 0; i < formats.size(); i++) {
+        if (formatsWritten < formatsMax) {
+            surroundFormats[formatsWritten] = formats[i];
+            bool formatEnabled = false;
+            if (formats[i] == AUDIO_FORMAT_AAC_LC) {
+                for (size_t j = 0; j < ARRAY_SIZE(AAC_FORMATS); j++) {
+                    formatEnabled =
+                            mSurroundFormats.find(AAC_FORMATS[i]) != mSurroundFormats.end();
+                    break;
+                }
+            } else {
+                formatEnabled = mSurroundFormats.find(formats[i]) != mSurroundFormats.end();
+            }
+            surroundFormatsEnabled[formatsWritten++] = formatEnabled;
+        }
+        (*numSurroundFormats)++;
+    }
+    return NO_ERROR;
+}
+
+status_t AudioPolicyManager::setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled)
+{
+    // Check if audio format is a surround formats.
+    bool isSurroundFormat = false;
+    for (size_t i = 0; i < ARRAY_SIZE(SURROUND_FORMATS); i++) {
+        if (audioFormat == SURROUND_FORMATS[i]) {
+            isSurroundFormat = true;
+            break;
+        }
+    }
+    if (!isSurroundFormat) {
+        return BAD_VALUE;
+    }
+
+    // Should only be called when MANUAL.
+    audio_policy_forced_cfg_t forceUse = mEngine->getForceUse(
+                AUDIO_POLICY_FORCE_FOR_ENCODED_SURROUND);
+    if (forceUse != AUDIO_POLICY_FORCE_ENCODED_SURROUND_MANUAL) {
+        return INVALID_OPERATION;
+    }
+
+    if ((mSurroundFormats.find(audioFormat) != mSurroundFormats.end() && enabled)
+            || (mSurroundFormats.find(audioFormat) == mSurroundFormats.end() && !enabled)) {
+        return NO_ERROR;
+    }
+
+    // The operation is valid only when there is HDMI output available.
+    if ((mAvailableOutputDevices.types() & AUDIO_DEVICE_OUT_HDMI) == 0) {
+        return INVALID_OPERATION;
+    }
+
+    if (enabled) {
+        if (audioFormat == AUDIO_FORMAT_AAC_LC) {
+            for (size_t i = 0; i < ARRAY_SIZE(AAC_FORMATS); i++) {
+                mSurroundFormats.insert(AAC_FORMATS[i]);
+            }
+        } else {
+            mSurroundFormats.insert(audioFormat);
+        }
+    } else {
+        if (audioFormat == AUDIO_FORMAT_AAC_LC) {
+            for (size_t i = 0; i < ARRAY_SIZE(AAC_FORMATS); i++) {
+                mSurroundFormats.erase(AAC_FORMATS[i]);
+            }
+        } else {
+            mSurroundFormats.erase(audioFormat);
+        }
+    }
+
+    sp<SwAudioOutputDescriptor> outputDesc;
+    bool profileUpdated = false;
+    DeviceVector hdmiOutputDevices = mAvailableOutputDevices.getDevicesFromType(
+            AUDIO_DEVICE_OUT_HDMI);
+    for (size_t i = 0; i < hdmiOutputDevices.size(); i++) {
+        // Simulate reconnection to update enabled surround sound formats.
+        String8 address = hdmiOutputDevices[i]->mAddress;
+        String8 name = hdmiOutputDevices[i]->getName();
+        status_t status = setDeviceConnectionStateInt(AUDIO_DEVICE_OUT_HDMI,
+                                                      AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE,
+                                                      address.c_str(),
+                                                      name.c_str());
+        if (status != NO_ERROR) {
+            continue;
+        }
+        status = setDeviceConnectionStateInt(AUDIO_DEVICE_OUT_HDMI,
+                                             AUDIO_POLICY_DEVICE_STATE_AVAILABLE,
+                                             address.c_str(),
+                                             name.c_str());
+        profileUpdated |= (status == NO_ERROR);
+    }
+    DeviceVector hdmiInputDevices = mAvailableInputDevices.getDevicesFromType(
+                AUDIO_DEVICE_IN_HDMI);
+    for (size_t i = 0; i < hdmiInputDevices.size(); i++) {
+        // Simulate reconnection to update enabled surround sound formats.
+        String8 address = hdmiInputDevices[i]->mAddress;
+        String8 name = hdmiInputDevices[i]->getName();
+        status_t status = setDeviceConnectionStateInt(AUDIO_DEVICE_IN_HDMI,
+                                                      AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE,
+                                                      address.c_str(),
+                                                      name.c_str());
+        if (status != NO_ERROR) {
+            continue;
+        }
+        status = setDeviceConnectionStateInt(AUDIO_DEVICE_IN_HDMI,
+                                             AUDIO_POLICY_DEVICE_STATE_AVAILABLE,
+                                             address.c_str(),
+                                             name.c_str());
+        profileUpdated |= (status == NO_ERROR);
+    }
+
+    // Undo the surround formats change due to no audio profiles updated.
+    if (!profileUpdated) {
+        if (enabled) {
+            if (audioFormat == AUDIO_FORMAT_AAC_LC) {
+                for (size_t i = 0; i < ARRAY_SIZE(AAC_FORMATS); i++) {
+                    mSurroundFormats.erase(AAC_FORMATS[i]);
+                }
+            } else {
+                mSurroundFormats.erase(audioFormat);
+            }
+        } else {
+            if (audioFormat == AUDIO_FORMAT_AAC_LC) {
+                for (size_t i = 0; i < ARRAY_SIZE(AAC_FORMATS); i++) {
+                    mSurroundFormats.insert(AAC_FORMATS[i]);
+                }
+            } else {
+                mSurroundFormats.insert(audioFormat);
+            }
+        }
+    }
+
+    return profileUpdated ? NO_ERROR : INVALID_OPERATION;
+}
+
 void AudioPolicyManager::setRecordSilenced(uid_t uid, bool silenced)
 {
     ALOGV("AudioPolicyManager:setRecordSilenced(uid:%d, silenced:%d)", uid, silenced);
@@ -3843,6 +4182,7 @@ AudioPolicyManager::~AudioPolicyManager()
    mInputs.clear();
    mHwModules.clear();
    mHwModulesAll.clear();
+   mSurroundFormats.clear();
 }
 
 status_t AudioPolicyManager::initCheck()
@@ -4391,14 +4731,23 @@ void AudioPolicyManager::checkOutputForStrategy(routing_strategy strategy)
     }
 
     if (!vectorsEqual(srcOutputs,dstOutputs)) {
+        // get maximum latency of all source outputs to determine the minimum mute time guaranteeing
+        // audio from invalidated tracks will be rendered when unmuting
+        uint32_t maxLatency = 0;
+        for (audio_io_handle_t srcOut : srcOutputs) {
+            sp<SwAudioOutputDescriptor> desc = mPreviousOutputs.valueFor(srcOut);
+            if (desc != 0 && maxLatency < desc->latency()) {
+                maxLatency = desc->latency();
+            }
+        }
         ALOGV("checkOutputForStrategy() strategy %d, moving from output %d to output %d",
               strategy, srcOutputs[0], dstOutputs[0]);
         // mute strategy while moving tracks from one output to another
         for (audio_io_handle_t srcOut : srcOutputs) {
-            sp<SwAudioOutputDescriptor> desc = mOutputs.valueFor(srcOut);
-            if (isStrategyActive(desc, strategy)) {
+            sp<SwAudioOutputDescriptor> desc = mPreviousOutputs.valueFor(srcOut);
+            if (desc != 0 && isStrategyActive(desc, strategy)) {
                 setStrategyMute(strategy, true, desc);
-                setStrategyMute(strategy, false, desc, MUTE_TIME_MS, newDevice);
+                setStrategyMute(strategy, false, desc, maxLatency * LATENCY_MUTE_FACTOR, newDevice);
             }
             sp<AudioSourceDescriptor> source =
                     getSourceForStrategyOnOutput(srcOut, strategy);
@@ -4438,9 +4787,8 @@ void AudioPolicyManager::checkOutputForAllStrategies()
 void AudioPolicyManager::checkA2dpSuspend()
 {
     audio_io_handle_t a2dpOutput = mOutputs.getA2dpOutput();
-    bool a2dpOnPrimary = mOutputs.isA2dpOnPrimary();
 
-    if ((a2dpOutput == 0 || mOutputs.isA2dpOffloadedOnPrimary()) && !a2dpOnPrimary) {
+    if (a2dpOutput == 0 || mOutputs.isA2dpOffloadedOnPrimary()) {
         mA2dpSuspended = false;
         return;
     }
@@ -4470,10 +4818,7 @@ void AudioPolicyManager::checkA2dpSuspend()
                       AUDIO_POLICY_FORCE_BT_SCO) &&
               (mEngine->getPhoneState() != AUDIO_MODE_IN_CALL) &&
               (mEngine->getPhoneState() != AUDIO_MODE_RINGTONE))) {
-
-            if ((a2dpOutput != 0) && !a2dpOnPrimary) {
                 mpClientInterface->restoreOutput(a2dpOutput);
-            }
             mA2dpSuspended = false;
         }
     } else {
@@ -4484,10 +4829,7 @@ void AudioPolicyManager::checkA2dpSuspend()
                       AUDIO_POLICY_FORCE_BT_SCO) ||
               (mEngine->getPhoneState() == AUDIO_MODE_IN_CALL) ||
               (mEngine->getPhoneState() == AUDIO_MODE_RINGTONE))) {
-
-            if ((a2dpOutput != 0) && !a2dpOnPrimary) {
                 mpClientInterface->suspendOutput(a2dpOutput);
-            }
             mA2dpSuspended = true;
         }
     }
@@ -4505,6 +4847,20 @@ audio_devices_t AudioPolicyManager::getNewOutputDevice(const sp<AudioOutputDescr
             ALOGV("getNewOutputDevice() device %08x forced by patch %d",
                   outputDesc->device(), outputDesc->getPatchHandle());
             return outputDesc->device();
+        }
+    }
+
+    // Check if an explicit routing request exists for an active stream on this output and
+    // use it in priority before any other rule
+    for (int stream = 0; stream < AUDIO_STREAM_FOR_POLICY_CNT; stream++) {
+        if (outputDesc->isStreamActive((audio_stream_type_t)stream)) {
+            audio_devices_t forcedDevice =
+                    mOutputRoutes.getActiveDeviceForStream(
+                            (audio_stream_type_t)stream, mAvailableOutputDevices);
+
+            if (forcedDevice != AUDIO_DEVICE_NONE) {
+                return forcedDevice;
+            }
         }
     }
 
@@ -4719,19 +5075,16 @@ uint32_t AudioPolicyManager::setBeaconMute(bool mute) {
 audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy,
                                                          bool fromCache)
 {
-    // Routing
-    // see if we have an explicit route
-    // scan the whole RouteMap, for each entry, convert the stream type to a strategy
-    // (getStrategy(stream)).
-    // if the strategy from the stream type in the RouteMap is the same as the argument above,
-    // and activity count is non-zero and the device in the route descriptor is available
-    // then select this device.
-    for (size_t routeIndex = 0; routeIndex < mOutputRoutes.size(); routeIndex++) {
-        sp<SessionRoute> route = mOutputRoutes.valueAt(routeIndex);
-        routing_strategy routeStrategy = getStrategy(route->mStreamType);
-        if ((routeStrategy == strategy) && route->isActiveOrChanged() &&
-                (mAvailableOutputDevices.indexOf(route->mDeviceDescriptor) >= 0)) {
-            return route->mDeviceDescriptor->type();
+    // Check if an explicit routing request exists for a stream type corresponding to the
+    // specified strategy and use it in priority over default routing rules.
+    for (int stream = 0; stream < AUDIO_STREAM_FOR_POLICY_CNT; stream++) {
+        if (getStrategy((audio_stream_type_t)stream) == strategy) {
+            audio_devices_t forcedDevice =
+                    mOutputRoutes.getActiveDeviceForStream(
+                            (audio_stream_type_t)stream, mAvailableOutputDevices);
+            if (forcedDevice != AUDIO_DEVICE_NONE) {
+                return forcedDevice;
+            }
         }
     }
 
@@ -5306,7 +5659,10 @@ status_t AudioPolicyManager::checkAndSetVolume(audio_stream_type_t stream,
     }
 
     float volumeDb = computeVolume(stream, index, device);
-    if (outputDesc->isFixedVolume(device)) {
+    if (outputDesc->isFixedVolume(device) ||
+            // Force VoIP volume to max for bluetooth SCO
+            ((stream == AUDIO_STREAM_VOICE_CALL || stream == AUDIO_STREAM_BLUETOOTH_SCO) &&
+             (device & AUDIO_DEVICE_OUT_ALL_SCO) != 0)) {
         volumeDb = 0.0f;
     }
 
@@ -5607,81 +5963,110 @@ void AudioPolicyManager::filterSurroundFormats(FormatVector *formatsPtr) {
             AUDIO_POLICY_FORCE_FOR_ENCODED_SURROUND);
     ALOGD("%s: forced use = %d", __FUNCTION__, forceUse);
 
-    // Analyze original support for various formats.
-    bool supportsAC3 = false;
-    bool supportsOtherSurround = false;
-    bool supportsIEC61937 = false;
-    for (ssize_t formatIndex = 0; formatIndex < (ssize_t)formats.size(); formatIndex++) {
-        audio_format_t format = formats[formatIndex];
-        switch (format) {
-            case AUDIO_FORMAT_AC3:
-                supportsAC3 = true;
-                break;
-            case AUDIO_FORMAT_E_AC3:
-            case AUDIO_FORMAT_DTS:
-            case AUDIO_FORMAT_DTS_HD:
-                // If ALWAYS, remove all other surround formats here since we will add them later.
-                if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS) {
-                    formats.removeAt(formatIndex);
-                    formatIndex--;
-                }
-                supportsOtherSurround = true;
-                break;
-            case AUDIO_FORMAT_IEC61937:
-                supportsIEC61937 = true;
-                break;
-            default:
-                break;
+    // If MANUAL, keep the supported surround sound formats as current enabled ones.
+    if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_MANUAL) {
+        formats.clear();
+        for (auto it = mSurroundFormats.begin(); it != mSurroundFormats.end(); it++) {
+            formats.add(*it);
         }
-    }
+        // Always enable IEC61937 when in MANUAL mode.
+        formats.add(AUDIO_FORMAT_IEC61937);
+    } else { // NEVER, AUTO or ALWAYS
+        // Analyze original support for various formats.
+        bool supportsAC3 = false;
+        bool supportsOtherSurround = false;
+        bool supportsIEC61937 = false;
+        mSurroundFormats.clear();
+        for (ssize_t formatIndex = 0; formatIndex < (ssize_t)formats.size(); formatIndex++) {
+            audio_format_t format = formats[formatIndex];
+            switch (format) {
+                case AUDIO_FORMAT_AC3:
+                    supportsAC3 = true;
+                    break;
+                case AUDIO_FORMAT_E_AC3:
+                case AUDIO_FORMAT_DTS:
+                case AUDIO_FORMAT_DTS_HD:
+                    // If ALWAYS, remove all other surround formats here
+                    // since we will add them later.
+                    if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS) {
+                        formats.removeAt(formatIndex);
+                        formatIndex--;
+                    }
+                    supportsOtherSurround = true;
+                    break;
+                case AUDIO_FORMAT_IEC61937:
+                    supportsIEC61937 = true;
+                    break;
+                default:
+                    break;
+            }
+        }
 
-    // Modify formats based on surround preferences.
-    // If NEVER, remove support for surround formats.
-    if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_NEVER) {
-        if (supportsAC3 || supportsOtherSurround || supportsIEC61937) {
-            // Remove surround sound related formats.
-            for (size_t formatIndex = 0; formatIndex < formats.size(); ) {
+        // Modify formats based on surround preferences.
+        // If NEVER, remove support for surround formats.
+        if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_NEVER) {
+            if (supportsAC3 || supportsOtherSurround || supportsIEC61937) {
+                // Remove surround sound related formats.
+                for (size_t formatIndex = 0; formatIndex < formats.size(); ) {
+                    audio_format_t format = formats[formatIndex];
+                    switch(format) {
+                        case AUDIO_FORMAT_AC3:
+                        case AUDIO_FORMAT_E_AC3:
+                        case AUDIO_FORMAT_DTS:
+                        case AUDIO_FORMAT_DTS_HD:
+                        case AUDIO_FORMAT_IEC61937:
+                            formats.removeAt(formatIndex);
+                            break;
+                        default:
+                            formatIndex++; // keep it
+                            break;
+                    }
+                }
+                supportsAC3 = false;
+                supportsOtherSurround = false;
+                supportsIEC61937 = false;
+            }
+        } else { // AUTO or ALWAYS
+            // Most TVs support AC3 even if they do not report it in the EDID.
+            if ((alwaysForceAC3 || (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS))
+                    && !supportsAC3) {
+                formats.add(AUDIO_FORMAT_AC3);
+                supportsAC3 = true;
+            }
+
+            // If ALWAYS, add support for raw surround formats if all are missing.
+            // This assumes that if any of these formats are reported by the HAL
+            // then the report is valid and should not be modified.
+            if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS) {
+                formats.add(AUDIO_FORMAT_E_AC3);
+                formats.add(AUDIO_FORMAT_DTS);
+                formats.add(AUDIO_FORMAT_DTS_HD);
+                supportsOtherSurround = true;
+            }
+
+            // Add support for IEC61937 if any raw surround supported.
+            // The HAL could do this but add it here, just in case.
+            if ((supportsAC3 || supportsOtherSurround) && !supportsIEC61937) {
+                formats.add(AUDIO_FORMAT_IEC61937);
+                supportsIEC61937 = true;
+            }
+
+            // Add reported surround sound formats to enabled surround formats.
+            for (size_t formatIndex = 0; formatIndex < formats.size(); formatIndex++) {
                 audio_format_t format = formats[formatIndex];
                 switch(format) {
                     case AUDIO_FORMAT_AC3:
                     case AUDIO_FORMAT_E_AC3:
                     case AUDIO_FORMAT_DTS:
                     case AUDIO_FORMAT_DTS_HD:
-                    case AUDIO_FORMAT_IEC61937:
-                        formats.removeAt(formatIndex);
-                        break;
+                    case AUDIO_FORMAT_AAC_LC:
+                    case AUDIO_FORMAT_DOLBY_TRUEHD:
+                    case AUDIO_FORMAT_E_AC3_JOC:
+                        mSurroundFormats.insert(format);
                     default:
-                        formatIndex++; // keep it
                         break;
                 }
             }
-            supportsAC3 = false;
-            supportsOtherSurround = false;
-            supportsIEC61937 = false;
-        }
-    } else { // AUTO or ALWAYS
-        // Most TVs support AC3 even if they do not report it in the EDID.
-        if ((alwaysForceAC3 || (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS))
-                && !supportsAC3) {
-            formats.add(AUDIO_FORMAT_AC3);
-            supportsAC3 = true;
-        }
-
-        // If ALWAYS, add support for raw surround formats if all are missing.
-        // This assumes that if any of these formats are reported by the HAL
-        // then the report is valid and should not be modified.
-        if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS) {
-            formats.add(AUDIO_FORMAT_E_AC3);
-            formats.add(AUDIO_FORMAT_DTS);
-            formats.add(AUDIO_FORMAT_DTS_HD);
-            supportsOtherSurround = true;
-        }
-
-        // Add support for IEC61937 if any raw surround supported.
-        // The HAL could do this but add it here, just in case.
-        if ((supportsAC3 || supportsOtherSurround) && !supportsIEC61937) {
-            formats.add(AUDIO_FORMAT_IEC61937);
-            supportsIEC61937 = true;
         }
     }
 }
@@ -5703,8 +6088,9 @@ void AudioPolicyManager::filterSurroundChannelMasks(ChannelsVector *channelMasks
                 maskIndex++;
             }
         }
-    // If ALWAYS, then make sure we at least support 5.1
-    } else if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS) {
+    // If ALWAYS or MANUAL, then make sure we at least support 5.1
+    } else if (forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_ALWAYS
+            || forceUse == AUDIO_POLICY_FORCE_ENCODED_SURROUND_MANUAL) {
         bool supports5dot1 = false;
         // Are there any channel masks that can be considered "surround"?
         for (audio_channel_mask_t channelMask : channelMasks) {
@@ -5731,7 +6117,7 @@ void AudioPolicyManager::updateAudioProfiles(audio_devices_t device,
     if (profiles.hasDynamicFormat()) {
         reply = mpClientInterface->getParameters(
                 ioHandle, String8(AudioParameter::keyStreamSupportedFormats));
-        ALOGV("%s: supported formats %s", __FUNCTION__, reply.string());
+        ALOGV("%s: supported formats %d, %s", __FUNCTION__, ioHandle, reply.string());
         AudioParameter repliedParameters(reply);
         if (repliedParameters.get(
                 String8(AudioParameter::keyStreamSupportedFormats), reply) != NO_ERROR) {

@@ -169,9 +169,7 @@ status_t MediaCodecSource::Puller::postSynchronouslyAndReturnError(
 }
 
 status_t MediaCodecSource::Puller::setStopTimeUs(int64_t stopTimeUs) {
-    sp<AMessage> msg = new AMessage(kWhatSetStopTimeUs, this);
-    msg->setInt64("stop-time-us", stopTimeUs);
-    return postSynchronouslyAndReturnError(msg);
+    return mSource->setStopTimeUs(stopTimeUs);
 }
 
 status_t MediaCodecSource::Puller::start(const sp<MetaData> &meta, const sp<AMessage> &notify) {
@@ -355,6 +353,7 @@ sp<MediaCodecSource> MediaCodecSource::Create(
         uint32_t flags) {
     sp<MediaCodecSource> mediaSource = new MediaCodecSource(
             looper, format, source, persistentSurface, flags);
+    AVUtils::get()->getHFRParams(&mediaSource->mIsHFR, &mediaSource->mBatchSize, format);
 
     if (mediaSource->init() == OK) {
         return mediaSource;
@@ -457,7 +456,10 @@ MediaCodecSource::MediaCodecSource(
       mFirstSampleSystemTimeUs(-1ll),
       mPausePending(false),
       mFirstSampleTimeUs(-1ll),
-      mGeneration(0) {
+      mGeneration(0),
+      mPrevBufferTimestampUs(0),
+      mIsHFR(false),
+      mBatchSize(0){
     CHECK(mLooper != NULL);
 
     if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
@@ -649,10 +651,10 @@ void MediaCodecSource::signalEOS(status_t err) {
             output->mErrorCode = err;
             if (err != ERROR_END_OF_STREAM) {
                 output->mErrorCode = ERROR_IO;
-                if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
-                    mStopping = true;
-                    mPuller->stop();
-                }
+            }
+            if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
+                mStopping = true;
+                mPuller->stop();
             }
             output->mCond.signal();
 
@@ -714,7 +716,8 @@ status_t MediaCodecSource::feedEncoderInputBuffers() {
                     return OK;
                 }
             }
-
+            mInputBufferTimeOffsetUs = AVUtils::get()->overwriteTimeOffset(mIsHFR,
+                mInputBufferTimeOffsetUs, &mPrevBufferTimestampUs, timeUs, mBatchSize);
             timeUs += mInputBufferTimeOffsetUs;
 
             // push decoding time for video, or drift time for audio
@@ -775,8 +778,8 @@ status_t MediaCodecSource::feedEncoderInputBuffers() {
 }
 
 status_t MediaCodecSource::onStart(MetaData *params) {
-    if (mStopping) {
-        ALOGE("Failed to start while we're stopping");
+    if (mStopping | mOutput.lock()->mEncoderReachedEOS) {
+        ALOGE("Failed to start while we're stopping or encoder already stopped due to EOS error");
         return INVALID_OPERATION;
     }
     int64_t startTimeUs;
