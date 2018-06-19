@@ -253,7 +253,7 @@ int32_t CryptoHal::setHeapBase(const sp<IMemoryHeap>& heap) {
 
     int32_t seqNum = mHeapSeqNum++;
     sp<HidlMemory> hidlMemory = fromHeap(heap);
-    mHeapBases.add(seqNum, mNextBufferId);
+    mHeapBases.add(seqNum, HeapBase(mNextBufferId, heap->getSize()));
     Return<void> hResult = mPlugin->setSharedBufferBase(*hidlMemory, mNextBufferId++);
     ALOGE_IF(!hResult.isOk(), "setSharedBufferBase(): remote call failed");
     return seqNum;
@@ -262,7 +262,22 @@ int32_t CryptoHal::setHeapBase(const sp<IMemoryHeap>& heap) {
 void CryptoHal::clearHeapBase(int32_t seqNum) {
     Mutex::Autolock autoLock(mLock);
 
-    mHeapBases.removeItem(seqNum);
+    /*
+     * Clear the remote shared memory mapping by setting the shared
+     * buffer base to a null hidl_memory.
+     *
+     * TODO: Add a releaseSharedBuffer method in a future DRM HAL
+     * API version to make this explicit.
+     */
+    ssize_t index = mHeapBases.indexOfKey(seqNum);
+    if (index >= 0) {
+        if (mPlugin != NULL) {
+            uint32_t bufferId = mHeapBases[index].getBufferId();
+            Return<void> hResult = mPlugin->setSharedBufferBase(hidl_memory(), bufferId);
+            ALOGE_IF(!hResult.isOk(), "setSharedBufferBase(): remote call failed");
+        }
+        mHeapBases.removeItem(seqNum);
+    }
 }
 
 status_t CryptoHal::toSharedBuffer(const sp<IMemory>& memory, int32_t seqNum, ::SharedBuffer* buffer) {
@@ -278,10 +293,26 @@ status_t CryptoHal::toSharedBuffer(const sp<IMemory>& memory, int32_t seqNum, ::
         return UNEXPECTED_NULL;
     }
 
-    // memory must be in the declared heap
-    CHECK(mHeapBases.indexOfKey(seqNum) >= 0);
+    // memory must be in one of the heaps that have been set
+    if (mHeapBases.indexOfKey(seqNum) < 0) {
+        return UNKNOWN_ERROR;
+    }
 
-    buffer->bufferId = mHeapBases.valueFor(seqNum);
+    // heap must be the same size as the one that was set in setHeapBase
+    if (mHeapBases.valueFor(seqNum).getSize() != heap->getSize()) {
+        android_errorWriteLog(0x534e4554, "76221123");
+        return UNKNOWN_ERROR;
+     }
+
+    // memory must be within the address space of the heap
+    if (memory->pointer() != static_cast<uint8_t *>(heap->getBase()) + memory->offset()  ||
+            heap->getSize() < memory->offset() + memory->size() ||
+            SIZE_MAX - memory->offset() < memory->size()) {
+        android_errorWriteLog(0x534e4554, "76221123");
+        return UNKNOWN_ERROR;
+    }
+
+    buffer->bufferId = mHeapBases.valueFor(seqNum).getBufferId();
     buffer->offset = offset >= 0 ? offset : 0;
     buffer->size = size;
     return OK;

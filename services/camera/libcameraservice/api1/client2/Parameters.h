@@ -177,6 +177,8 @@ struct Parameters {
     bool isZslReprocessPresent;
     // Whether the device supports enableZsl.
     bool isDeviceZslSupported;
+    // Whether the device supports geometric distortion correction
+    bool isDistortionCorrectionSupported;
 
     // Overall camera state
     enum State {
@@ -242,6 +244,7 @@ struct Parameters {
         float minFocalLength;
         bool useFlexibleYuv;
         Size maxJpegSize;
+        Size maxZslSize;
     } fastInfo;
 
     // Quirks information; these are short-lived flags to enable workarounds for

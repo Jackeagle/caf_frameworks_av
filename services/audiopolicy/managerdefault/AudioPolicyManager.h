@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <memory>
+#include <unordered_set>
 
 #include <stdint.h>
 #include <sys/types.h>
@@ -66,6 +67,10 @@ namespace android {
 // Time in milliseconds during witch some streams are muted while the audio path
 // is switched
 #define MUTE_TIME_MS 2000
+
+// multiplication factor applied to output latency when calculating a safe mute delay when
+// invalidating tracks
+#define LATENCY_MUTE_FACTOR 4
 
 #define NUM_TEST_OUTPUTS 5
 
@@ -233,6 +238,12 @@ public:
         virtual float    getStreamVolumeDB(
                     audio_stream_type_t stream, int index, audio_devices_t device);
 
+        virtual status_t getSurroundFormats(unsigned int *numSurroundFormats,
+                                            audio_format_t *surroundFormats,
+                                            bool *surroundFormatsEnabled,
+                                            bool reported);
+        virtual status_t setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled);
+
         // return the strategy corresponding to a given stream type
         routing_strategy getStrategy(audio_stream_type_t stream) const;
 
@@ -287,10 +298,6 @@ protected:
         virtual const sp<DeviceDescriptor> &getDefaultOutputDevice() const
         {
             return mDefaultOutputDevice;
-        }
-        virtual const bool &getA2dpSuspended() const
-        {
-            return mA2dpSuspended;
         }
         void addOutput(audio_io_handle_t output, const sp<SwAudioOutputDescriptor>& outputDesc);
         void removeOutput(audio_io_handle_t output);
@@ -595,10 +602,15 @@ protected:
 
         // Audio Policy Engine Interface.
         AudioPolicyManagerInterface *mEngine;
+
+        // Surround formats that are enabled.
+        std::unordered_set<audio_format_t> mSurroundFormats;
 protected:
         // Add or remove AC3 DTS encodings based on user preferences.
         void filterSurroundFormats(FormatVector *formatsPtr);
         void filterSurroundChannelMasks(ChannelsVector *channelMasksPtr);
+
+        status_t getSupportedFormats(audio_io_handle_t ioHandle, FormatVector& formats);
 
         // If any, resolve any "dynamic" fields of an Audio Profiles collection
         void updateAudioProfiles(audio_devices_t device, audio_io_handle_t ioHandle,
