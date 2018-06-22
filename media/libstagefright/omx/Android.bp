@@ -104,6 +104,7 @@ cc_library_shared {
         "libutils",
         "liblog",
         "libui",
+        "libgui_vendor",
         "libcutils",
         "libstagefright_foundation_ext",
         "libstagefright_bufferqueue_helper",
