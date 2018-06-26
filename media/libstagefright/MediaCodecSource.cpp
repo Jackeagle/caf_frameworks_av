@@ -397,8 +397,7 @@ status_t MediaCodecSource::setStopTimeUs(int64_t stopTimeUs) {
 status_t MediaCodecSource::pause(MetaData* params) {
     sp<AMessage> msg = new AMessage(kWhatPause, mReflector);
     msg->setObject("meta", params);
-    msg->post();
-    return OK;
+    return postSynchronouslyAndReturnError(msg);
 }
 
 sp<MetaData> MediaCodecSource::getFormat() {
@@ -1094,6 +1093,8 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
 
     case kWhatPause:
     {
+        sp<AReplyToken> replyID;
+        CHECK(msg->senderAwaitsResponse(&replyID));
         if (mFirstSampleSystemTimeUs < 0) {
             mPausePending = true;
         } else {
@@ -1106,6 +1107,8 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
             }
             onPause(pauseStartTimeUs);
         }
+        sp<AMessage> response = new AMessage;
+        response->postReply(replyID);
         break;
     }
     case kWhatSetInputBufferTimeOffset:
