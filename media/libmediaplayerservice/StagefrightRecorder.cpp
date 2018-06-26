@@ -1936,13 +1936,14 @@ status_t StagefrightRecorder::pause() {
         return OK;
     }
 
+    if (mAudioEncoderSource != NULL) {
+        mAudioEncoderSource->pause();
+    }
+
     mPauseStartTimeUs = systemTime() / 1000;
     sp<MetaData> meta = new MetaData;
     meta->setInt64(kKeyTime, mPauseStartTimeUs);
 
-    if (mAudioEncoderSource != NULL) {
-        mAudioEncoderSource->pause();
-    }
     if (mVideoEncoderSource != NULL) {
         mVideoEncoderSource->pause(meta.get());
     }
@@ -1984,7 +1985,7 @@ status_t StagefrightRecorder::resume() {
         }
         mTotalPausedDurationUs += resumeStartTimeUs - mPauseStartTimeUs;
 
-        bool isQCHwAACEnc = property_get_bool("vendor.audio.hw.aac.encoder", true);
+        bool isQCHwAACEnc = property_get_bool("vendor.audio.hw.aac.encoder", false);
         if (!isQCHwAACEnc || mAudioEncoder != AUDIO_ENCODER_AAC) {
             // 30 ms buffer to avoid timestamp overlap
             mTotalPausedDurationUs -= (30000*(mCaptureFpsEnable ? (mCaptureFps / mFrameRate) : 1));
