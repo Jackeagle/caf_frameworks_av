@@ -154,14 +154,14 @@ private:
     bool mLegacyAdaptiveExperiment;
     IOMX::PortMode mPortMode[2];
     // metadata and secure buffer type tracking
-    MetadataBufferType mMetadataType[4];
+    MetadataBufferType mMetadataType[2];
     enum SecureBufferType {
         kSecureBufferTypeUnknown,
         kSecureBufferTypeOpaque,
         kSecureBufferTypeNativeHandle,
     };
     SecureBufferType mSecureBufferType[2];
-    bool mGraphicBufferEnabled[4];
+    bool mGraphicBufferEnabled[2];
 
     // Following are OMX parameters managed by us (instead of the component)
     // OMX_IndexParamMaxFrameDurationForBitrateControl
@@ -174,7 +174,7 @@ private:
     // For debug support
     char *mName;
     int DEBUG;
-    size_t mNumPortBuffers[4];  // modified under mLock, read outside for debug
+    size_t mNumPortBuffers[2];  // modified under mLock, read outside for debug
     Mutex mDebugLock;
     // following are modified and read under mDebugLock
     int DEBUG_BUMP;
@@ -288,6 +288,21 @@ private:
 
     bool handleDataSpaceChanged(omx_message &msg);
 
+    /*
+     * Set the max pts gap between frames.
+     *
+     * When the pts gap number is positive, it indicates the maximum pts gap between
+     * two adjacent frames. If two frames are further apart, timestamps will be modified
+     * to meet this requirement before the frames are sent to the encoder.
+     *
+     * When the pts gap number is negative, it indicates that the original timestamp
+     * should always be modified such that all adjacent frames have the same pts gap
+     * equal to the absolute value of the passed in number. This option is typically
+     * used when client wants to make sure all frames are captured even when source
+     * potentially sends out-of-order frames.
+     *
+     * Timestamps will be restored to the original when the output is sent back to the client.
+     */
     status_t setMaxPtsGapUs(const void *params, size_t size);
     int64_t getCodecTimestamp(OMX_TICKS timestamp);
 

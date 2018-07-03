@@ -1464,8 +1464,20 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     }
 
     // reassemble the csd data into its original form
+    int32_t nalLengthBitstream = 0;
+    msg->findInt32("feature-nal-length-bitstream", &nalLengthBitstream);
     sp<ABuffer> csd0, csd1, csd2;
     if (msg->findBuffer("csd-0", &csd0)) {
+        uint8_t* data = csd0->data();
+        if (csd0->size() < 4) {
+            ALOGE("csd0 too small");
+            nalLengthBitstream = 0;
+        }
+        if (nalLengthBitstream && !memcmp(data, "\x00\x00\x00\x01", 4)) {
+            nalLengthBitstream = 0;
+        }
+    }
+    if (msg->findBuffer("csd-0", &csd0) && !nalLengthBitstream) {
         int csd0size = csd0->size();
         if (mime == MEDIA_MIMETYPE_VIDEO_AVC) {
             sp<ABuffer> csd1;
