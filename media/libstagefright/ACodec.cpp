@@ -134,8 +134,8 @@ static OMX_VIDEO_CONTROLRATETYPE getVideoBitrateMode(const sp<AMessage> &msg) {
         // explicitly translate from MediaCodecInfo.EncoderCapabilities.
         // BITRATE_MODE_* into OMX bitrate mode.
         switch (tmp) {
-            //BITRATE_MODE_CQ
-            case 0: return OMX_Video_ControlRateConstantQuality;
+            //BITRATE_MODE_DISABLE
+            case 0: return OMX_Video_ControlRateDisable;
             //BITRATE_MODE_VBR
             case 1: return OMX_Video_ControlRateVariable;
             //BITRATE_MODE_CBR
@@ -144,6 +144,8 @@ static OMX_VIDEO_CONTROLRATETYPE getVideoBitrateMode(const sp<AMessage> &msg) {
             case 3: return OMX_Video_ControlRateVariableSkipFrames;
             //BITRATE_MODE_CBR_VFR
             case 4: return OMX_Video_ControlRateConstantSkipFrames;
+            //BITRATE_MODE_CQ
+            case 5: return OMX_Video_ControlRateConstantQuality;
             default: break;
         }
     }
@@ -1263,6 +1265,7 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         info.mRenderInfo = NULL;
         info.mGraphicBuffer = graphicBuffer;
         info.mNewGraphicBuffer = false;
+        info.mDequeuedAt = mDequeueCounter;
 
         // TODO: We shouln't need to create MediaCodecBuffer. In metadata mode
         //       OMX doesn't use the shared memory buffer, but some code still
@@ -2579,6 +2582,8 @@ status_t ACodec::configureTemporalLayers(
         layerParams.nPLayerCountActual = numLayers - numBLayers;
         layerParams.nBLayerCountActual = numBLayers;
         layerParams.bBitrateRatiosSpecified = OMX_FALSE;
+        layerParams.nLayerCountMax = numLayers - numBLayers;
+        layerParams.nBLayerCountMax = numBLayers;
 
         err = mOMXNode->setParameter(
                 (OMX_INDEXTYPE)OMX_IndexParamAndroidVideoTemporalLayering,
@@ -3078,6 +3083,10 @@ status_t ACodec::setupRawAudioFormat(
         case kAudioEncodingPcm24bitPacked:
             pcmParams.eNumData = OMX_NumericalDataSigned;
             pcmParams.nBitPerSample = 24;
+            break;
+        case kAudioEncodingPcm32bit:
+            pcmParams.eNumData = OMX_NumericalDataSigned;
+            pcmParams.nBitPerSample = 32;
             break;
         default:
             return BAD_VALUE;
@@ -5133,6 +5142,9 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
                     } else if (params.eNumData == OMX_NumericalDataSigned
                             && params.nBitPerSample == 24u) {
                         encoding = kAudioEncodingPcm24bitPacked;
+                    } else if (params.eNumData == OMX_NumericalDataSigned
+                            && params.nBitPerSample == 32u) {
+                        encoding = kAudioEncodingPcm32bit;
                     } else if (params.nBitPerSample != 16u
                             || params.eNumData != OMX_NumericalDataSigned) {
                         ALOGE("unsupported PCM port: %s(%d), %s(%d) mode ",
