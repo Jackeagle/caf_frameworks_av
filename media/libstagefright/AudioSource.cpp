@@ -53,8 +53,7 @@ AudioSource::AudioSource(
         audio_source_t inputSource, const String16 &opPackageName,
         uint32_t sampleRate, uint32_t channelCount, uint32_t outSampleRate,
         uid_t uid, pid_t pid)
-    : mInitCheck(OK),
-      mStarted(false),
+    : mStarted(false),
       mSampleRate(sampleRate),
       mOutSampleRate(outSampleRate > 0 ? outSampleRate : sampleRate),
       mTrackMaxAmplitude(false),
@@ -71,48 +70,45 @@ AudioSource::AudioSource(
       mNoMoreFramesToRead(false) {
     ALOGV("sampleRate: %u, outSampleRate: %u, channelCount: %u",
             sampleRate, outSampleRate, channelCount);
-    if (channelCount == 3 || channelCount == 5 || sampleRate == 0) {
-        mInitCheck = BAD_VALUE;
-    }
+    CHECK(channelCount == 1 || channelCount == 2 || channelCount == 4 || channelCount == 6);
+    CHECK(sampleRate > 0);
 
-    if (mInitCheck == OK) {
-        size_t minFrameCount;
-        mMaxBufferSize = kMaxBufferSize;
-        status_t status = AudioRecord::getMinFrameCount(&minFrameCount,
-                                               sampleRate,
-                                               AUDIO_FORMAT_PCM_16_BIT,
-                                               audio_channel_in_mask_from_count(channelCount));
-        if (status == OK) {
-            // make sure that the AudioRecord callback never returns more than the maximum
-            // buffer size
-            uint32_t frameCount = mMaxBufferSize / sizeof(int16_t) / channelCount;
+    size_t minFrameCount;
+    mMaxBufferSize = kMaxBufferSize;
+    status_t status = AudioRecord::getMinFrameCount(&minFrameCount,
+                                           sampleRate,
+                                           AUDIO_FORMAT_PCM_16_BIT,
+                                           audio_channel_in_mask_from_count(channelCount));
+    if (status == OK) {
+        // make sure that the AudioRecord callback never returns more than the maximum
+        // buffer size
+        uint32_t frameCount = mMaxBufferSize / sizeof(int16_t) / channelCount;
 
-            // make sure that the AudioRecord total buffer size is large enough
-            size_t bufCount = 2;
-            while ((bufCount * frameCount) < minFrameCount) {
-                bufCount++;
-            }
-
-            mRecord = new AudioRecord(
-                        inputSource, sampleRate, AUDIO_FORMAT_PCM_16_BIT,
-                        audio_channel_in_mask_from_count(channelCount),
-                        opPackageName,
-                        (size_t) (bufCount * frameCount),
-                        AudioRecordCallbackFunction,
-                        this,
-                        frameCount /*notificationFrames*/,
-                        AUDIO_SESSION_ALLOCATE,
-                        AudioRecord::TRANSFER_DEFAULT,
-                        AUDIO_INPUT_FLAG_NONE,
-                        uid,
-                        pid);
-            mInitCheck = mRecord->initCheck();
-            if (mInitCheck != OK) {
-                mRecord.clear();
-            }
-        } else {
-            mInitCheck = status;
+        // make sure that the AudioRecord total buffer size is large enough
+        size_t bufCount = 2;
+        while ((bufCount * frameCount) < minFrameCount) {
+            bufCount++;
         }
+
+        mRecord = new AudioRecord(
+                    inputSource, sampleRate, AUDIO_FORMAT_PCM_16_BIT,
+                    audio_channel_in_mask_from_count(channelCount),
+                    opPackageName,
+                    (size_t) (bufCount * frameCount),
+                    AudioRecordCallbackFunction,
+                    this,
+                    frameCount /*notificationFrames*/,
+                    AUDIO_SESSION_ALLOCATE,
+                    AudioRecord::TRANSFER_DEFAULT,
+                    AUDIO_INPUT_FLAG_NONE,
+                    uid,
+                    pid);
+        mInitCheck = mRecord->initCheck();
+        if (mInitCheck != OK) {
+            mRecord.clear();
+        }
+    } else {
+        mInitCheck = status;
     }
 }
 
