@@ -134,8 +134,8 @@ static OMX_VIDEO_CONTROLRATETYPE getVideoBitrateMode(const sp<AMessage> &msg) {
         // explicitly translate from MediaCodecInfo.EncoderCapabilities.
         // BITRATE_MODE_* into OMX bitrate mode.
         switch (tmp) {
-            //BITRATE_MODE_DISABLE
-            case 0: return OMX_Video_ControlRateDisable;
+            //BITRATE_MODE_CQ
+            case 0: return OMX_Video_ControlRateConstantQuality;
             //BITRATE_MODE_VBR
             case 1: return OMX_Video_ControlRateVariable;
             //BITRATE_MODE_CBR
@@ -144,8 +144,6 @@ static OMX_VIDEO_CONTROLRATETYPE getVideoBitrateMode(const sp<AMessage> &msg) {
             case 3: return OMX_Video_ControlRateVariableSkipFrames;
             //BITRATE_MODE_CBR_VFR
             case 4: return OMX_Video_ControlRateConstantSkipFrames;
-            //BITRATE_MODE_CQ
-            case 5: return OMX_Video_ControlRateConstantQuality;
             default: break;
         }
     }
@@ -2582,6 +2580,8 @@ status_t ACodec::configureTemporalLayers(
         layerParams.nPLayerCountActual = numLayers - numBLayers;
         layerParams.nBLayerCountActual = numBLayers;
         layerParams.bBitrateRatiosSpecified = OMX_FALSE;
+        layerParams.nLayerCountMax = numLayers - numBLayers;
+        layerParams.nBLayerCountMax = numBLayers;
 
         err = mOMXNode->setParameter(
                 (OMX_INDEXTYPE)OMX_IndexParamAndroidVideoTemporalLayering,
