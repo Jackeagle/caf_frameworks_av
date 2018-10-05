@@ -166,7 +166,7 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                     strlcpy(file_path, "/vendor/etc/media_codecs_8937_v1.xml",
                             PROP_VALUE_MAX);
                 } else {
-                    strlcpy(file_path, "/vendor/etc/media_codecs.xml",
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor.xml",
                             PROP_VALUE_MAX);
                 }
                 ALOGE("SDM429 prop_value = %s, file_path = %s", value, file_path);
@@ -178,7 +178,7 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                     strlcpy(file_path, "/vendor/etc/media_codecs_sdm660_v1.xml",
                             PROP_VALUE_MAX);
                 } else {
-                    strlcpy(file_path, "/vendor/etc/media_codecs.xml",
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor.xml",
                             PROP_VALUE_MAX);
                 }
                 path = file_path;
