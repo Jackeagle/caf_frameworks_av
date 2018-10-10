@@ -816,6 +816,11 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
 
             *stream = streamTypefromAttributesInt(&attributes);
             *output = desc->mIoHandle;
+            auto deviceAddress = desc->mPolicyMix ? desc->mPolicyMix->mDeviceAddress : String8("");
+            DeviceVector outputDevices = mAvailableOutputDevices.
+                     getDevicesFromTypeAddr(desc->device(), deviceAddress);
+            *selectedDeviceId = outputDevices.size() > 0 ? outputDevices.itemAt(0)->getId()
+                    : AUDIO_PORT_HANDLE_NONE;
             ALOGV("getOutputForAttr() returns output %d", *output);
             return NO_ERROR;
         }
@@ -2332,13 +2337,26 @@ audio_io_handle_t AudioPolicyManager::selectOutputForMusicEffects()
 {
     // select one output among several suitable for global effects.
     // The priority is as follows:
-    // 1: An offloaded output. If the effect ends up not being offloadable,
+    // 1: Dynamic mix output for Media
+    // 2: An offloaded output. If the effect ends up not being offloadable,
     //    AudioFlinger will invalidate the track and the offloaded output
     //    will be closed causing the effect to be moved to a PCM output.
-    // 2: Non offloaded Direct output
     // 3: A deep buffer output
     // 4: The primary output
     // 5: the first output in the list
+
+    const audio_attributes_t attributes = {
+            .content_type = AUDIO_CONTENT_TYPE_MUSIC,
+            .usage = AUDIO_USAGE_MEDIA,
+            .source = AUDIO_SOURCE_VOICE_RECOGNITION,
+            .flags = AUDIO_FLAG_LOW_LATENCY,
+            .tags = ""
+    };
+
+    sp<SwAudioOutputDescriptor> desc;
+    if (mPolicyMixes.getOutputForAttr(attributes, 0, desc) == NO_ERROR) {
+        return desc->mIoHandle;
+    }
 
     routing_strategy strategy = getStrategy(AUDIO_STREAM_MUSIC);
     audio_devices_t device = getDeviceForStrategy(strategy, false /*fromCache*/);
