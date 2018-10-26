@@ -134,12 +134,15 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
     else if (findFileInDirs(searchDirs, mainXmlName, &path)) {
         xmlFound = true;
     }
-
     if (xmlFound) {
         if (!strncmp(path.c_str(), "/vendor/etc", strlen("/vendor/etc"))){
             strlcpy(file_path, path.c_str(), PROP_VALUE_MAX);
             property_get("ro.board.platform", platform, NULL);
-            if (!strcmp(platform, "sdm710") ||
+            if (!strcmp(platform, "qcs605")) {
+                strlcpy(file_path, "/vendor/etc/media_codecs_qcs605_v0.xml",
+                            PROP_VALUE_MAX);
+                parseTopLevelXMLFile(file_path, false);
+           } else if (!strcmp(platform, "sdm710") ||
                    !strcmp(platform, "msmpeafowl")) {   //platform is SDM710
                 if (property_get("vendor.media.sdm710.version", value, "0") &&
                     (atoi(value) == 0)) {               // version is 0
@@ -183,7 +186,10 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
     if (findFileInDirs(searchDirs, performanceXmlName, &path)) {
         if (!strncmp(path.c_str(), "/vendor/etc", strlen("/vendor/etc"))){
             property_get("ro.board.platform", platform, NULL);
-            if (!strcmp(platform, "sdm710") ||
+            if (!strcmp(platform, "qcs605")) {
+                strlcpy(file_path, "/vendor/etc/media_codecs_performance_qcs605_v0.xml",
+                            PROP_VALUE_MAX);
+            } else if (!strcmp(platform, "sdm710") ||
                    !strcmp(platform, "msmpeafowl")) {
                 if (property_get("vendor.media.sdm710.version", value, "0") &&
                     (atoi(value) == 0)) {
@@ -618,7 +624,6 @@ status_t MediaCodecsXmlParser::addMediaCodecFromAttributes(
         ALOGE("addMediaCodecFromAttributes: name not found");
         return -EINVAL;
     }
-
     mUpdate = (update != nullptr) && parseBoolean(update);
     mCurrentCodec = mCodecMap.find(name);
     if (mCurrentCodec == mCodecMap.end()) { // New codec name
