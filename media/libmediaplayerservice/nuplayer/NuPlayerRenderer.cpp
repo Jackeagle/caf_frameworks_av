@@ -35,6 +35,7 @@
 #include <media/MediaCodecBuffer.h>
 
 #include <inttypes.h>
+#include "mediaplayerservice/AVNuExtensions.h"
 #include "stagefright/AVExtensions.h"
 
 namespace android {
