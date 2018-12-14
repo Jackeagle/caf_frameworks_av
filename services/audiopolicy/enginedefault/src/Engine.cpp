@@ -377,6 +377,8 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
                 device = availableOutputDevicesType & AUDIO_DEVICE_OUT_AUX_DIGITAL;
                 if (device) break;
             }
+            device = availableOutputDevicesType & AUDIO_DEVICE_OUT_EAVB;
+            if (device) break;
             if (!isInCall()) {
                 device = availableOutputDevicesType & AUDIO_DEVICE_OUT_USB_ACCESSORY;
                 if (device) break;
@@ -409,6 +411,8 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
                 device = availableOutputDevicesType & AUDIO_DEVICE_OUT_AUX_DIGITAL;
                 if (device) break;
                 device = availableOutputDevicesType & AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET;
+                if (device) break;
+                device = availableOutputDevicesType & AUDIO_DEVICE_OUT_EAVB;
                 if (device) break;
             }
             device = availableOutputDevicesType & AUDIO_DEVICE_OUT_SPEAKER;
@@ -582,6 +586,9 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             device2 = availableOutputDevicesType & AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET;
         }
         if (device2 == AUDIO_DEVICE_NONE) {
+            device2 = availableOutputDevicesType & AUDIO_DEVICE_OUT_EAVB;
+        }
+        if (device2 == AUDIO_DEVICE_NONE) {
             device2 = availableOutputDevicesType & AUDIO_DEVICE_OUT_SPEAKER;
         }
         int device3 = AUDIO_DEVICE_NONE;
@@ -679,6 +686,8 @@ audio_devices_t Engine::getDeviceForInputSource(audio_source_t inputSource) cons
         device = AUDIO_DEVICE_IN_USB_DEVICE;
     } else if (availableDeviceTypes & AUDIO_DEVICE_IN_BUILTIN_MIC) {
         device = AUDIO_DEVICE_IN_BUILTIN_MIC;
+    } else if (availableDeviceTypes & AUDIO_DEVICE_IN_EAVB) {
+        device = AUDIO_DEVICE_IN_EAVB;
     }
     break;
 
