@@ -633,7 +633,7 @@ CameraDevice::configureStreamsLocked(const ACaptureSessionOutputContainer* outpu
     }
 
     std::set<std::pair<ANativeWindow*, OutputConfiguration>> outputSet;
-    for (auto outConfig : outputs->mOutputs) {
+    for (const auto& outConfig : outputs->mOutputs) {
         ANativeWindow* anw = outConfig.mWindow;
         sp<IGraphicBufferProducer> iGBP(nullptr);
         ret = getIGBPfromAnw(anw, iGBP);
@@ -706,7 +706,7 @@ CameraDevice::configureStreamsLocked(const ACaptureSessionOutputContainer* outpu
     }
 
     // add new streams
-    for (auto outputPair : addSet) {
+    for (const auto& outputPair : addSet) {
         int streamId;
         remoteRet = mRemote->createStream(outputPair.second, &streamId);
         if (!remoteRet.isOk()) {
@@ -839,7 +839,7 @@ CameraDevice::onCaptureErrorLocked(
 
         const auto& gbps = outputPairIt->second.second.getGraphicBufferProducers();
         for (const auto& outGbp : gbps) {
-            for (auto surface : request->mSurfaceList) {
+            for (const auto& surface : request->mSurfaceList) {
                 if (surface->getIGraphicBufferProducer() == outGbp) {
                     ANativeWindow* anw = static_cast<ANativeWindow*>(surface.get());
                     ALOGV("Camera %s Lost output buffer for ANW %p frame %" PRId64,
@@ -1290,16 +1290,21 @@ CameraDevice::ServiceCallback::onDeviceError(
         }
         default:
             ALOGE("Unknown error from camera device: %d", errorCode);
-            // no break
+            [[fallthrough]];
         case ERROR_CAMERA_DEVICE:
         case ERROR_CAMERA_SERVICE:
         {
+            int32_t errorVal = ::ERROR_CAMERA_DEVICE;
+            // We keep this switch since this block might be encountered with
+            // more than just 2 states. The default fallthrough could have us
+            // handling more unmatched error cases.
             switch (errorCode) {
                 case ERROR_CAMERA_DEVICE:
                     dev->setCameraDeviceErrorLocked(ACAMERA_ERROR_CAMERA_DEVICE);
                     break;
                 case ERROR_CAMERA_SERVICE:
                     dev->setCameraDeviceErrorLocked(ACAMERA_ERROR_CAMERA_SERVICE);
+                    errorVal = ::ERROR_CAMERA_SERVICE;
                     break;
                 default:
                     dev->setCameraDeviceErrorLocked(ACAMERA_ERROR_UNKNOWN);
@@ -1309,7 +1314,7 @@ CameraDevice::ServiceCallback::onDeviceError(
             msg->setPointer(kContextKey, dev->mAppCallbacks.context);
             msg->setPointer(kDeviceKey, (void*) dev->getWrapper());
             msg->setPointer(kCallbackFpKey, (void*) dev->mAppCallbacks.onError);
-            msg->setInt32(kErrorCodeKey, errorCode);
+            msg->setInt32(kErrorCodeKey, errorVal);
             msg->post();
             break;
         }

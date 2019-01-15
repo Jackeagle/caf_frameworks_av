@@ -15,7 +15,12 @@
  */
 
 #define LOG_TAG "APM_AudioPolicyManager"
-//#define LOG_NDEBUG 0
+
+// Need to keep the log statements even in production builds
+// to enable VERBOSE logging dynamically.
+// You can enable VERBOSE logging as follows:
+// adb shell setprop log.tag.APM_AudioPolicyManager V
+#define LOG_NDEBUG 0
 
 //#define VERY_VERBOSE_LOGGING
 #ifdef VERY_VERBOSE_LOGGING
@@ -861,6 +866,21 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
         *flags = (audio_output_flags_t)(*flags | AUDIO_OUTPUT_FLAG_HW_AV_SYNC);
     }
 
+    // Set incall music only if device was explicitly set, and fallback to the device which is
+    // chosen by the engine if not.
+    // FIXME: provide a more generic approach which is not device specific and move this back
+    // to getOutputForDevice.
+    if (device == AUDIO_DEVICE_OUT_TELEPHONY_TX &&
+        *stream == AUDIO_STREAM_MUSIC &&
+        audio_is_linear_pcm(config->format) &&
+        isInCall()) {
+        if (*selectedDeviceId != AUDIO_PORT_HANDLE_NONE) {
+            *flags = (audio_output_flags_t)AUDIO_OUTPUT_FLAG_INCALL_MUSIC;
+        } else {
+            device = mEngine->getDeviceForStrategy(strategy);
+        }
+    }
+
     ALOGV("getOutputForAttr() device 0x%x, sampling rate %d, format %#x, channel mask %#x, "
           "flags %#x",
           device, config->sample_rate, config->format, config->channel_mask, *flags);
@@ -916,11 +936,6 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         *flags = (audio_output_flags_t)(AUDIO_OUTPUT_FLAG_VOIP_RX |
                                        AUDIO_OUTPUT_FLAG_DIRECT);
         ALOGV("Set VoIP and Direct output flags for PCM format");
-    } else if (device == AUDIO_DEVICE_OUT_TELEPHONY_TX &&
-        stream == AUDIO_STREAM_MUSIC &&
-        audio_is_linear_pcm(config->format) &&
-        isInCall()) {
-        *flags = (audio_output_flags_t)AUDIO_OUTPUT_FLAG_INCALL_MUSIC;
     }
 
 
@@ -1071,13 +1086,12 @@ audio_io_handle_t AudioPolicyManager::selectOutput(const SortedVector<audio_io_h
     for (audio_io_handle_t output : outputs) {
         sp<SwAudioOutputDescriptor> outputDesc = mOutputs.valueFor(output);
         if (!outputDesc->isDuplicated()) {
+            if (outputDesc->mFlags & AUDIO_OUTPUT_FLAG_DIRECT) {
+                continue;
+            }
             // if a valid format is specified, skip output if not compatible
             if (format != AUDIO_FORMAT_INVALID) {
-                if (outputDesc->mFlags & AUDIO_OUTPUT_FLAG_DIRECT) {
-                    if (format != outputDesc->mFormat) {
-                        continue;
-                    }
-                } else if (!audio_is_linear_pcm(format)) {
+                if (!audio_is_linear_pcm(format)) {
                     continue;
                 }
                 if (AudioPort::isBetterFormatMatch(
@@ -2277,7 +2291,7 @@ status_t AudioPolicyManager::setStreamVolumeIndex(audio_stream_type_t stream,
     status_t status = NO_ERROR;
     for (size_t i = 0; i < mOutputs.size(); i++) {
         sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
-        audio_devices_t curDevice = Volume::getDeviceForVolume(desc->device());
+        audio_devices_t curDevice = desc->device();
         for (int curStream = 0; curStream < AUDIO_STREAM_FOR_POLICY_CNT; curStream++) {
             if (!streamsMatchForvolume(stream, (audio_stream_type_t)curStream)) {
                 continue;
@@ -2296,7 +2310,7 @@ status_t AudioPolicyManager::setStreamVolumeIndex(audio_stream_type_t stream,
             bool applyVolume;
             if (device != AUDIO_DEVICE_OUT_DEFAULT_FOR_VOLUME) {
                 curStreamDevice |= device;
-                applyVolume = (curDevice & curStreamDevice) != 0;
+                applyVolume = (Volume::getDeviceForVolume(curDevice) & curStreamDevice) != 0;
             } else {
                 applyVolume = !mVolumeCurves->hasVolumeIndexForDevice(
                         stream, curStreamDevice);
@@ -4159,6 +4173,9 @@ status_t AudioPolicyManager::initialize() {
         status = NO_INIT;
     }
 
+    // Silence ALOGV statements
+    property_set("log.tag." LOG_TAG, "D");
+
     updateDevicesAndOutputs();
     return status;
 }
@@ -4877,11 +4894,15 @@ audio_devices_t AudioPolicyManager::getNewOutputDevice(const sp<AudioOutputDescr
     //      use device for strategy DTMF
     // 9: the strategy for beacon, a.k.a. "transmitted through speaker" is active on the output:
     //      use device for strategy t-t-s
+
+    // FIXME: extend use of isStrategyActiveOnSameModule() to all strategies
+    // with a refined rule considering mutually exclusive devices (using same backend)
+    // as opposed to all streams on the same audio HAL module.
     if (isStrategyActive(outputDesc, STRATEGY_ENFORCED_AUDIBLE) &&
         mEngine->getForceUse(AUDIO_POLICY_FORCE_FOR_SYSTEM) == AUDIO_POLICY_FORCE_SYSTEM_ENFORCED) {
         device = getDeviceForStrategy(STRATEGY_ENFORCED_AUDIBLE, fromCache);
     } else if (isInCall() ||
-                    isStrategyActive(outputDesc, STRATEGY_PHONE)) {
+               isStrategyActiveOnSameModule(outputDesc, STRATEGY_PHONE)) {
         device = getDeviceForStrategy(STRATEGY_PHONE, fromCache);
     } else if (isStrategyActive(outputDesc, STRATEGY_SONIFICATION)) {
         device = getDeviceForStrategy(STRATEGY_SONIFICATION, fromCache);
@@ -5889,6 +5910,20 @@ bool AudioPolicyManager::isStrategyActive(const sp<AudioOutputDescriptor>& outpu
     return false;
 }
 
+bool AudioPolicyManager::isStrategyActiveOnSameModule(const sp<AudioOutputDescriptor>& outputDesc,
+                                          routing_strategy strategy, uint32_t inPastMs,
+                                          nsecs_t sysTime) const
+{
+    for (size_t i = 0; i < mOutputs.size(); i++) {
+        sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
+        if (outputDesc->sharesHwModuleWith(desc)
+            && isStrategyActive(desc, strategy, inPastMs, sysTime)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 audio_policy_forced_cfg_t AudioPolicyManager::getForceUse(audio_policy_force_use_t usage)
 {
     return mEngine->getForceUse(usage);
@@ -6048,6 +6083,7 @@ void AudioPolicyManager::filterSurroundFormats(FormatVector *formatsPtr) {
                     case AUDIO_FORMAT_DOLBY_TRUEHD:
                     case AUDIO_FORMAT_E_AC3_JOC:
                         mSurroundFormats.insert(format);
+                        break;
                     default:
                         break;
                 }

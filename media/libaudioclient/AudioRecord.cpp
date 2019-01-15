@@ -19,6 +19,7 @@
 #define LOG_TAG "AudioRecord"
 
 #include <inttypes.h>
+#include <android-base/macros.h>
 #include <sys/resource.h>
 
 #include <binder/IPCThreadState.h>
@@ -865,9 +866,9 @@ status_t AudioRecord::obtainBuffer(Buffer* audioBuffer, int32_t waitCount, size_
     } else if (waitCount == 0) {
         requested = &ClientProxy::kNonBlocking;
     } else if (waitCount > 0) {
-        long long ms = WAIT_PERIOD_MS * (long long) waitCount;
+        time_t ms = WAIT_PERIOD_MS * (time_t) waitCount;
         timeout.tv_sec = ms / 1000;
-        timeout.tv_nsec = (int) (ms % 1000) * 1000000;
+        timeout.tv_nsec = (long) (ms % 1000) * 1000000;
         requested = &timeout;
     } else {
         ALOGE("%s invalid waitCount %d", __func__, waitCount);
@@ -1446,7 +1447,7 @@ bool AudioRecord::AudioRecordThread::threadLoop()
     case NS_WHENEVER:
         // Event driven: call wake() when callback notifications conditions change.
         ns = INT64_MAX;
-        // fall through
+        FALLTHROUGH_INTENDED;
     default:
         LOG_ALWAYS_FATAL_IF(ns < 0, "processAudioBuffer() returned %" PRId64, ns);
         pauseInternal(ns);

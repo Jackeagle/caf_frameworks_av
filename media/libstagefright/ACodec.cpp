@@ -566,8 +566,8 @@ ACodec::ACodec()
       mDequeueCounter(0),
       mMetadataBuffersToSubmit(0),
       mNumUndequeuedBuffers(0),
-      mRepeatFrameDelayUs(-1ll),
-      mMaxPtsGapUs(0ll),
+      mRepeatFrameDelayUs(-1LL),
+      mMaxPtsGapUs(0LL),
       mMaxFps(-1),
       mFps(-1.0),
       mCaptureFps(-1.0),
@@ -1619,7 +1619,7 @@ status_t ACodec::freeBuffer(OMX_U32 portIndex, size_t i) {
             if (portIndex == kPortIndexOutput && mNativeWindow != NULL) {
                 (void)cancelBufferToNativeWindow(info);
             }
-            // fall through
+            FALLTHROUGH_INTENDED;
 
         case BufferInfo::OWNED_BY_NATIVE_WINDOW:
             err = mOMXNode->freeBuffer(portIndex, info->mBufferID);
@@ -1818,15 +1818,15 @@ status_t ACodec::configureCodec(
         if (!msg->findInt64(
                     "repeat-previous-frame-after",
                     &mRepeatFrameDelayUs)) {
-            mRepeatFrameDelayUs = -1ll;
+            mRepeatFrameDelayUs = -1LL;
         }
 
         // only allow 32-bit value, since we pass it as U32 to OMX.
         if (!msg->findInt64("max-pts-gap-to-encoder", &mMaxPtsGapUs)) {
-            mMaxPtsGapUs = 0ll;
+            mMaxPtsGapUs = 0LL;
         } else if (mMaxPtsGapUs > INT32_MAX || mMaxPtsGapUs < INT32_MIN) {
             ALOGW("Unsupported value for max pts gap %lld", (long long) mMaxPtsGapUs);
-            mMaxPtsGapUs = 0ll;
+            mMaxPtsGapUs = 0LL;
         }
 
         if (!msg->findFloat("max-fps-to-encoder", &mMaxFps)) {
@@ -1834,7 +1834,7 @@ status_t ACodec::configureCodec(
         }
 
         // notify GraphicBufferSource to allow backward frames
-        if (mMaxPtsGapUs < 0ll) {
+        if (mMaxPtsGapUs < 0LL) {
             mMaxFps = -1;
         }
 
@@ -5019,6 +5019,7 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
                         }
                     }
                     // Fall through to set up mime.
+                    FALLTHROUGH_INTENDED;
                 }
 
                 default:
@@ -5123,6 +5124,7 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
                     notify->setString("mime", MEDIA_MIMETYPE_AUDIO_AAC);
                     notify->setInt32("channel-count", params.nChannels);
                     notify->setInt32("sample-rate", params.nSampleRate);
+                    notify->setInt32("bitrate", params.nBitRate);
                     break;
                 }
 
@@ -5383,7 +5385,7 @@ void ACodec::onOutputFormatChanged(sp<const AMessage> expectedFormat) {
         AudioEncoding pcmEncoding = kAudioEncodingPcm16bit;
         (void)mConfigFormat->findInt32("pcm-encoding", (int32_t*)&pcmEncoding);
         AudioEncoding codecPcmEncoding = kAudioEncodingPcm16bit;
-        (void)mOutputFormat->findInt32("pcm-encoding", (int32_t*)&pcmEncoding);
+        (void)mOutputFormat->findInt32("pcm-encoding", (int32_t*)&codecPcmEncoding);
 
         mConverter[kPortIndexOutput] = AudioConverter::Create(codecPcmEncoding, pcmEncoding);
         if (mConverter[kPortIndexOutput] != NULL) {
@@ -6536,7 +6538,7 @@ void ACodec::LoadedState::stateEntered() {
 
     mCodec->mDequeueCounter = 0;
     mCodec->mMetadataBuffersToSubmit = 0;
-    mCodec->mRepeatFrameDelayUs = -1ll;
+    mCodec->mRepeatFrameDelayUs = -1LL;
     mCodec->mInputFormat.clear();
     mCodec->mOutputFormat.clear();
     mCodec->mBaseOutputFormat.clear();
@@ -6678,7 +6680,7 @@ status_t ACodec::LoadedState::setupInputSurface() {
         return err;
     }
 
-    if (mCodec->mRepeatFrameDelayUs > 0ll) {
+    if (mCodec->mRepeatFrameDelayUs > 0LL) {
         err = statusFromBinderStatus(
                 mCodec->mGraphicBufferSource->setRepeatPreviousFrameDelayUs(
                         mCodec->mRepeatFrameDelayUs));
@@ -6691,7 +6693,7 @@ status_t ACodec::LoadedState::setupInputSurface() {
         }
     }
 
-    if (mCodec->mMaxPtsGapUs != 0ll) {
+    if (mCodec->mMaxPtsGapUs != 0LL) {
         OMX_PARAM_U32TYPE maxPtsGapParams;
         InitOMXParams(&maxPtsGapParams);
         maxPtsGapParams.nPortIndex = kPortIndexInput;
@@ -7849,7 +7851,7 @@ bool ACodec::OutputPortSettingsChangedState::onMessageReceived(
                 msg->setInt32("generation", mCodec->mStateGeneration);
                 msg->post(3000000);
             }
-            // fall-through
+            FALLTHROUGH_INTENDED;
         }
         case kWhatResume:
         case kWhatSetParameters:

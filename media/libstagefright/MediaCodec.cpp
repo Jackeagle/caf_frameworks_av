@@ -860,7 +860,15 @@ static CodecBase *CreateCCodec() {
 }
 
 //static
-sp<CodecBase> MediaCodec::GetCodecBase(const AString &name) {
+sp<CodecBase> MediaCodec::GetCodecBase(const AString &name, const char *owner) {
+    if (owner) {
+        if (strncmp(owner, "default", 8) == 0) {
+            return new ACodec;
+        } else if (strncmp(owner, "codec2", 7) == 0) {
+            return CreateCCodec();
+        }
+    }
+
     if (name.startsWithIgnoreCase("c2.")) {
         return CreateCCodec();
     } else if (name.startsWithIgnoreCase("omx.")) {
@@ -883,11 +891,6 @@ status_t MediaCodec::init(const AString &name) {
     // quickly, violating the OpenMAX specs, until that is remedied
     // we need to invest in an extra looper to free the main event
     // queue.
-
-    mCodec = GetCodecBase(name);
-    if (mCodec == NULL) {
-        return NAME_NOT_FOUND;
-    }
 
     mCodecInfo.clear();
 
@@ -919,6 +922,11 @@ status_t MediaCodec::init(const AString &name) {
         break;
     }
     if (mCodecInfo == nullptr) {
+        return NAME_NOT_FOUND;
+    }
+
+    mCodec = GetCodecBase(name, mCodecInfo->getOwnerName());
+    if (mCodec == NULL) {
         return NAME_NOT_FOUND;
     }
 
@@ -1821,8 +1829,8 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                             // the shutdown complete notification. If we
                             // don't, we'll timeout and force release.
                             sendErrorResponse = false;
+                            FALLTHROUGH_INTENDED;
                         }
-                        // fall-thru
                         case STOPPING:
                         {
                             if (mFlags & kFlagSawMediaServerDie) {
@@ -1935,7 +1943,9 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                         mAnalyticsItem->setCString(kCodecCodec, mComponentName.c_str());
                     }
 
-                    if (mComponentName.startsWith("OMX.google.")) {
+                    const char *owner = mCodecInfo->getOwnerName();
+                    if (mComponentName.startsWith("OMX.google.")
+                            && (owner == nullptr || strncmp(owner, "default", 8) == 0)) {
                         mFlags |= kFlagUsesSoftwareRenderer;
                     } else {
                         mFlags &= ~kFlagUsesSoftwareRenderer;
@@ -2682,7 +2692,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             int64_t timeoutUs;
             CHECK(msg->findInt64("timeoutUs", &timeoutUs));
 
-            if (timeoutUs == 0ll) {
+            if (timeoutUs == 0LL) {
                 PostReplyWithError(replyID, -EAGAIN);
                 break;
             }
@@ -2690,7 +2700,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             mFlags |= kFlagDequeueInputPending;
             mDequeueInputReplyID = replyID;
 
-            if (timeoutUs > 0ll) {
+            if (timeoutUs > 0LL) {
                 sp<AMessage> timeoutMsg =
                     new AMessage(kWhatDequeueInputTimedOut, this);
                 timeoutMsg->setInt32(
@@ -2756,7 +2766,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             int64_t timeoutUs;
             CHECK(msg->findInt64("timeoutUs", &timeoutUs));
 
-            if (timeoutUs == 0ll) {
+            if (timeoutUs == 0LL) {
                 PostReplyWithError(replyID, -EAGAIN);
                 break;
             }
@@ -2764,7 +2774,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             mFlags |= kFlagDequeueOutputPending;
             mDequeueOutputReplyID = replyID;
 
-            if (timeoutUs > 0ll) {
+            if (timeoutUs > 0LL) {
                 sp<AMessage> timeoutMsg =
                     new AMessage(kWhatDequeueOutputTimedOut, this);
                 timeoutMsg->setInt32(
@@ -3025,7 +3035,7 @@ status_t MediaCodec::queueCSDInputBuffer(size_t bufferIndex) {
     msg->setSize("index", bufferIndex);
     msg->setSize("offset", 0);
     msg->setSize("size", csd->size());
-    msg->setInt64("timeUs", 0ll);
+    msg->setInt64("timeUs", 0LL);
     msg->setInt32("flags", BUFFER_FLAG_CODECCONFIG);
     msg->setPointer("errorDetailMsg", &errorDetailMsg);
 

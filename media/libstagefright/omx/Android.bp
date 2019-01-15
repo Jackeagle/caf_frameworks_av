@@ -29,6 +29,7 @@ cc_library_shared {
     ],
 
     header_libs: [
+        "libbase_headers",
         "media_plugin_headers",
     ],
 
@@ -78,9 +79,6 @@ cc_library_shared {
             "unsigned-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }
 
@@ -114,9 +112,6 @@ cc_library_shared {
             "unsigned-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
     cflags: ["-Wall", "-Werror"],
 }
