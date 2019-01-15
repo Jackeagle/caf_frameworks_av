@@ -25,9 +25,6 @@ cc_library {
             "unsigned-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 
     shared_libs: [
@@ -44,6 +41,10 @@ cc_library {
         "libhidlbase",
         "android.hardware.cas@1.0",
         "android.hardware.cas.native@1.0",
+    ],
+
+    header_libs: [
+        "libbase_headers",
     ],
 
     static_libs: [

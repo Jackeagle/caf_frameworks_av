@@ -17,6 +17,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayerDriver"
 #include <inttypes.h>
+#include <android-base/macros.h>
 #include <utils/Log.h>
 #include <cutils/properties.h>
 
@@ -344,7 +345,7 @@ status_t NuPlayerDriver::start_l() {
 
             CHECK_EQ(mState, STATE_PREPARED);
 
-            // fall through
+            FALLTHROUGH_INTENDED;
         }
 
         case STATE_PAUSED:
@@ -353,7 +354,7 @@ status_t NuPlayerDriver::start_l() {
         {
             mPlayer->start();
 
-            // fall through
+            FALLTHROUGH_INTENDED;
         }
 
         case STATE_RUNNING:
@@ -382,7 +383,7 @@ status_t NuPlayerDriver::stop() {
     switch (mState) {
         case STATE_RUNNING:
             mPlayer->pause();
-            // fall through
+            FALLTHROUGH_INTENDED;
 
         case STATE_PAUSED:
             mState = STATE_STOPPED;
@@ -472,7 +473,7 @@ status_t NuPlayerDriver::seekTo(int msec, MediaPlayerSeekMode mode) {
     ALOGD("seekTo(%p) (%d ms, %d) at state %d", this, msec, mode, mState);
     Mutex::Autolock autoLock(mLock);
 
-    int64_t seekTimeUs = msec * 1000ll;
+    int64_t seekTimeUs = msec * 1000LL;
 
     switch (mState) {
         case STATE_PREPARED:
@@ -529,7 +530,7 @@ status_t NuPlayerDriver::getDuration(int *msec) {
         return UNKNOWN_ERROR;
     }
 
-    *msec = (mDurationUs + 500ll) / 1000;
+    *msec = (mDurationUs + 500LL) / 1000;
 
     return OK;
 }
@@ -737,7 +738,7 @@ status_t NuPlayerDriver::invoke(const Parcel &request, Parcel *reply) {
             int msec = 0;
             // getCurrentPosition should always return OK
             getCurrentPosition(&msec);
-            return mPlayer->selectTrack(trackIndex, true /* select */, msec * 1000ll);
+            return mPlayer->selectTrack(trackIndex, true /* select */, msec * 1000LL);
         }
 
         case INVOKE_ID_UNSELECT_TRACK:
@@ -991,7 +992,7 @@ void NuPlayerDriver::notifyListener_l(
                 mPlayer->pause();
                 mState = STATE_PAUSED;
             }
-            // fall through
+            FALLTHROUGH_INTENDED;
         }
 
         case MEDIA_ERROR:

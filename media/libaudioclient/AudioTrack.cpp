@@ -22,6 +22,7 @@
 #include <math.h>
 #include <sys/resource.h>
 
+#include <android-base/macros.h>
 #include <audio_utils/clock.h>
 #include <audio_utils/primitives.h>
 #include <binder/IPCThreadState.h>
@@ -63,7 +64,7 @@ static inline nsecs_t framesToNanoseconds(ssize_t frames, uint32_t sampleRate, f
 
 static int64_t convertTimespecToUs(const struct timespec &tv)
 {
-    return tv.tv_sec * 1000000ll + tv.tv_nsec / 1000;
+    return tv.tv_sec * 1000000LL + tv.tv_nsec / 1000;
 }
 
 // TODO move to audio_utils.
@@ -706,6 +707,13 @@ status_t AudioTrack::start()
         // force refresh of remaining frames by processAudioBuffer() as last
         // write before stop could be partial.
         mRefreshRemaining = true;
+
+        // for static track, clear the old flags when starting from stopped state
+        if (mSharedBuffer != 0) {
+            android_atomic_and(
+            ~(CBLK_LOOP_CYCLE | CBLK_LOOP_FINAL | CBLK_BUFFER_END),
+            &mCblk->mFlags);
+        }
     }
     mNewPosition = mPosition + mUpdatePeriod;
     int32_t flags = android_atomic_and(~(CBLK_STREAM_END_DONE | CBLK_DISABLED), &mCblk->mFlags);
@@ -1634,9 +1642,9 @@ status_t AudioTrack::obtainBuffer(Buffer* audioBuffer, int32_t waitCount, size_t
     } else if (waitCount == 0) {
         requested = &ClientProxy::kNonBlocking;
     } else if (waitCount > 0) {
-        long long ms = WAIT_PERIOD_MS * (long long) waitCount;
+        time_t ms = WAIT_PERIOD_MS * (time_t) waitCount;
         timeout.tv_sec = ms / 1000;
-        timeout.tv_nsec = (int) (ms % 1000) * 1000000;
+        timeout.tv_nsec = (long) (ms % 1000) * 1000000;
         requested = &timeout;
     } else {
         ALOGE("%s invalid waitCount %d", __func__, waitCount);
@@ -2957,7 +2965,7 @@ bool AudioTrack::hasStarted()
         if (mProxy->getStreamEndDone()) {
             return true;
         }
-        // fall through
+        FALLTHROUGH_INTENDED;
     case STATE_ACTIVE:
     case STATE_STOPPING:
         break;
@@ -3076,7 +3084,7 @@ bool AudioTrack::AudioTrackThread::threadLoop()
     case NS_WHENEVER:
         // Event driven: call wake() when callback notifications conditions change.
         ns = INT64_MAX;
-        // fall through
+        FALLTHROUGH_INTENDED;
     default:
         LOG_ALWAYS_FATAL_IF(ns < 0, "processAudioBuffer() returned %" PRId64, ns);
         pauseInternal(ns);

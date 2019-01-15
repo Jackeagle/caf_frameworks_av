@@ -121,9 +121,23 @@ status_t Camera3Device::initialize(sp<CameraProviderManager> manager, const Stri
 
     res = manager->getCameraCharacteristics(mId.string(), &mDeviceInfo);
     if (res != OK) {
-        SET_ERR_L("Could not retrive camera characteristics: %s (%d)", strerror(-res), res);
+        SET_ERR_L("Could not retrieve camera characteristics: %s (%d)", strerror(-res), res);
         session->close();
         return res;
+    }
+
+    std::vector<std::string> physicalCameraIds;
+    bool isLogical = CameraProviderManager::isLogicalCamera(mDeviceInfo, &physicalCameraIds);
+    if (isLogical) {
+        for (auto& physicalId : physicalCameraIds) {
+            res = manager->getCameraCharacteristics(physicalId, &mPhysicalDeviceInfoMap[physicalId]);
+            if (res != OK) {
+                SET_ERR_L("Could not retrieve camera %s characteristics: %s (%d)",
+                        physicalId.c_str(), strerror(-res), res);
+                session->close();
+                return res;
+            }
+        }
     }
 
     std::shared_ptr<RequestMetadataQueue> queue;
@@ -161,7 +175,7 @@ status_t Camera3Device::initialize(sp<CameraProviderManager> manager, const Stri
         session->interfaceChain([](
             ::android::hardware::hidl_vec<::android::hardware::hidl_string> interfaceChain) {
                 ALOGV("Session interface chain:");
-                for (auto iface : interfaceChain) {
+                for (const auto& iface : interfaceChain) {
                     ALOGV("  %s", iface.c_str());
                 }
             });
@@ -719,7 +733,7 @@ status_t Camera3Device::dump(int fd, const Vector<String16> &args) {
     return OK;
 }
 
-const CameraMetadata& Camera3Device::info() const {
+const CameraMetadata& Camera3Device::info(const String8& physicalId) const {
     ALOGVV("%s: E", __FUNCTION__);
     if (CC_UNLIKELY(mStatus == STATUS_UNINITIALIZED ||
                     mStatus == STATUS_ERROR)) {
@@ -727,7 +741,22 @@ const CameraMetadata& Camera3Device::info() const {
                 mStatus == STATUS_ERROR ?
                 "when in error state" : "before init");
     }
-    return mDeviceInfo;
+    if (physicalId.isEmpty()) {
+        return mDeviceInfo;
+    } else {
+        std::string id(physicalId.c_str());
+        if (mPhysicalDeviceInfoMap.find(id) != mPhysicalDeviceInfoMap.end()) {
+            return mPhysicalDeviceInfoMap.at(id);
+        } else {
+            ALOGE("%s: Invalid physical camera id %s", __FUNCTION__, physicalId.c_str());
+            return mDeviceInfo;
+        }
+    }
+}
+
+const CameraMetadata& Camera3Device::info() const {
+    String8 emptyId;
+    return info(emptyId);
 }
 
 status_t Camera3Device::checkStatusOkToCaptureLocked() {
@@ -2143,8 +2172,14 @@ status_t Camera3Device::setConsumerSurfaces(int streamId,
 
         res = stream->finishConfiguration();
         if (res != OK) {
-            SET_ERR_L("Can't finish configuring output stream %d: %s (%d)",
-                   stream->getId(), strerror(-res), res);
+            // If finishConfiguration fails due to abandoned surface, do not set
+            // device to error state.
+            bool isSurfaceAbandoned =
+                    (res == NO_INIT || res == DEAD_OBJECT) && stream->isAbandoned();
+            if (!isSurfaceAbandoned) {
+                SET_ERR_L("Can't finish configuring output stream %d: %s (%d)",
+                        stream->getId(), strerror(-res), res);
+            }
             return res;
         }
     }
@@ -2232,8 +2267,8 @@ sp<Camera3Device::CaptureRequest> Camera3Device::createCaptureRequest(
                 return NULL;
             }
         }
-        // Check if stream is being prepared
-        if (mInputStream->isPreparing()) {
+        // Check if stream prepare is blocking requests.
+        if (mInputStream->isBlockedByPrepare()) {
             CLOGE("Request references an input stream that's being prepared!");
             return NULL;
         }
@@ -2283,8 +2318,8 @@ sp<Camera3Device::CaptureRequest> Camera3Device::createCaptureRequest(
                 return NULL;
             }
         }
-        // Check if stream is being prepared
-        if (stream->isPreparing()) {
+        // Check if stream prepare is blocking requests.
+        if (stream->isBlockedByPrepare()) {
             CLOGE("Request references an output stream that's being prepared!");
             return NULL;
         }
@@ -2361,9 +2396,16 @@ bool Camera3Device::reconfigureCamera(const CameraMetadata& sessionParams) {
             //present streams end up with outstanding buffers that will
             //not get drained.
             internalUpdateStatusLocked(STATUS_ACTIVE);
+        } else if (rc == DEAD_OBJECT) {
+            // DEAD_OBJECT can be returned if either the consumer surface is
+            // abandoned, or the HAL has died.
+            // - If the HAL has died, configureStreamsLocked call will set
+            // device to error state,
+            // - If surface is abandoned, we should not set device to error
+            // state.
+            ALOGE("Failed to re-configure camera due to abandoned surface");
         } else {
-            setErrorStateLocked("%s: Failed to re-configure camera: %d",
-                    __FUNCTION__, rc);
+            SET_ERR_L("Failed to re-configure camera: %d", rc);
         }
     } else {
         ALOGE("%s: Failed to pause streaming: %d", __FUNCTION__, rc);
@@ -2497,6 +2539,9 @@ status_t Camera3Device::configureStreamsLocked(int operatingMode,
             CLOGE("Can't finish configuring input stream %d: %s (%d)",
                     mInputStream->getId(), strerror(-res), res);
             cancelStreamsConfigurationLocked();
+            if ((res == NO_INIT || res == DEAD_OBJECT) && mInputStream->isAbandoned()) {
+                return DEAD_OBJECT;
+            }
             return BAD_VALUE;
         }
     }
@@ -2510,6 +2555,9 @@ status_t Camera3Device::configureStreamsLocked(int operatingMode,
                 CLOGE("Can't finish configuring output stream %d: %s (%d)",
                         outputStream->getId(), strerror(-res), res);
                 cancelStreamsConfigurationLocked();
+                if ((res == NO_INIT || res == DEAD_OBJECT) && outputStream->isAbandoned()) {
+                    return DEAD_OBJECT;
+                }
                 return BAD_VALUE;
             }
         }
@@ -4825,6 +4873,15 @@ status_t Camera3Device::RequestThread::prepareHalRequests() {
                 captureRequest->mOutputStreams.size());
         halRequest->output_buffers = outputBuffers->array();
         std::set<String8> requestedPhysicalCameras;
+
+        sp<Camera3Device> parent = mParent.promote();
+        if (parent == NULL) {
+            // Should not happen, and nowhere to send errors to, so just log it
+            CLOGE("RequestThread: Parent is gone");
+            return INVALID_OPERATION;
+        }
+        nsecs_t waitDuration = kBaseGetBufferWait + parent->getExpectedInFlightDuration();
+
         for (size_t j = 0; j < captureRequest->mOutputStreams.size(); j++) {
             sp<Camera3OutputStreamInterface> outputStream = captureRequest->mOutputStreams.editItemAt(j);
 
@@ -4833,7 +4890,8 @@ status_t Camera3Device::RequestThread::prepareHalRequests() {
                 // Only try to prepare video stream on the first video request.
                 mPrepareVideoStream = false;
 
-                res = outputStream->startPrepare(Camera3StreamInterface::ALLOCATE_PIPELINE_MAX);
+                res = outputStream->startPrepare(Camera3StreamInterface::ALLOCATE_PIPELINE_MAX,
+                        false /*blockRequest*/);
                 while (res == NOT_ENOUGH_DATA) {
                     res = outputStream->prepareNextBuffer();
                 }
@@ -4845,6 +4903,7 @@ status_t Camera3Device::RequestThread::prepareHalRequests() {
             }
 
             res = outputStream->getBuffer(&outputBuffers->editItemAt(j),
+                    waitDuration,
                     captureRequest->mOutputSurfaces[j]);
             if (res != OK) {
                 // Can't get output buffer from gralloc queue - this could be due to
@@ -4871,13 +4930,6 @@ status_t Camera3Device::RequestThread::prepareHalRequests() {
         totalNumBuffers += halRequest->num_output_buffers;
 
         // Log request in the in-flight queue
-        sp<Camera3Device> parent = mParent.promote();
-        if (parent == NULL) {
-            // Should not happen, and nowhere to send errors to, so just log it
-            CLOGE("RequestThread: Parent is gone");
-            return INVALID_OPERATION;
-        }
-
         // If this request list is for constrained high speed recording (not
         // preview), and the current request is not the last one in the batch,
         // do not send callback to the app.
@@ -5504,7 +5556,7 @@ status_t Camera3Device::PreparerThread::prepare(int maxCount, sp<Camera3StreamIn
     Mutex::Autolock l(mLock);
     sp<NotificationListener> listener = mListener.promote();
 
-    res = stream->startPrepare(maxCount);
+    res = stream->startPrepare(maxCount, true /*blockRequest*/);
     if (res == OK) {
         // No preparation needed, fire listener right off
         ALOGV("%s: Stream %d already prepared", __FUNCTION__, stream->getId());
@@ -5592,7 +5644,7 @@ status_t Camera3Device::PreparerThread::resume() {
 
     auto it = mPendingStreams.begin();
     for (; it != mPendingStreams.end();) {
-        res = it->second->startPrepare(it->first);
+        res = it->second->startPrepare(it->first, true /*blockRequest*/);
         if (res == OK) {
             if (listener != NULL) {
                 listener->notifyPrepared(it->second->getId());

@@ -234,7 +234,11 @@ bool M3UParser::MediaGroup::getActiveURI(AString *uri, const char *baseURL) cons
         if (mSelectedIndex >= 0 && i == (size_t)mSelectedIndex) {
             const Media &item = mMediaItems.itemAt(i);
 
-            *uri = item.makeURL(baseURL);
+            if (item.mURI.empty()) {
+                *uri = "";
+            } else {
+                *uri = item.makeURL(baseURL);
+            }
             return true;
         }
     }
@@ -254,7 +258,7 @@ M3UParser::M3UParser(
       mIsEvent(false),
       mFirstSeqNumber(-1),
       mLastSeqNumber(-1),
-      mTargetDurationUs(-1ll),
+      mTargetDurationUs(-1LL),
       mDiscontinuitySeq(0),
       mDiscontinuityCount(0),
       mSelectedIndex(-1) {
@@ -465,7 +469,7 @@ bool M3UParser::getTypeURI(size_t index, const char *key, AString *uri) const {
         }
 
         if ((*uri).empty()) {
-            *uri = mItems.itemAt(index).mURI;
+            *uri = mItems.itemAt(index).makeURL(mBaseURI.c_str());
         }
     }
 
@@ -712,7 +716,7 @@ status_t M3UParser::parse(const void *_data, size_t size) {
             ALOGE("Media playlist missing #EXT-X-TARGETDURATION");
             return ERROR_MALFORMED;
         }
-        mTargetDurationUs = targetDurationSecs * 1000000ll;
+        mTargetDurationUs = targetDurationSecs * 1000000LL;
 
         mFirstSeqNumber = 0;
         if (mMeta != NULL) {

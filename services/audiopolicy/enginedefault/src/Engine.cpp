@@ -25,6 +25,7 @@
 #endif
 
 #include "Engine.h"
+#include <android-base/macros.h>
 #include <AudioPolicyManagerObserver.h>
 #include <AudioPort.h>
 #include <IOProfile.h>
@@ -185,6 +186,7 @@ routing_strategy Engine::getStrategyForStream(audio_stream_type_t stream)
         return STRATEGY_DTMF;
     default:
         ALOGE("unknown stream type %d", stream);
+        FALLTHROUGH_INTENDED;
     case AUDIO_STREAM_SYSTEM:
         // NOTE: SYSTEM stream uses MEDIA strategy because muting music and switching outputs
         // while key clicks are played produces a poor result
@@ -302,7 +304,7 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             break;
         }
         // when in call, DTMF and PHONE strategies follow the same rules
-        // FALL THROUGH
+        FALLTHROUGH_INTENDED;
 
     case STRATEGY_PHONE:
         // Force use of only devices on primary output if:
@@ -343,7 +345,7 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             device = availableOutputDevicesType & AUDIO_DEVICE_OUT_BLUETOOTH_SCO;
             if (device) break;
             // if SCO device is requested but no SCO device is available, fall back to default case
-            // FALL THROUGH
+            FALLTHROUGH_INTENDED;
 
         default:    // FORCE_NONE
             device = availableOutputDevicesType & AUDIO_DEVICE_OUT_HEARING_AID;
@@ -416,7 +418,7 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
                     outputDeviceTypesToIgnore);
             break;
         }
-        // FALL THROUGH
+        FALLTHROUGH_INTENDED;
 
     case STRATEGY_ENFORCED_AUDIBLE:
         // strategy STRATEGY_ENFORCED_AUDIBLE uses same routing policy as STRATEGY_SONIFICATION
@@ -466,7 +468,7 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             }
         }
         // The second device used for sonification is the same as the device used by media strategy
-        // FALL THROUGH
+        FALLTHROUGH_INTENDED;
 
     case STRATEGY_ACCESSIBILITY:
         if (strategy == STRATEGY_ACCESSIBILITY) {
@@ -496,7 +498,7 @@ audio_devices_t Engine::getDeviceForStrategyInt(routing_strategy strategy,
             }
         }
         // For other cases, STRATEGY_ACCESSIBILITY behaves like STRATEGY_MEDIA
-        // FALL THROUGH
+        FALLTHROUGH_INTENDED;
 
     // FIXME: STRATEGY_REROUTING follow STRATEGY_MEDIA for now
     case STRATEGY_REROUTING:
@@ -681,7 +683,7 @@ audio_devices_t Engine::getDeviceForInputSource(audio_source_t inputSource) cons
                 device = AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET;
                 break;
             }
-            // FALL THROUGH
+            FALLTHROUGH_INTENDED;
 
         default:    // FORCE_NONE
             if (availableDeviceTypes & AUDIO_DEVICE_IN_WIRED_HEADSET) {

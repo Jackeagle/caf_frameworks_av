@@ -3,6 +3,7 @@ cc_library_headers {
     vendor_available: true,
     export_include_dirs: ["include"],
     header_libs:[
+        "libbase_headers",
         "libgui_headers",
         "libstagefright_headers",
         "media_plugin_headers",
@@ -109,9 +110,6 @@ cc_library_shared {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }
 
@@ -136,9 +134,6 @@ cc_library_static {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }
 
@@ -210,8 +205,7 @@ cc_library {
         "libutils",
         "libbinder",
         "libsonivox",
-        "libicuuc",
-        "libicui18n",
+        "libandroidicu",
         "libexpat",
         "libcamera_client",
         "libstagefright_foundation",
@@ -226,8 +220,7 @@ cc_library {
     export_shared_lib_headers: [
         "libaudioclient",
         "libbinder",
-        "libicuuc",
-        "libicui18n",
+        "libandroidicu",
         "libsonivox",
         "libmedia_omx",
     ],
@@ -255,9 +248,6 @@ cc_library {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }
 
@@ -284,6 +274,7 @@ cc_library {
         "libmediaextractor",
         "libmediandk",
         "libnativewindow",
+        "libstagefright",
         "libstagefright_foundation",
         "libui",
         "libutils",
@@ -319,8 +310,5 @@ cc_library {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }

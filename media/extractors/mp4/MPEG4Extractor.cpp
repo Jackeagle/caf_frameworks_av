@@ -55,6 +55,8 @@
 #define UINT32_MAX       (4294967295U)
 #endif
 
+#define ALAC_SPECIFIC_INFO_SIZE (36)
+
 namespace android {
 
 enum {
@@ -331,6 +333,8 @@ static const char *FourCC2MIME(uint32_t fourcc) {
         case FOURCC('t', 'w', 'o', 's'):
         case FOURCC('s', 'o', 'w', 't'):
             return MEDIA_MIMETYPE_AUDIO_RAW;
+        case FOURCC('a', 'l', 'a', 'c'):
+            return MEDIA_MIMETYPE_AUDIO_ALAC;
 
         default:
             ALOGW("Unknown fourcc: %c%c%c%c",
@@ -455,6 +459,7 @@ status_t MPEG4Extractor::getTrackMetaData(
                 track->meta.findInt64(kKeyDuration, &duration) &&
                 track->meta.findInt32(kKeySampleRate, &samplerate)) {
 
+            // elst has to be processed only the first time this function is called
             track->has_elst = false;
 
             if (track->elst_segment_duration > INT64_MAX) {
@@ -462,16 +467,19 @@ status_t MPEG4Extractor::getTrackMetaData(
             }
             int64_t segment_duration = track->elst_segment_duration;
             int64_t media_time = track->elst_media_time;
-            int64_t halfscale = mHeaderTimescale / 2;
+            int64_t halfscale = track->timescale / 2;
+
             ALOGV("segment_duration = %" PRId64 ", media_time = %" PRId64
-                  ", halfscale = %" PRId64 ", timescale = %d",
-                  segment_duration,
-                  media_time,
-                  halfscale,
-                  mHeaderTimescale);
+                  ", halfscale = %" PRId64 ", mdhd_timescale = %d, track_timescale = %u",
+                  segment_duration, media_time,
+                  halfscale, mHeaderTimescale, track->timescale);
+
+            if ((uint32_t)samplerate != track->timescale){
+                ALOGV("samplerate:%" PRId32 ", track->timescale and samplerate are different!", samplerate);
+            }
 
             int64_t delay;
-            // delay = ((media_time * samplerate) + halfscale) / mHeaderTimescale;
+            // delay = ((media_time * samplerate) + halfscale) / track->timescale;
             if (__builtin_mul_overflow(media_time, samplerate, &delay) ||
                     __builtin_add_overflow(delay, halfscale, &delay) ||
                     (delay /= mHeaderTimescale, false) ||
@@ -498,33 +506,43 @@ status_t MPEG4Extractor::getTrackMetaData(
 
             int64_t segment_end;
             int64_t padding;
-            // padding = scaled_duration - ((segment_duration + media_time) * 1000000);
-            if (__builtin_add_overflow(segment_duration, media_time, &segment_end) ||
-                    __builtin_mul_overflow(segment_end, 1000000, &segment_end) ||
-                    __builtin_sub_overflow(scaled_duration, segment_end, &padding)) {
+            int64_t segment_duration_e6;
+            int64_t media_time_scaled_e6;
+            int64_t media_time_scaled;
+            // padding = scaled_duration - ((segment_duration * 1000000) +
+            //                  ((media_time * mHeaderTimeScale * 1000000)/track->timescale) )
+            // segment_duration is based on timescale in movie header box(mdhd)
+            // media_time is based on timescale track header/media timescale
+            if (__builtin_mul_overflow(segment_duration, 1000000, &segment_duration_e6) ||
+                __builtin_mul_overflow(media_time, mHeaderTimescale, &media_time_scaled) ||
+                __builtin_mul_overflow(media_time_scaled, 1000000, &media_time_scaled_e6)) {
+                return;
+            }
+            media_time_scaled_e6 /= track->timescale;
+            if(__builtin_add_overflow(segment_duration_e6, media_time_scaled_e6, &segment_end) ||
+                __builtin_sub_overflow(scaled_duration, segment_end, &padding)) {
                 return;
             }
             ALOGV("segment_end = %" PRId64 ", padding = %" PRId64, segment_end, padding);
-
+            int64_t paddingsamples = 0;
             if (padding < 0) {
                 // track duration from media header (which is what kKeyDuration is) might
                 // be slightly shorter than the segment duration, which would make the
                 // padding negative. Clamp to zero.
                 padding = 0;
-            }
-
-            int64_t paddingsamples;
-            int64_t halfscale_e6;
-            int64_t timescale_e6;
-            // paddingsamples = ((padding * samplerate) + (halfscale * 1000000))
-            //                / (mHeaderTimescale * 1000000);
-            if (__builtin_mul_overflow(padding, samplerate, &paddingsamples) ||
-                    __builtin_mul_overflow(halfscale, 1000000, &halfscale_e6) ||
-                    __builtin_mul_overflow(mHeaderTimescale, 1000000, &timescale_e6) ||
-                    __builtin_add_overflow(paddingsamples, halfscale_e6, &paddingsamples) ||
-                    (paddingsamples /= timescale_e6, false) ||
-                    paddingsamples > INT32_MAX) {
-                return;
+            } else {
+                int64_t halfscale_e6;
+                int64_t timescale_e6;
+                // paddingsamples = ((padding * samplerate) + (halfscale * 1000000))
+                //                / (mHeaderTimescale * 1000000);
+                if (__builtin_mul_overflow(padding, samplerate, &paddingsamples) ||
+                        __builtin_mul_overflow(halfscale, 1000000, &halfscale_e6) ||
+                        __builtin_mul_overflow(mHeaderTimescale, 1000000, &timescale_e6) ||
+                        __builtin_add_overflow(paddingsamples, halfscale_e6, &paddingsamples) ||
+                        (paddingsamples /= timescale_e6, false) ||
+                        paddingsamples > INT32_MAX) {
+                    return;
+                }
             }
             ALOGV("paddingsamples = %" PRId64, paddingsamples);
             track->meta.setInt32(kKeyEncoderPadding, paddingsamples);
@@ -1122,6 +1140,43 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                 mLastTrack->meta.setInt32(kKeyChannelCount, num_channels);
                 mLastTrack->meta.setInt32(kKeySampleRate, sample_rate);
             }
+
+            // If format type is 'alac', it is necessary to get the parameters
+            // from a alac atom spreading behind the frma atom.
+            // See 'external/alac/ALACMagicCookieDescription.txt'.
+            if (original_fourcc == FOURCC('a', 'l', 'a', 'c')) {
+                // Store ALAC magic cookie (decoder needs it).
+                uint8_t alacInfo[12];
+                data_offset = *offset;
+                if (mDataSource->readAt(
+                        data_offset, alacInfo, sizeof(alacInfo)) < (ssize_t)sizeof(alacInfo)) {
+                    return ERROR_IO;
+                }
+                uint32_t size = U32_AT(&alacInfo[0]);
+                if ((size != ALAC_SPECIFIC_INFO_SIZE) ||
+                        (U32_AT(&alacInfo[4]) != FOURCC('a', 'l', 'a', 'c')) ||
+                        (U32_AT(&alacInfo[8]) != 0)) {
+                    return ERROR_MALFORMED;
+                }
+
+                data_offset += sizeof(alacInfo);
+                uint8_t cookie[size - sizeof(alacInfo)];
+                if (mDataSource->readAt(
+                        data_offset, cookie, sizeof(cookie)) < (ssize_t)sizeof(cookie)) {
+                    return ERROR_IO;
+                }
+
+                uint8_t bitsPerSample = cookie[5];
+                mLastTrack->meta.setInt32(kKeyBitsPerSample, bitsPerSample);
+                mLastTrack->meta.setInt32(kKeyChannelCount, cookie[9]);
+                mLastTrack->meta.setInt32(kKeySampleRate, U32_AT(&cookie[20]));
+                mLastTrack->meta.setData(
+                    kKeyAlacMagicCookie, MetaData::TYPE_NONE, cookie, sizeof(cookie));
+
+                // Add the size of ALAC Specific Info (36 bytes) and terminator
+                // atom (8 bytes).
+                *offset += (size + 8);
+            }
             break;
         }
 
@@ -1490,6 +1545,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
         case FOURCC('s', 'a', 'w', 'b'):
         case FOURCC('t', 'w', 'o', 's'):
         case FOURCC('s', 'o', 'w', 't'):
+        case FOURCC('a', 'l', 'a', 'c'):
         {
             if (mIsQT && chunk_type == FOURCC('m', 'p', '4', 'a')
                     && depth >= 1 && mPath[depth - 1] == FOURCC('w', 'a', 'v', 'e')) {
@@ -1571,6 +1627,40 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
                    chunk, num_channels, sample_size, sample_rate);
             mLastTrack->meta.setInt32(kKeyChannelCount, num_channels);
             mLastTrack->meta.setInt32(kKeySampleRate, sample_rate);
+
+            if (chunk_type == FOURCC('a', 'l', 'a', 'c')) {
+
+                // See 'external/alac/ALACMagicCookieDescription.txt for the detail'.
+                // Store ALAC magic cookie (decoder needs it).
+                uint8_t alacInfo[12];
+                data_offset += sizeof(buffer);
+                if (mDataSource->readAt(
+                        data_offset, alacInfo, sizeof(alacInfo)) < (ssize_t)sizeof(alacInfo)) {
+                    return ERROR_IO;
+                }
+                uint32_t size = U32_AT(&alacInfo[0]);
+                if ((size != ALAC_SPECIFIC_INFO_SIZE) ||
+                        (U32_AT(&alacInfo[4]) != FOURCC('a', 'l', 'a', 'c')) ||
+                        (U32_AT(&alacInfo[8]) != 0)) {
+                    return ERROR_MALFORMED;
+                }
+                data_offset += sizeof(alacInfo);
+                uint8_t cookie[size - sizeof(alacInfo)];
+                if (mDataSource->readAt(
+                        data_offset, cookie, sizeof(cookie)) < (ssize_t)sizeof(cookie)) {
+                    return ERROR_IO;
+                }
+
+                uint8_t bitsPerSample = cookie[5];
+                mLastTrack->meta.setInt32(kKeyBitsPerSample, bitsPerSample);
+                mLastTrack->meta.setInt32(kKeyChannelCount, cookie[9]);
+                mLastTrack->meta.setInt32(kKeySampleRate, U32_AT(&cookie[20]));
+                mLastTrack->meta.setData(
+                        kKeyAlacMagicCookie, MetaData::TYPE_NONE, cookie, sizeof(cookie));
+                data_offset += sizeof(cookie);
+                *offset = data_offset;
+                CHECK_EQ(*offset, stop_offset);
+            }
 
             while (*offset < stop_offset) {
                 status_t err = parseChunk(offset, depth + 1);

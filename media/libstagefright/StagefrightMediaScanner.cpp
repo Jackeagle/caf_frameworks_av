@@ -41,7 +41,7 @@ static bool FileHasAcceptableExtension(const char *extension) {
         ".wav", ".amr", ".midi", ".xmf", ".rtttl", ".rtx", ".ota",
         ".mkv", ".mka", ".webm", ".ts", ".fl", ".flac", ".mxmf",
         ".avi", ".mpeg", ".mpg", ".awb", ".mpga", ".mov",
-        ".m4v", ".oga"
+        ".m4v", ".oga", ".m4r"
     };
     static const size_t kNumValidExtensions =
         sizeof(kValidExtensions) / sizeof(kValidExtensions[0]);
@@ -132,6 +132,11 @@ MediaScanResult StagefrightMediaScanner::processFileInternal(
         { "date", METADATA_KEY_DATE },
         { "width", METADATA_KEY_VIDEO_WIDTH },
         { "height", METADATA_KEY_VIDEO_HEIGHT },
+        { "colorstandard", METADATA_KEY_COLOR_STANDARD },
+        { "colortransfer", METADATA_KEY_COLOR_TRANSFER },
+        { "colorrange", METADATA_KEY_COLOR_RANGE },
+        { "samplerate", METADATA_KEY_SAMPLERATE },
+        { "bitspersample", METADATA_KEY_BITS_PER_SAMPLE },
     };
     static const size_t kNumEntries = sizeof(kKeyMap) / sizeof(kKeyMap[0]);
 

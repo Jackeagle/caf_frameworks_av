@@ -20,6 +20,8 @@
 #include <inttypes.h>
 #include <utils/Log.h>
 
+#include <android-base/macros.h>
+
 #include "MPEG2TSExtractor.h"
 
 #include <media/DataSourceBase.h>
@@ -260,22 +262,19 @@ void MPEG2TSExtractor::init() {
         }
 
         // Wait only for 2 seconds to detect audio/video streams.
-        if (ALooper::GetNowUs() - startTime > 2000000ll) {
+        if (ALooper::GetNowUs() - startTime > 2000000LL) {
             break;
         }
     }
 
     off64_t size;
     if (mDataSource->getSize(&size) == OK && (haveAudio || haveVideo)) {
-        sp<AnotherPacketSource> impl = haveVideo
-                ? mParser->getSource(ATSParser::VIDEO)
-                : mParser->getSource(ATSParser::AUDIO);
         size_t prevSyncSize = 1;
         int64_t durationUs = -1;
         List<int64_t> durations;
         // Estimate duration --- stabilize until you get <500ms deviation.
         while (feedMore() == OK
-                && ALooper::GetNowUs() - startTime <= 2000000ll) {
+                && ALooper::GetNowUs() - startTime <= 2000000LL) {
             if (mSeekSyncPoints->size() > prevSyncSize) {
                 prevSyncSize = mSeekSyncPoints->size();
                 int64_t diffUs = mSeekSyncPoints->keyAt(prevSyncSize - 1)
@@ -303,17 +302,32 @@ void MPEG2TSExtractor::init() {
                 }
             }
         }
-        status_t err;
-        int64_t bufferedDurationUs;
-        bufferedDurationUs = impl->getBufferedDurationUs(&err);
-        if (err == ERROR_END_OF_STREAM) {
-            durationUs = bufferedDurationUs;
+
+        bool found = false;
+        for (int i = 0; i < ATSParser::NUM_SOURCE_TYPES; ++i) {
+            ATSParser::SourceType type = static_cast<ATSParser::SourceType>(i);
+            sp<AnotherPacketSource> impl = mParser->getSource(type);
+            if (impl == NULL) {
+                continue;
+            }
+
+            int64_t trackDurationUs = durationUs;
+
+            status_t err;
+            int64_t bufferedDurationUs = impl->getBufferedDurationUs(&err);
+            if (err == ERROR_END_OF_STREAM) {
+                trackDurationUs = bufferedDurationUs;
+            }
+            if (trackDurationUs > 0) {
+                ALOGV("[SourceType%d] durationUs=%" PRId64 "", type, trackDurationUs);
+                const sp<MetaData> meta = impl->getFormat();
+                meta->setInt64(kKeyDuration, trackDurationUs);
+                impl->setFormat(meta);
+
+                found = true;
+            }
         }
-        if (durationUs > 0) {
-            const sp<MetaData> meta = impl->getFormat();
-            meta->setInt64(kKeyDuration, durationUs);
-            impl->setFormat(meta);
-        } else {
+        if (!found) {
             estimateDurationsFromTimesUsAtEnd();
         }
     }
@@ -508,7 +522,7 @@ status_t MPEG2TSExtractor::seek(int64_t seekTimeUs,
         case MediaTrack::ReadOptions::SEEK_CLOSEST:
             ALOGW("seekMode not supported: %d; falling back to PREVIOUS_SYNC",
                     seekMode);
-            // fall-through
+            FALLTHROUGH_INTENDED;
         case MediaTrack::ReadOptions::SEEK_PREVIOUS_SYNC:
             if (index == 0) {
                 ALOGW("Previous sync not found; starting from the earliest "

@@ -16,6 +16,7 @@ cc_library_static {
     ],
 
     header_libs: [
+        "libbase_headers",
         "libmediaplayer2_headers",
         "media_plugin_headers",
     ],
@@ -32,6 +33,8 @@ cc_library_static {
     cflags: [
         "-Werror",
         "-Wall",
+        // Allow implicit fallthroughs in NuPlayer2Driver.cpp until they are fixed.
+        "-Wno-error=implicit-fallthrough",
     ],
 
     product_variables: {
@@ -60,9 +63,6 @@ cc_library_static {
 
     sanitize: {
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 
 }

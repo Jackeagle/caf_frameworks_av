@@ -17,6 +17,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NuPlayer2Driver"
 #include <inttypes.h>
+#include <android-base/macros.h>
 #include <utils/Log.h>
 #include <cutils/properties.h>
 
@@ -297,8 +298,7 @@ status_t NuPlayer2Driver::start_l() {
         case STATE_PREPARED:
         {
             mPlayer->start();
-
-            // fall through
+            FALLTHROUGH_INTENDED;
         }
 
         case STATE_RUNNING:
@@ -327,7 +327,7 @@ status_t NuPlayer2Driver::stop() {
     switch (mState) {
         case STATE_RUNNING:
             mPlayer->pause();
-            // fall through
+            [[fallthrough]];
 
         case STATE_PAUSED:
             mState = STATE_STOPPED;
@@ -415,7 +415,7 @@ status_t NuPlayer2Driver::seekTo(int64_t msec, MediaPlayer2SeekMode mode) {
     ALOGD("seekTo(%p) (%lld ms, %d) at state %d", this, (long long)msec, mode, mState);
     Mutex::Autolock autoLock(mLock);
 
-    int64_t seekTimeUs = msec * 1000ll;
+    int64_t seekTimeUs = msec * 1000LL;
 
     switch (mState) {
         case STATE_PREPARED:
@@ -470,7 +470,7 @@ status_t NuPlayer2Driver::getDuration(int64_t *msec) {
         return UNKNOWN_ERROR;
     }
 
-    *msec = (mDurationUs + 500ll) / 1000;
+    *msec = (mDurationUs + 500LL) / 1000;
 
     return OK;
 }
@@ -664,7 +664,7 @@ status_t NuPlayer2Driver::invoke(const Parcel &request, Parcel *reply) {
             int64_t msec = 0;
             // getCurrentPosition should always return OK
             getCurrentPosition(&msec);
-            return mPlayer->selectTrack(trackIndex, true /* select */, msec * 1000ll);
+            return mPlayer->selectTrack(trackIndex, true /* select */, msec * 1000LL);
         }
 
         case MEDIA_PLAYER2_INVOKE_ID_UNSELECT_TRACK:
@@ -940,7 +940,7 @@ void NuPlayer2Driver::notifyListener_l(
                     mPlayer->pause();
                     mState = STATE_PAUSED;
                 }
-                // fall through
+                FALLTHROUGH_INTENDED;
             }
 
             case MEDIA2_ERROR:

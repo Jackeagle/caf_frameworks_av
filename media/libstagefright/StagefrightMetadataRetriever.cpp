@@ -20,6 +20,7 @@
 #include <inttypes.h>
 
 #include <utils/Log.h>
+#include <cutils/properties.h>
 
 #include "include/FrameDecoder.h"
 #include "include/StagefrightMetadataRetriever.h"
@@ -34,6 +35,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MediaExtractorFactory.h>
 #include <media/stagefright/MetaData.h>
+#include <media/stagefright/Utils.h>
 #include <media/CharacterEncodingDetector.h>
 
 namespace android {
@@ -204,11 +206,14 @@ sp<IMemory> StagefrightMetadataRetriever::getImageInternal(
         trackMeta->setCString(kKeyMIMEType, mime);
     }
 
+    bool preferhw = property_get_bool(
+            "media.stagefright.thumbnail.prefer_hw_codecs", false);
+    uint32_t flags = preferhw ? 0 : MediaCodecList::kPreferSoftwareCodecs;
     Vector<AString> matchingCodecs;
     MediaCodecList::findMatchingCodecs(
             mime,
             false, /* encoder */
-            MediaCodecList::kPreferSoftwareCodecs,
+            flags,
             &matchingCodecs);
 
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
@@ -325,11 +330,14 @@ status_t StagefrightMetadataRetriever::getFrameInternal(
     const char *mime;
     CHECK(trackMeta->findCString(kKeyMIMEType, &mime));
 
+    bool preferhw = property_get_bool(
+            "media.stagefright.thumbnail.prefer_hw_codecs", false);
+    uint32_t flags = preferhw ? 0 : MediaCodecList::kPreferSoftwareCodecs;
     Vector<AString> matchingCodecs;
     MediaCodecList::findMatchingCodecs(
             mime,
             false, /* encoder */
-            MediaCodecList::kPreferSoftwareCodecs,
+            flags,
             &matchingCodecs);
 
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
@@ -393,6 +401,25 @@ const char *StagefrightMetadataRetriever::extractMetadata(int keyCode) {
     }
 
     return mMetaData.valueAt(index).string();
+}
+
+void StagefrightMetadataRetriever::parseColorAspects(const sp<MetaData>& meta) {
+    sp<AMessage> format = new AMessage();
+    if (convertMetaDataToMessage(meta, &format) != OK) {
+        return;
+    }
+
+    int32_t standard, transfer, range;
+    if (format->findInt32("color-standard", &standard)
+            && format->findInt32("color-transfer", &transfer)
+            && format->findInt32("color-range", &range)) {
+        ALOGV("found color aspects : standard=%d, transfer=%d, range=%d",
+                standard, transfer, range);
+
+        mMetaData.add(METADATA_KEY_COLOR_STANDARD, String8::format("%d", standard));
+        mMetaData.add(METADATA_KEY_COLOR_TRANSFER, String8::format("%d", transfer));
+        mMetaData.add(METADATA_KEY_COLOR_RANGE, String8::format("%d", range));
+    }
 }
 
 void StagefrightMetadataRetriever::parseMetaData() {
@@ -523,6 +550,19 @@ void StagefrightMetadataRetriever::parseMetaData() {
                 if (!trackMeta->findInt32(kKeyBitRate, &audioBitrate)) {
                     audioBitrate = -1;
                 }
+
+                int32_t bitsPerSample = -1;
+                int32_t sampleRate = -1;
+                trackMeta->findInt32(kKeyBitsPerSample, &bitsPerSample);
+                trackMeta->findInt32(kKeySampleRate, &sampleRate);
+                if (bitsPerSample >= 0) {
+                    sprintf(tmp, "%d", bitsPerSample);
+                    mMetaData.add(METADATA_KEY_BITS_PER_SAMPLE, String8(tmp));
+                }
+                if (sampleRate >= 0) {
+                    sprintf(tmp, "%d", sampleRate);
+                    mMetaData.add(METADATA_KEY_SAMPLERATE, String8(tmp));
+                }
             } else if (!hasVideo && !strncasecmp("video/", mime, 6)) {
                 hasVideo = true;
 
@@ -534,6 +574,8 @@ void StagefrightMetadataRetriever::parseMetaData() {
                 if (!trackMeta->findInt32(kKeyFrameCount, &videoFrameCount)) {
                     videoFrameCount = 0;
                 }
+
+                parseColorAspects(trackMeta);
             } else if (!strncasecmp("image/", mime, 6)) {
                 int32_t isPrimary;
                 if (trackMeta->findInt32(

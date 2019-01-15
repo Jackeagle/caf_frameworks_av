@@ -950,6 +950,56 @@ status_t convertMetaDataToMessage(
             msg->setInt32("android._is-hdr", (info & hvcc.kInfoIsHdr) != 0);
         }
 
+        uint32_t isoPrimaries, isoTransfer, isoMatrix, isoRange;
+        if (hvcc.findParam32(kColourPrimaries, &isoPrimaries)
+                && hvcc.findParam32(kTransferCharacteristics, &isoTransfer)
+                && hvcc.findParam32(kMatrixCoeffs, &isoMatrix)
+                && hvcc.findParam32(kVideoFullRangeFlag, &isoRange)) {
+            ALOGV("found iso color aspects : primaris=%d, transfer=%d, matrix=%d, range=%d",
+                    isoPrimaries, isoTransfer, isoMatrix, isoRange);
+
+            ColorAspects aspects;
+            ColorUtils::convertIsoColorAspectsToCodecAspects(
+                    isoPrimaries, isoTransfer, isoMatrix, isoRange, aspects);
+
+            if (aspects.mPrimaries == ColorAspects::PrimariesUnspecified) {
+                int32_t primaries;
+                if (meta->findInt32(kKeyColorPrimaries, &primaries)) {
+                    ALOGV("unspecified primaries found, replaced to %d", primaries);
+                    aspects.mPrimaries = static_cast<ColorAspects::Primaries>(primaries);
+                }
+            }
+            if (aspects.mTransfer == ColorAspects::TransferUnspecified) {
+                int32_t transferFunction;
+                if (meta->findInt32(kKeyTransferFunction, &transferFunction)) {
+                    ALOGV("unspecified transfer found, replaced to %d", transferFunction);
+                    aspects.mTransfer = static_cast<ColorAspects::Transfer>(transferFunction);
+                }
+            }
+            if (aspects.mMatrixCoeffs == ColorAspects::MatrixUnspecified) {
+                int32_t colorMatrix;
+                if (meta->findInt32(kKeyColorMatrix, &colorMatrix)) {
+                    ALOGV("unspecified matrix found, replaced to %d", colorMatrix);
+                    aspects.mMatrixCoeffs = static_cast<ColorAspects::MatrixCoeffs>(colorMatrix);
+                }
+            }
+            if (aspects.mRange == ColorAspects::RangeUnspecified) {
+                int32_t range;
+                if (meta->findInt32(kKeyColorRange, &range)) {
+                    ALOGV("unspecified range found, replaced to %d", range);
+                    aspects.mRange = static_cast<ColorAspects::Range>(range);
+                }
+            }
+
+            int32_t standard, transfer, range;
+            if (ColorUtils::convertCodecColorAspectsToPlatformAspects(
+                    aspects, &range, &standard, &transfer) == OK) {
+                msg->setInt32("color-standard", standard);
+                msg->setInt32("color-transfer", transfer);
+                msg->setInt32("color-range", range);
+            }
+        }
+
         parseHevcProfileLevelFromHvcc((const uint8_t *)data, dataSize, msg);
     } else if (meta->findData(kKeyESDS, &type, &data, &size)) {
         ESDS esds((const char *)data, size);
@@ -1085,6 +1135,17 @@ status_t convertMetaDataToMessage(
         msg->setBuffer("csd-0", buffer);
 
         parseVp9ProfileLevelFromCsd(buffer, msg);
+    } else if (meta->findData(kKeyAlacMagicCookie, &type, &data, &size)) {
+        ALOGV("convertMetaDataToMessage found kKeyAlacMagicCookie of size %zu\n", size);
+        sp<ABuffer> buffer = new (std::nothrow) ABuffer(size);
+        if (buffer.get() == NULL || buffer->base() == NULL) {
+            return NO_MEMORY;
+        }
+        memcpy(buffer->data(), data, size);
+
+        buffer->meta()->setInt32("csd", true);
+        buffer->meta()->setInt64("timeUs", 0);
+        msg->setBuffer("csd-0", buffer);
     }
 
     // TODO expose "crypto-key"/kKeyCryptoKey through public api
@@ -1496,6 +1557,8 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
             if (msg->findBuffer("csd-1", &csd1)) {
                 meta->setData(kKeyVorbisBooks, 0, csd1->data(), csd1->size());
             }
+        } else if (mime == MEDIA_MIMETYPE_AUDIO_ALAC) {
+            meta->setData(kKeyAlacMagicCookie, 0, csd0->data(), csd0->size());
         }
     }
 
@@ -1578,6 +1641,7 @@ static const struct mime_conv_t mimeLookup[] = {
     { MEDIA_MIMETYPE_AUDIO_OPUS,        AUDIO_FORMAT_OPUS},
     { MEDIA_MIMETYPE_AUDIO_AC3,         AUDIO_FORMAT_AC3},
     { MEDIA_MIMETYPE_AUDIO_FLAC,        AUDIO_FORMAT_FLAC},
+    { MEDIA_MIMETYPE_AUDIO_ALAC,        AUDIO_FORMAT_ALAC },
     { 0, AUDIO_FORMAT_INVALID }
 };
 
@@ -1668,7 +1732,7 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
     info.sample_rate = srate;
 
     int32_t cmask = 0;
-    if (!meta->findInt32(kKeyChannelMask, &cmask)) {
+    if (!meta->findInt32(kKeyChannelMask, &cmask) || cmask == CHANNEL_MASK_USE_CHANNEL_ORDER) {
         ALOGV("track of type '%s' does not publish channel mask", mime);
 
         // Try a channel count instead
@@ -1738,7 +1802,7 @@ AString uriDebugString(const AString &uri, bool incognito) {
 
 HLSTime::HLSTime(const sp<AMessage>& meta) :
     mSeq(-1),
-    mTimeUs(-1ll),
+    mTimeUs(-1LL),
     mMeta(meta) {
     if (meta != NULL) {
         CHECK(meta->findInt32("discontinuitySeq", &mSeq));
@@ -1747,7 +1811,7 @@ HLSTime::HLSTime(const sp<AMessage>& meta) :
 }
 
 int64_t HLSTime::getSegmentTimeUs() const {
-    int64_t segmentStartTimeUs = -1ll;
+    int64_t segmentStartTimeUs = -1LL;
     if (mMeta != NULL) {
         CHECK(mMeta->findInt64("segmentStartTimeUs", &segmentStartTimeUs));
 
