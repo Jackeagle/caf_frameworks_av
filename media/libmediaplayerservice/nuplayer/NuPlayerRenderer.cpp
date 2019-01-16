@@ -1932,6 +1932,10 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
             offloadInfo.has_video = hasVideo;
             offloadInfo.is_streaming = isStreaming;
             offloadInfo.offload_buffer_size = offloadBufferSize;
+            /*CR 2360587 Fix: : Update the bitWidth variable with the value
+                                AVUtils::get()->getAudioSampleBits(format) */
+            offloadInfo.bit_width = bitWidth;
+
 
             if (memcmp(&mCurrentOffloadInfo, &offloadInfo, sizeof(offloadInfo)) == 0) {
                 ALOGV("openAudioSink: no change in offload mode");
