@@ -153,17 +153,18 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                 } else {
                     parseTopLevelXMLFile(path.c_str(), false);
                 }
-            } else if (!strcmp(platform, "talos")) {
+            } else if (!strcmp(platform, "talos") ||
+                    !strcmp(platform, "sm6150")) {
                 if (property_get("vendor.media.sm6150.version", value, "0") &&
                     (atoi(value) == 1)) {
                     strlcpy(file_path, "/vendor/etc/media_codecs_vendor.xml",
                             PROP_VALUE_MAX);
-                } else if (property_get("vendor.media.sm7150.version", value, "0") &&
+                } else if (property_get("vendor.media.sdmmagpie.version", value, "0") &&
                     (atoi(value) == 1)) {
-                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor_sm7150_v1.xml",
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor_sdmmagpie_v1.xml",
                             PROP_VALUE_MAX);
                 } else {
-                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor_sm7150_v0.xml",
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor_sdmmagpie_v0.xml",
                             PROP_VALUE_MAX);
                 }
                 path = file_path;
@@ -226,17 +227,18 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                     strlcpy(file_path, "/vendor/etc/media_codecs_performance.xml",
                             PROP_VALUE_MAX);
                 }
-            } else if (!strcmp(platform, "talos")) {
+            } else if (!strcmp(platform, "talos") ||
+                    !strcmp(platform, "sm6150")) {
                 if (property_get("vendor.media.sm6150.version", value, "0") &&
                     (atoi(value) == 1)) {
                     strlcpy(file_path, "/vendor/etc/media_codecs_performance.xml",
                             PROP_VALUE_MAX);
-                } else if (property_get("vendor.media.sm7150.version", value, "0") &&
+                } else if (property_get("vendor.media.sdmmagpie.version", value, "0") &&
                     (atoi(value) == 1)) {
-                    strlcpy(file_path, "/vendor/etc/media_codecs_performance_sm7150_v1.xml",
+                    strlcpy(file_path, "/vendor/etc/media_codecs_performance_sdmmagpie_v1.xml",
                             PROP_VALUE_MAX);
                 } else {
-                    strlcpy(file_path, "/vendor/etc/media_codecs_performance_sm7150_v0.xml",
+                    strlcpy(file_path, "/vendor/etc/media_codecs_performance_sdmmagpie_v0.xml",
                             PROP_VALUE_MAX);
                 }
             } else if (!strcmp(platform, "msm8953")) {
