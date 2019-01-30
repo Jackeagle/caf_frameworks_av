@@ -861,7 +861,15 @@ static CodecBase *CreateCCodec() {
 }
 
 //static
-sp<CodecBase> MediaCodec::GetCodecBase(const AString &name) {
+sp<CodecBase> MediaCodec::GetCodecBase(const AString &name, const char *owner) {
+    if (owner) {
+        if (strncmp(owner, "default", 8) == 0) {
+            return AVFactory::get()->createACodec();
+        } else if (strncmp(owner, "codec2", 7) == 0) {
+            return CreateCCodec();
+        }
+    }
+
     if (name.startsWithIgnoreCase("c2.")) {
         return CreateCCodec();
     } else if (name.startsWithIgnoreCase("omx.")) {
@@ -887,11 +895,6 @@ status_t MediaCodec::init(const AString &name, bool nameIsType) {
     // we need to invest in an extra looper to free the main event
     // queue.
 
-    mCodec = GetCodecBase(name);
-    if (mCodec == NULL) {
-        return NAME_NOT_FOUND;
-    }
-
     mCodecInfo.clear();
 
     bool secureCodec = false;
@@ -905,8 +908,9 @@ status_t MediaCodec::init(const AString &name, bool nameIsType) {
     //as these components are not present in media_codecs.xml and MediaCodecList won't find
     //these component by findCodecByName
     //Video and Flac decoder are present in list so exclude them.
-    if (!(name.find("qcom", 0) > 0 || name.find("qti", 0) > 0 || name.find("filter", 0) > 0)
-          || name.find("video", 0) > 0 || name.find("flac", 0) > 0) {
+    if ((!(name.find("qcom", 0) > 0 || name.find("qti", 0) > 0 || name.find("filter", 0) > 0)
+          || name.find("video", 0) > 0 || name.find("flac", 0) > 0)
+          && !(name.find("tme",0) > 0)) {
         const sp<IMediaCodecList> mcl = MediaCodecList::getInstance();
         if (mcl == NULL) {
             mCodec = NULL;  // remove the codec.
@@ -933,7 +937,14 @@ status_t MediaCodec::init(const AString &name, bool nameIsType) {
             return NAME_NOT_FOUND;
         }
     }
+    const char *owner = "default";
+    if (mCodecInfo !=NULL)
+        owner = mCodecInfo->getOwnerName();
 
+    mCodec = GetCodecBase(name, owner);
+    if (mCodec == NULL) {
+        return NAME_NOT_FOUND;
+    }
     if (mIsVideo) {
         // video codec needs dedicated looper
         if (mCodecLooper == NULL) {
@@ -1955,8 +1966,11 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                     if (mComponentName.c_str()) {
                         mAnalyticsItem->setCString(kCodecCodec, mComponentName.c_str());
                     }
-
-                    if (mComponentName.startsWith("OMX.google.")) {
+                    const char *owner = "default";
+                    if (mCodecInfo !=NULL)
+                        owner = mCodecInfo->getOwnerName();
+                    if (mComponentName.startsWith("OMX.google.")
+                            && (owner == nullptr || strncmp(owner, "default", 8) == 0)) {
                         mFlags |= kFlagUsesSoftwareRenderer;
                     } else {
                         mFlags &= ~kFlagUsesSoftwareRenderer;
