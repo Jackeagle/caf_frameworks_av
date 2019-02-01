@@ -29,6 +29,7 @@
 #include <media/AudioTrack.h>
 #include <utils/Log.h>
 #include <private/media/AudioTrackShared.h>
+#include <processgroup/sched_policy.h>
 #include <media/IAudioFlinger.h>
 #include <media/AudioParameter.h>
 #include <media/AudioPolicyHelper.h>
@@ -281,6 +282,11 @@ AudioTrack::AudioTrack(
       mPreviousSchedulingGroup(SP_DEFAULT),
       mPausedPosition(0)
 {
+    mAttributes.content_type = AUDIO_CONTENT_TYPE_UNKNOWN;
+    mAttributes.usage = AUDIO_USAGE_UNKNOWN;
+    mAttributes.flags = 0x0;
+    strcpy(mAttributes.tags, "");
+
     (void)set(streamType, sampleRate, format, channelMask,
             frameCount, flags, cbf, user, notificationFrames,
             0 /*sharedBuffer*/, false /*threadCanCallJava*/, sessionId, transferType,
@@ -312,6 +318,11 @@ AudioTrack::AudioTrack(
       mPausedPosition(0),
       mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE)
 {
+    mAttributes.content_type = AUDIO_CONTENT_TYPE_UNKNOWN;
+    mAttributes.usage = AUDIO_USAGE_UNKNOWN;
+    mAttributes.flags = 0x0;
+    strcpy(mAttributes.tags, "");
+
     (void)set(streamType, sampleRate, format, channelMask,
             0 /*frameCount*/, flags, cbf, user, notificationFrames,
             sharedBuffer, false /*threadCanCallJava*/, sessionId, transferType, offloadInfo,
