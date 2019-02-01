@@ -6079,6 +6079,8 @@ bool ACodec::BaseState::onOMXFillBufferDone(
 
     ssize_t index;
     status_t err= OK;
+    int filledLen = BITFIELD_GET(bufferID, 4, 28);
+    bufferID = BITFIELD_GET(bufferID, 0, 4);
 
 #if TRACK_BUFFER_TIMING
     index = mCodec->mBufferStats.indexOfKey(timeUs);
@@ -6170,12 +6172,10 @@ bool ACodec::BaseState::onOMXFillBufferDone(
                 native_handle_t *handle = NULL;
                 sp<SecureBuffer> secureBuffer = static_cast<SecureBuffer *>(buffer.get());
                 if (secureBuffer != NULL) {
-#ifdef OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
-                    // handle is only valid on 32-bit/mediaserver process
-                    handle = NULL;
-#else
                     handle = (native_handle_t *)secureBuffer->getDestinationPointer();
-#endif
+                    if (handle) {
+                        handle->data[2] = filledLen;
+                    }
                 }
                 buffer->meta()->setPointer("handle", handle);
                 buffer->meta()->setInt32("rangeOffset", rangeOffset);
