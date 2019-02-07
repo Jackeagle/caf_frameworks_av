@@ -828,11 +828,13 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
     if (mPolicyMixes.getOutputForAttr(attributes, uid, desc) == NO_ERROR) {
         ALOG_ASSERT(desc != 0, "Invalid desc returned by getOutputForAttr");
         /* BUG 73287368: Support compress-offload playback with bus device routing */
-        if ((property_get_bool("audio.automotive.offload.support", false)) &&
-            (((*flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) != 0) &&
+        routing_strategy strategy = (routing_strategy) getStrategyForAttr(&attributes);
+        audio_devices_t device = getDeviceForStrategy(strategy, false /*fromCache*/);
+        if ((device & AUDIO_DEVICE_OUT_BUS) &&
+            (((*flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) != 0) ||
                   ((*flags & AUDIO_OUTPUT_FLAG_DIRECT) != 0)) &&
             (attributes.usage == AUDIO_USAGE_MEDIA)) {
-            ALOGW("getOutputForAttr() select legacy media compress offload or direct output");
+            ALOGW("getOutputForAttr() select legacy media compress offload or direct output for bus device");
         } else {
             if (!audio_has_proportional_frames(config->format)) {
                 return BAD_VALUE;
