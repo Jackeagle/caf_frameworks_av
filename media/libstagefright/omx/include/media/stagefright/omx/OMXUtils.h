@@ -24,6 +24,20 @@
 // OMXUtils contains omx-specific utility functions for stagefright/omx library
 // TODO: move ACodec and OMXClient into this library
 
+#define BIT(pos)                            ( 1<<(pos) )
+#define BIT_MASK(len)                       ( BIT(len)-1 )
+
+#define BITFIELD_MASK(start, len)           ( BIT_MASK(len)<<(start) )
+#define BITFIELD_PREP(val, start, len)      ( ((val)&BIT_MASK(len)) << (start) )
+
+#define BITFIELD_GET(num, start, len)       ( ((num)>>(start)) & BIT_MASK(len) )
+
+#define BITFIELD_SET(num, val, start, len)        \
+    ( ((num) &~ BITFIELD_MASK(start, len)) | BITFIELD_PREP(val, start, len) )
+
+#define BITFIELD_PACK(val1, len1, val2, len2)     \
+    ( BITFIELD_SET(0, val1, 0, len1) | BITFIELD_SET(0, val2, len1, len2) )
+
 namespace android {
 
 template<class T>
