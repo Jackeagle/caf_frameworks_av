@@ -881,6 +881,21 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
         *flags = (audio_output_flags_t)(*flags | AUDIO_OUTPUT_FLAG_HW_AV_SYNC);
     }
 
+    // Set incall music only if device was explicitly set, and fallback to the device which is
+    // chosen by the engine if not.
+    // FIXME: provide a more generic approach which is not device specific and move this back
+    // to getOutputForDevice.
+    if (device == AUDIO_DEVICE_OUT_TELEPHONY_TX &&
+        *stream == AUDIO_STREAM_MUSIC &&
+        audio_is_linear_pcm(config->format) &&
+        isInCall()) {
+        if (*selectedDeviceId != AUDIO_PORT_HANDLE_NONE) {
+            *flags = (audio_output_flags_t)AUDIO_OUTPUT_FLAG_INCALL_MUSIC;
+        } else {
+            device = mEngine->getDeviceForStrategy(strategy);
+        }
+    }
+
     ALOGV("getOutputForAttr() device 0x%x, sampling rate %d, format %#x, channel mask %#x, "
           "flags %#x",
           device, config->sample_rate, config->format, config->channel_mask, *flags);
@@ -936,11 +951,6 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         *flags = (audio_output_flags_t)(AUDIO_OUTPUT_FLAG_VOIP_RX |
                                        AUDIO_OUTPUT_FLAG_DIRECT);
         ALOGV("Set VoIP and Direct output flags for PCM format");
-    } else if (device == AUDIO_DEVICE_OUT_TELEPHONY_TX &&
-        stream == AUDIO_STREAM_MUSIC &&
-        audio_is_linear_pcm(config->format) &&
-        isInCall()) {
-        *flags = (audio_output_flags_t)AUDIO_OUTPUT_FLAG_INCALL_MUSIC;
     }
 
 
@@ -4906,11 +4916,15 @@ audio_devices_t AudioPolicyManager::getNewOutputDevice(const sp<AudioOutputDescr
     //      use device for strategy DTMF
     // 9: the strategy for beacon, a.k.a. "transmitted through speaker" is active on the output:
     //      use device for strategy t-t-s
+
+    // FIXME: extend use of isStrategyActiveOnSameModule() to all strategies
+    // with a refined rule considering mutually exclusive devices (using same backend)
+    // as opposed to all streams on the same audio HAL module.
     if (isStrategyActive(outputDesc, STRATEGY_ENFORCED_AUDIBLE) &&
         mEngine->getForceUse(AUDIO_POLICY_FORCE_FOR_SYSTEM) == AUDIO_POLICY_FORCE_SYSTEM_ENFORCED) {
         device = getDeviceForStrategy(STRATEGY_ENFORCED_AUDIBLE, fromCache);
     } else if (isInCall() ||
-                    isStrategyActive(outputDesc, STRATEGY_PHONE)) {
+               isStrategyActiveOnSameModule(outputDesc, STRATEGY_PHONE)) {
         device = getDeviceForStrategy(STRATEGY_PHONE, fromCache);
     } else if (isStrategyActive(outputDesc, STRATEGY_SONIFICATION)) {
         device = getDeviceForStrategy(STRATEGY_SONIFICATION, fromCache);
@@ -5912,6 +5926,20 @@ bool AudioPolicyManager::isStrategyActive(const sp<AudioOutputDescriptor>& outpu
         if (((getStrategy((audio_stream_type_t)i) == strategy) ||
                 (NUM_STRATEGIES == strategy)) &&
                 outputDesc->isStreamActive((audio_stream_type_t)i, inPastMs, sysTime)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AudioPolicyManager::isStrategyActiveOnSameModule(const sp<AudioOutputDescriptor>& outputDesc,
+                                          routing_strategy strategy, uint32_t inPastMs,
+                                          nsecs_t sysTime) const
+{
+    for (size_t i = 0; i < mOutputs.size(); i++) {
+        sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
+        if (outputDesc->sharesHwModuleWith(desc)
+            && isStrategyActive(desc, strategy, inPastMs, sysTime)) {
             return true;
         }
     }
