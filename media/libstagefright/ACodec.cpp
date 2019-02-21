@@ -6091,8 +6091,11 @@ bool ACodec::BaseState::onOMXFillBufferDone(
 
     ssize_t index;
     status_t err= OK;
-    int filledLen = BITFIELD_GET(bufferID, 4, 28);
-    bufferID = BITFIELD_GET(bufferID, 0, 4);
+    int filledLen = 0;
+    if (mCodec->mIsEncoder && (mCodec->mFlags & kFlagIsSecure)) {
+        filledLen = BITFIELD_GET(bufferID, 4, 28);
+        bufferID = BITFIELD_GET(bufferID, 0, 4);
+    }
 
 #if TRACK_BUFFER_TIMING
     index = mCodec->mBufferStats.indexOfKey(timeUs);

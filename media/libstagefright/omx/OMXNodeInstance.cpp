@@ -2350,12 +2350,16 @@ OMX_ERRORTYPE OMXNodeInstance::OnFillBufferDone(
     }
     int fenceFd = instance->retrieveFenceFromMeta_l(pBuffer, kPortIndexOutput);
 
-    native_handle_t *nh = (native_handle_t *)pBuffer->pBuffer;
     omx_message msg;
     msg.type = omx_message::FILL_BUFFER_DONE;
     msg.fenceFd = fenceFd;
     /* Pack bufferID and size in 4 bits and 28 bits respectively */
-    msg.u.extended_buffer_data.buffer = BITFIELD_PACK(instance->findBufferID(pBuffer), 4, nh->data[2], 28);
+    if(instance->mIsSecure && (strstr(instance->mName, "encoder") != NULL)) {
+        native_handle_t *nh = (native_handle_t *)pBuffer->pBuffer;
+        msg.u.extended_buffer_data.buffer = BITFIELD_PACK(instance->findBufferID(pBuffer), 4, nh->data[2], 28);
+    } else{
+        msg.u.extended_buffer_data.buffer = instance->findBufferID(pBuffer);
+    }
     msg.u.extended_buffer_data.range_offset = pBuffer->nOffset;
     msg.u.extended_buffer_data.range_length = pBuffer->nFilledLen;
     msg.u.extended_buffer_data.flags = pBuffer->nFlags;
@@ -2368,7 +2372,11 @@ OMX_ERRORTYPE OMXNodeInstance::OnFillBufferDone(
 void OMXNodeInstance::addActiveBuffer(OMX_U32 portIndex, IOMX::buffer_id id) {
     ActiveBuffer active;
     active.mPortIndex = portIndex;
-    active.mID = BITFIELD_GET(id, 0, 4);
+    if(mIsSecure && (strstr(mName, "encoder") != NULL)) {
+        active.mID = BITFIELD_GET(id, 0, 4);
+    } else {
+        active.mID = id;
+    }
     mActiveBuffers.push(active);
 
     if (portIndex == kPortIndexInputExtradata || portIndex == kPortIndexOutputExtradata) {
@@ -2380,7 +2388,9 @@ void OMXNodeInstance::addActiveBuffer(OMX_U32 portIndex, IOMX::buffer_id id) {
 
 void OMXNodeInstance::removeActiveBuffer(
         OMX_U32 portIndex, IOMX::buffer_id id) {
-    id = BITFIELD_GET(id, 0, 4);
+    if(mIsSecure && (strstr(mName, "encoder") != NULL)) {
+        id = BITFIELD_GET(id, 0, 4);
+    }
     for (size_t i = 0; i < mActiveBuffers.size(); ++i) {
         if (mActiveBuffers[i].mPortIndex == portIndex
                 && mActiveBuffers[i].mID == id) {
@@ -2430,7 +2440,9 @@ OMX_BUFFERHEADERTYPE *OMXNodeInstance::findBufferHeader(
         return NULL;
     }
     Mutex::Autolock autoLock(mBufferIDLock);
-    buffer = BITFIELD_GET(buffer, 0, 4);
+    if(mIsSecure && (strstr(mName, "encoder") != NULL)) {
+        buffer = BITFIELD_GET(buffer, 0, 4);
+    }
     ssize_t index = mBufferIDToBufferHeader.indexOfKey(buffer);
     if (index < 0) {
         CLOGW("findBufferHeader: buffer %u not found", buffer);
