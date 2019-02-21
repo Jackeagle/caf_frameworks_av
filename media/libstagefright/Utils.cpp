@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2009 The Android Open Source Project
  *
@@ -1520,6 +1521,7 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     }
 
     // XXX TODO add whatever other keys there are
+    AVUtils::get()->convertMessageToMetaData(msg, meta);
 
 #if 0
     ALOGI("converted %s to:", msg->debugString(0).c_str());
@@ -1694,6 +1696,8 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
 
     int32_t cmask = 0;
     if (!meta->findInt32(kKeyChannelMask, &cmask) || 0 == cmask) {
+        ALOGV("track of type '%s' does not publish channel mask", mime);
+
         // Try a channel count instead
         int32_t channelCount;
         if (!meta->findInt32(kKeyChannelCount, &channelCount)) {
@@ -1702,7 +1706,7 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
             cmask = audio_channel_out_mask_from_count(channelCount);
         }
         ALOGW("track of type '%s' does not publish channel mask, channel count %d",
-               mime, channelCount);
+              mime, channelCount);
     }
     info.channel_mask = cmask;
 

@@ -69,9 +69,8 @@ public:
                              audio_format_t *updatedFormat,
                              audio_channel_mask_t channelMask,
                              audio_channel_mask_t *updatedChannelMask,
-                             // FIXME parameter type
                              uint32_t flags,
-                             bool exactMatchRequiredForInputFlags = false) const;
+                             bool checkExactFormatMatch = false) const;
 
     void dump(int fd);
     void log();
