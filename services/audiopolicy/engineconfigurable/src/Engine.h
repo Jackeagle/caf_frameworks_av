@@ -56,6 +56,10 @@ private:
         {
             mPolicyEngine->setObserver(observer);
         }
+        virtual void setDpConnAndAllowedForVoice(bool connAndAllowed)
+        {
+            return mPolicyEngine->setDpConnAndAllowedForVoice(connAndAllowed);
+        }
         virtual audio_devices_t getDeviceForInputSource(audio_source_t inputSource) const
         {
             return mPolicyEngine->getPropertyForKey<audio_devices_t, audio_source_t>(inputSource);
@@ -157,6 +161,7 @@ private:
                                    const VolumeCurvePoints &points);
 
     status_t initCheck();
+    void setDpConnAndAllowedForVoice(bool connAndAllowed);
     status_t setPhoneState(audio_mode_t mode);
     audio_mode_t getPhoneState() const;
     status_t setForceUse(audio_policy_force_use_t usage, audio_policy_forced_cfg_t config);
@@ -190,6 +195,8 @@ private:
      * Policy Parameter Manager hidden through a wrapper.
      */
     ParameterManagerWrapper *mPolicyParameterMgr;
+
+    bool mDpConnAndAllowedForVoice;
 
     AudioPolicyManagerObserver *mApmObserver;
 };

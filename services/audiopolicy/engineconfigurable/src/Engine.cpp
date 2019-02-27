@@ -85,6 +85,7 @@ Engine::Engine()
     : mManagerInterface(this),
       mPluginInterface(this),
       mPolicyParameterMgr(new ParameterManagerWrapper()),
+      mDpConnAndAllowedForVoice(false),
       mApmObserver(NULL)
 {
 }
@@ -111,6 +112,11 @@ status_t Engine::initCheck()
         return NO_INIT;
     }
     return (mApmObserver != NULL)? NO_ERROR : NO_INIT;
+}
+
+void Engine::setDpConnAndAllowedForVoice(bool connAndAllowed)
+{
+    mDpConnAndAllowedForVoice = connAndAllowed;
 }
 
 template <typename Key>
