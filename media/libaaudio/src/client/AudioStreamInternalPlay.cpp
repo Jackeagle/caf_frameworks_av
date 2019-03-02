@@ -71,7 +71,7 @@ aaudio_result_t AudioStreamInternalPlay::requestPause()
 
     mClockModel.stop(AudioClock::getNanoseconds());
     setState(AAUDIO_STREAM_STATE_PAUSING);
-    mAtomicTimestamp.clear();
+    mAtomicInternalTimestamp.clear();
     return mServiceInterface.pauseStream(mServiceStreamHandle);
 }
 
@@ -242,27 +242,17 @@ aaudio_result_t AudioStreamInternalPlay::writeNowWithConversion(const void *buff
     return framesWritten;
 }
 
-int64_t AudioStreamInternalPlay::getFramesRead()
-{
-    int64_t framesReadHardware;
-    if (isActive()) {
-        framesReadHardware = mClockModel.convertTimeToPosition(AudioClock::getNanoseconds());
-    } else {
-        framesReadHardware = mAudioEndpoint.getDataReadCounter();
-    }
-    int64_t framesRead = framesReadHardware + mFramesOffsetFromService;
-    // Prevent retrograde motion.
-    if (framesRead < mLastFramesRead) {
-        framesRead = mLastFramesRead;
-    } else {
-        mLastFramesRead = framesRead;
-    }
-    return framesRead;
+int64_t AudioStreamInternalPlay::getFramesRead() {
+    const int64_t framesReadHardware = isClockModelInControl()
+            ? mClockModel.convertTimeToPosition(AudioClock::getNanoseconds())
+            : mAudioEndpoint.getDataReadCounter();
+    // Add service offset and prevent retrograde motion.
+    mLastFramesRead = std::max(mLastFramesRead, framesReadHardware + mFramesOffsetFromService);
+    return mLastFramesRead;
 }
 
-int64_t AudioStreamInternalPlay::getFramesWritten()
-{
-    int64_t framesWritten = mAudioEndpoint.getDataWriteCounter()
+int64_t AudioStreamInternalPlay::getFramesWritten() {
+    const int64_t framesWritten = mAudioEndpoint.getDataWriteCounter()
                                + mFramesOffsetFromService;
     return framesWritten;
 }
@@ -293,7 +283,8 @@ void *AudioStreamInternalPlay::callbackLoop() {
                 break;
             }
         } else if (callbackResult == AAUDIO_CALLBACK_RESULT_STOP) {
-            ALOGV("%s(): callback returned AAUDIO_CALLBACK_RESULT_STOP", __func__);
+            ALOGD("%s(): callback returned AAUDIO_CALLBACK_RESULT_STOP", __func__);
+            result = systemStopFromCallback();
             break;
         }
     }

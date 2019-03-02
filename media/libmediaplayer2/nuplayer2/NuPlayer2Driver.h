@@ -16,8 +16,9 @@
 
 #include <mediaplayer2/MediaPlayer2Interface.h>
 
-#include <media/MediaAnalyticsItem.h>
+#include <media/MediaMetrics.h>
 #include <media/stagefright/foundation/ABase.h>
+#include <mediaplayer2/JObjectHolder.h>
 
 namespace android {
 
@@ -26,7 +27,7 @@ struct MediaClock;
 struct NuPlayer2;
 
 struct NuPlayer2Driver : public MediaPlayer2Interface {
-    explicit NuPlayer2Driver(pid_t pid, uid_t uid);
+    explicit NuPlayer2Driver(pid_t pid, uid_t uid, const sp<JObjectHolder> &context);
 
     virtual status_t initCheck() override;
 
@@ -60,9 +61,7 @@ struct NuPlayer2Driver : public MediaPlayer2Interface {
     virtual void setAudioSink(const sp<AudioSink> &audioSink) override;
     virtual status_t setParameter(int key, const Parcel &request) override;
     virtual status_t getParameter(int key, Parcel *reply) override;
-
-    virtual status_t getMetadata(
-            const media::Metadata::Filter& ids, Parcel *records) override;
+    virtual status_t getMetrics(char **buf, size_t *length) override;
 
     virtual status_t dump(int fd, const Vector<String16> &args) const override;
 
@@ -82,8 +81,9 @@ struct NuPlayer2Driver : public MediaPlayer2Interface {
     void notifyFlagsChanged(int64_t srcId, uint32_t flags);
 
     // Modular DRM
-    virtual status_t prepareDrm(const uint8_t uuid[16], const Vector<uint8_t> &drmSessionId);
-    virtual status_t releaseDrm();
+    virtual status_t prepareDrm(
+            int64_t srcId, const uint8_t uuid[16], const Vector<uint8_t> &drmSessionId);
+    virtual status_t releaseDrm(int64_t srcId);
 
 protected:
     virtual ~NuPlayer2Driver();
@@ -133,7 +133,7 @@ private:
     sp<AudioSink> mAudioSink;
     uint32_t mPlayerFlags;
 
-    MediaAnalyticsItem *mAnalyticsItem;
+    mediametrics_handle_t mMetricsHandle;
     uid_t mClientUid;
 
     bool mAtEOS;

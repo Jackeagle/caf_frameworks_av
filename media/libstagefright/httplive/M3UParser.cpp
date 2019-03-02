@@ -258,7 +258,7 @@ M3UParser::M3UParser(
       mIsEvent(false),
       mFirstSeqNumber(-1),
       mLastSeqNumber(-1),
-      mTargetDurationUs(-1ll),
+      mTargetDurationUs(-1LL),
       mDiscontinuitySeq(0),
       mDiscontinuityCount(0),
       mSelectedIndex(-1) {
@@ -706,6 +706,12 @@ status_t M3UParser::parse(const void *_data, size_t size) {
         ++lineNo;
     }
 
+    // playlist has no item, would cause exception
+    if (mItems.size() == 0) {
+        ALOGE("playlist has no item");
+        return ERROR_MALFORMED;
+    }
+
     // error checking of all fields that's required to appear once
     // (currently only checking "target-duration"), and
     // initialization of playlist properties (eg. mTargetDurationUs)
@@ -716,7 +722,7 @@ status_t M3UParser::parse(const void *_data, size_t size) {
             ALOGE("Media playlist missing #EXT-X-TARGETDURATION");
             return ERROR_MALFORMED;
         }
-        mTargetDurationUs = targetDurationSecs * 1000000ll;
+        mTargetDurationUs = targetDurationSecs * 1000000LL;
 
         mFirstSeqNumber = 0;
         if (mMeta != NULL) {
@@ -1391,6 +1397,7 @@ bool M3UParser::codecIsType(const AString &codec, const char *type) {
         case 'QDMC':
         case 'ulaw':
         case 'vdva':
+        case 'ac-4':
             return !strcmp("audio", type);
 
         case 'avc1':

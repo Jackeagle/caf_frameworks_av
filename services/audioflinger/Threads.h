@@ -485,6 +485,10 @@ protected:
                 audio_devices_t         mPrevOutDevice;   // previous output device
                 audio_devices_t         mPrevInDevice;    // previous input device
                 struct audio_patch      mPatch;
+                /**
+                 * @brief mDeviceId  current device port unique identifier
+                 */
+                audio_port_handle_t     mDeviceId = AUDIO_PORT_HANDLE_NONE;
                 audio_source_t          mAudioSource;
 
                 const audio_io_handle_t mId;
@@ -729,6 +733,7 @@ public:
 
                 // VolumeInterface
     virtual     void        setMasterVolume(float value);
+    virtual     void        setMasterBalance(float balance);
     virtual     void        setMasterMute(bool muted);
     virtual     void        setStreamVolume(audio_stream_type_t stream, float value);
     virtual     void        setStreamMute(audio_stream_type_t stream, bool muted);
@@ -907,6 +912,11 @@ protected:
     int64_t                         mBytesWritten;
     int64_t                         mFramesWritten; // not reset on standby
     int64_t                         mSuspendedFrames; // not reset on standby
+
+    // mHapticChannelMask and mHapticChannelCount will only be valid when the thread support
+    // haptic playback.
+    audio_channel_mask_t            mHapticChannelMask = AUDIO_CHANNEL_NONE;
+    uint32_t                        mHapticChannelCount = 0;
 private:
     // mMasterMute is in both PlaybackThread and in AudioFlinger.  When a
     // PlaybackThread needs to find out if master-muted, it checks it's local
@@ -1018,6 +1028,8 @@ private:
     AudioStreamOut                  *mOutput;
 
     float                           mMasterVolume;
+    std::atomic<float>              mMasterBalance{};
+    audio_utils::Balance            mBalance;
     nsecs_t                         mLastWriteTime;
     int                             mNumWrites;
     int                             mNumDelayedWrites;
@@ -1192,20 +1204,36 @@ protected:
                 // Blending with limiter is not idempotent,
                 // and blending without limiter is idempotent but inefficient to do twice.
     virtual     bool       requireMonoBlend() { return mMasterMono.load() && !hasFastMixer(); }
+
+                void       setMasterBalance(float balance) override {
+                               mMasterBalance.store(balance);
+                               if (hasFastMixer()) {
+                                   mFastMixer->setMasterBalance(balance);
+                               }
+                           }
 };
 
 class DirectOutputThread : public PlaybackThread {
 public:
 
     DirectOutputThread(const sp<AudioFlinger>& audioFlinger, AudioStreamOut* output,
-                       audio_io_handle_t id, audio_devices_t device, bool systemReady);
+                       audio_io_handle_t id, audio_devices_t device, bool systemReady)
+        : DirectOutputThread(audioFlinger, output, id, device, DIRECT, systemReady) { }
+
     virtual                 ~DirectOutputThread();
+
+                status_t    selectPresentation(int presentationId, int programId);
 
     // Thread virtuals
 
     virtual     bool        checkForNewParameter_l(const String8& keyValuePair,
                                                    status_t& status);
+
+                void        dumpInternals(int fd, const Vector<String16>& args) override;
+
     virtual     void        flushHw_l();
+
+                void        setMasterBalance(float balance) override;
 
 protected:
     virtual     uint32_t    activeSleepTimeUs() const;
@@ -1222,10 +1250,10 @@ protected:
 
     virtual     void        onAddNewTrack_l();
 
-    bool mVolumeShaperActive;
+    bool mVolumeShaperActive = false;
 
     DirectOutputThread(const sp<AudioFlinger>& audioFlinger, AudioStreamOut* output,
-                        audio_io_handle_t id, uint32_t device, ThreadBase::type_t type,
+                        audio_io_handle_t id, audio_devices_t device, ThreadBase::type_t type,
                         bool systemReady);
     void processVolume_l(Track *track, bool lastTrack);
 
@@ -1233,6 +1261,10 @@ protected:
     sp<Track>               mActiveTrack;
 
     wp<Track>               mPreviousTrack;         // used to detect track switch
+
+    // This must be initialized for initial condition of mMasterBalance = 0 (disabled).
+    float                   mMasterBalanceLeft = 1.f;
+    float                   mMasterBalanceRight = 1.f;
 
     uint64_t                mFramesWrittenAtStandby;// used to reset frames on track reset
     uint64_t                mFramesWrittenForSleep; // used to reset frames on track removal
@@ -1541,6 +1573,9 @@ public:
 
             status_t    getActiveMicrophones(std::vector<media::MicrophoneInfo>* activeMicrophones);
 
+            status_t    setMicrophoneDirection(audio_microphone_direction_t direction);
+            status_t    setMicrophoneFieldDimension(float zoom);
+
             void        updateMetadata_l() override;
 
             bool        fastTrackAvailable() const { return mFastTrackAvail; }
@@ -1704,7 +1739,6 @@ class MmapThread : public ThreadBase
 
                 audio_attributes_t      mAttr;
                 audio_session_t         mSessionId;
-                audio_port_handle_t     mDeviceId;
                 audio_port_handle_t     mPortId;
 
                 wp<MmapStreamCallback>  mCallback;

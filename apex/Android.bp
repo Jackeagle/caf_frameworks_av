@@ -15,26 +15,53 @@
 apex {
     name: "com.android.media",
     manifest: "manifest.json",
-    native_shared_libs: [
-        // Extractor plugins
-        "libaacextractor",
-        "libamrextractor",
-        "libflacextractor",
-        "libmidiextractor",
-        "libmkvextractor",
-        "libmp3extractor",
-        "libmp4extractor",
-        "libmpeg2extractor",
-        "liboggextractor",
-        "libwavextractor",
-        // MediaPlayer2
-        "libmedia2_jni",
-    ],
+    java_libs: ["updatable-media"],
+    compile_multilib: "both",
+    multilib: {
+        first: {
+            // Extractor process runs only with the primary ABI.
+            native_shared_libs: [
+                // Extractor plugins
+                "libaacextractor",
+                "libamrextractor",
+                "libflacextractor",
+                "libmidiextractor",
+                "libmkvextractor",
+                "libmp3extractor",
+                "libmp4extractor",
+                "libmpeg2extractor",
+                "liboggextractor",
+                "libwavextractor",
+            ],
+        },
+        both: {
+            native_shared_libs: [
+                // MediaPlayer2
+                "libmedia2_jni",
+            ],
+        },
+    },
     key: "com.android.media.key",
+}
+
+apex {
+    name: "com.android.media.swcodec",
+    manifest: "manifest_codec.json",
+    native_shared_libs: [
+        "libmedia_codecserviceregistrant",
+    ],
+    use_vendor: true,
+    key: "com.android.media.swcodec.key",
 }
 
 apex_key {
     name: "com.android.media.key",
-    public_key: "media.avbpubkey",
-    private_key: "media.pem",
+    public_key: "com.android.media.avbpubkey",
+    private_key: "com.android.media.pem",
+}
+
+apex_key {
+    name: "com.android.media.swcodec.key",
+    public_key: "com.android.media.swcodec.avbpubkey",
+    private_key: "com.android.media.swcodec.pem",
 }

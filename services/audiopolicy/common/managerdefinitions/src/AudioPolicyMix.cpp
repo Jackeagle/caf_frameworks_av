@@ -280,13 +280,32 @@ status_t AudioPolicyMixCollection::getOutputForAttr(audio_attributes_t attribute
     return BAD_VALUE;
 }
 
-audio_devices_t AudioPolicyMixCollection::getDeviceAndMixForInputSource(audio_source_t inputSource,
-                                                                        audio_devices_t availDevices,
-                                                                        AudioMix **policyMix)
+sp<DeviceDescriptor> AudioPolicyMixCollection::getDeviceAndMixForOutput(
+        const sp<SwAudioOutputDescriptor> &output,
+        const DeviceVector &availableOutputDevices,
+        AudioMix **policyMix)
+{
+    for (size_t i = 0; i < size(); i++) {
+        if (valueAt(i)->getOutput() == output) {
+            AudioMix *mix = valueAt(i)->getMix();
+            if (policyMix != nullptr)
+                *policyMix = mix;
+            // This Desc is involved in a Mix, which has the highest prio
+            audio_devices_t deviceType = mix->mDeviceType;
+            String8 address = mix->mDeviceAddress;
+            ALOGV("%s: device (0x%x, addr=%s) forced by mix",
+                  __FUNCTION__, deviceType, address.c_str());
+            return availableOutputDevices.getDevice(deviceType, address, AUDIO_FORMAT_DEFAULT);
+        }
+    }
+    return nullptr;
+}
+
+sp<DeviceDescriptor> AudioPolicyMixCollection::getDeviceAndMixForInputSource(
+        audio_source_t inputSource, const DeviceVector &availDevices, AudioMix **policyMix) const
 {
     for (size_t i = 0; i < size(); i++) {
         AudioMix *mix = valueAt(i)->getMix();
-
         if (mix->mMixType != MIX_TYPE_RECORDERS) {
             continue;
         }
@@ -295,17 +314,22 @@ audio_devices_t AudioPolicyMixCollection::getDeviceAndMixForInputSource(audio_so
                     mix->mCriteria[j].mValue.mSource == inputSource) ||
                (RULE_EXCLUDE_ATTRIBUTE_CAPTURE_PRESET == mix->mCriteria[j].mRule &&
                     mix->mCriteria[j].mValue.mSource != inputSource)) {
-                if (availDevices & AUDIO_DEVICE_IN_REMOTE_SUBMIX) {
+                // assuming PolicyMix only for remote submix for input
+                // so mix->mDeviceType can only be AUDIO_DEVICE_OUT_REMOTE_SUBMIX
+                audio_devices_t device = AUDIO_DEVICE_IN_REMOTE_SUBMIX;
+                auto mixDevice =
+                        availDevices.getDevice(device, mix->mDeviceAddress, AUDIO_FORMAT_DEFAULT);
+                if (mixDevice != nullptr) {
                     if (policyMix != NULL) {
                         *policyMix = mix;
                     }
-                    return AUDIO_DEVICE_IN_REMOTE_SUBMIX;
+                    return mixDevice;
                 }
                 break;
             }
         }
     }
-    return AUDIO_DEVICE_NONE;
+    return nullptr;
 }
 
 status_t AudioPolicyMixCollection::getInputMixForAttr(audio_attributes_t attr, AudioMix **policyMix)
@@ -337,6 +361,89 @@ status_t AudioPolicyMixCollection::getInputMixForAttr(audio_attributes_t attr, A
         return BAD_VALUE;
     }
     *policyMix = mix;
+    return NO_ERROR;
+}
+
+status_t AudioPolicyMixCollection::setUidDeviceAffinities(uid_t uid,
+        const Vector<AudioDeviceTypeAddr>& devices) {
+    // remove existing rules for this uid
+    removeUidDeviceAffinities(uid);
+
+    // for each player mix: add a rule to match or exclude the uid based on the device
+    for (size_t i = 0; i < size(); i++) {
+        const AudioMix *mix = valueAt(i)->getMix();
+        if (mix->mMixType != MIX_TYPE_PLAYERS) {
+            continue;
+        }
+        // check if this mix goes to a device in the list of devices
+        bool deviceMatch = false;
+        for (size_t j = 0; j < devices.size(); j++) {
+            if (devices[j].mType == mix->mDeviceType
+                    && devices[j].mAddress == mix->mDeviceAddress) {
+                deviceMatch = true;
+                break;
+            }
+        }
+        if (deviceMatch) {
+            mix->setMatchUid(uid);
+        } else {
+            // this mix doesn't go to one of the listed devices for the given uid,
+            // modify its rules to exclude the uid
+            mix->setExcludeUid(uid);
+        }
+    }
+
+    return NO_ERROR;
+}
+
+status_t AudioPolicyMixCollection::removeUidDeviceAffinities(uid_t uid) {
+    // for each player mix: remove existing rules that match or exclude this uid
+    for (size_t i = 0; i < size(); i++) {
+        bool foundUidRule = false;
+        AudioMix *mix = valueAt(i)->getMix();
+        if (mix->mMixType != MIX_TYPE_PLAYERS) {
+            continue;
+        }
+        std::vector<size_t> criteriaToRemove;
+        for (size_t j = 0; j < mix->mCriteria.size(); j++) {
+            const uint32_t rule = mix->mCriteria[j].mRule;
+            // is this rule affecting the uid?
+            if ((rule == RULE_EXCLUDE_UID || rule == RULE_MATCH_UID)
+                    && uid == mix->mCriteria[j].mValue.mUid) {
+                foundUidRule = true;
+                criteriaToRemove.insert(criteriaToRemove.begin(), j);
+            }
+        }
+        if (foundUidRule) {
+            for (size_t j = 0; j < criteriaToRemove.size(); j++) {
+                mix->mCriteria.removeAt(criteriaToRemove[j]);
+            }
+        }
+    }
+    return NO_ERROR;
+}
+
+status_t AudioPolicyMixCollection::getDevicesForUid(uid_t uid,
+        Vector<AudioDeviceTypeAddr>& devices) const {
+    // for each player mix: find rules that don't exclude this uid, and add the device to the list
+    for (size_t i = 0; i < size(); i++) {
+        bool ruleAllowsUid = true;
+        AudioMix *mix = valueAt(i)->getMix();
+        if (mix->mMixType != MIX_TYPE_PLAYERS) {
+            continue;
+        }
+        for (size_t j = 0; j < mix->mCriteria.size(); j++) {
+            const uint32_t rule = mix->mCriteria[j].mRule;
+            if (rule == RULE_EXCLUDE_UID
+                    && uid == mix->mCriteria[j].mValue.mUid) {
+                ruleAllowsUid = false;
+                break;
+            }
+        }
+        if (ruleAllowsUid) {
+            devices.add(AudioDeviceTypeAddr(mix->mDeviceType, mix->mDeviceAddress));
+        }
+    }
     return NO_ERROR;
 }
 

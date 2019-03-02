@@ -63,19 +63,29 @@ std::string TrackClientDescriptor::toShortString() const
     return ss.str();
 }
 
+void RecordClientDescriptor::trackEffectEnabled(const sp<EffectDescriptor> &effect, bool enabled)
+{
+    if (enabled) {
+        mEnabledEffects.replaceValueFor(effect->mId, effect);
+    } else {
+        mEnabledEffects.removeItem(effect->mId);
+    }
+}
+
 void RecordClientDescriptor::dump(String8 *dst, int spaces, int index) const
 {
     ClientDescriptor::dump(dst, spaces, index);
     dst->appendFormat("%*s- Source: %d flags: %08x\n", spaces, "", mSource, mFlags);
+    mEnabledEffects.dump(dst, spaces + 2 /*spaces*/, false /*verbose*/);
 }
 
 SourceClientDescriptor::SourceClientDescriptor(audio_port_handle_t portId, uid_t uid,
          audio_attributes_t attributes, const sp<AudioPatch>& patchDesc,
          const sp<DeviceDescriptor>& srcDevice, audio_stream_type_t stream,
-         routing_strategy strategy) :
+         product_strategy_t strategy) :
     TrackClientDescriptor::TrackClientDescriptor(portId, uid, AUDIO_SESSION_NONE, attributes,
         AUDIO_CONFIG_BASE_INITIALIZER, AUDIO_PORT_HANDLE_NONE,
-        stream, strategy, AUDIO_OUTPUT_FLAG_NONE),
+        stream, strategy, AUDIO_OUTPUT_FLAG_NONE, false),
         mPatchDesc(patchDesc), mSrcDevice(srcDevice)
 {
 }

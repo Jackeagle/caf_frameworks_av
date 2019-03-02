@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <limits.h>
 
+#include <android/os/BnExternalVibrationController.h>
 #include <android-base/macros.h>
 
 #include <cutils/atomic.h>
@@ -84,6 +85,8 @@
 #include <private/media/AudioEffectShared.h>
 #include <private/media/AudioTrackShared.h>
 
+#include <vibrator/ExternalVibration.h>
+
 #include "android/media/BnAudioRecord.h"
 
 namespace android {
@@ -136,6 +139,10 @@ public:
 
     virtual     float       masterVolume() const;
     virtual     bool        masterMute() const;
+
+    // Balance value must be within -1.f (left only) to 1.f (right only) inclusive.
+                status_t    setMasterBalance(float balance) override;
+                status_t    getMasterBalance(float *balance) const override;
 
     virtual     status_t    setStreamVolume(audio_stream_type_t stream, float value,
                                             audio_io_handle_t output);
@@ -284,6 +291,9 @@ public:
                             const sp<MmapStreamCallback>& callback,
                             sp<MmapStreamInterface>& interface,
                             audio_port_handle_t *handle);
+
+    static int onExternalVibrationStart(const sp<os::ExternalVibration>& externalVibration);
+    static void onExternalVibrationStop(const sp<os::ExternalVibration>& externalVibration);
 private:
     // FIXME The 400 is temporarily too high until a leak of writers in media.log is fixed.
     static const size_t kLogMemorySize = 400 * 1024;
@@ -365,16 +375,17 @@ private:
     static inline bool isValidPcmSinkChannelMask(audio_channel_mask_t channelMask) {
         switch (audio_channel_mask_get_representation(channelMask)) {
         case AUDIO_CHANNEL_REPRESENTATION_POSITION: {
-            uint32_t channelCount = FCC_2; // stereo is default
-            if (kEnableExtendedChannels) {
-                channelCount = audio_channel_count_from_out_mask(channelMask);
-                if (channelCount < FCC_2 // mono is not supported at this time
-                        || channelCount > AudioMixer::MAX_NUM_CHANNELS) {
-                    return false;
-                }
+            // Haptic channel mask is only applicable for channel position mask.
+            const uint32_t channelCount = audio_channel_count_from_out_mask(
+                    channelMask & ~AUDIO_CHANNEL_HAPTIC_ALL);
+            const uint32_t maxChannelCount = kEnableExtendedChannels
+                    ? AudioMixer::MAX_NUM_CHANNELS : FCC_2;
+            if (channelCount < FCC_2 // mono is not supported at this time
+                    || channelCount > maxChannelCount) {
+                return false;
             }
             // check that channelMask is the "canonical" one we expect for the channelCount.
-            return channelMask == audio_channel_out_mask_from_count(channelCount);
+            return audio_channel_position_mask_is_out_canonical(channelMask);
             }
         case AUDIO_CHANNEL_REPRESENTATION_INDEX:
             if (kEnableExtendedChannels) {
@@ -553,6 +564,7 @@ using effect_buffer_t = int16_t;
         virtual void        pause();
         virtual status_t    attachAuxEffect(int effectId);
         virtual status_t    setParameters(const String8& keyValuePairs);
+        virtual status_t    selectPresentation(int presentationId, int programId);
         virtual media::VolumeShaper::Status applyVolumeShaper(
                 const sp<media::VolumeShaper::Configuration>& configuration,
                 const sp<media::VolumeShaper::Operation>& operation) override;
@@ -577,6 +589,10 @@ using effect_buffer_t = int16_t;
         virtual binder::Status   stop();
         virtual binder::Status   getActiveMicrophones(
                 std::vector<media::MicrophoneInfo>* activeMicrophones);
+        virtual binder::Status   setMicrophoneDirection(
+                int /*audio_microphone_direction_t*/ direction);
+        virtual binder::Status   setMicrophoneFieldDimension(float zoom);
+
     private:
         const sp<RecordThread::RecordTrack> mRecordTrack;
 
@@ -618,7 +634,9 @@ using effect_buffer_t = int16_t;
                                            audio_devices_t device,
                                            const String8& address,
                                            audio_source_t source,
-                                           audio_input_flags_t flags);
+                                           audio_input_flags_t flags,
+                                           audio_devices_t outputDevice,
+                                           const String8& outputDeviceAddress);
               sp<ThreadBase> openOutput_l(audio_module_handle_t module,
                                               audio_io_handle_t *output,
                                               audio_config_t *config,
@@ -768,6 +786,7 @@ using effect_buffer_t = int16_t;
                 // member variables below are protected by mLock
                 float                               mMasterVolume;
                 bool                                mMasterMute;
+                float                               mMasterBalance = 0.f;
                 // end of variables protected by mLock
 
                 DefaultKeyedVector< audio_io_handle_t, sp<RecordThread> >    mRecordThreads;
@@ -785,6 +804,7 @@ using effect_buffer_t = int16_t;
                 Vector<AudioSessionRef*> mAudioSessionRefs;
 
                 float       masterVolume_l() const;
+                float       getMasterBalance_l() const;
                 bool        masterMute_l() const;
                 audio_module_handle_t loadHwModule_l(const char *name);
 

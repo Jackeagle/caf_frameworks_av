@@ -569,8 +569,8 @@ ACodec::ACodec()
       mDequeueCounter(0),
       mMetadataBuffersToSubmit(0),
       mNumUndequeuedBuffers(0),
-      mRepeatFrameDelayUs(-1ll),
-      mMaxPtsGapUs(0ll),
+      mRepeatFrameDelayUs(-1LL),
+      mMaxPtsGapUs(0LL),
       mMaxFps(-1),
       mFps(-1.0),
       mCaptureFps(-1.0),
@@ -579,6 +579,7 @@ ACodec::ACodec()
       mTunneled(false),
       mDescribeColorAspectsIndex((OMX_INDEXTYPE)0),
       mDescribeHDRStaticInfoIndex((OMX_INDEXTYPE)0),
+      mDescribeHDR10PlusInfoIndex((OMX_INDEXTYPE)0),
       mStateGeneration(0),
       mVendorExtensionsStatus(kExtensionsUnchecked) {
     memset(&mLastHDRStaticInfo, 0, sizeof(mLastHDRStaticInfo));
@@ -1839,15 +1840,15 @@ status_t ACodec::configureCodec(
         if (!msg->findInt64(
                     "repeat-previous-frame-after",
                     &mRepeatFrameDelayUs)) {
-            mRepeatFrameDelayUs = -1ll;
+            mRepeatFrameDelayUs = -1LL;
         }
 
         // only allow 32-bit value, since we pass it as U32 to OMX.
         if (!msg->findInt64("max-pts-gap-to-encoder", &mMaxPtsGapUs)) {
-            mMaxPtsGapUs = 0ll;
+            mMaxPtsGapUs = 0LL;
         } else if (mMaxPtsGapUs > INT32_MAX || mMaxPtsGapUs < INT32_MIN) {
             ALOGW("Unsupported value for max pts gap %lld", (long long) mMaxPtsGapUs);
-            mMaxPtsGapUs = 0ll;
+            mMaxPtsGapUs = 0LL;
         }
 
         if (!msg->findFloat("max-fps-to-encoder", &mMaxFps)) {
@@ -1855,7 +1856,7 @@ status_t ACodec::configureCodec(
         }
 
         // notify GraphicBufferSource to allow backward frames
-        if (mMaxPtsGapUs < 0ll) {
+        if (mMaxPtsGapUs < 0LL) {
             mMaxFps = -1;
         }
 
@@ -2205,7 +2206,8 @@ status_t ACodec::configureCodec(
 #else
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC)) {
 #endif
-        int32_t numChannels = 0, sampleRate = 0, compressionLevel = -1;
+        // numChannels needs to be set to properly communicate PCM values.
+        int32_t numChannels = 2, sampleRate = 44100, compressionLevel = -1;
         if (encoder &&
                 (!msg->findInt32("channel-count", &numChannels)
                         || !msg->findInt32("sample-rate", &sampleRate))) {
@@ -2231,7 +2233,7 @@ status_t ACodec::configureCodec(
                 }
             }
             err = setupFlacCodec(
-                    encoder, numChannels, sampleRate, compressionLevel);
+                    encoder, numChannels, sampleRate, compressionLevel, pcmEncoding);
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         int32_t numChannels, sampleRate;
@@ -2259,6 +2261,15 @@ status_t ACodec::configureCodec(
             err = INVALID_OPERATION;
         } else {
             err = setupEAC3Codec(encoder, numChannels, sampleRate);
+        }
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC4)) {
+        int32_t numChannels;
+        int32_t sampleRate;
+        if (!msg->findInt32("channel-count", &numChannels)
+                || !msg->findInt32("sample-rate", &sampleRate)) {
+            err = INVALID_OPERATION;
+        } else {
+            err = setupAC4Codec(encoder, numChannels, sampleRate);
         }
     } else {
         err = setupCustomCodec(err, mime, msg);
@@ -2335,12 +2346,16 @@ status_t ACodec::configureCodec(
             (void)mInputFormat->findInt32("pcm-encoding", (int32_t*)&codecPcmEncoding);
             mConverter[kPortIndexInput] = AudioConverter::Create(pcmEncoding, codecPcmEncoding);
             if (mConverter[kPortIndexInput] != NULL) {
+                ALOGD("%s: encoder %s input format pcm encoding converter from %d to %d",
+                        __func__, mComponentName.c_str(), pcmEncoding, codecPcmEncoding);
                 mInputFormat->setInt32("pcm-encoding", pcmEncoding);
             }
         } else {
             (void)mOutputFormat->findInt32("pcm-encoding", (int32_t*)&codecPcmEncoding);
             mConverter[kPortIndexOutput] = AudioConverter::Create(codecPcmEncoding, pcmEncoding);
             if (mConverter[kPortIndexOutput] != NULL) {
+                ALOGD("%s: decoder %s output format pcm encoding converter from %d to %d",
+                        __func__, mComponentName.c_str(), codecPcmEncoding, pcmEncoding);
                 mOutputFormat->setInt32("pcm-encoding", pcmEncoding);
             }
         }
@@ -2370,6 +2385,17 @@ status_t ACodec::getLatency(uint32_t *latency) {
     if (err == OK) {
         *latency = config.nU32;
     }
+    return err;
+}
+
+status_t ACodec::setAudioPresentation(int32_t presentationId, int32_t programId) {
+    OMX_AUDIO_CONFIG_ANDROID_AUDIOPRESENTATION config;
+    InitOMXParams(&config);
+    config.nPresentationId = (OMX_S32)presentationId;
+    config.nProgramId = (OMX_S32)programId;
+    status_t err = mOMXNode->setConfig(
+            (OMX_INDEXTYPE)OMX_IndexConfigAudioPresentation,
+            &config, sizeof(config));
     return err;
 }
 
@@ -2920,6 +2946,38 @@ status_t ACodec::setupEAC3Codec(
             (OMX_INDEXTYPE)OMX_IndexParamAudioAndroidEac3, &def, sizeof(def));
 }
 
+status_t ACodec::setupAC4Codec(
+        bool encoder, int32_t numChannels, int32_t sampleRate) {
+    status_t err = setupRawAudioFormat(
+            encoder ? kPortIndexInput : kPortIndexOutput, sampleRate, numChannels);
+
+    if (err != OK) {
+        return err;
+    }
+
+    if (encoder) {
+        ALOGW("AC4 encoding is not supported.");
+        return INVALID_OPERATION;
+    }
+
+    OMX_AUDIO_PARAM_ANDROID_AC4TYPE def;
+    InitOMXParams(&def);
+    def.nPortIndex = kPortIndexInput;
+
+    err = mOMXNode->getParameter(
+            (OMX_INDEXTYPE)OMX_IndexParamAudioAndroidAc4, &def, sizeof(def));
+
+    if (err != OK) {
+        return err;
+    }
+
+    def.nChannels = numChannels;
+    def.nSampleRate = sampleRate;
+
+    return mOMXNode->setParameter(
+            (OMX_INDEXTYPE)OMX_IndexParamAudioAndroidAc4, &def, sizeof(def));
+}
+
 static OMX_AUDIO_AMRBANDMODETYPE pickModeFromBitRate(
         bool isAMRWB, int32_t bps) {
     if (isAMRWB) {
@@ -3003,8 +3061,8 @@ status_t ACodec::setupG711Codec(bool encoder, int32_t sampleRate, int32_t numCha
 }
 
 status_t ACodec::setupFlacCodec(
-        bool encoder, int32_t numChannels, int32_t sampleRate, int32_t compressionLevel) {
-
+        bool encoder, int32_t numChannels, int32_t sampleRate, int32_t compressionLevel,
+        AudioEncoding encoding) {
     if (encoder) {
         OMX_AUDIO_PARAM_FLACTYPE def;
         InitOMXParams(&def);
@@ -3027,7 +3085,8 @@ status_t ACodec::setupFlacCodec(
     return setupRawAudioFormat(
             encoder ? kPortIndexInput : kPortIndexOutput,
             sampleRate,
-            numChannels);
+            numChannels,
+            encoding);
 }
 
 status_t ACodec::setupRawAudioFormat(
@@ -3093,6 +3152,7 @@ status_t ACodec::setupRawAudioFormat(
     pcmParams.ePCMMode = OMX_AUDIO_PCMModeLinear;
 
     if (getOMXChannelMapping(numChannels, pcmParams.eChannelMapping) != OK) {
+        ALOGE("%s: incorrect numChannels: %d", __func__, numChannels);
         return OMX_ErrorNone;
     }
 
@@ -3748,8 +3808,17 @@ status_t ACodec::initDescribeHDRStaticInfoIndex() {
             "OMX.google.android.index.describeHDRStaticInfo", &mDescribeHDRStaticInfoIndex);
     if (err != OK) {
         mDescribeHDRStaticInfoIndex = (OMX_INDEXTYPE)0;
+        return err;
     }
-    return err;
+
+    err = mOMXNode->getExtensionIndex(
+                "OMX.google.android.index.describeHDR10PlusInfo", &mDescribeHDR10PlusInfoIndex);
+    if (err != OK) {
+        mDescribeHDR10PlusInfoIndex = (OMX_INDEXTYPE)0;
+        return err;
+    }
+
+    return OK;
 }
 
 status_t ACodec::setHDRStaticInfo(const DescribeHDRStaticInfoParams &params) {
@@ -4402,8 +4471,8 @@ status_t ACodec::setupAVCEncoderParameters(const sp<AMessage> &msg) {
         h264type.nBFrames = mLatency == 0 ? 1 : std::min(1U, mLatency - 1);
 
         // disable B-frames until MPEG4Writer can guarantee finalizing files with B-frames
-        h264type.nRefFrames = 1;
-        h264type.nBFrames = 0;
+        // h264type.nRefFrames = 1;
+        // h264type.nBFrames = 0;
 
         h264type.nPFrames = setPFramesSpacing(iFrameInterval, frameRate, h264type.nBFrames);
         h264type.nAllowedPictureTypes =
@@ -5295,6 +5364,25 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
                     break;
                 }
 
+                case OMX_AUDIO_CodingAndroidAC4:
+                {
+                    OMX_AUDIO_PARAM_ANDROID_AC4TYPE params;
+                    InitOMXParams(&params);
+                    params.nPortIndex = portIndex;
+
+                    err = mOMXNode->getParameter(
+                            (OMX_INDEXTYPE)OMX_IndexParamAudioAndroidAc4,
+                            &params, sizeof(params));
+                    if (err != OK) {
+                        return err;
+                    }
+
+                    notify->setString("mime", MEDIA_MIMETYPE_AUDIO_AC4);
+                    notify->setInt32("channel-count", params.nChannels);
+                    notify->setInt32("sample-rate", params.nSampleRate);
+                    break;
+                }
+
                 case OMX_AUDIO_CodingAndroidOPUS:
                 {
                     OMX_AUDIO_PARAM_ANDROID_OPUSTYPE params;
@@ -5373,6 +5461,70 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
     }
 
     return getVendorParameters(portIndex, notify);
+}
+
+DescribeHDR10PlusInfoParams* ACodec::getHDR10PlusInfo(size_t paramSizeUsed) {
+    if (mDescribeHDR10PlusInfoIndex == 0) {
+        ALOGE("getHDR10PlusInfo: does not support DescribeHDR10PlusInfoParams");
+        return nullptr;
+    }
+
+    size_t newSize = sizeof(DescribeHDR10PlusInfoParams) - 1 +
+            ((paramSizeUsed > 0) ? paramSizeUsed : 512);
+    if (mHdr10PlusScratchBuffer == nullptr
+            || newSize > mHdr10PlusScratchBuffer->size()) {
+        mHdr10PlusScratchBuffer = new ABuffer(newSize);
+    }
+    DescribeHDR10PlusInfoParams *config =
+            (DescribeHDR10PlusInfoParams *)mHdr10PlusScratchBuffer->data();
+    InitOMXParams(config);
+    config->nSize = mHdr10PlusScratchBuffer->size();
+    config->nPortIndex = 1;
+    size_t paramSize = config->nSize - sizeof(DescribeHDR10PlusInfoParams) + 1;
+    config->nParamSize = paramSize;
+    config->nParamSizeUsed = 0;
+    status_t err = mOMXNode->getConfig(
+            (OMX_INDEXTYPE)mDescribeHDR10PlusInfoIndex,
+            config, config->nSize);
+    if (err != OK) {
+        ALOGE("failed to get DescribeHDR10PlusInfoParams (err %d)", err);
+        return nullptr;
+    }
+    if (config->nParamSize != paramSize) {
+        ALOGE("DescribeHDR10PlusInfoParams alters nParamSize: %u vs %zu",
+                config->nParamSize, paramSize);
+        return nullptr;
+    }
+    if (paramSizeUsed > 0 && config->nParamSizeUsed != paramSizeUsed) {
+        ALOGE("DescribeHDR10PlusInfoParams returns wrong nParamSizeUsed: %u vs %zu",
+                config->nParamSizeUsed, paramSizeUsed);
+        return nullptr;
+    }
+    return config;
+}
+
+void ACodec::onConfigUpdate(OMX_INDEXTYPE configIndex) {
+    if (mDescribeHDR10PlusInfoIndex == 0
+            || configIndex != mDescribeHDR10PlusInfoIndex) {
+        // mDescribeHDR10PlusInfoIndex is the only update we recognize now
+        return;
+    }
+
+    DescribeHDR10PlusInfoParams *config = getHDR10PlusInfo();
+    if (config == nullptr) {
+        return;
+    }
+    if (config->nParamSizeUsed > config->nParamSize) {
+        // try again with the size specified
+        config = getHDR10PlusInfo(config->nParamSizeUsed);
+        if (config == nullptr) {
+            return;
+        }
+    }
+
+    mOutputFormat = mOutputFormat->dup(); // trigger an output format changed event
+    mOutputFormat->setBuffer("hdr10-plus-info",
+            ABuffer::CreateAsCopy(config->nValue, config->nParamSizeUsed));
 }
 
 void ACodec::onDataSpaceChanged(android_dataspace dataSpace, const ColorAspects &aspects) {
@@ -6332,6 +6484,15 @@ void ACodec::BaseState::onOutputBufferDrained(const sp<AMessage> &msg) {
             }
         }
 
+        sp<ABuffer> hdr10PlusInfo;
+        if (buffer->format()->findBuffer("hdr10-plus-info", &hdr10PlusInfo)
+                && hdr10PlusInfo != nullptr && hdr10PlusInfo->size() > 0
+                && hdr10PlusInfo != mCodec->mLastHdr10PlusBuffer) {
+            native_window_set_buffers_hdr10_plus_metadata(mCodec->mNativeWindow.get(),
+                    hdr10PlusInfo->size(), hdr10PlusInfo->data());
+            mCodec->mLastHdr10PlusBuffer = hdr10PlusInfo;
+        }
+
         // save buffers sent to the surface so we can get render time when they return
         int64_t mediaTimeUs = -1;
         buffer->meta()->findInt64("timeUs", &mediaTimeUs);
@@ -6541,8 +6702,9 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     //as these components are not present in media_codecs.xml and MediaCodecList won't find
     //these component by findCodecByName.
     //Video and Flac decoder are present in list so exclude them.
-    if (!(componentName.find("qcom", 0) > 0 || componentName.find("qti", 0) > 0) ||
-          componentName.find("video", 0) > 0 || componentName.find("flac", 0) > 0) {
+    if ((!(componentName.find("qcom", 0) > 0 || componentName.find("qti", 0) > 0) ||
+          componentName.find("video", 0) > 0 || componentName.find("flac", 0) > 0) &&
+          !(componentName.find("tme",0) > 0)) {
         if (info == nullptr) {
             ALOGE("Unexpected nullptr for codec information");
             mCodec->signalError(OMX_ErrorUndefined, UNKNOWN_ERROR);
@@ -6620,7 +6782,7 @@ void ACodec::LoadedState::stateEntered() {
 
     mCodec->mDequeueCounter = 0;
     mCodec->mMetadataBuffersToSubmit = 0;
-    mCodec->mRepeatFrameDelayUs = -1ll;
+    mCodec->mRepeatFrameDelayUs = -1LL;
     mCodec->mInputFormat.clear();
     mCodec->mOutputFormat.clear();
     mCodec->mBaseOutputFormat.clear();
@@ -6762,7 +6924,7 @@ status_t ACodec::LoadedState::setupInputSurface() {
         return err;
     }
 
-    if (mCodec->mRepeatFrameDelayUs > 0ll) {
+    if (mCodec->mRepeatFrameDelayUs > 0LL) {
         err = statusFromBinderStatus(
                 mCodec->mGraphicBufferSource->setRepeatPreviousFrameDelayUs(
                         mCodec->mRepeatFrameDelayUs));
@@ -6775,7 +6937,7 @@ status_t ACodec::LoadedState::setupInputSurface() {
         }
     }
 
-    if (mCodec->mMaxPtsGapUs != 0ll) {
+    if (mCodec->mMaxPtsGapUs != 0LL) {
         OMX_PARAM_U32TYPE maxPtsGapParams;
         InitOMXParams(&maxPtsGapParams);
         maxPtsGapParams.nPortIndex = kPortIndexInput;
@@ -7477,10 +7639,55 @@ status_t ACodec::setParameters(const sp<AMessage> &params) {
         }
     }
 
+    int32_t presentationId = -1;
+    if (params->findInt32("audio-presentation-presentation-id", &presentationId)) {
+        int32_t programId = -1;
+        params->findInt32("audio-presentation-program-id", &programId);
+        status_t err = setAudioPresentation(presentationId, programId);
+        if (err != OK) {
+            ALOGI("[%s] failed setAudioPresentation. Failure is fine since this key is optional",
+                    mComponentName.c_str());
+            err = OK;
+        }
+    }
+
+    sp<ABuffer> hdr10PlusInfo;
+    if (params->findBuffer("hdr10-plus-info", &hdr10PlusInfo)
+            && hdr10PlusInfo != nullptr && hdr10PlusInfo->size() > 0) {
+        (void)setHdr10PlusInfo(hdr10PlusInfo);
+    }
+
     // Ignore errors as failure is expected for codecs that aren't video encoders.
     (void)configureTemporalLayers(params, false /* inConfigure */, mOutputFormat);
 
     return setVendorParameters(params);
+}
+
+status_t ACodec::setHdr10PlusInfo(const sp<ABuffer> &hdr10PlusInfo) {
+    if (mDescribeHDR10PlusInfoIndex == 0) {
+        ALOGE("setHdr10PlusInfo: does not support DescribeHDR10PlusInfoParams");
+        return ERROR_UNSUPPORTED;
+    }
+    size_t newSize = sizeof(DescribeHDR10PlusInfoParams) + hdr10PlusInfo->size() - 1;
+    if (mHdr10PlusScratchBuffer == nullptr ||
+            newSize > mHdr10PlusScratchBuffer->size()) {
+        mHdr10PlusScratchBuffer = new ABuffer(newSize);
+    }
+    DescribeHDR10PlusInfoParams *config =
+            (DescribeHDR10PlusInfoParams *)mHdr10PlusScratchBuffer->data();
+    InitOMXParams(config);
+    config->nPortIndex = 0;
+    config->nSize = newSize;
+    config->nParamSize = hdr10PlusInfo->size();
+    config->nParamSizeUsed = hdr10PlusInfo->size();
+    memcpy(config->nValue, hdr10PlusInfo->data(), hdr10PlusInfo->size());
+    status_t err = mOMXNode->setConfig(
+            (OMX_INDEXTYPE)mDescribeHDR10PlusInfoIndex,
+            config, config->nSize);
+    if (err != OK) {
+        ALOGE("failed to set DescribeHDR10PlusInfoParams (err %d)", err);
+    }
+    return OK;
 }
 
 // Removes trailing tags matching |tag| from |key| (e.g. a settings name). |minLength| specifies
@@ -7908,6 +8115,15 @@ bool ACodec::ExecutingState::onOMXEvent(
                 ALOGV("[%s] OMX_EventPortSettingsChanged 0x%08x",
                      mCodec->mComponentName.c_str(), data2);
             }
+
+            return true;
+        }
+
+        case OMX_EventConfigUpdate:
+        {
+            CHECK_EQ(data1, (OMX_U32)kPortIndexOutput);
+
+            mCodec->onConfigUpdate((OMX_INDEXTYPE)data2);
 
             return true;
         }
@@ -8574,14 +8790,17 @@ status_t ACodec::queryCapabilities(
         if (omxNode->configureVideoTunnelMode(
                 kPortIndexOutput, OMX_TRUE, 0, &sidebandHandle) == OK) {
             // tunneled playback includes adaptive playback
-            caps->addFlags(MediaCodecInfo::Capabilities::kFlagSupportsAdaptivePlayback
-                    | MediaCodecInfo::Capabilities::kFlagSupportsTunneledPlayback);
-        } else if (omxNode->setPortMode(
-                kPortIndexOutput, IOMX::kPortModeDynamicANWBuffer) == OK ||
-                omxNode->prepareForAdaptivePlayback(
-                kPortIndexOutput, OMX_TRUE,
-                1280 /* width */, 720 /* height */) == OK) {
-            caps->addFlags(MediaCodecInfo::Capabilities::kFlagSupportsAdaptivePlayback);
+        } else {
+            // tunneled playback is not supported
+            caps->removeDetail(MediaCodecInfo::Capabilities::FEATURE_TUNNELED_PLAYBACK);
+            if (omxNode->setPortMode(
+                    kPortIndexOutput, IOMX::kPortModeDynamicANWBuffer) != OK &&
+                    omxNode->prepareForAdaptivePlayback(
+                        kPortIndexOutput, OMX_TRUE,
+                        1280 /* width */, 720 /* height */) != OK) {
+                // adaptive playback is not supported
+                caps->removeDetail(MediaCodecInfo::Capabilities::FEATURE_ADAPTIVE_PLAYBACK);
+            }
         }
     }
 
@@ -8589,11 +8808,20 @@ status_t ACodec::queryCapabilities(
         OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE params;
         InitOMXParams(&params);
         params.nPortIndex = kPortIndexOutput;
-        // TODO: should we verify if fallback is supported?
+
+        OMX_VIDEO_PARAM_INTRAREFRESHTYPE fallbackParams;
+        InitOMXParams(&fallbackParams);
+        fallbackParams.nPortIndex = kPortIndexOutput;
+        fallbackParams.eRefreshMode = OMX_VIDEO_IntraRefreshCyclic;
+
         if (omxNode->getConfig(
                 (OMX_INDEXTYPE)OMX_IndexConfigAndroidIntraRefresh,
-                &params, sizeof(params)) == OK) {
-            caps->addFlags(MediaCodecInfo::Capabilities::kFlagSupportsIntraRefresh);
+                &params, sizeof(params)) != OK &&
+                omxNode->getParameter(
+                    OMX_IndexParamVideoIntraRefresh, &fallbackParams,
+                    sizeof(fallbackParams)) != OK) {
+            // intra refresh is not supported
+            caps->removeDetail(MediaCodecInfo::Capabilities::FEATURE_INTRA_REFRESH);
         }
     }
 

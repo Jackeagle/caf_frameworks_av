@@ -41,7 +41,7 @@ class AAudioServiceEndpoint
         , public AAudioStreamParameters {
 public:
 
-    virtual ~AAudioServiceEndpoint();
+    virtual ~AAudioServiceEndpoint() = default;
 
     virtual std::string dump() const;
 
@@ -121,7 +121,7 @@ protected:
     mutable std::mutex       mLockStreams;
     std::vector<android::sp<AAudioServiceStreamBase>> mRegisteredStreams;
 
-    SimpleDoubleBuffer<Timestamp>  mAtomicTimestamp;
+    SimpleDoubleBuffer<Timestamp>  mAtomicEndpointTimestamp;
 
     android::AudioClient     mMmapClient;   // set in open, used in open and startStream
 

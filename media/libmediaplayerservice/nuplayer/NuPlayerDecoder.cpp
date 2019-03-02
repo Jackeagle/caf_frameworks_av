@@ -73,10 +73,10 @@ NuPlayer::Decoder::Decoder(
       mCCDecoder(ccDecoder),
       mPid(pid),
       mUid(uid),
-      mSkipRenderingUntilMediaTimeUs(-1ll),
-      mNumFramesTotal(0ll),
-      mNumInputFramesDropped(0ll),
-      mNumOutputFramesDropped(0ll),
+      mSkipRenderingUntilMediaTimeUs(-1LL),
+      mNumFramesTotal(0LL),
+      mNumInputFramesDropped(0LL),
+      mNumOutputFramesDropped(0LL),
       mVideoWidth(0),
       mVideoHeight(0),
       mIsAudio(true),
@@ -112,6 +112,7 @@ sp<AMessage> NuPlayer::Decoder::getStats() const {
     mStats->setInt64("frames-total", mNumFramesTotal);
     mStats->setInt64("frames-dropped-input", mNumInputFramesDropped);
     mStats->setInt64("frames-dropped-output", mNumOutputFramesDropped);
+    mStats->setFloat("frame-rate-total", mFrameRateTotal);
     return mStats;
 }
 
@@ -413,10 +414,10 @@ void NuPlayer::Decoder::onSetParameters(const sp<AMessage> &params) {
         // TODO: For now, layer fps is calculated for some specific architectures.
         // But it really should be extracted from the stream.
         mVideoTemporalLayerAggregateFps[0] =
-            mFrameRateTotal / (float)(1ll << (mNumVideoTemporalLayerTotal - 1));
+            mFrameRateTotal / (float)(1LL << (mNumVideoTemporalLayerTotal - 1));
         for (int32_t i = 1; i < mNumVideoTemporalLayerTotal; ++i) {
             mVideoTemporalLayerAggregateFps[i] =
-                mFrameRateTotal / (float)(1ll << (mNumVideoTemporalLayerTotal - i))
+                mFrameRateTotal / (float)(1LL << (mNumVideoTemporalLayerTotal - i))
                 + mVideoTemporalLayerAggregateFps[i - 1];
         }
     }
@@ -682,7 +683,7 @@ bool NuPlayer::Decoder::handleAnInputBuffer(size_t index) {
         msg->setSize("buffer-ix", index);
 
         sp<ABuffer> buffer = mCSDsToSubmit.itemAt(0);
-        ALOGI("[%s] resubmitting CSD", mComponentName.c_str());
+        ALOGV("[%s] resubmitting CSD", mComponentName.c_str());
         msg->setBuffer("buffer", buffer);
         mCSDsToSubmit.removeAt(0);
         if (!onInputBufferFetched(msg)) {
@@ -753,7 +754,7 @@ bool NuPlayer::Decoder::handleAnOutputBuffer(
     reply->setSize("size", size);
 
     if (eos) {
-        ALOGI("[%s] saw output EOS", mIsAudio ? "audio" : "video");
+        ALOGV("[%s] saw output EOS", mIsAudio ? "audio" : "video");
 
         buffer->meta()->setInt32("eos", true);
         reply->setInt32("eos", true);
@@ -945,7 +946,7 @@ status_t NuPlayer::Decoder::fetchInputData(sp<AMessage> &reply) {
 
             int32_t layerId = 0;
             bool haveLayerId = accessUnit->meta()->findInt32("temporal-layer-id", &layerId);
-            if (mRenderer->getVideoLateByUs() > 100000ll
+            if (mRenderer->getVideoLateByUs() > 100000LL
                     && mIsVideoAVC
                     && !IsAVCReferenceFrame(accessUnit)) {
                 dropAccessUnit = true;
@@ -1040,7 +1041,7 @@ bool NuPlayer::Decoder::onInputBufferFetched(const sp<AMessage> &msg) {
             int64_t resumeAtMediaTimeUs;
             if (extra->findInt64(
                         "resume-at-mediaTimeUs", &resumeAtMediaTimeUs)) {
-                ALOGI("[%s] suppressing rendering until %lld us",
+                ALOGV("[%s] suppressing rendering until %lld us",
                         mComponentName.c_str(), (long long)resumeAtMediaTimeUs);
                 mSkipRenderingUntilMediaTimeUs = resumeAtMediaTimeUs;
             }

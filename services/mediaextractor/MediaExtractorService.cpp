@@ -29,6 +29,11 @@
 
 namespace android {
 
+MediaExtractorService::MediaExtractorService()
+        : BnMediaExtractorService() {
+    MediaExtractorFactory::SetLinkedLibraries(std::string(LINKED_LIBRARIES));
+}
+
 sp<IMediaExtractor> MediaExtractorService::makeExtractor(
         const sp<IDataSource> &remoteSource, const char *mime) {
     ALOGV("@@@ MediaExtractorService::makeExtractor for %s", mime);
@@ -52,6 +57,10 @@ sp<IDataSource> MediaExtractorService::makeIDataSource(int fd, int64_t offset, i
 {
     sp<DataSource> source = DataSourceFactory::CreateFromFd(fd, offset, length);
     return CreateIDataSourceFromDataSource(source);
+}
+
+std::unordered_set<std::string> MediaExtractorService::getSupportedTypes() {
+    return MediaExtractorFactory::getSupportedTypes();
 }
 
 status_t MediaExtractorService::dump(int fd, const Vector<String16>& args) {

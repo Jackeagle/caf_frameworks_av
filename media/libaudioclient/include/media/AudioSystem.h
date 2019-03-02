@@ -20,6 +20,7 @@
 #include <sys/types.h>
 
 #include <media/AudioPolicy.h>
+#include <media/AudioProductStrategy.h>
 #include <media/AudioIoDescriptor.h>
 #include <media/IAudioFlingerClient.h>
 #include <media/IAudioPolicyServiceClient.h>
@@ -35,9 +36,14 @@ namespace android {
 
 typedef void (*audio_error_callback)(status_t err);
 typedef void (*dynamic_policy_callback)(int event, String8 regId, int val);
-typedef void (*record_config_callback)(int event, const record_client_info_t *clientInfo,
-                const audio_config_base_t *clientConfig, const audio_config_base_t *deviceConfig,
-                audio_patch_handle_t patchHandle);
+typedef void (*record_config_callback)(int event,
+                                       const record_client_info_t *clientInfo,
+                                       const audio_config_base_t *clientConfig,
+                                       std::vector<effect_descriptor_t> clientEffects,
+                                       const audio_config_base_t *deviceConfig,
+                                       std::vector<effect_descriptor_t> effects,
+                                       audio_patch_handle_t patchHandle,
+                                       audio_source_t source);
 
 class IAudioFlinger;
 class IAudioPolicyService;
@@ -204,12 +210,14 @@ public:
     // IAudioPolicyService interface (see AudioPolicyInterface for method descriptions)
     //
     static status_t setDeviceConnectionState(audio_devices_t device, audio_policy_dev_state_t state,
-                                             const char *device_address, const char *device_name);
+                                             const char *device_address, const char *device_name,
+                                             audio_format_t encodedFormat);
     static audio_policy_dev_state_t getDeviceConnectionState(audio_devices_t device,
                                                                 const char *device_address);
     static status_t handleDeviceConfigChange(audio_devices_t device,
                                              const char *device_address,
-                                             const char *device_name);
+                                             const char *device_name,
+                                             audio_format_t encodedFormat);
     static status_t setPhoneState(audio_mode_t state);
     static status_t setForceUse(audio_policy_force_use_t usage, audio_policy_forced_cfg_t config);
     static audio_policy_forced_cfg_t getForceUse(audio_policy_force_use_t usage);
@@ -241,8 +249,7 @@ public:
                                     audio_port_handle_t *selectedDeviceId,
                                     audio_port_handle_t *portId);
 
-    static status_t startInput(audio_port_handle_t portId,
-                               bool *silenced);
+    static status_t startInput(audio_port_handle_t portId);
     static status_t stopInput(audio_port_handle_t portId);
     static void releaseInput(audio_port_handle_t portId);
     static status_t initStreamVolume(audio_stream_type_t stream,
@@ -321,6 +328,10 @@ public:
 
     static status_t registerPolicyMixes(const Vector<AudioMix>& mixes, bool registration);
 
+    static status_t setUidDeviceAffinities(uid_t uid, const Vector<AudioDeviceTypeAddr>& devices);
+
+    static status_t removeUidDeviceAffinities(uid_t uid);
+
     static status_t startAudioSource(const struct audio_port_config *source,
                                      const audio_attributes_t *attributes,
                                      audio_port_handle_t *portId);
@@ -329,10 +340,16 @@ public:
     static status_t setMasterMono(bool mono);
     static status_t getMasterMono(bool *mono);
 
+    static status_t setMasterBalance(float balance);
+    static status_t getMasterBalance(float *balance);
+
     static float    getStreamVolumeDB(
             audio_stream_type_t stream, int index, audio_devices_t device);
 
     static status_t getMicrophones(std::vector<media::MicrophoneInfo> *microphones);
+
+    static status_t getHwOffloadEncodingFormatsSupportedForA2DP(
+                                    std::vector<audio_format_t> *formats);
 
     // numSurroundFormats holds the maximum number of formats and bool value allowed in the array.
     // When numSurroundFormats is 0, surroundFormats and surroundFormatsEnabled will not be
@@ -342,6 +359,17 @@ public:
                                        bool *surroundFormatsEnabled,
                                        bool reported);
     static status_t setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled);
+
+    static status_t setAssistantUid(uid_t uid);
+    static status_t setA11yServicesUids(const std::vector<uid_t>& uids);
+
+    static bool     isHapticPlaybackSupported();
+
+    static status_t listAudioProductStrategies(AudioProductStrategyVector &strategies);
+    static product_strategy_t getProductStrategyFromAudioAttributes(const AudioAttributes &aa);
+
+    static audio_attributes_t streamTypeToAttributes(audio_stream_type_t stream);
+    static audio_stream_type_t attributesToStreamType(const audio_attributes_t &attr);
 
     // ----------------------------------------------------------------------------
 
@@ -444,9 +472,13 @@ private:
         virtual void onAudioPatchListUpdate();
         virtual void onDynamicPolicyMixStateUpdate(String8 regId, int32_t state);
         virtual void onRecordingConfigurationUpdate(int event,
-                        const record_client_info_t *clientInfo,
-                        const audio_config_base_t *clientConfig,
-                        const audio_config_base_t *deviceConfig, audio_patch_handle_t patchHandle);
+                                                    const record_client_info_t *clientInfo,
+                                                    const audio_config_base_t *clientConfig,
+                                                    std::vector<effect_descriptor_t> clientEffects,
+                                                    const audio_config_base_t *deviceConfig,
+                                                    std::vector<effect_descriptor_t> effects,
+                                                    audio_patch_handle_t patchHandle,
+                                                    audio_source_t source);
 
     private:
         Mutex                               mLock;

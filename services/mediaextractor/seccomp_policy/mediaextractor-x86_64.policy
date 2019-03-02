@@ -11,6 +11,7 @@ munmap: 1
 mmap: 1
 madvise: 1
 openat: 1
+open: 1
 clock_gettime: 1
 writev: 1
 brk: 1
@@ -21,6 +22,7 @@ clone: 1
 getuid: 1
 setpriority: 1
 sigaltstack: 1
+fstat: 1
 fstatfs: 1
 newfstatat: 1
 restart_syscall: 1
@@ -38,6 +40,7 @@ getdents64: 1
 readlinkat: 1
 pread64: 1
 mremap: 1
+statfs: 1
 
 # for FileSource
 readlinkat: 1

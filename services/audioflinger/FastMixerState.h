@@ -19,6 +19,7 @@
 
 #include <audio_utils/minifloat.h>
 #include <system/audio.h>
+#include <media/AudioMixer.h>
 #include <media/ExtendedAudioBufferProvider.h>
 #include <media/nbaio/NBAIO.h>
 #include <media/nblog/NBLog.h>
@@ -47,6 +48,9 @@ struct FastTrack {
     audio_channel_mask_t    mChannelMask;    // AUDIO_CHANNEL_OUT_MONO or AUDIO_CHANNEL_OUT_STEREO
     audio_format_t          mFormat;         // track format
     int                     mGeneration;     // increment when any field is assigned
+    bool                    mHapticPlaybackEnabled = false; // haptic playback is enabled or not
+    AudioMixer::haptic_intensity_t mHapticIntensity = AudioMixer::HAPTIC_SCALE_NONE; // intensity of
+                                                                                     // haptic data
 };
 
 // Represents a single state of the fast mixer
@@ -69,6 +73,9 @@ struct FastMixerState : FastThreadState {
     NBAIO_Sink* mOutputSink;    // HAL output device, must already be negotiated
     int         mOutputSinkGen; // increment when mOutputSink is assigned
     size_t      mFrameCount;    // number of frames per fast mix buffer
+    audio_channel_mask_t mSinkChannelMask; // If not AUDIO_CHANNEL_NONE, specifies sink channel
+                                           // mask when it cannot be directly calculated from
+                                           // channel count
 
     // Extends FastThreadState::Command
     static const Command

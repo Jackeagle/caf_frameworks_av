@@ -25,6 +25,7 @@
 #include <media/AudioSystem.h>
 #include <media/IAudioFlinger.h>
 #include <media/IAudioPolicyService.h>
+#include <media/TypeConverter.h>
 #include <math.h>
 
 #include <system/audio.h>
@@ -784,7 +785,8 @@ const sp<IAudioPolicyService> AudioSystem::get_audio_policy_service()
 status_t AudioSystem::setDeviceConnectionState(audio_devices_t device,
                                                audio_policy_dev_state_t state,
                                                const char *device_address,
-                                               const char *device_name)
+                                               const char *device_name,
+                                               audio_format_t encodedFormat)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     const char *address = "";
@@ -798,7 +800,7 @@ status_t AudioSystem::setDeviceConnectionState(audio_devices_t device,
     if (device_name != NULL) {
         name = device_name;
     }
-    return aps->setDeviceConnectionState(device, state, address, name);
+    return aps->setDeviceConnectionState(device, state, address, name, encodedFormat);
 }
 
 audio_policy_dev_state_t AudioSystem::getDeviceConnectionState(audio_devices_t device,
@@ -812,7 +814,8 @@ audio_policy_dev_state_t AudioSystem::getDeviceConnectionState(audio_devices_t d
 
 status_t AudioSystem::handleDeviceConfigChange(audio_devices_t device,
                                                const char *device_address,
-                                               const char *device_name)
+                                               const char *device_name,
+                                               audio_format_t encodedFormat)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     const char *address = "";
@@ -826,7 +829,7 @@ status_t AudioSystem::handleDeviceConfigChange(audio_devices_t device,
     if (device_name != NULL) {
         name = device_name;
     }
-    return aps->handleDeviceConfigChange(device, address, name);
+    return aps->handleDeviceConfigChange(device, address, name, encodedFormat);
 }
 
 status_t AudioSystem::setPhoneState(audio_mode_t state)
@@ -917,11 +920,11 @@ status_t AudioSystem::getInputForAttr(const audio_attributes_t *attr,
             config, flags, selectedDeviceId, portId);
 }
 
-status_t AudioSystem::startInput(audio_port_handle_t portId, bool *silenced)
+status_t AudioSystem::startInput(audio_port_handle_t portId)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return PERMISSION_DENIED;
-    return aps->startInput(portId, silenced);
+    return aps->startInput(portId);
 }
 
 status_t AudioSystem::stopInput(audio_port_handle_t portId)
@@ -968,7 +971,7 @@ status_t AudioSystem::getStreamVolumeIndex(audio_stream_type_t stream,
 uint32_t AudioSystem::getStrategyForStream(audio_stream_type_t stream)
 {
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
-    if (aps == 0) return 0;
+    if (aps == 0) return PRODUCT_STRATEGY_NONE;
     return aps->getStrategyForStream(stream);
 }
 
@@ -1236,6 +1239,19 @@ status_t AudioSystem::registerPolicyMixes(const Vector<AudioMix>& mixes, bool re
     return aps->registerPolicyMixes(mixes, registration);
 }
 
+status_t AudioSystem::setUidDeviceAffinities(uid_t uid, const Vector<AudioDeviceTypeAddr>& devices)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+    return aps->setUidDeviceAffinities(uid, devices);
+}
+
+status_t AudioSystem::removeUidDeviceAffinities(uid_t uid) {
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+    return aps->removeUidDeviceAffinities(uid);
+}
+
 status_t AudioSystem::startAudioSource(const struct audio_port_config *source,
                                        const audio_attributes_t *attributes,
                                        audio_port_handle_t *portId)
@@ -1264,6 +1280,20 @@ status_t AudioSystem::getMasterMono(bool *mono)
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return PERMISSION_DENIED;
     return aps->getMasterMono(mono);
+}
+
+status_t AudioSystem::setMasterBalance(float balance)
+{
+    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
+    if (af == 0) return PERMISSION_DENIED;
+    return af->setMasterBalance(balance);
+}
+
+status_t AudioSystem::getMasterBalance(float *balance)
+{
+    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
+    if (af == 0) return PERMISSION_DENIED;
+    return af->getMasterBalance(balance);
 }
 
 float AudioSystem::getStreamVolumeDB(audio_stream_type_t stream, int index, audio_devices_t device)
@@ -1296,6 +1326,88 @@ status_t AudioSystem::setSurroundFormatEnabled(audio_format_t audioFormat, bool 
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return PERMISSION_DENIED;
     return aps->setSurroundFormatEnabled(audioFormat, enabled);
+}
+
+status_t AudioSystem::setAssistantUid(uid_t uid)
+{
+    const sp <IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+
+    return aps->setAssistantUid(uid);
+}
+
+status_t AudioSystem::setA11yServicesUids(const std::vector<uid_t>& uids)
+{
+    const sp <IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+
+    return aps->setA11yServicesUids(uids);
+}
+
+bool AudioSystem::isHapticPlaybackSupported()
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return false;
+    return aps->isHapticPlaybackSupported();
+}
+
+status_t AudioSystem::getHwOffloadEncodingFormatsSupportedForA2DP(
+                                std::vector<audio_format_t> *formats) {
+    const sp <IAudioPolicyService>
+        & aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+    return aps->getHwOffloadEncodingFormatsSupportedForA2DP(formats);
+}
+
+status_t AudioSystem::listAudioProductStrategies(AudioProductStrategyVector &strategies)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PERMISSION_DENIED;
+    return aps->listAudioProductStrategies(strategies);
+}
+
+audio_attributes_t AudioSystem::streamTypeToAttributes(audio_stream_type_t stream)
+{
+    AudioProductStrategyVector strategies;
+    listAudioProductStrategies(strategies);
+    for (const auto &strategy : strategies) {
+        auto attrVect = strategy.getAudioAttributes();
+        auto iter = std::find_if(begin(attrVect), end(attrVect), [&stream](const auto &attributes) {
+                         return attributes.getStreamType() == stream; });
+        if (iter != end(attrVect)) {
+            return iter->getAttributes();
+        }
+    }
+    ALOGE("invalid stream type %s when converting to attributes",  toString(stream).c_str());
+    return AUDIO_ATTRIBUTES_INITIALIZER;
+}
+
+audio_stream_type_t AudioSystem::attributesToStreamType(const audio_attributes_t &attr)
+{
+    product_strategy_t strategyId =
+            AudioSystem::getProductStrategyFromAudioAttributes(AudioAttributes(attr));
+    AudioProductStrategyVector strategies;
+    listAudioProductStrategies(strategies);
+    for (const auto &strategy : strategies) {
+        if (strategy.getId() == strategyId) {
+            auto attrVect = strategy.getAudioAttributes();
+            auto iter = std::find_if(begin(attrVect), end(attrVect), [&attr](const auto &refAttr) {
+                             return AudioProductStrategy::attributesMatches(
+                                 refAttr.getAttributes(), attr); });
+            if (iter != end(attrVect)) {
+                return iter->getStreamType();
+            }
+        }
+    }
+    ALOGE("invalid attributes %s when converting to stream",  toString(attr).c_str());
+    return AUDIO_STREAM_MUSIC;
+}
+
+product_strategy_t AudioSystem::getProductStrategyFromAudioAttributes(const AudioAttributes &aa)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return PRODUCT_STRATEGY_NONE;
+    return aps->getProductStrategyFromAudioAttributes(aa);
 }
 
 // ---------------------------------------------------------------------------
@@ -1363,9 +1475,14 @@ void AudioSystem::AudioPolicyServiceClient::onDynamicPolicyMixStateUpdate(
 }
 
 void AudioSystem::AudioPolicyServiceClient::onRecordingConfigurationUpdate(
-        int event, const record_client_info_t *clientInfo,
-        const audio_config_base_t *clientConfig, const audio_config_base_t *deviceConfig,
-        audio_patch_handle_t patchHandle) {
+                                                int event,
+                                                const record_client_info_t *clientInfo,
+                                                const audio_config_base_t *clientConfig,
+                                                std::vector<effect_descriptor_t> clientEffects,
+                                                const audio_config_base_t *deviceConfig,
+                                                std::vector<effect_descriptor_t> effects,
+                                                audio_patch_handle_t patchHandle,
+                                                audio_source_t source) {
     record_config_callback cb = NULL;
     {
         Mutex::Autolock _l(AudioSystem::gLock);
@@ -1373,7 +1490,8 @@ void AudioSystem::AudioPolicyServiceClient::onRecordingConfigurationUpdate(
     }
 
     if (cb != NULL) {
-        cb(event, clientInfo, clientConfig, deviceConfig, patchHandle);
+        cb(event, clientInfo, clientConfig, clientEffects,
+           deviceConfig, effects, patchHandle, source);
     }
 }
 

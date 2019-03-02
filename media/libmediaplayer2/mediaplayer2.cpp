@@ -18,14 +18,10 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "MediaPlayer2Native"
 
-#include <binder/IServiceManager.h>
-#include <binder/IPCThreadState.h>
-
+#include <android/binder_ibinder.h>
 #include <media/AudioSystem.h>
 #include <media/DataSourceDesc.h>
-#include <media/MediaAnalyticsItem.h>
 #include <media/MemoryLeakTrackUtil.h>
-#include <media/Metadata.h>
 #include <media/NdkWrapper.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooperRoster.h>
@@ -103,114 +99,110 @@ status_t dumpPlayers(int fd, const Vector<String16>& args) {
     String8 result;
     SortedVector< sp<MediaPlayer2> > players; //to serialise the mutex unlock & client destruction.
 
-    if (checkCallingPermission(String16("android.permission.DUMP")) == false) {
-        snprintf(buffer, SIZE, "Permission Denial: can't dump MediaPlayer2\n");
-        result.append(buffer);
+    {
+        Mutex::Autolock lock(sRecordLock);
+        ensureInit_l();
+        for (int i = 0, n = sPlayers->size(); i < n; ++i) {
+            sp<MediaPlayer2> p = (*sPlayers)[i].promote();
+            if (p != 0) {
+                p->dump(fd, args);
+            }
+            players.add(p);
+        }
+    }
+
+    result.append(" Files opened and/or mapped:\n");
+    snprintf(buffer, SIZE, "/proc/%d/maps", getpid());
+    FILE *f = fopen(buffer, "r");
+    if (f) {
+        while (!feof(f)) {
+            fgets(buffer, SIZE, f);
+            if (strstr(buffer, " /storage/") ||
+                strstr(buffer, " /system/sounds/") ||
+                strstr(buffer, " /data/") ||
+                strstr(buffer, " /system/media/")) {
+                result.append("  ");
+                result.append(buffer);
+            }
+        }
+        fclose(f);
     } else {
-        {
-            Mutex::Autolock lock(sRecordLock);
-            ensureInit_l();
-            for (int i = 0, n = sPlayers->size(); i < n; ++i) {
-                sp<MediaPlayer2> p = (*sPlayers)[i].promote();
-                if (p != 0) {
-                    p->dump(fd, args);
-                }
-                players.add(p);
-            }
-        }
+        result.append("couldn't open ");
+        result.append(buffer);
+        result.append("\n");
+    }
 
-        result.append(" Files opened and/or mapped:\n");
-        snprintf(buffer, SIZE, "/proc/%d/maps", getpid());
-        FILE *f = fopen(buffer, "r");
-        if (f) {
-            while (!feof(f)) {
-                fgets(buffer, SIZE, f);
-                if (strstr(buffer, " /storage/") ||
-                    strstr(buffer, " /system/sounds/") ||
-                    strstr(buffer, " /data/") ||
-                    strstr(buffer, " /system/media/")) {
-                    result.append("  ");
-                    result.append(buffer);
-                }
-            }
-            fclose(f);
-        } else {
-            result.append("couldn't open ");
-            result.append(buffer);
-            result.append("\n");
-        }
-
-        snprintf(buffer, SIZE, "/proc/%d/fd", getpid());
-        DIR *d = opendir(buffer);
-        if (d) {
-            struct dirent *ent;
-            while((ent = readdir(d)) != NULL) {
-                if (strcmp(ent->d_name,".") && strcmp(ent->d_name,"..")) {
-                    snprintf(buffer, SIZE, "/proc/%d/fd/%s", getpid(), ent->d_name);
-                    struct stat s;
-                    if (lstat(buffer, &s) == 0) {
-                        if ((s.st_mode & S_IFMT) == S_IFLNK) {
-                            char linkto[256];
-                            int len = readlink(buffer, linkto, sizeof(linkto));
-                            if(len > 0) {
-                                if(len > 255) {
-                                    linkto[252] = '.';
-                                    linkto[253] = '.';
-                                    linkto[254] = '.';
-                                    linkto[255] = 0;
-                                } else {
-                                    linkto[len] = 0;
-                                }
-                                if (strstr(linkto, "/storage/") == linkto ||
-                                    strstr(linkto, "/system/sounds/") == linkto ||
-                                    strstr(linkto, "/data/") == linkto ||
-                                    strstr(linkto, "/system/media/") == linkto) {
-                                    result.append("  ");
-                                    result.append(buffer);
-                                    result.append(" -> ");
-                                    result.append(linkto);
-                                    result.append("\n");
-                                }
+    snprintf(buffer, SIZE, "/proc/%d/fd", getpid());
+    DIR *d = opendir(buffer);
+    if (d) {
+        struct dirent *ent;
+        while((ent = readdir(d)) != NULL) {
+            if (strcmp(ent->d_name,".") && strcmp(ent->d_name,"..")) {
+                snprintf(buffer, SIZE, "/proc/%d/fd/%s", getpid(), ent->d_name);
+                struct stat s;
+                if (lstat(buffer, &s) == 0) {
+                    if ((s.st_mode & S_IFMT) == S_IFLNK) {
+                        char linkto[256];
+                        int len = readlink(buffer, linkto, sizeof(linkto));
+                        if(len > 0) {
+                            if(len > 255) {
+                                linkto[252] = '.';
+                                linkto[253] = '.';
+                                linkto[254] = '.';
+                                linkto[255] = 0;
+                            } else {
+                                linkto[len] = 0;
                             }
-                        } else {
-                            result.append("  unexpected type for ");
-                            result.append(buffer);
-                            result.append("\n");
+                            if (strstr(linkto, "/storage/") == linkto ||
+                                strstr(linkto, "/system/sounds/") == linkto ||
+                                strstr(linkto, "/data/") == linkto ||
+                                strstr(linkto, "/system/media/") == linkto) {
+                                result.append("  ");
+                                result.append(buffer);
+                                result.append(" -> ");
+                                result.append(linkto);
+                                result.append("\n");
+                            }
                         }
+                    } else {
+                        result.append("  unexpected type for ");
+                        result.append(buffer);
+                        result.append("\n");
                     }
                 }
             }
-            closedir(d);
-        } else {
-            result.append("couldn't open ");
-            result.append(buffer);
-            result.append("\n");
         }
+        closedir(d);
+    } else {
+        result.append("couldn't open ");
+        result.append(buffer);
+        result.append("\n");
+    }
 
-        gLooperRoster.dump(fd, args);
+    gLooperRoster.dump(fd, args);
 
-        bool dumpMem = false;
-        bool unreachableMemory = false;
-        for (size_t i = 0; i < args.size(); i++) {
-            if (args[i] == String16("-m")) {
-                dumpMem = true;
-            } else if (args[i] == String16("--unreachable")) {
-                unreachableMemory = true;
-            }
-        }
-        if (dumpMem) {
-            result.append("\nDumping memory:\n");
-            std::string s = dumpMemoryAddresses(100 /* limit */);
-            result.append(s.c_str(), s.size());
-        }
-        if (unreachableMemory) {
-            result.append("\nDumping unreachable memory:\n");
-            // TODO - should limit be an argument parameter?
-            // TODO: enable GetUnreachableMemoryString if it's part of stable API
-            //std::string s = GetUnreachableMemoryString(true /* contents */, 10000 /* limit */);
-            //result.append(s.c_str(), s.size());
+    bool dumpMem = false;
+    bool unreachableMemory = false;
+    for (size_t i = 0; i < args.size(); i++) {
+        if (args[i] == String16("-m")) {
+            dumpMem = true;
+        } else if (args[i] == String16("--unreachable")) {
+            unreachableMemory = true;
         }
     }
+    if (dumpMem) {
+        result.append("\nDumping memory:\n");
+        std::string s = dumpMemoryAddresses(100 /* limit */);
+        result.append(s.c_str(), s.size());
+    }
+    if (unreachableMemory) {
+        result.append("\nDumping unreachable memory:\n");
+        // TODO - should limit be an argument parameter?
+        // TODO: enable GetUnreachableMemoryString if it's part of stable API
+        //std::string s = GetUnreachableMemoryString(true /* contents */, 10000 /* limit */);
+        //result.append(s.c_str(), s.size());
+    }
+
     write(fd, result.string(), result.size());
     return NO_ERROR;
 }
@@ -218,8 +210,8 @@ status_t dumpPlayers(int fd, const Vector<String16>& args) {
 }  // anonymous namespace
 
 //static
-sp<MediaPlayer2> MediaPlayer2::Create(int32_t sessionId) {
-    sp<MediaPlayer2> player = new MediaPlayer2(sessionId);
+sp<MediaPlayer2> MediaPlayer2::Create(int32_t sessionId, jobject context) {
+    sp<MediaPlayer2> player = new MediaPlayer2(sessionId, context);
 
     if (!player->init()) {
         return NULL;
@@ -236,13 +228,14 @@ status_t MediaPlayer2::DumpAll(int fd, const Vector<String16>& args) {
     return dumpPlayers(fd, args);
 }
 
-MediaPlayer2::MediaPlayer2(int32_t sessionId) {
+MediaPlayer2::MediaPlayer2(int32_t sessionId, jobject context) {
     ALOGV("constructor");
     mSrcId = 0;
     mLockThreadId = 0;
     mListener = NULL;
     mStreamType = AUDIO_STREAM_MUSIC;
     mAudioAttributes = NULL;
+    mContext = new JObjectHolder(context);
     mCurrentPosition = -1;
     mCurrentSeekMode = MediaPlayer2SeekMode::SEEK_PREVIOUS_SYNC;
     mSeekPosition = -1;
@@ -253,9 +246,8 @@ MediaPlayer2::MediaPlayer2(int32_t sessionId) {
     mVideoWidth = mVideoHeight = 0;
     mSendLevel = 0;
 
-    // TODO: get pid and uid from JAVA
-    mPid = IPCThreadState::self()->getCallingPid();
-    mUid = IPCThreadState::self()->getCallingUid();
+    mPid = AIBinder_getCallingPid();
+    mUid = AIBinder_getCallingUid();
 
     mAudioOutput = new MediaPlayer2AudioOutput(sessionId, mUid, mPid, NULL /*attributes*/);
 }
@@ -334,15 +326,15 @@ status_t MediaPlayer2::setDataSource(const sp<DataSourceDesc> &dsd) {
 
     sp<MediaPlayer2Interface> oldPlayer;
 
-    Mutex::Autolock _l(mLock);
     {
+        Mutex::Autolock _l(mLock);
         if (!((mCurrentState & MEDIA_PLAYER2_IDLE)
               || mCurrentState == MEDIA_PLAYER2_STATE_ERROR)) {
             ALOGE("setDataSource called in wrong state %d", mCurrentState);
             return INVALID_OPERATION;
         }
 
-        sp<MediaPlayer2Interface> player = new NuPlayer2Driver(mPid, mUid);
+        sp<MediaPlayer2Interface> player = new NuPlayer2Driver(mPid, mUid, mContext);
         status_t err = player->initCheck();
         if (err != NO_ERROR) {
             ALOGE("Failed to create player object, initCheck failed(%d)", err);
@@ -718,8 +710,15 @@ status_t MediaPlayer2::getCurrentPosition(int64_t *msec) {
     return ret;
 }
 
-status_t MediaPlayer2::getDuration(int64_t *msec) {
+status_t MediaPlayer2::getDuration(int64_t srcId, int64_t *msec) {
     Mutex::Autolock _l(mLock);
+    // TODO: cache duration for currentSrcId and nextSrcId, and return correct
+    // value for nextSrcId.
+    if (srcId != mSrcId) {
+        *msec = -1;
+        return OK;
+    }
+
     ALOGV("getDuration_l");
     bool isValidState = (mCurrentState & (MEDIA_PLAYER2_PREPARED | MEDIA_PLAYER2_STARTED |
             MEDIA_PLAYER2_PAUSED | MEDIA_PLAYER2_PLAYBACK_COMPLETE));
@@ -979,6 +978,22 @@ status_t MediaPlayer2::getParameter(int key, Parcel *reply) {
     return status;
 }
 
+// for mediametrics
+status_t MediaPlayer2::getMetrics(char **buffer, size_t *length) {
+    ALOGD("MediaPlayer2::getMetrics()");
+    Mutex::Autolock _l(mLock);
+    if (mPlayer == NULL) {
+        ALOGV("getMetrics: no active player");
+        return INVALID_OPERATION;
+    }
+
+    status_t status =  mPlayer->getMetrics(buffer, length);
+    if (status != OK) {
+        ALOGD("getMetrics returns %d", status);
+    }
+    return status;
+}
+
 void MediaPlayer2::notify(int64_t srcId, int msg, int ext1, int ext2, const PlayerMessage *obj) {
     ALOGV("message received srcId=%lld, msg=%d, ext1=%d, ext2=%d",
           (long long)srcId, msg, ext1, ext2);
@@ -1094,7 +1109,8 @@ void MediaPlayer2::notify(int64_t srcId, int msg, int ext1, int ext2, const Play
 }
 
 // Modular DRM
-status_t MediaPlayer2::prepareDrm(const uint8_t uuid[16], const Vector<uint8_t>& drmSessionId) {
+status_t MediaPlayer2::prepareDrm(
+        int64_t srcId, const uint8_t uuid[16], const Vector<uint8_t>& drmSessionId) {
     // TODO change to ALOGV
     ALOGD("prepareDrm: uuid: %p  drmSessionId: %p(%zu)", uuid,
             drmSessionId.array(), drmSessionId.size());
@@ -1108,8 +1124,10 @@ status_t MediaPlayer2::prepareDrm(const uint8_t uuid[16], const Vector<uint8_t>&
     // completed) so the state change to "prepared" might not have happened yet (e.g., buffering).
     // Still, we can allow prepareDrm for the use case of being called in OnDrmInfoListener.
     if (!(mCurrentState & (MEDIA_PLAYER2_PREPARING | MEDIA_PLAYER2_PREPARED))) {
-        ALOGE("prepareDrm is called in the wrong state (%d).", mCurrentState);
-        return INVALID_OPERATION;
+        ALOGW("prepareDrm(%lld) called in non-prepare state(%d)", (long long)srcId, mCurrentState);
+        if (srcId == mSrcId) {
+            return INVALID_OPERATION;
+        }
     }
 
     if (drmSessionId.isEmpty()) {
@@ -1118,7 +1136,7 @@ status_t MediaPlayer2::prepareDrm(const uint8_t uuid[16], const Vector<uint8_t>&
     }
 
     // Passing down to mediaserver mainly for creating the crypto
-    status_t status = mPlayer->prepareDrm(uuid, drmSessionId);
+    status_t status = mPlayer->prepareDrm(srcId, uuid, drmSessionId);
     ALOGE_IF(status != OK, "prepareDrm: Failed at mediaserver with ret: %d", status);
 
     // TODO change to ALOGV
@@ -1127,7 +1145,7 @@ status_t MediaPlayer2::prepareDrm(const uint8_t uuid[16], const Vector<uint8_t>&
     return status;
 }
 
-status_t MediaPlayer2::releaseDrm() {
+status_t MediaPlayer2::releaseDrm(int64_t srcId) {
     Mutex::Autolock _l(mLock);
     if (mPlayer == NULL) {
         return NO_INIT;
@@ -1142,7 +1160,7 @@ status_t MediaPlayer2::releaseDrm() {
         return INVALID_OPERATION;
     }
 
-    status_t status = mPlayer->releaseDrm();
+    status_t status = mPlayer->releaseDrm(srcId);
     // TODO change to ALOGV
     ALOGD("releaseDrm: mediaserver::releaseDrm ret: %d", status);
     if (status != OK) {

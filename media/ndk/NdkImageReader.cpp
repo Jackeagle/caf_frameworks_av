@@ -69,6 +69,7 @@ AImageReader::isSupportedFormatAndUsage(int32_t format, uint64_t usage) {
         case AIMAGE_FORMAT_DEPTH16:
         case AIMAGE_FORMAT_DEPTH_POINT_CLOUD:
         case AIMAGE_FORMAT_Y8:
+        case AIMAGE_FORMAT_RAW_DEPTH:
             return true;
         case AIMAGE_FORMAT_PRIVATE:
             // For private format, cpu usage is prohibited.
@@ -96,6 +97,7 @@ AImageReader::getNumPlanesForFormat(int32_t format) {
         case AIMAGE_FORMAT_DEPTH16:
         case AIMAGE_FORMAT_DEPTH_POINT_CLOUD:
         case AIMAGE_FORMAT_Y8:
+        case AIMAGE_FORMAT_RAW_DEPTH:
             return 1;
         case AIMAGE_FORMAT_PRIVATE:
             return 0;
@@ -308,6 +310,9 @@ AImageReader::init() {
         ALOGE("Failed to set BufferItemConsumer buffer dataSpace");
         return AMEDIA_ERROR_UNKNOWN;
     }
+    if (mUsage & AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT) {
+        gbConsumer->setConsumerIsProtected(true);
+    }
 
     mSurface = new Surface(mProducer, /*controlledByApp*/true);
     if (mSurface == nullptr) {
@@ -357,8 +362,10 @@ AImageReader::~AImageReader() {
               it != mAcquiredImages.end(); it++) {
         AImage* image = *it;
         Mutex::Autolock _l(image->mLock);
-        releaseImageLocked(image, /*releaseFenceFd*/-1);
+        // Do not alter mAcquiredImages while we are iterating on it
+        releaseImageLocked(image, /*releaseFenceFd*/-1, /*clearCache*/false);
     }
+    mAcquiredImages.clear();
 
     // Delete Buffer Items
     for (auto it = mBuffers.begin();
@@ -497,7 +504,7 @@ AImageReader::returnBufferItemLocked(BufferItem* buffer) {
 }
 
 void
-AImageReader::releaseImageLocked(AImage* image, int releaseFenceFd) {
+AImageReader::releaseImageLocked(AImage* image, int releaseFenceFd, bool clearCache) {
     BufferItem* buffer = image->mBuffer;
     if (buffer == nullptr) {
         // This should not happen, but is not fatal
@@ -520,6 +527,10 @@ AImageReader::releaseImageLocked(AImage* image, int releaseFenceFd) {
     image->mBuffer = nullptr;
     image->mLockedBuffer = nullptr;
     image->mIsClosed = true;
+
+    if (!clearCache) {
+        return;
+    }
 
     bool found = false;
     // cleanup acquired image list
@@ -645,31 +656,6 @@ static native_handle_t *convertHalTokenToNativeHandle(
     nh->data[0] = nhDataByteSize;
     memcpy(&(nh->data[1]), halToken.data(), nhDataByteSize);
     return nh;
-}
-
-static sp<HGraphicBufferProducer> convertNativeHandleToHGBP (
-        const native_handle_t *handle) {
-    // Read the size of the halToken vec<uint8_t>
-    hidl_vec<uint8_t> halToken;
-    halToken.setToExternal(
-        reinterpret_cast<uint8_t *>(const_cast<int *>(&(handle->data[1]))),
-        handle->data[0]);
-    sp<HGraphicBufferProducer> hgbp =
-        HGraphicBufferProducer::castFrom(retrieveHalInterface(halToken));
-    return hgbp;
-}
-
-EXPORT
-sp<HGraphicBufferProducer> AImageReader_getHGBPFromHandle(
-    const native_handle_t *handle) {
-    if (handle == nullptr) {
-        return nullptr;
-    }
-    if (handle->numFds != 0  ||
-        handle->numInts < ceil(sizeof(size_t) / sizeof(int))) {
-        return nullptr;
-    }
-    return convertNativeHandleToHGBP(handle);
 }
 
 EXPORT

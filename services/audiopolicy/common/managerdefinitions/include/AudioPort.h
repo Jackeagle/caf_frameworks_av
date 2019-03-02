@@ -65,6 +65,7 @@ public:
     uint32_t getFlags() const { return mFlags; }
 
     virtual void attach(const sp<HwModule>& module);
+    virtual void detach();
     bool isAttached() { return mModule != 0; }
 
     // Audio port IDs are in a different namespace than AudioFlinger unique IDs
@@ -91,10 +92,11 @@ public:
     status_t checkCompatibleAudioProfile(uint32_t &samplingRate,
                                          audio_channel_mask_t &channelMask,
                                          audio_format_t &format,
-                                         bool checkExactFormat) const
+                                         bool checkExactFormat,
+                                         bool checkExactChannelMask) const
     {
         return mProfiles.checkCompatibleProfile(samplingRate, channelMask, format, mType,
-                                                  mRole, checkExactFormat);
+                                                  mRole, checkExactFormat, checkExactChannelMask);
     }
 
     void clearAudioProfiles() { return mProfiles.clearProfiles(); }
@@ -118,6 +120,7 @@ public:
     audio_module_handle_t getModuleHandle() const;
     uint32_t getModuleVersionMajor() const;
     const char *getModuleName() const;
+    sp<HwModule> getModule() const { return mModule; }
 
     bool useInputChannelMask() const
     {
@@ -139,12 +142,12 @@ public:
     void log(const char* indent) const;
 
     AudioGainCollection mGains; // gain controllers
-    sp<HwModule> mModule;                 // audio HW module exposing this I/O stream
 
 private:
     void pickChannelMask(audio_channel_mask_t &channelMask, const ChannelsVector &channelMasks) const;
     void pickSamplingRate(uint32_t &rate,const SampleRateVector &samplingRates) const;
 
+    sp<HwModule> mModule;                 // audio HW module exposing this I/O stream
     String8  mName;
     audio_port_type_t mType;
     audio_port_role_t mRole;
@@ -162,7 +165,7 @@ public:
                                    const struct audio_port_config *srcConfig = NULL) const = 0;
     virtual sp<AudioPort> getAudioPort() const = 0;
     virtual bool hasSameHwModuleAs(const sp<AudioPortConfig>& other) const {
-        return (other != 0) &&
+        return (other != 0) && (other->getAudioPort() != 0) && (getAudioPort() != 0) &&
                 (other->getAudioPort()->getModuleHandle() == getAudioPort()->getModuleHandle());
     }
     unsigned int mSamplingRate = 0u;

@@ -115,6 +115,7 @@ constexpr std::pair<audio_source_t, const char*> STREAM_NAME_MAP<audio_source_t>
         {AUDIO_SOURCE_VOICE_RECOGNITION, "voice_recognition"},
         {AUDIO_SOURCE_VOICE_COMMUNICATION, "voice_communication"},
         {AUDIO_SOURCE_UNPROCESSED, "unprocessed"},
+        {AUDIO_SOURCE_VOICE_PERFORMANCE, "voice_performance"},
 };
 
 /** Find the stream type enum corresponding to the stream type name or return false */
@@ -305,7 +306,7 @@ ParsingResult parse(const char* path) {
         return parseWithPath(path);
     }
 
-    for (std::string location : DEFAULT_LOCATIONS) {
+    for (const std::string& location : DEFAULT_LOCATIONS) {
         std::string defaultPath = location + '/' + DEFAULT_NAME;
         if (access(defaultPath.c_str(), R_OK) != 0) {
             continue;

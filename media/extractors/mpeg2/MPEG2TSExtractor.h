@@ -43,11 +43,11 @@ struct MPEG2TSExtractor : public MediaExtractorPluginHelper {
 
     virtual size_t countTracks();
     virtual MediaTrackHelper *getTrack(size_t index);
-    virtual status_t getTrackMetaData(MetaDataBase &meta, size_t index, uint32_t flags);
+    virtual media_status_t getTrackMetaData(AMediaFormat *meta, size_t index, uint32_t flags);
 
-    virtual status_t getMetaData(MetaDataBase& meta);
+    virtual media_status_t getMetaData(AMediaFormat *meta);
 
-    virtual status_t setMediaCas(const uint8_t* /*casToken*/, size_t /*size*/) override;
+    virtual media_status_t setMediaCas(const uint8_t* /*casToken*/, size_t /*size*/) override;
 
     virtual uint32_t flags() const;
     virtual const char * name() { return "MPEG2TSExtractor"; }
@@ -95,6 +95,7 @@ private:
     status_t seekBeyond(int64_t seekTimeUs);
 
     status_t feedUntilBufferAvailable(const sp<AnotherPacketSource> &impl);
+    status_t findIndexOfSource(const sp<AnotherPacketSource> &impl, size_t *index);
 
     // Add a SynPoint derived from |event|.
     void addSyncPoint_l(const ATSParser::SyncEvent &event);

@@ -17,7 +17,7 @@
 #ifndef CLEARKEY_MACROS_H_
 #define CLEARKEY_MACROS_H_
 
-#include <android/hardware/drm/1.0/types.h>
+#include <android/hardware/drm/1.2/types.h>
 
 #include <map>
 
@@ -28,6 +28,7 @@ namespace V1_2 {
 namespace clearkey {
 
 using ::android::hardware::drm::V1_0::KeyValue;
+using ::android::hardware::drm::V1_1::SecurityLevel;
 using ::android::hardware::hidl_vec;
 
 const uint8_t kBlockSize = 16; //AES_BLOCK_SIZE;

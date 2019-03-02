@@ -534,9 +534,23 @@ public:
      */
             status_t    getActiveMicrophones(std::vector<media::MicrophoneInfo>* activeMicrophones);
 
-    /*
-     * Dumps the state of an audio record.
+    /* Set the Microphone direction (for processing purposes).
      */
+            status_t    setMicrophoneDirection(audio_microphone_direction_t direction);
+
+    /* Set the Microphone zoom factor (for processing purposes).
+     */
+            status_t    setMicrophoneFieldDimension(float zoom);
+
+     /* Get the unique port ID assigned to this AudioRecord instance by audio policy manager.
+      * The ID is unique across all audioserver clients and can change during the life cycle
+      * of a given AudioRecord instance if the connection to audioserver is restored.
+      */
+            audio_port_handle_t getPortId() const { return mPortId; };
+
+     /*
+      * Dumps the state of an audio record.
+      */
             status_t    dump(int fd, const Vector<String16>& args) const;
 
 private:
@@ -654,7 +668,7 @@ private:
     audio_input_flags_t     mOrigFlags;             // as specified in constructor or set(), const
 
     audio_session_t         mSessionId;
-    int                     mId;                    // Id from AudioFlinger
+    audio_port_handle_t     mPortId;                    // Id from Audio Policy Manager
     transfer_type           mTransfer;
 
     // Next 5 fields may be changed if IAudioRecord is re-created, but always != 0
@@ -705,7 +719,7 @@ private:
 private:
     class MediaMetrics {
       public:
-        MediaMetrics() : mAnalyticsItem(new MediaAnalyticsItem("audiorecord")),
+        MediaMetrics() : mAnalyticsItem(MediaAnalyticsItem::create("audiorecord")),
                          mCreatedNs(systemTime(SYSTEM_TIME_REALTIME)),
                          mStartedNs(0), mDurationNs(0), mCount(0),
                          mLastError(NO_ERROR) {

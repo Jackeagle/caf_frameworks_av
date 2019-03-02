@@ -43,7 +43,7 @@ using namespace aaudio;   // TODO just import names needed
 AAudioServiceStreamBase::AAudioServiceStreamBase(AAudioService &audioService)
         : mUpMessageQueue(nullptr)
         , mTimestampThread("AATime")
-        , mAtomicTimestamp()
+        , mAtomicStreamTimestamp()
         , mAudioService(audioService) {
     mMmapClient.clientUid = -1;
     mMmapClient.clientPid = -1;
@@ -51,7 +51,6 @@ AAudioServiceStreamBase::AAudioServiceStreamBase(AAudioService &audioService)
 }
 
 AAudioServiceStreamBase::~AAudioServiceStreamBase() {
-    ALOGD("~AAudioServiceStreamBase() destroying %p", this);
     // If the stream is deleted when OPEN or in use then audio resources will leak.
     // This would indicate an internal error. So we want to find this ASAP.
     LOG_ALWAYS_FATAL_IF(!(getState() == AAUDIO_STREAM_STATE_CLOSED
@@ -110,7 +109,6 @@ aaudio_result_t AAudioServiceStreamBase::open(const aaudio::AAudioStreamRequest 
         mServiceEndpoint = mEndpointManager.openEndpoint(mAudioService,
                                                          request);
         if (mServiceEndpoint == nullptr) {
-            ALOGE("%s() openEndpoint() failed", __func__);
             result = AAUDIO_ERROR_UNAVAILABLE;
             goto error;
         }
@@ -181,9 +179,10 @@ aaudio_result_t AAudioServiceStreamBase::start() {
     }
 
     setFlowing(false);
+    setSuspended(false);
 
     // Start with fresh presentation timestamps.
-    mAtomicTimestamp.clear();
+    mAtomicStreamTimestamp.clear();
 
     mClientHandle = AUDIO_PORT_HANDLE_NONE;
     result = startDevice();
@@ -292,16 +291,20 @@ aaudio_result_t AAudioServiceStreamBase::flush() {
 }
 
 // implement Runnable, periodically send timestamps to client
+__attribute__((no_sanitize("integer")))
 void AAudioServiceStreamBase::run() {
     ALOGD("%s() %s entering >>>>>>>>>>>>>> TIMESTAMPS", __func__, getTypeText());
     TimestampScheduler timestampScheduler;
     timestampScheduler.setBurstPeriod(mFramesPerBurst, getSampleRate());
     timestampScheduler.start(AudioClock::getNanoseconds());
     int64_t nextTime = timestampScheduler.nextAbsoluteTime();
+    int32_t loopCount = 0;
     while(mThreadEnabled.load()) {
+        loopCount++;
         if (AudioClock::getNanoseconds() >= nextTime) {
             aaudio_result_t result = sendCurrentTimestamp();
             if (result != AAUDIO_OK) {
+                ALOGE("%s() timestamp thread got result = %d", __func__, result);
                 break;
             }
             nextTime = timestampScheduler.nextAbsoluteTime();
@@ -311,7 +314,8 @@ void AAudioServiceStreamBase::run() {
             AudioClock::sleepUntilNanoTime(nextTime);
         }
     }
-    ALOGD("%s() %s exiting <<<<<<<<<<<<<< TIMESTAMPS", __func__, getTypeText());
+    ALOGD("%s() %s exiting after %d loops <<<<<<<<<<<<<< TIMESTAMPS",
+          __func__, getTypeText(), loopCount);
 }
 
 void AAudioServiceStreamBase::disconnect() {
@@ -347,7 +351,9 @@ aaudio_result_t AAudioServiceStreamBase::writeUpMessageQueue(AAudioServiceMessag
     }
     int32_t count = mUpMessageQueue->getFifoBuffer()->write(command, 1);
     if (count != 1) {
-        ALOGE("%s(): Queue full. Did client die? %s", __func__, getTypeText());
+        ALOGW("%s(): Queue full. Did client stop? Suspending stream. what = %u, %s",
+              __func__, command->what, getTypeText());
+        setSuspended(true);
         return AAUDIO_ERROR_WOULD_BLOCK;
     } else {
         return AAUDIO_OK;

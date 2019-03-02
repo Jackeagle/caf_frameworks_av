@@ -57,6 +57,11 @@ static const char *AMediaFormatKeyGroupInt32[] = {
     AMEDIAFORMAT_KEY_COLOR_STANDARD,
     AMEDIAFORMAT_KEY_COLOR_TRANSFER,
     AMEDIAFORMAT_KEY_COMPLEXITY,
+    AMEDIAFORMAT_KEY_CREATE_INPUT_SURFACE_SUSPENDED,
+    AMEDIAFORMAT_KEY_CRYPTO_DEFAULT_IV_SIZE,
+    AMEDIAFORMAT_KEY_CRYPTO_ENCRYPTED_BYTE_BLOCK,
+    AMEDIAFORMAT_KEY_CRYPTO_MODE,
+    AMEDIAFORMAT_KEY_CRYPTO_SKIP_BYTE_BLOCK,
     AMEDIAFORMAT_KEY_FLAC_COMPRESSION_LEVEL,
     AMEDIAFORMAT_KEY_GRID_COLUMNS,
     AMEDIAFORMAT_KEY_GRID_ROWS,
@@ -102,6 +107,8 @@ static const char *AMediaFormatKeyGroupString[] = {
 };
 
 static const char *AMediaFormatKeyGroupBuffer[] = {
+    AMEDIAFORMAT_KEY_CRYPTO_IV,
+    AMEDIAFORMAT_KEY_CRYPTO_KEY,
     AMEDIAFORMAT_KEY_HDR_STATIC_INFO,
     AMEDIAFORMAT_KEY_SEI,
     AMEDIAFORMAT_KEY_MPEG_USER_DATA,
@@ -1243,7 +1250,11 @@ sp<AMediaCodecCryptoInfoWrapper> AMediaExtractorWrapper::getSampleCryptoInfo() {
     if (mAMediaExtractor == NULL) {
         return NULL;
     }
-    return new AMediaCodecCryptoInfoWrapper(AMediaExtractor_getSampleCryptoInfo(mAMediaExtractor));
+    AMediaCodecCryptoInfo *cryptoInfo = AMediaExtractor_getSampleCryptoInfo(mAMediaExtractor);
+    if (cryptoInfo == NULL) {
+        return NULL;
+    }
+    return new AMediaCodecCryptoInfoWrapper(cryptoInfo);
 }
 
 AMediaDataSourceWrapper::AMediaDataSourceWrapper(const sp<DataSource> &dataSource)

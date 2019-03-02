@@ -338,7 +338,7 @@ status_t AudioSource::dataCallback(const AudioRecord::Buffer& audioBuffer) {
     } else {
         // This should not happen in normal case.
         ALOGW("Failed to get audio timestamp, fallback to use systemclock");
-        timeUs = systemTime() / 1000ll;
+        timeUs = systemTime() / 1000LL;
         // Estimate the real sampling time of the 1st sample in this buffer
         // from AudioRecord's latency. (Apply this adjustment first so that
         // the start time logic is not affected.)
@@ -507,4 +507,11 @@ status_t AudioSource::getActiveMicrophones(
     return NO_INIT;
 }
 
+status_t AudioSource::getPortId(audio_port_handle_t *portId) const {
+    if (mRecord != 0) {
+        *portId = mRecord->getPortId();
+        return NO_ERROR;
+    }
+    return NO_INIT;
+}
 }  // namespace android

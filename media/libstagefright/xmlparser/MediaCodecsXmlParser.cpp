@@ -27,8 +27,9 @@
 #include <sys/stat.h>
 #include <expat.h>
 
-#include <cctype>
 #include <algorithm>
+#include <cctype>
+#include <string>
 #include <cutils/properties.h>
 
 namespace android {
@@ -140,7 +141,11 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
         if (!strncmp(path.c_str(), "/vendor/etc", strlen("/vendor/etc"))){
             strlcpy(file_path, path.c_str(), PROP_VALUE_MAX);
             property_get("ro.board.platform", platform, NULL);
-            if (!strcmp(platform, "sdm710") ||
+            if (!strcmp(platform, "qcs605")) {
+                strlcpy(file_path, "/vendor/etc/media_codecs_qcs605_v0.xml",
+                            PROP_VALUE_MAX);
+                parseTopLevelXMLFile(file_path, false);
+           } else if (!strcmp(platform, "sdm710") ||
                    !strcmp(platform, "msmpeafowl")) {   //platform is SDM710
                 if (property_get("vendor.media.sdm710.version", value, "0") &&
                     (atoi(value) == 0)) {               // version is 0
@@ -150,6 +155,22 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                 } else {
                     parseTopLevelXMLFile(path.c_str(), false);
                 }
+            } else if (!strcmp(platform, "talos") ||
+                    !strcmp(platform, "sm6150")) {
+                if (property_get("vendor.media.sm6150.version", value, "0") &&
+                    (atoi(value) == 1)) {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor.xml",
+                            PROP_VALUE_MAX);
+                } else if (property_get("vendor.media.sdmmagpie.version", value, "0") &&
+                    (atoi(value) == 1)) {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor_sdmmagpie_v1.xml",
+                            PROP_VALUE_MAX);
+                } else {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor_sdmmagpie_v0.xml",
+                            PROP_VALUE_MAX);
+                }
+                path = file_path;
+                parseTopLevelXMLFile(path.c_str(), false);
             } else if (!strcmp(platform, "msm8953")) {
                 if (property_get("vendor.media.msm8953.version", value, "0") &&
                     (atoi(value) == 1)){
@@ -173,6 +194,17 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                 ALOGE("SDM429 prop_value = %s, file_path = %s", value, file_path);
                 path = file_path;
                 parseTopLevelXMLFile(path.c_str(), false);
+            } else if (!strcmp(platform, "sdm660")) {
+                if (property_get("vendor.media.sdm660.version", value, "0") &&
+                    (atoi(value) == 1)){
+                    strlcpy(file_path, "/vendor/etc/media_codecs_sdm660_v1.xml",
+                            PROP_VALUE_MAX);
+                } else {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_vendor.xml",
+                            PROP_VALUE_MAX);
+                }
+                path = file_path;
+                parseTopLevelXMLFile(path.c_str(), false);
             } else {
                 parseTopLevelXMLFile(path.c_str(), false);
             }
@@ -184,7 +216,10 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
     if (findFileInDirs(searchDirs, performanceXmlName, &path)) {
         if (!strncmp(path.c_str(), "/vendor/etc", strlen("/vendor/etc"))){
             property_get("ro.board.platform", platform, NULL);
-            if (!strcmp(platform, "sdm710") ||
+            if (!strcmp(platform, "qcs605")) {
+                strlcpy(file_path, "/vendor/etc/media_codecs_performance_qcs605_v0.xml",
+                            PROP_VALUE_MAX);
+            } else if (!strcmp(platform, "sdm710") ||
                    !strcmp(platform, "msmpeafowl")) {
                 if (property_get("vendor.media.sdm710.version", value, "0") &&
                     (atoi(value) == 0)) {
@@ -194,6 +229,20 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                     strlcpy(file_path, "/vendor/etc/media_codecs_performance.xml",
                             PROP_VALUE_MAX);
                 }
+            } else if (!strcmp(platform, "talos") ||
+                    !strcmp(platform, "sm6150")) {
+                if (property_get("vendor.media.sm6150.version", value, "0") &&
+                    (atoi(value) == 1)) {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_performance.xml",
+                            PROP_VALUE_MAX);
+                } else if (property_get("vendor.media.sdmmagpie.version", value, "0") &&
+                    (atoi(value) == 1)) {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_performance_sdmmagpie_v1.xml",
+                            PROP_VALUE_MAX);
+                } else {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_performance_sdmmagpie_v0.xml",
+                            PROP_VALUE_MAX);
+                }
             } else if (!strcmp(platform, "msm8953")) {
                 if (property_get("vendor.media.msm8953.version", value, "0") &&
                     (atoi(value) == 1)){
@@ -201,6 +250,15 @@ MediaCodecsXmlParser::MediaCodecsXmlParser(
                             PROP_VALUE_MAX);
                 } else {
                     strlcpy(file_path, "/vendor/etc/media_codecs_performance_8953.xml",
+                            PROP_VALUE_MAX);
+                }
+            } else if (!strcmp(platform, "sdm660")) {
+                if (property_get("vendor.media.sdm660.version", value, "0") &&
+                    (atoi(value) == 1)){
+                    strlcpy(file_path, "/vendor/etc/media_codecs_performance_sdm660_v1.xml",
+                            PROP_VALUE_MAX);
+                } else {
+                    strlcpy(file_path, "/vendor/etc/media_codecs_performance.xml",
                             PROP_VALUE_MAX);
                 }
             } else {
@@ -406,8 +464,8 @@ void MediaCodecsXmlParser::startElementHandler(
         case SECTION_DECODER:
         case SECTION_ENCODER:
         {
-            if (strEq(name, "Quirk")) {
-                (void)addQuirk(attrs);
+            if (strEq(name, "Quirk") || strEq(name, "Attribute")) {
+                (void)addQuirk(attrs, name);
             } else if (strEq(name, "Type")) {
                 (void)addTypeFromAttributes(attrs,
                         (mCurrentSection == SECTION_ENCODER));
@@ -428,6 +486,8 @@ void MediaCodecsXmlParser::startElementHandler(
             if (outside &&
                     (strEq(name, "Limit") || strEq(name, "Feature"))) {
                 ALOGW("ignoring %s specified outside of a Type", name);
+            } else if (strEq(name, "Alias")) {
+                (void)addAlias(attrs);
             } else if (strEq(name, "Limit")) {
                 (void)addLimit(attrs);
             } else if (strEq(name, "Feature")) {
@@ -659,7 +719,7 @@ status_t MediaCodecsXmlParser::addMediaCodecFromAttributes(
     return OK;
 }
 
-status_t MediaCodecsXmlParser::addQuirk(const char **attrs) {
+status_t MediaCodecsXmlParser::addQuirk(const char **attrs, const char *tag) {
     if (mCurrentCodec == mCodecMap.end()) {
         return BAD_VALUE;
     }
@@ -686,7 +746,12 @@ status_t MediaCodecsXmlParser::addQuirk(const char **attrs) {
         return BAD_VALUE;
     }
 
-    mCurrentCodec->second.quirkSet.emplace(name);
+    std::string tagString = tag;
+    std::transform(tagString.begin(), tagString.end(), tagString.begin(), ::tolower);
+    tagString.append("::");
+    tagString.append(name);
+    mCurrentCodec->second.quirkSet.emplace(tagString.c_str());
+    ALOGI("adding %s to %s", tagString.c_str(), mCurrentCodec->first.c_str());
     return OK;
 }
 
@@ -840,6 +905,7 @@ status_t MediaCodecsXmlParser::addLimit(const char **attrs) {
             strEq(a_name, "quality") ||
             strEq(a_name, "size") ||
             strEq(a_name, "measured-blocks-per-second") ||
+            strHasPrefix(a_name, "performance-point-") ||
             strHasPrefix(a_name, "measured-frame-rate-")) {
         // "range" is specified in exactly one of the following forms:
         // 1) min-max
@@ -1044,6 +1110,34 @@ status_t MediaCodecsXmlParser::addFeature(const char **attrs) {
     return OK;
 }
 
+status_t MediaCodecsXmlParser::addAlias(const char **attrs) {
+    size_t i = 0;
+    const char *name = nullptr;
+
+    while (attrs[i] != nullptr) {
+        if (strEq(attrs[i], "name")) {
+            if (attrs[++i] == nullptr) {
+                ALOGE("addAlias: name is null");
+                return BAD_VALUE;
+            }
+            name = attrs[i];
+        } else {
+            ALOGE("addAlias: unrecognized attribute: %s", attrs[i]);
+            return BAD_VALUE;
+        }
+        ++i;
+    }
+
+    // Every feature must have a name.
+    if (name == nullptr) {
+        ALOGE("alias with no 'name' attribute");
+        return BAD_VALUE;
+    }
+
+    mCurrentCodec->second.aliases.emplace_back(name);
+    return OK;
+}
+
 const MediaCodecsXmlParser::AttributeMap&
         MediaCodecsXmlParser::getServiceAttributeMap() const {
     return mServiceAttributeMap;
@@ -1121,10 +1215,17 @@ void MediaCodecsXmlParser::generateRoleMap() const {
 
             NodeInfo nodeInfo;
             nodeInfo.name = codecName;
+            // NOTE: no aliases are exposed in role info
+            // attribute quirks are exposed as node attributes
             nodeInfo.attributeList.reserve(typeAttributeMap.size());
             for (const auto& attribute : typeAttributeMap) {
                 nodeInfo.attributeList.push_back(
                         Attribute{attribute.first, attribute.second});
+            }
+            for (const std::string &quirk : codec.second.quirkSet) {
+                if (strHasPrefix(quirk.c_str(), "attribute::")) {
+                    nodeInfo.attributeList.push_back(Attribute{quirk, "present"});
+                }
             }
             nodeList->insert(std::make_pair(
                     std::move(order), std::move(nodeInfo)));

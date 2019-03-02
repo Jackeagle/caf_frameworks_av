@@ -16,23 +16,90 @@
 
 #pragma once
 
+#define __STDC_LIMIT_MACROS
+#include <inttypes.h>
+
 #include <sys/types.h>
 
 #include <utils/Errors.h>
 #include <utils/Timers.h>
 #include <utils/KeyedVector.h>
 #include <system/audio.h>
-#include <RoutingStrategy.h>
 #include "AudioIODescriptorInterface.h"
 #include "AudioPort.h"
 #include "ClientDescriptor.h"
+#include "DeviceDescriptor.h"
+#include <vector>
 
 namespace android {
 
 class IOProfile;
 class AudioMix;
 class AudioPolicyClientInterface;
-class DeviceDescriptor;
+
+class ActivityTracking
+{
+public:
+    virtual ~ActivityTracking() = default;
+    bool isActive(uint32_t inPastMs = 0, nsecs_t sysTime = 0) const
+    {
+        if (mActivityCount > 0) {
+            return true;
+        }
+        if (inPastMs == 0) {
+            return false;
+        }
+        if (sysTime == 0) {
+            sysTime = systemTime();
+        }
+        if (ns2ms(sysTime - mStopTime) < inPastMs) {
+            return true;
+        }
+        return false;
+    }
+    void changeActivityCount(int delta)
+    {
+        if ((delta + (int)mActivityCount) < 0) {
+            LOG_ALWAYS_FATAL("%s: invalid delta %d, refCount %d", __func__, delta, mActivityCount);
+        }
+        mActivityCount += delta;
+        if (!mActivityCount) {
+            setStopTime(systemTime());
+        }
+    }
+    uint32_t getActivityCount() const { return mActivityCount; }
+    nsecs_t getStopTime() const { return mStopTime; }
+    void setStopTime(nsecs_t stopTime) { mStopTime = stopTime; }
+
+    virtual void dump(String8 *dst, int spaces) const
+    {
+        dst->appendFormat("%*s- ActivityCount: %d, StopTime: %" PRId64 " \n", spaces, "",
+                          getActivityCount(), getStopTime());
+    }
+private:
+    uint32_t mActivityCount = 0;
+    nsecs_t mStopTime = 0;
+};
+
+/**
+ * @brief The Activity class: it tracks the activity for volume policy (volume index, mute,
+ * memorize previous stop, and store mute if incompatible device with another strategy.
+ * Having this class prevents from looping on all attributes (legacy streams) of the strategy
+ */
+class RoutingActivity : public ActivityTracking
+{
+public:
+    void setMutedByDevice( bool isMuted) { mIsMutedByDevice = isMuted; }
+    bool isMutedByDevice() const { return mIsMutedByDevice; }
+
+private:
+    /**
+     * strategies muted because of incompatible device selection.
+     * See AudioPolicyManager::checkDeviceMuteStrategies()
+     */
+    bool mIsMutedByDevice = false;
+};
+using RoutingActivities = std::map<product_strategy_t, RoutingActivity>;
 
 // descriptor for audio outputs. Used to maintain current configuration of each opened audio output
 // and keep track of the usage of this output by each audio stream type.
@@ -48,14 +115,12 @@ public:
     void        log(const char* indent);
 
     audio_port_handle_t getId() const;
-    virtual audio_devices_t device() const;
-    virtual bool sharesHwModuleWith(const sp<AudioOutputDescriptor>& outputDesc);
-    virtual audio_devices_t supportedDevices();
+    virtual DeviceVector devices() const { return mDevices; }
+    bool sharesHwModuleWith(const sp<AudioOutputDescriptor>& outputDesc);
+    virtual DeviceVector supportedDevices() const  { return mDevices; }
     virtual bool isDuplicated() const { return false; }
     virtual uint32_t latency() { return 0; }
     virtual bool isFixedVolume(audio_devices_t device);
-    virtual sp<AudioOutputDescriptor> subOutput1() { return 0; }
-    virtual sp<AudioOutputDescriptor> subOutput2() { return 0; }
     virtual bool setVolume(float volume,
                            audio_stream_type_t stream,
                            audio_devices_t device,
@@ -72,6 +137,14 @@ public:
                             { return mActiveCount[stream]; }
 
     /**
+     * @brief setStopTime set the stop time due to the client stoppage or a re routing of this
+     * client
+     * @param client to be considered
+     * @param sysTime when the client stopped/was rerouted
+     */
+    void setStopTime(const sp<TrackClientDescriptor>& client, nsecs_t sysTime);
+
+    /**
      * Changes the client->active() state and the output descriptor's global active count,
      * along with the stream active count and mActiveClients.
      * The client must be previously added by the base class addClient().
@@ -82,6 +155,21 @@ public:
     bool isStreamActive(audio_stream_type_t stream,
                         uint32_t inPastMs = 0,
                         nsecs_t sysTime = 0) const;
+
+    bool isStrategyActive(product_strategy_t ps, uint32_t inPastMs = 0, nsecs_t sysTime = 0) const
+    {
+        return mRoutingActivities.find(ps) != std::end(mRoutingActivities)?
+                    mRoutingActivities.at(ps).isActive(inPastMs, sysTime) : false;
+    }
+    bool isStrategyMutedByDevice(product_strategy_t ps) const
+    {
+        return mRoutingActivities.find(ps) != std::end(mRoutingActivities)?
+                    mRoutingActivities.at(ps).isMutedByDevice() : false;
+    }
+    void setStrategyMutedByDevice(product_strategy_t ps, bool isMuted)
+    {
+        mRoutingActivities[ps].setMutedByDevice(isMuted);
+    }
 
     virtual void toAudioPortConfig(struct audio_port_config *dstConfig,
                            const struct audio_port_config *srcConfig = NULL) const;
@@ -96,7 +184,8 @@ public:
     void setPatchHandle(audio_patch_handle_t handle) override;
 
     TrackClientVector clientsList(bool activeOnly = false,
-        routing_strategy strategy = STRATEGY_NONE, bool preferredDeviceOnly = false) const;
+                                  product_strategy_t strategy = PRODUCT_STRATEGY_NONE,
+                                  bool preferredDeviceOnly = false) const;
 
     audio_io_handle_t mIoHandle;           // output handle
     // override ClientMapHandler to abort when removing a client when active.
@@ -120,11 +209,9 @@ public:
         return mActiveClients;
     }
 
-    audio_devices_t mDevice = AUDIO_DEVICE_NONE; // current device this output is routed to
+    DeviceVector mDevices; /**< current devices this output is routed to */
     nsecs_t mStopTime[AUDIO_STREAM_CNT];
     int mMuteCount[AUDIO_STREAM_CNT];            // mute request counter
-    bool mStrategyMutedByDevice[NUM_STRATEGIES]; // strategies muted because of incompatible
-                                        // device selection. See checkDeviceMuteStrategies()
     AudioMix *mPolicyMix = nullptr;              // non NULL when used by a dynamic policy
 
 protected:
@@ -141,6 +228,8 @@ protected:
     // Compare with the ClientMap (mClients) which are external AudioTrack clients of the
     // output descriptor (and do not count internal PatchTracks).
     ActiveClientMap mActiveClients;
+
+    RoutingActivities mRoutingActivities; /**< track routing activity on this ouput.*/
 };
 
 // Audio output driven by a software mixer in audio flinger.
@@ -152,14 +241,16 @@ public:
     virtual ~SwAudioOutputDescriptor() {}
 
             void dump(String8 *dst) const override;
-    virtual audio_devices_t device() const;
-    virtual bool sharesHwModuleWith(const sp<AudioOutputDescriptor>& outputDesc);
-    virtual audio_devices_t supportedDevices();
+    virtual DeviceVector devices() const;
+    void setDevices(const DeviceVector &devices) { mDevices = devices; }
+    bool sharesHwModuleWith(const sp<SwAudioOutputDescriptor>& outputDesc);
+    virtual DeviceVector supportedDevices() const;
+    virtual bool deviceSupportsEncodedFormats(audio_devices_t device);
     virtual uint32_t latency();
     virtual bool isDuplicated() const { return (mOutput1 != NULL && mOutput2 != NULL); }
     virtual bool isFixedVolume(audio_devices_t device);
-    virtual sp<AudioOutputDescriptor> subOutput1() { return mOutput1; }
-    virtual sp<AudioOutputDescriptor> subOutput2() { return mOutput2; }
+    sp<SwAudioOutputDescriptor> subOutput1() { return mOutput1; }
+    sp<SwAudioOutputDescriptor> subOutput2() { return mOutput2; }
             void changeStreamActiveCount(
                     const sp<TrackClientDescriptor>& client, int delta) override;
     virtual bool setVolume(float volume,
@@ -172,22 +263,49 @@ public:
                            const struct audio_port_config *srcConfig = NULL) const;
     virtual void toAudioPort(struct audio_port *port) const;
 
-            status_t open(const audio_config_t *config,
-                          audio_devices_t device,
-                          const String8& address,
-                          audio_stream_type_t stream,
-                          audio_output_flags_t flags,
-                          audio_io_handle_t *output);
-            // Called when a stream is about to be started
-            // Note: called before setClientActive(true);
-            status_t start();
-            // Called after a stream is stopped.
-            // Note: called after setClientActive(false);
-            void stop();
-            void close();
-            status_t openDuplicating(const sp<SwAudioOutputDescriptor>& output1,
-                                     const sp<SwAudioOutputDescriptor>& output2,
-                                     audio_io_handle_t *ioHandle);
+        status_t open(const audio_config_t *config,
+                      const DeviceVector &devices,
+                      audio_stream_type_t stream,
+                      audio_output_flags_t flags,
+                      audio_io_handle_t *output);
+
+        // Called when a stream is about to be started
+        // Note: called before setClientActive(true);
+        status_t start();
+        // Called after a stream is stopped.
+        // Note: called after setClientActive(false);
+        void stop();
+        void close();
+        status_t openDuplicating(const sp<SwAudioOutputDescriptor>& output1,
+                                 const sp<SwAudioOutputDescriptor>& output2,
+                                 audio_io_handle_t *ioHandle);
+
+    /**
+     * @brief supportsDevice
+     * @param device to be checked against
+     * @return true if the device is supported by type (for non bus / remote submix devices),
+     *         true if the device is supported (both type and address) for bus / remote submix
+     *         false otherwise
+     */
+    bool supportsDevice(const sp<DeviceDescriptor> &device) const;
+
+    /**
+     * @brief supportsAllDevices
+     * @param devices to be checked against
+     * @return true if the device is weakly supported by type (e.g. for non bus / rsubmix devices),
+     *         true if the device is supported (both type and address) for bus / remote submix
+     *         false otherwise
+     */
+    bool supportsAllDevices(const DeviceVector &devices) const;
+
+    /**
+     * @brief filterSupportedDevices takes a vector of devices and filters them according to the
+     * device supported by this output (the profile from which this output derives from)
+     * @param devices reference device vector to be filtered
+     * @return vector of devices filtered from the supported devices of this output (weakly or not
+     * depending on the device type)
+     */
+    DeviceVector filterSupportedDevices(const DeviceVector &devices) const;
 
     const sp<IOProfile> mProfile;          // I/O profile this output derives from
     uint32_t mLatency;                  //
@@ -208,7 +326,6 @@ public:
 
             void dump(String8 *dst) const override;
 
-    virtual audio_devices_t supportedDevices();
     virtual bool setVolume(float volume,
                            audio_stream_type_t stream,
                            audio_devices_t device,
@@ -246,6 +363,21 @@ public:
      * For the base implementation, "remotely" means playing during screen mirroring.
      */
     bool isStreamActiveLocally(audio_stream_type_t stream, uint32_t inPastMs = 0) const;
+
+    /**
+     * @brief isStrategyActiveOnSameModule checks if the given strategy is active (or was active
+     * in the past) on the given output and all the outputs belonging to the same HW Module
+     * the same module than the given output
+     * @param outputDesc to be considered
+     * @param ps product strategy to be checked upon activity status
+     * @param inPastMs if 0, check currently, otherwise, check in the past
+     * @param sysTime shall be set if request is done for the past activity.
+     * @return true if an output following the strategy is active on the same module than desc,
+     * false otherwise
+     */
+    bool isStrategyActiveOnSameModule(product_strategy_t ps,
+                                      const sp<SwAudioOutputDescriptor>& desc,
+                                      uint32_t inPastMs = 0, nsecs_t sysTime = 0) const;
 
     /**
      * returns the A2DP output handle if it is open or 0 otherwise

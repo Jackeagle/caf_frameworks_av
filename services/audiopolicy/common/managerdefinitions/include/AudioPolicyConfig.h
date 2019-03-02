@@ -133,18 +133,14 @@ public:
         mDefaultOutputDevice->attach(module);
         defaultInputDevice->attach(module);
 
-        sp<OutputProfile> outProfile;
-        outProfile = new OutputProfile(String8("primary"));
-        outProfile->attach(module);
+        sp<OutputProfile> outProfile = new OutputProfile(String8("primary"));
         outProfile->addAudioProfile(
                 new AudioProfile(AUDIO_FORMAT_PCM_16_BIT, AUDIO_CHANNEL_OUT_STEREO, 44100));
         outProfile->addSupportedDevice(mDefaultOutputDevice);
         outProfile->setFlags(AUDIO_OUTPUT_FLAG_PRIMARY);
         module->addOutputProfile(outProfile);
 
-        sp<InputProfile> inProfile;
-        inProfile = new InputProfile(String8("primary"));
-        inProfile->attach(module);
+        sp<InputProfile> inProfile = new InputProfile(String8("primary"));
         inProfile->addAudioProfile(micProfile);
         inProfile->addSupportedDevice(defaultInputDevice);
         module->addInputProfile(inProfile);
@@ -176,7 +172,8 @@ public:
                     AUDIO_FORMAT_AAC_HE_V1, AUDIO_FORMAT_AAC_HE_V2, AUDIO_FORMAT_AAC_ELD,
                     AUDIO_FORMAT_AAC_XHE}},
             {AUDIO_FORMAT_DOLBY_TRUEHD, {}},
-            {AUDIO_FORMAT_E_AC3_JOC, {}}};
+            {AUDIO_FORMAT_E_AC3_JOC, {}},
+            {AUDIO_FORMAT_AC4, {}}};
     }
 
 private:

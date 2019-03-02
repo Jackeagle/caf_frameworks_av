@@ -31,7 +31,6 @@
 // from LOCAL_C_INCLUDES
 #include "IcuUtils.h"
 #include "MediaExtractorService.h"
-#include "MediaExtractorUpdateService.h"
 #include "MediaUtils.h"
 #include "minijail.h"
 
@@ -41,6 +40,12 @@ static const char kSystemSeccompPolicyPath[] =
         "/system/etc/seccomp_policy/mediaextractor.policy";
 static const char kVendorSeccompPolicyPath[] =
         "/vendor/etc/seccomp_policy/mediaextractor.policy";
+
+// Disable Scudo's mismatch allocation check, as it is being triggered
+// by some third party code.
+extern "C" const char *__scudo_default_options() {
+    return "DeallocationTypeMismatch=false";
+}
 
 int main(int argc __unused, char** argv)
 {
@@ -65,11 +70,6 @@ int main(int argc __unused, char** argv)
     sp<ProcessState> proc(ProcessState::self());
     sp<IServiceManager> sm = defaultServiceManager();
     MediaExtractorService::instantiate();
-
-    std::string value = base::GetProperty("ro.build.type", "unknown");
-    if (value == "userdebug" || value == "eng") {
-        media::MediaExtractorUpdateService::instantiate();
-    }
 
     ProcessState::self()->startThreadPool();
     IPCThreadState::self()->joinThreadPool();

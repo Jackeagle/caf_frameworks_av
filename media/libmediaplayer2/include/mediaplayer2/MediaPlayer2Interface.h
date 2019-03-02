@@ -30,7 +30,6 @@
 #include <media/AudioSystem.h>
 #include <media/AudioTimestamp.h>
 #include <media/BufferingSettings.h>
-#include <media/Metadata.h>
 #include <media/stagefright/foundation/AHandler.h>
 #include <mediaplayer2/MediaPlayer2Types.h>
 
@@ -215,6 +214,8 @@ public:
     virtual status_t setParameter(int key, const Parcel &request) = 0;
     virtual status_t getParameter(int key, Parcel *reply) = 0;
 
+    virtual status_t getMetrics(char **buffer, size_t *length) = 0;
+
     // Invoke a generic method on the player by using opaque parcels
     // for the request and reply.
     //
@@ -223,18 +224,6 @@ public:
     // @param[out] reply Parcel to hold the reply data. Cannot be null.
     // @return OK if the call was successful.
     virtual status_t invoke(const PlayerMessage &request, PlayerMessage *reply) = 0;
-
-    // The Client in the MetadataPlayerService calls this method on
-    // the native player to retrieve all or a subset of metadata.
-    //
-    // @param ids SortedList of metadata ID to be fetch. If empty, all
-    //            the known metadata should be returned.
-    // @param[inout] records Parcel where the player appends its metadata.
-    // @return OK if the call was successful.
-    virtual status_t getMetadata(const media::Metadata::Filter& /* ids */,
-                                 Parcel* /* records */) {
-        return INVALID_OPERATION;
-    };
 
     void setListener(const sp<MediaPlayer2InterfaceListener> &listener) {
         Mutex::Autolock autoLock(mListenerLock);
@@ -260,11 +249,11 @@ public:
     virtual void onMessageReceived(const sp<AMessage> & /* msg */) override { }
 
     // Modular DRM
-    virtual status_t prepareDrm(const uint8_t /* uuid */[16],
+    virtual status_t prepareDrm(int64_t /*srcId*/, const uint8_t /* uuid */[16],
                                 const Vector<uint8_t>& /* drmSessionId */) {
         return INVALID_OPERATION;
     }
-    virtual status_t releaseDrm() {
+    virtual status_t releaseDrm(int64_t /*srcId*/) {
         return INVALID_OPERATION;
     }
 

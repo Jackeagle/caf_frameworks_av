@@ -19,12 +19,9 @@
 
 #include <atomic>
 
-#include <android/hardware/audio/2.0/IStream.h>
-#include <android/hardware/audio/4.0/IStream.h>
-#include <android/hardware/audio/2.0/IStreamIn.h>
-#include <android/hardware/audio/4.0/IStreamIn.h>
-#include <android/hardware/audio/2.0/IStreamOut.h>
-#include <android/hardware/audio/4.0/IStreamOut.h>
+#include PATH(android/hardware/audio/FILE_VERSION/IStream.h)
+#include PATH(android/hardware/audio/FILE_VERSION/IStreamIn.h)
+#include PATH(android/hardware/audio/FILE_VERSION/IStreamOut.h)
 #include <fmq/EventFlag.h>
 #include <fmq/MessageQueue.h>
 #include <media/audiohal/StreamHalInterface.h>
@@ -131,6 +128,9 @@ class StreamOutHalHidl : public StreamOutHalInterface, public StreamHalHidl {
     // Use this method in situations where audio mixing is done in the hardware.
     virtual status_t setVolume(float left, float right);
 
+    // Selects the audio presentation (if available).
+    virtual status_t selectPresentation(int presentationId, int programId);
+
     // Write audio buffer to driver.
     virtual status_t write(const void *buffer, size_t bytes, size_t *written);
 
@@ -219,6 +219,12 @@ class StreamInHalHidl : public StreamInHalInterface, public StreamHalHidl {
 
     // Get active microphones
     virtual status_t getActiveMicrophones(std::vector<media::MicrophoneInfo> *microphones);
+
+    // Set microphone direction (for processing)
+    virtual status_t setMicrophoneDirection(audio_microphone_direction_t direction) override;
+
+    // Set microphone zoom (for processing)
+    virtual status_t setMicrophoneFieldDimension(float zoom) override;
 
     // Called when the metadata of the stream's sink has been changed.
     status_t updateSinkMetadata(const SinkMetadata& sinkMetadata) override;

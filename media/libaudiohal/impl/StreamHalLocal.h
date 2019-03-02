@@ -103,6 +103,9 @@ class StreamOutHalLocal : public StreamOutHalInterface, public StreamHalLocal {
     // Use this method in situations where audio mixing is done in the hardware.
     virtual status_t setVolume(float left, float right);
 
+    // Selects the audio presentation (if available).
+    virtual status_t selectPresentation(int presentationId, int programId);
+
     // Write audio buffer to driver.
     virtual status_t write(const void *buffer, size_t bytes, size_t *written);
 
@@ -200,6 +203,12 @@ class StreamInHalLocal : public StreamInHalInterface, public StreamHalLocal {
 
     // Get active microphones
     virtual status_t getActiveMicrophones(std::vector<media::MicrophoneInfo> *microphones);
+
+    // Sets microphone direction (for processing)
+    virtual status_t setMicrophoneDirection(audio_microphone_direction_t direction);
+
+    // Sets microphone zoom (for processing)
+    virtual status_t setMicrophoneFieldDimension(float zoom);
 
     // Called when the metadata of the stream's sink has been changed.
     status_t updateSinkMetadata(const SinkMetadata& sinkMetadata) override;

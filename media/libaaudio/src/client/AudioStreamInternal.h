@@ -144,6 +144,14 @@ protected:
      */
     bool isInService() const { return mInService; }
 
+    /**
+     * Is the service FIFO position currently controlled by the AAudio service or HAL,
+     * or set based on the Clock Model.
+     *
+     * @return true if the ClockModel is currently determining the FIFO position
+     */
+    bool isClockModelInControl() const;
+
     IsochronousClockModel    mClockModel;      // timing model for chasing the HAL
 
     AudioEndpoint            mAudioEndpoint;   // source for reads or sink for writes
@@ -163,7 +171,7 @@ protected:
 
     AAudioServiceInterface  &mServiceInterface;   // abstract interface to the service
 
-    SimpleDoubleBuffer<Timestamp>  mAtomicTimestamp;
+    SimpleDoubleBuffer<Timestamp>  mAtomicInternalTimestamp;
 
     AtomicRequestor          mNeedCatchUp;   // Ask read() or write() to sync on first timestamp.
 

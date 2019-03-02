@@ -20,7 +20,6 @@
 #include <media/AVSyncSettings.h>
 #include <media/AudioResamplerPublic.h>
 #include <media/BufferingSettings.h>
-#include <media/Metadata.h>
 #include <media/mediaplayer_common.h>
 #include <mediaplayer2/MediaPlayer2Interface.h>
 #include <mediaplayer2/MediaPlayer2Types.h>
@@ -55,7 +54,7 @@ class MediaPlayer2 : public MediaPlayer2InterfaceListener
 public:
     ~MediaPlayer2();
 
-    static sp<MediaPlayer2> Create(int32_t sessionId);
+    static sp<MediaPlayer2> Create(int32_t sessionId, jobject context);
     static status_t DumpAll(int fd, const Vector<String16>& args);
 
             void            disconnect();
@@ -86,7 +85,7 @@ public:
                     MediaPlayer2SeekMode mode = MediaPlayer2SeekMode::SEEK_PREVIOUS_SYNC);
             status_t        notifyAt(int64_t mediaTimeUs);
             status_t        getCurrentPosition(int64_t *msec);
-            status_t        getDuration(int64_t *msec);
+            status_t        getDuration(int64_t srcId, int64_t *msec);
             status_t        reset();
             status_t        setAudioStreamType(audio_stream_type_t type);
             status_t        getAudioStreamType(audio_stream_type_t *type);
@@ -103,10 +102,13 @@ public:
             status_t        setAudioAttributes(const jobject attributes);
             jobject         getAudioAttributes();
             status_t        getParameter(int key, Parcel* reply);
+            status_t        getMetrics(char **buffer, size_t *length);
 
             // Modular DRM
-            status_t        prepareDrm(const uint8_t uuid[16], const Vector<uint8_t>& drmSessionId);
-            status_t        releaseDrm();
+            status_t        prepareDrm(int64_t srcId,
+                                       const uint8_t uuid[16],
+                                       const Vector<uint8_t>& drmSessionId);
+            status_t        releaseDrm(int64_t srcId);
             // AudioRouting
             status_t        setPreferredDevice(jobject device);
             jobject         getRoutedDevice();
@@ -116,7 +118,7 @@ public:
             status_t        dump(int fd, const Vector<String16>& args);
 
 private:
-    MediaPlayer2(int32_t sessionId);
+    MediaPlayer2(int32_t sessionId, jobject context);
     bool init();
 
     // Disconnect from the currently connected ANativeWindow.
@@ -152,6 +154,7 @@ private:
     int                         mVideoHeight;
     int32_t                     mAudioSessionId;
     sp<JObjectHolder>           mAudioAttributes;
+    sp<JObjectHolder>           mContext;
     float                       mSendLevel;
     sp<ANativeWindowWrapper>    mConnectedWindow;
 };

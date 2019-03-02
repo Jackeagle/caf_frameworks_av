@@ -54,6 +54,7 @@
 #include <media/IMediaHTTPService.h>
 #include <media/mediaplayer.h>
 #include <mediautils/BatteryNotifier.h>
+#include <sensorprivacy/SensorPrivacyManager.h>
 #include <utils/Errors.h>
 #include <utils/Log.h>
 #include <utils/String16.h>
@@ -145,6 +146,8 @@ void CameraService::onFirstRef()
 
     mUidPolicy = new UidPolicy(this);
     mUidPolicy->registerSelf();
+    mSensorPrivacyPolicy = new SensorPrivacyPolicy(this);
+    mSensorPrivacyPolicy->registerSelf();
     sp<HidlCameraService> hcs = HidlCameraService::getInstance(this);
     if (hcs->registerAsService() != android::OK) {
         ALOGE("%s: Failed to register default android.frameworks.cameraservice.service@1.0",
@@ -190,7 +193,9 @@ status_t CameraService::enumerateProviders() {
 
     for (auto& cameraId : deviceIds) {
         String8 id8 = String8(cameraId.c_str());
-        onDeviceStatusChanged(id8, CameraDeviceStatus::PRESENT);
+        if (getCameraState(id8) == nullptr) {
+            onDeviceStatusChanged(id8, CameraDeviceStatus::PRESENT);
+        }
     }
 
     return OK;
@@ -228,6 +233,7 @@ void CameraService::broadcastTorchModeStatus(const String8& cameraId, TorchModeS
 CameraService::~CameraService() {
     VendorTagDescriptor::clearGlobalVendorTagDescriptor();
     mUidPolicy->unregisterSelf();
+    mSensorPrivacyPolicy->unregisterSelf();
 }
 
 void CameraService::onNewProviderRegistered() {
@@ -949,6 +955,14 @@ Status CameraService::validateClientPermissionsLocked(const String8& cameraId,
                 clientName8.string(), clientUid, clientPid, cameraId.string());
     }
 
+    // If sensor privacy is enabled then prevent access to the camera
+    if (mSensorPrivacyPolicy->isSensorPrivacyEnabled()) {
+        ALOGE("Access Denial: cannot use the camera when sensor privacy is enabled");
+        return STATUS_ERROR_FMT(ERROR_DISABLED,
+                "Caller \"%s\" (PID %d, UID %d) cannot open camera \"%s\" when sensor privacy "
+                "is enabled", clientName8.string(), clientUid, clientPid, cameraId.string());
+    }
+
     // Only use passed in clientPid to check permission. Use calling PID as the client PID that's
     // connected to camera service directly.
     originalClientPid = clientPid;
@@ -1579,13 +1593,32 @@ Status CameraService::setTorchMode(const String16& cameraId, bool enabled,
 
 Status CameraService::notifySystemEvent(int32_t eventId,
         const std::vector<int32_t>& args) {
+    const int pid = CameraThreadState::getCallingPid();
+    const int selfPid = getpid();
+
+    // Permission checks
+    if (pid != selfPid) {
+        // Ensure we're being called by system_server, or similar process with
+        // permissions to notify the camera service about system events
+        if (!checkCallingPermission(
+                String16("android.permission.CAMERA_SEND_SYSTEM_EVENTS"))) {
+            const int uid = CameraThreadState::getCallingUid();
+            ALOGE("Permission Denial: cannot send updates to camera service about system"
+                    " events from pid=%d, uid=%d", pid, uid);
+            return STATUS_ERROR_FMT(ERROR_PERMISSION_DENIED,
+                    "No permission to send updates to camera service about system events"
+                    " from pid=%d, uid=%d", pid, uid);
+        }
+    }
+
     ATRACE_CALL();
 
     switch(eventId) {
         case ICameraService::EVENT_USER_SWITCHED: {
-            // Try to register for UID policy updates, in case we're recovering
+            // Try to register for UID and sensor privacy policy updates, in case we're recovering
             // from a system server crash
             mUidPolicy->registerSelf();
+            mSensorPrivacyPolicy->registerSelf();
             doUserSwitch(/*newUserIds*/ args);
             break;
         }
@@ -1994,9 +2027,6 @@ void CameraService::logServiceError(const char* msg, int errorCode) {
 status_t CameraService::onTransact(uint32_t code, const Parcel& data, Parcel* reply,
         uint32_t flags) {
 
-    const int pid = CameraThreadState::getCallingPid();
-    const int selfPid = getpid();
-
     // Permission checks
     switch (code) {
         case SHELL_COMMAND_TRANSACTION: {
@@ -2022,20 +2052,6 @@ status_t CameraService::onTransact(uint32_t code, const Parcel& data, Parcel* re
                 resultReceiver->send(status);
             }
             return NO_ERROR;
-        }
-        case BnCameraService::NOTIFYSYSTEMEVENT: {
-            if (pid != selfPid) {
-                // Ensure we're being called by system_server, or similar process with
-                // permissions to notify the camera service about system events
-                if (!checkCallingPermission(
-                        String16("android.permission.CAMERA_SEND_SYSTEM_EVENTS"))) {
-                    const int uid = CameraThreadState::getCallingUid();
-                    ALOGE("Permission Denial: cannot send updates to camera service about system"
-                            " events from pid=%d, uid=%d", pid, uid);
-                    return PERMISSION_DENIED;
-                }
-            }
-            break;
         }
     }
 
@@ -2213,6 +2229,8 @@ binder::Status CameraService::BasicClient::disconnect() {
     sCameraService->removeByClient(this);
     sCameraService->logDisconnected(mCameraIdStr, mClientPid,
             String8(mClientPackageName));
+    sCameraService->mCameraProviderManager->removeRef(CameraProviderManager::DeviceMode::CAMERA,
+            mCameraIdStr.c_str());
 
     sp<IBinder> remote = getRemote();
     if (remote != nullptr) {
@@ -2570,6 +2588,59 @@ void CameraService::UidPolicy::updateOverrideUid(uid_t uid, String16 callingPack
             service->blockClientsForUid(uid);
         }
     }
+}
+
+// ----------------------------------------------------------------------------
+//                  SensorPrivacyPolicy
+// ----------------------------------------------------------------------------
+void CameraService::SensorPrivacyPolicy::registerSelf() {
+    Mutex::Autolock _l(mSensorPrivacyLock);
+    if (mRegistered) {
+        return;
+    }
+    SensorPrivacyManager spm;
+    spm.addSensorPrivacyListener(this);
+    mSensorPrivacyEnabled = spm.isSensorPrivacyEnabled();
+    status_t res = spm.linkToDeath(this);
+    if (res == OK) {
+        mRegistered = true;
+        ALOGV("SensorPrivacyPolicy: Registered with SensorPrivacyManager");
+    }
+}
+
+void CameraService::SensorPrivacyPolicy::unregisterSelf() {
+    Mutex::Autolock _l(mSensorPrivacyLock);
+    SensorPrivacyManager spm;
+    spm.removeSensorPrivacyListener(this);
+    spm.unlinkToDeath(this);
+    mRegistered = false;
+    ALOGV("SensorPrivacyPolicy: Unregistered with SensorPrivacyManager");
+}
+
+bool CameraService::SensorPrivacyPolicy::isSensorPrivacyEnabled() {
+    Mutex::Autolock _l(mSensorPrivacyLock);
+    return mSensorPrivacyEnabled;
+}
+
+binder::Status CameraService::SensorPrivacyPolicy::onSensorPrivacyChanged(bool enabled) {
+    {
+        Mutex::Autolock _l(mSensorPrivacyLock);
+        mSensorPrivacyEnabled = enabled;
+    }
+    // if sensor privacy is enabled then block all clients from accessing the camera
+    if (enabled) {
+        sp<CameraService> service = mService.promote();
+        if (service != nullptr) {
+            service->blockAllClients();
+        }
+    }
+    return binder::Status::ok();
+}
+
+void CameraService::SensorPrivacyPolicy::binderDied(const wp<IBinder>& /*who*/) {
+    Mutex::Autolock _l(mSensorPrivacyLock);
+    ALOGV("SensorPrivacyPolicy: SensorPrivacyManager has died");
+    mRegistered = false;
 }
 
 // ----------------------------------------------------------------------------
@@ -3052,6 +3123,18 @@ void CameraService::blockClientsForUid(uid_t uid) {
         if (current != nullptr) {
             const auto basicClient = current->getValue();
             if (basicClient.get() != nullptr && basicClient->getClientUid() == uid) {
+                basicClient->block();
+            }
+        }
+    }
+}
+
+void CameraService::blockAllClients() {
+    const auto clients = mActiveClientManager.getAll();
+    for (auto& current : clients) {
+        if (current != nullptr) {
+            const auto basicClient = current->getValue();
+            if (basicClient.get() != nullptr) {
                 basicClient->block();
             }
         }

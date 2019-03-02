@@ -20,7 +20,6 @@
 #include "AudioPolicyService.h"
 #include "TypeConverter.h"
 #include <cutils/properties.h>
-#include <media/AudioPolicyHelper.h>
 #include <media/MediaAnalyticsItem.h>
 #include <mediautils/ServiceUtilities.h>
 #include <utils/Log.h>
@@ -33,7 +32,8 @@ namespace android {
 status_t AudioPolicyService::setDeviceConnectionState(audio_devices_t device,
                                                   audio_policy_dev_state_t state,
                                                   const char *device_address,
-                                                  const char *device_name)
+                                                  const char *device_name,
+                                                  audio_format_t encodedFormat)
 {
     if (mAudioPolicyManager == NULL) {
         return NO_INIT;
@@ -50,7 +50,7 @@ status_t AudioPolicyService::setDeviceConnectionState(audio_devices_t device,
     Mutex::Autolock _l(mLock);
     AutoCallerClear acc;
     return mAudioPolicyManager->setDeviceConnectionState(device, state,
-                                                         device_address, device_name);
+                                                         device_address, device_name, encodedFormat);
 }
 
 audio_policy_dev_state_t AudioPolicyService::getDeviceConnectionState(
@@ -67,7 +67,8 @@ audio_policy_dev_state_t AudioPolicyService::getDeviceConnectionState(
 
 status_t AudioPolicyService::handleDeviceConfigChange(audio_devices_t device,
                                                   const char *device_address,
-                                                  const char *device_name)
+                                                  const char *device_name,
+                                                  audio_format_t encodedFormat)
 {
     if (mAudioPolicyManager == NULL) {
         return NO_INIT;
@@ -80,7 +81,7 @@ status_t AudioPolicyService::handleDeviceConfigChange(audio_devices_t device,
     Mutex::Autolock _l(mLock);
     AutoCallerClear acc;
     return mAudioPolicyManager->handleDeviceConfigChange(device, device_address,
-                                                         device_name);
+                                                         device_name, encodedFormat);
 }
 
 status_t AudioPolicyService::setPhoneState(audio_mode_t state)
@@ -346,8 +347,11 @@ status_t AudioPolicyService::getInputForAttr(const audio_attributes_t *attr,
     }
 
     // already checked by client, but double-check in case the client wrapper is bypassed
-    if (attr->source < AUDIO_SOURCE_DEFAULT && attr->source >= AUDIO_SOURCE_CNT &&
-            attr->source != AUDIO_SOURCE_HOTWORD && attr->source != AUDIO_SOURCE_FM_TUNER) {
+    if ((attr->source < AUDIO_SOURCE_DEFAULT)
+            || (attr->source >= AUDIO_SOURCE_CNT
+                && attr->source != AUDIO_SOURCE_HOTWORD
+                && attr->source != AUDIO_SOURCE_FM_TUNER
+                && attr->source != AUDIO_SOURCE_ECHO_REFERENCE)) {
         return BAD_VALUE;
     }
 
@@ -377,7 +381,8 @@ status_t AudioPolicyService::getInputForAttr(const audio_attributes_t *attr,
 
     if ((attr->source == AUDIO_SOURCE_VOICE_UPLINK ||
         attr->source == AUDIO_SOURCE_VOICE_DOWNLINK ||
-        attr->source == AUDIO_SOURCE_VOICE_CALL) &&
+        attr->source == AUDIO_SOURCE_VOICE_CALL ||
+        attr->source == AUDIO_SOURCE_ECHO_REFERENCE) &&
         !captureAudioOutputAllowed(pid, uid)) {
         return PERMISSION_DENIED;
     }
@@ -472,23 +477,6 @@ static std::string audioSourceString(audio_source_t value) {
     return rawbuffer;
 }
 
-static std::string audioConcurrencyString(
-        AudioPolicyInterface::concurrency_type__mask_t concurrency)
-{
-    char buffer[64]; // oversized
-    if (concurrency & AudioPolicyInterface::API_INPUT_CONCURRENCY_ALL) {
-        snprintf(buffer, sizeof(buffer), "%s%s%s%s",
-            (concurrency & AudioPolicyInterface::API_INPUT_CONCURRENCY_CALL)? ",call":"",
-            (concurrency & AudioPolicyInterface::API_INPUT_CONCURRENCY_CAPTURE)? ",capture":"",
-            (concurrency & AudioPolicyInterface::API_INPUT_CONCURRENCY_HOTWORD)? ",hotword":"",
-            (concurrency & AudioPolicyInterface::API_INPUT_CONCURRENCY_PREEMPT)? ",preempt":"");
-    } else {
-        snprintf(buffer, sizeof(buffer), ",none");
-    }
-
-    return &buffer[1];
-}
-
 std::string AudioPolicyService::getDeviceTypeStrForPortId(audio_port_handle_t portId) {
     std::string typeStr;
     struct audio_port port = {};
@@ -500,7 +488,7 @@ std::string AudioPolicyService::getDeviceTypeStrForPortId(audio_port_handle_t po
     return typeStr;
 }
 
-status_t AudioPolicyService::startInput(audio_port_handle_t portId, bool *silenced)
+status_t AudioPolicyService::startInput(audio_port_handle_t portId)
 {
     if (mAudioPolicyManager == NULL) {
         return NO_INIT;
@@ -523,17 +511,16 @@ status_t AudioPolicyService::startInput(audio_port_handle_t portId, bool *silenc
         return PERMISSION_DENIED;
     }
 
-    // If UID inactive it records silence until becoming active
-    *silenced = !mUidPolicy->isUidActive(client->uid) && !client->isVirtualDevice;
-
     Mutex::Autolock _l(mLock);
-    AudioPolicyInterface::concurrency_type__mask_t concurrency =
-            AudioPolicyInterface::API_INPUT_CONCURRENCY_NONE;
+
+    client->active = true;
+    client->startTimeNs = systemTime();
+    updateUidStates_l();
 
     status_t status;
     {
         AutoCallerClear acc;
-        status = mAudioPolicyManager->startInput(portId, *silenced, &concurrency);
+        status = mAudioPolicyManager->startInput(portId);
 
     }
 
@@ -542,7 +529,6 @@ status_t AudioPolicyService::startInput(audio_port_handle_t portId, bool *silenc
 
         static constexpr char kAudioPolicy[] = "audiopolicy";
 
-        static constexpr char kAudioPolicyReason[] = "android.media.audiopolicy.reason";
         static constexpr char kAudioPolicyStatus[] = "android.media.audiopolicy.status";
         static constexpr char kAudioPolicyRqstSrc[] = "android.media.audiopolicy.rqst.src";
         static constexpr char kAudioPolicyRqstPkg[] = "android.media.audiopolicy.rqst.pkg";
@@ -556,10 +542,9 @@ status_t AudioPolicyService::startInput(audio_port_handle_t portId, bool *silenc
         static constexpr char kAudioPolicyActiveDevice[] =
                 "android.media.audiopolicy.active.device";
 
-        MediaAnalyticsItem *item = new MediaAnalyticsItem(kAudioPolicy);
+        MediaAnalyticsItem *item = MediaAnalyticsItem::create(kAudioPolicy);
         if (item != NULL) {
 
-            item->setCString(kAudioPolicyReason, audioConcurrencyString(concurrency).c_str());
             item->setInt32(kAudioPolicyStatus, status);
 
             item->setCString(kAudioPolicyRqstSrc,
@@ -574,54 +559,35 @@ status_t AudioPolicyService::startInput(audio_port_handle_t portId, bool *silenc
             item->setCString(
                     kAudioPolicyRqstDevice, getDeviceTypeStrForPortId(client->deviceId).c_str());
 
-            // figure out who is active
-            // NB: might the other party have given up the microphone since then? how sure.
-            // perhaps could have given up on it.
-            // we hold mLock, so perhaps we're safe for this looping
-            if (concurrency != AudioPolicyInterface::API_INPUT_CONCURRENCY_NONE) {
-                int count = mAudioRecordClients.size();
-                for (int i = 0; i<count ; i++) {
-                    if (portId == mAudioRecordClients.keyAt(i)) {
-                        continue;
+            int count = mAudioRecordClients.size();
+            for (int i = 0; i < count ; i++) {
+                if (portId == mAudioRecordClients.keyAt(i)) {
+                    continue;
+                }
+                sp<AudioRecordClient> other = mAudioRecordClients.valueAt(i);
+                if (other->active) {
+                    // keeps the last of the clients marked active
+                    item->setCString(kAudioPolicyActiveSrc,
+                                     audioSourceString(other->attributes.source).c_str());
+                    item->setInt32(kAudioPolicyActiveSession, other->session);
+                    if (other->opPackageName.size() != 0) {
+                        item->setCString(kAudioPolicyActivePkg,
+                             std::string(String8(other->opPackageName).string()).c_str());
+                    } else {
+                        item->setCString(kAudioPolicyRqstPkg,
+                                         std::to_string(other->uid).c_str());
                     }
-                    sp<AudioRecordClient> other = mAudioRecordClients.valueAt(i);
-                    if (other->active) {
-                        // keeps the last of the clients marked active
-                        item->setCString(kAudioPolicyActiveSrc,
-                                         audioSourceString(other->attributes.source).c_str());
-                        item->setInt32(kAudioPolicyActiveSession, other->session);
-                        if (other->opPackageName.size() != 0) {
-                            item->setCString(kAudioPolicyActivePkg,
-                                 std::string(String8(other->opPackageName).string()).c_str());
-                        } else {
-                            item->setCString(kAudioPolicyRqstPkg,
-                                             std::to_string(other->uid).c_str());
-                        }
-                        item->setCString(kAudioPolicyActiveDevice,
-                                         getDeviceTypeStrForPortId(other->deviceId).c_str());
-                    }
+                    item->setCString(kAudioPolicyActiveDevice,
+                                     getDeviceTypeStrForPortId(other->deviceId).c_str());
                 }
             }
             item->selfrecord();
             delete item;
             item = NULL;
         }
-    }
-
-    if (status == NO_ERROR) {
-        LOG_ALWAYS_FATAL_IF(concurrency & ~AudioPolicyInterface::API_INPUT_CONCURRENCY_ALL,
-                            "startInput(): invalid concurrency type %d", (int)concurrency);
-
-        // enforce permission (if any) required for each type of concurrency
-        if (concurrency & AudioPolicyInterface::API_INPUT_CONCURRENCY_CALL) {
-            //TODO: check incall capture permission
-        }
-        if (concurrency & AudioPolicyInterface::API_INPUT_CONCURRENCY_CAPTURE) {
-            //TODO: check concurrent capture permission
-        }
-
-        client->active = true;
-    } else {
+        client->active = false;
+        client->startTimeNs = 0;
+        updateUidStates_l();
         finishRecording(client->opPackageName, client->uid);
     }
 
@@ -633,6 +599,7 @@ status_t AudioPolicyService::stopInput(audio_port_handle_t portId)
     if (mAudioPolicyManager == NULL) {
         return NO_INIT;
     }
+
     Mutex::Autolock _l(mLock);
 
     ssize_t index = mAudioRecordClients.indexOfKey(portId);
@@ -642,6 +609,9 @@ status_t AudioPolicyService::stopInput(audio_port_handle_t portId)
     sp<AudioRecordClient> client = mAudioRecordClients.valueAt(index);
 
     client->active = false;
+    client->startTimeNs = 0;
+
+    updateUidStates_l();
 
     // finish the recording app op
     finishRecording(client->opPackageName, client->uid);
@@ -664,6 +634,14 @@ void AudioPolicyService::releaseInput(audio_port_handle_t portId)
             return;
         }
         client = mAudioRecordClients.valueAt(index);
+
+        if (client->active) {
+            ALOGW("%s releasing active client portId %d", __FUNCTION__, portId);
+            client->active = false;
+            client->startTimeNs = 0;
+            updateUidStates_l();
+        }
+
         mAudioRecordClients.removeItem(portId);
     }
     if (client == 0) {
@@ -742,11 +720,12 @@ status_t AudioPolicyService::getStreamVolumeIndex(audio_stream_type_t stream,
 uint32_t AudioPolicyService::getStrategyForStream(audio_stream_type_t stream)
 {
     if (uint32_t(stream) >= AUDIO_STREAM_PUBLIC_CNT) {
-        return 0;
+        return PRODUCT_STRATEGY_NONE;
     }
     if (mAudioPolicyManager == NULL) {
-        return 0;
+        return PRODUCT_STRATEGY_NONE;
     }
+    // DO NOT LOCK, may be called from AudioFlinger with lock held, reaching deadlock
     AutoCallerClear acc;
     return mAudioPolicyManager->getStrategyForStream(stream);
 }
@@ -954,6 +933,17 @@ bool AudioPolicyService::isOffloadSupported(const audio_offload_info_t& info)
     return mAudioPolicyManager->isOffloadSupported(info);
 }
 
+bool AudioPolicyService::isDirectOutputSupported(const audio_config_base_t& config,
+                                                 const audio_attributes_t& attributes) {
+    if (mAudioPolicyManager == NULL) {
+        ALOGV("mAudioPolicyManager == NULL");
+        return false;
+    }
+    Mutex::Autolock _l(mLock);
+    return mAudioPolicyManager->isDirectOutputSupported(config, attributes);
+}
+
+
 status_t AudioPolicyService::listAudioPorts(audio_port_role_t role,
                                             audio_port_type_t type,
                                             unsigned int *num_ports,
@@ -1071,6 +1061,31 @@ status_t AudioPolicyService::registerPolicyMixes(const Vector<AudioMix>& mixes, 
     }
 }
 
+status_t AudioPolicyService::setUidDeviceAffinities(uid_t uid,
+        const Vector<AudioDeviceTypeAddr>& devices) {
+    Mutex::Autolock _l(mLock);
+    if(!modifyAudioRoutingAllowed()) {
+        return PERMISSION_DENIED;
+    }
+    if (mAudioPolicyManager == NULL) {
+        return NO_INIT;
+    }
+    AutoCallerClear acc;
+    return mAudioPolicyManager->setUidDeviceAffinities(uid, devices);
+}
+
+status_t AudioPolicyService::removeUidDeviceAffinities(uid_t uid) {
+    Mutex::Autolock _l(mLock);
+    if(!modifyAudioRoutingAllowed()) {
+        return PERMISSION_DENIED;
+    }
+    if (mAudioPolicyManager == NULL) {
+        return NO_INIT;
+    }
+    AutoCallerClear acc;
+    return mAudioPolicyManager->removeUidDeviceAffinities(uid);
+}
+
 status_t AudioPolicyService::startAudioSource(const struct audio_port_config *source,
                                               const audio_attributes_t *attributes,
                                               audio_port_handle_t *portId)
@@ -1143,6 +1158,17 @@ status_t AudioPolicyService::getSurroundFormats(unsigned int *numSurroundFormats
                                                    surroundFormatsEnabled, reported);
 }
 
+status_t AudioPolicyService::getHwOffloadEncodingFormatsSupportedForA2DP(
+                                        std::vector<audio_format_t> *formats)
+{
+    if (mAudioPolicyManager == NULL) {
+        return NO_INIT;
+    }
+    Mutex::Autolock _l(mLock);
+    AutoCallerClear acc;
+    return mAudioPolicyManager->getHwOffloadEncodingFormatsSupportedForA2DP(formats);
+}
+
 status_t AudioPolicyService::setSurroundFormatEnabled(audio_format_t audioFormat, bool enabled)
 {
     if (mAudioPolicyManager == NULL) {
@@ -1153,4 +1179,47 @@ status_t AudioPolicyService::setSurroundFormatEnabled(audio_format_t audioFormat
     return mAudioPolicyManager->setSurroundFormatEnabled(audioFormat, enabled);
 }
 
+status_t AudioPolicyService::setAssistantUid(uid_t uid)
+{
+    Mutex::Autolock _l(mLock);
+    mUidPolicy->setAssistantUid(uid);
+    return NO_ERROR;
+}
+
+status_t AudioPolicyService::setA11yServicesUids(const std::vector<uid_t>& uids)
+{
+    Mutex::Autolock _l(mLock);
+    mUidPolicy->setA11yUids(uids);
+    return NO_ERROR;
+}
+
+bool AudioPolicyService::isHapticPlaybackSupported()
+{
+    if (mAudioPolicyManager == NULL) {
+        ALOGW("%s, mAudioPolicyManager == NULL", __func__);
+        return false;
+    }
+    Mutex::Autolock _l(mLock);
+    AutoCallerClear acc;
+    return mAudioPolicyManager->isHapticPlaybackSupported();
+}
+
+status_t AudioPolicyService::listAudioProductStrategies(AudioProductStrategyVector &strategies)
+{
+    if (mAudioPolicyManager == NULL) {
+        return NO_INIT;
+    }
+    Mutex::Autolock _l(mLock);
+    return mAudioPolicyManager->listAudioProductStrategies(strategies);
+}
+
+product_strategy_t AudioPolicyService::getProductStrategyFromAudioAttributes(
+        const AudioAttributes &aa)
+{
+    if (mAudioPolicyManager == NULL) {
+        return PRODUCT_STRATEGY_NONE;
+    }
+    Mutex::Autolock _l(mLock);
+    return mAudioPolicyManager->getProductStrategyFromAudioAttributes(aa);
+}
 } // namespace android

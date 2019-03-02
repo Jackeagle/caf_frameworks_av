@@ -131,6 +131,8 @@ status_t DeviceHalLocal::openInputStream(
         audio_input_flags_t flags,
         const char *address,
         audio_source_t source,
+        audio_devices_t /*outputDevice*/,
+        const char */*outputDeviceAddress*/,
         sp<StreamInHalInterface> *inStream) {
     audio_stream_in_t *halStream;
     ALOGV("open_input_stream handle: %d devices: %x flags: %#x "
@@ -190,7 +192,7 @@ status_t DeviceHalLocal::getMicrophones(
         std::vector<media::MicrophoneInfo> *microphones __unused) {
     return INVALID_OPERATION;
 }
-#elif MAJOR_VERSION == 4
+#elif MAJOR_VERSION >= 4
 status_t DeviceHalLocal::getMicrophones(std::vector<media::MicrophoneInfo> *microphones) {
     if (mDev->get_microphones == NULL) return INVALID_OPERATION;
     size_t actual_mics = AUDIO_MICROPHONE_MAX_COUNT;

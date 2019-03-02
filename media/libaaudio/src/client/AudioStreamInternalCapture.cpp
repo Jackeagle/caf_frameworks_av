@@ -210,17 +210,12 @@ aaudio_result_t AudioStreamInternalCapture::readNowWithConversion(void *buffer,
 }
 
 int64_t AudioStreamInternalCapture::getFramesWritten() {
-    int64_t framesWrittenHardware;
-    if (isActive()) {
-        framesWrittenHardware = mClockModel.convertTimeToPosition(AudioClock::getNanoseconds());
-    } else {
-        framesWrittenHardware = mAudioEndpoint.getDataWriteCounter();
-    }
-    // Prevent retrograde motion.
+    const int64_t framesWrittenHardware = isClockModelInControl()
+            ? mClockModel.convertTimeToPosition(AudioClock::getNanoseconds())
+            : mAudioEndpoint.getDataWriteCounter();
+    // Add service offset and prevent retrograde motion.
     mLastFramesWritten = std::max(mLastFramesWritten,
                                   framesWrittenHardware + mFramesOffsetFromService);
-    //ALOGD("getFramesWritten() returns %lld",
-    //      (long long)mLastFramesWritten);
     return mLastFramesWritten;
 }
 
@@ -258,7 +253,8 @@ void *AudioStreamInternalCapture::callbackLoop() {
         callbackResult = maybeCallDataCallback(mCallbackBuffer, mCallbackFrames);
 
         if (callbackResult == AAUDIO_CALLBACK_RESULT_STOP) {
-            ALOGD("callback returned AAUDIO_CALLBACK_RESULT_STOP");
+            ALOGD("%s(): callback returned AAUDIO_CALLBACK_RESULT_STOP", __func__);
+            result = systemStopFromCallback();
             break;
         }
     }

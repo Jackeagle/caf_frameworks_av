@@ -113,9 +113,6 @@ cc_library_shared {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }
 
@@ -144,24 +141,13 @@ cc_library_static {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
-}
-
-filegroup {
-    name: "mediaupdateservice_aidl",
-    srcs: [
-        "aidl/android/media/IMediaUpdateService.aidl",
-    ],
 }
 
 cc_library {
     name: "libmedia",
 
     srcs: [
-        ":mediaupdateservice_aidl",
         "IDataSource.cpp",
         "BufferingSettings.cpp",
         "mediaplayer.cpp",
@@ -219,15 +205,14 @@ cc_library {
         "android.hidl.token@1.0-utils",
         "liblog",
         "libcutils",
+        "libprocessgroup",
         "libutils",
         "libbinder",
         "libsonivox",
-        "libicuuc",
-        "libicui18n",
+        "libandroidicu",
         "libexpat",
         "libcamera_client",
         "libstagefright_foundation",
-        "libmediaextractor",
         "libgui",
         "libdl",
         "libaudioutils",
@@ -238,8 +223,7 @@ cc_library {
     export_shared_lib_headers: [
         "libaudioclient",
         "libbinder",
-        "libicuuc",
-        "libicui18n",
+        "libandroidicu",
         "libsonivox",
         "libmedia_omx",
     ],
@@ -271,9 +255,6 @@ cc_library {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }
 
@@ -292,7 +273,6 @@ cc_library_static {
         "libbinder",
         "libcutils",
         "liblog",
-        "libmediaextractor",
         "libmediandk",
         "libnativewindow",
         "libmediandk_utils",
@@ -335,8 +315,5 @@ cc_library_static {
             "signed-integer-overflow",
         ],
         cfi: true,
-        diag: {
-            cfi: true,
-        },
     },
 }

@@ -551,7 +551,7 @@ MediaCodec::~MediaCodec() {
 
 void MediaCodec::initAnalyticsItem() {
     if (mAnalyticsItem == NULL) {
-        mAnalyticsItem = new MediaAnalyticsItem(kCodecKeyName);
+        mAnalyticsItem = MediaAnalyticsItem::create(kCodecKeyName);
     }
 
     mLatencyHist.setup(kLatencyHistBuckets, kLatencyHistWidth, kLatencyHistFloor);
@@ -863,9 +863,9 @@ static CodecBase *CreateCCodec() {
 //static
 sp<CodecBase> MediaCodec::GetCodecBase(const AString &name, const char *owner) {
     if (owner) {
-        if (strncmp(owner, "default", 8) == 0) {
-            return new ACodec;
-        } else if (strncmp(owner, "codec2", 7) == 0) {
+        if (strcmp(owner, "default") == 0) {
+            return AVFactory::get()->createACodec();
+        } else if (strncmp(owner, "codec2", 6) == 0) {
             return CreateCCodec();
         }
     }
@@ -875,8 +875,10 @@ sp<CodecBase> MediaCodec::GetCodecBase(const AString &name, const char *owner) {
     } else if (name.startsWithIgnoreCase("omx.")) {
         // at this time only ACodec specifies a mime type.
         return AVFactory::get()->createACodec();
-    } else if (name.startsWithIgnoreCase("android.filter.")) {
+    } else if (name.startsWithIgnoreCase("android.filter.qti")) {
         return AVFactory::get()->createMediaFilter();
+    } else if (name.startsWithIgnoreCase("android.filter")) {
+        return new MediaFilter;
     } else {
         return NULL;
     }
@@ -906,8 +908,9 @@ status_t MediaCodec::init(const AString &name, bool nameIsType) {
     //as these components are not present in media_codecs.xml and MediaCodecList won't find
     //these component by findCodecByName
     //Video and Flac decoder are present in list so exclude them.
-    if (!(name.find("qcom", 0) > 0 || name.find("qti", 0) > 0)
-          || name.find("video", 0) > 0 || name.find("flac", 0) > 0) {
+    if ((!(name.find("qcom", 0) > 0 || name.find("qti", 0) > 0 || name.find("filter", 0) > 0)
+          || name.find("video", 0) > 0 || name.find("flac", 0) > 0)
+          && !(name.find("tme",0) > 0)) {
         const sp<IMediaCodecList> mcl = MediaCodecList::getInstance();
         if (mcl == NULL) {
             mCodec = NULL;  // remove the codec.
@@ -919,10 +922,10 @@ status_t MediaCodec::init(const AString &name, bool nameIsType) {
                 continue;
             }
             mCodecInfo = mcl->getCodecInfo(codecIdx);
-            Vector<AString> mimes;
-            mCodecInfo->getSupportedMimes(&mimes);
-            for (size_t i = 0; i < mimes.size(); i++) {
-                if (mimes[i].startsWith("video/")) {
+            Vector<AString> mediaTypes;
+            mCodecInfo->getSupportedMediaTypes(&mediaTypes);
+            for (size_t i = 0; i < mediaTypes.size(); i++) {
+                if (mediaTypes[i].startsWith("video/")) {
                     mIsVideo = true;
                     break;
                 }
@@ -934,12 +937,14 @@ status_t MediaCodec::init(const AString &name, bool nameIsType) {
             return NAME_NOT_FOUND;
         }
     }
+    const char *owner = "default";
+    if (mCodecInfo !=NULL)
+        owner = mCodecInfo->getOwnerName();
 
-    mCodec = GetCodecBase(name, mCodecInfo->getOwnerName());
+    mCodec = GetCodecBase(name, owner);
     if (mCodec == NULL) {
         return NAME_NOT_FOUND;
     }
-
     if (mIsVideo) {
         // video codec needs dedicated looper
         if (mCodecLooper == NULL) {
@@ -1961,8 +1966,9 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                     if (mComponentName.c_str()) {
                         mAnalyticsItem->setCString(kCodecCodec, mComponentName.c_str());
                     }
-
-                    const char *owner = mCodecInfo->getOwnerName();
+                    const char *owner = "default";
+                    if (mCodecInfo !=NULL)
+                        owner = mCodecInfo->getOwnerName();
                     if (mComponentName.startsWith("OMX.google.")
                             && (owner == nullptr || strncmp(owner, "default", 8) == 0)) {
                         mFlags |= kFlagUsesSoftwareRenderer;
@@ -2086,6 +2092,10 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
 
                 case kWhatStartCompleted:
                 {
+                    if (mState == RELEASING) {
+                        ALOGW("start interrupted by error, current state %d", mState);
+                        break;
+                    }
                     CHECK_EQ(mState, STARTING);
                     if (mIsVideo) {
                         addResource(
@@ -2214,6 +2224,13 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                                 if (ColorUtils::getHDRStaticInfoFromFormat(mOutputFormat, &info)) {
                                     setNativeWindowHdrMetadata(mSurface.get(), &info);
                                 }
+                            }
+
+                            sp<ABuffer> hdr10PlusInfo;
+                            if (mOutputFormat->findBuffer("hdr10-plus-info", &hdr10PlusInfo)
+                                    && hdr10PlusInfo != nullptr && hdr10PlusInfo->size() > 0) {
+                                native_window_set_buffers_hdr10_plus_metadata(mSurface.get(),
+                                        hdr10PlusInfo->size(), hdr10PlusInfo->data());
                             }
 
                             if (mime.startsWithIgnoreCase("video/")) {
@@ -2714,7 +2731,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             int64_t timeoutUs;
             CHECK(msg->findInt64("timeoutUs", &timeoutUs));
 
-            if (timeoutUs == 0ll) {
+            if (timeoutUs == 0LL) {
                 PostReplyWithError(replyID, -EAGAIN);
                 break;
             }
@@ -2722,7 +2739,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             mFlags |= kFlagDequeueInputPending;
             mDequeueInputReplyID = replyID;
 
-            if (timeoutUs > 0ll) {
+            if (timeoutUs > 0LL) {
                 sp<AMessage> timeoutMsg =
                     new AMessage(kWhatDequeueInputTimedOut, this);
                 timeoutMsg->setInt32(
@@ -2788,7 +2805,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             int64_t timeoutUs;
             CHECK(msg->findInt64("timeoutUs", &timeoutUs));
 
-            if (timeoutUs == 0ll) {
+            if (timeoutUs == 0LL) {
                 PostReplyWithError(replyID, -EAGAIN);
                 break;
             }
@@ -2796,7 +2813,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             mFlags |= kFlagDequeueOutputPending;
             mDequeueOutputReplyID = replyID;
 
-            if (timeoutUs > 0ll) {
+            if (timeoutUs > 0LL) {
                 sp<AMessage> timeoutMsg =
                     new AMessage(kWhatDequeueOutputTimedOut, this);
                 timeoutMsg->setInt32(
@@ -3057,7 +3074,7 @@ status_t MediaCodec::queueCSDInputBuffer(size_t bufferIndex) {
     msg->setSize("index", bufferIndex);
     msg->setSize("offset", 0);
     msg->setSize("size", csd->size());
-    msg->setInt64("timeUs", 0ll);
+    msg->setInt64("timeUs", 0LL);
     msg->setInt32("flags", BUFFER_FLAG_CODECCONFIG);
     msg->setPointer("errorDetailMsg", &errorDetailMsg);
 

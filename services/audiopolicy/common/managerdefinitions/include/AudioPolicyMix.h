@@ -16,15 +16,17 @@
 
 #pragma once
 
+#include "DeviceDescriptor.h"
 #include <utils/RefBase.h>
 #include <media/AudioPolicy.h>
 #include <utils/KeyedVector.h>
 #include <system/audio.h>
 #include <utils/String8.h>
 
-namespace android {
+#include <DeviceDescriptor.h>
+#include <AudioOutputDescriptor.h>
 
-class SwAudioOutputDescriptor;
+namespace android {
 
 /**
  * custom mix entry in mPolicyMixes
@@ -74,11 +76,27 @@ public:
     status_t getOutputForAttr(audio_attributes_t attributes, uid_t uid,
             sp<SwAudioOutputDescriptor> &desc);
 
-    audio_devices_t getDeviceAndMixForInputSource(audio_source_t inputSource,
-                                                  audio_devices_t availableDeviceTypes,
-                                                  AudioMix **policyMix);
+    sp<DeviceDescriptor> getDeviceAndMixForInputSource(audio_source_t inputSource,
+                                                       const DeviceVector &availableDeviceTypes,
+                                                       AudioMix **policyMix) const;
+
+    /**
+     * @brief try to find a matching mix for a given output descriptor and returns the associated
+     * output device.
+     * @param output to be considered
+     * @param availableOutputDevices list of output devices currently reachable
+     * @param policyMix to be returned if any mix matching ouput descriptor
+     * @return device selected from the mix attached to the output, null pointer otherwise
+     */
+    sp<DeviceDescriptor> getDeviceAndMixForOutput(const sp<SwAudioOutputDescriptor> &output,
+                                                  const DeviceVector &availableOutputDevices,
+                                                  AudioMix **policyMix = nullptr);
 
     status_t getInputMixForAttr(audio_attributes_t attr, AudioMix **policyMix);
+
+    status_t setUidDeviceAffinities(uid_t uid, const Vector<AudioDeviceTypeAddr>& devices);
+    status_t removeUidDeviceAffinities(uid_t uid);
+    status_t getDevicesForUid(uid_t uid, Vector<AudioDeviceTypeAddr>& devices) const;
 
     void dump(String8 *dst) const;
 };

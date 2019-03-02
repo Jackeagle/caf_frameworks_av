@@ -140,6 +140,8 @@ struct DevicePortTraits : public AndroidCollectionTraits<DeviceDescriptor, Devic
         static constexpr const char *roleSource = "source"; /**< <attribute role source value>. */
         /** optional: device address, char string less than 64. */
         static constexpr const char *address = "address";
+        /** optional: the list of encoded audio formats that are known to be supported. */
+        static constexpr const char *encodedFormats = "encodedFormats";
     };
 
     static Return<Element> deserialize(const xmlNode *cur, PtrSerializingCtx serializingContext);
@@ -511,12 +513,18 @@ Return<DevicePortTraits::Element> DevicePortTraits::deserialize(const xmlNode *c
         ALOGW("%s: bad type %08x", __func__, type);
         return Status::fromStatusT(BAD_VALUE);
     }
-    Element deviceDesc = new DeviceDescriptor(type, String8(name.c_str()));
+    std::string encodedFormatsLiteral = getXmlAttribute(cur, Attributes::encodedFormats);
+    ALOGV("%s: %s %s=%s", __func__, tag, Attributes::encodedFormats, encodedFormatsLiteral.c_str());
+    FormatVector encodedFormats;
+    if (!encodedFormatsLiteral.empty()) {
+        encodedFormats = formatsFromString(encodedFormatsLiteral, " ");
+    }
+    Element deviceDesc = new DeviceDescriptor(type, encodedFormats, String8(name.c_str()));
 
     std::string address = getXmlAttribute(cur, Attributes::address);
     if (!address.empty()) {
         ALOGV("%s: address=%s for %s", __func__, address.c_str(), name.c_str());
-        deviceDesc->mAddress = String8(address.c_str());
+        deviceDesc->setAddress(String8(address.c_str()));
     }
 
     AudioProfileTraits::Collection profiles;
@@ -535,7 +543,7 @@ Return<DevicePortTraits::Element> DevicePortTraits::deserialize(const xmlNode *c
         return Status::fromStatusT(status);
     }
     ALOGV("%s: adding device tag %s type %08x address %s", __func__,
-          deviceDesc->getName().string(), type, deviceDesc->mAddress.string());
+          deviceDesc->getName().string(), type, deviceDesc->address().string());
     return deviceDesc;
 }
 
@@ -742,7 +750,7 @@ Return<VolumeTraits::Element> VolumeTraits::deserialize(const xmlNode *cur,
             }
             ALOGV("%s: %s=%s",
                     __func__, tag, reinterpret_cast<const char*>(pointDefinition.get()));
-            Vector<int32_t> point;
+            std::vector<int32_t> point;
             collectionFromString<DefaultTraits<int32_t>>(
                     reinterpret_cast<const char*>(pointDefinition.get()), point, ",");
             if (point.size() != 2) {

@@ -23,7 +23,6 @@
 #include <memory>
 #include <cutils/misc.h>
 #include <media/AudioEffect.h>
-#include <media/AudioPolicyHelper.h>
 #include <media/EffectsConfig.h>
 #include <mediautils/ServiceUtilities.h>
 #include <system/audio.h>
@@ -330,11 +329,12 @@ status_t AudioPolicyEffects::addSourceDefaultEffect(const effect_uuid_t *type,
         return BAD_VALUE;
     }
 
-    // HOTWORD and FM_TUNER are two special case sources > MAX.
+    // HOTWORD, FM_TUNER and ECHO_REFERENCE are special case sources > MAX.
     if (source < AUDIO_SOURCE_DEFAULT ||
             (source > AUDIO_SOURCE_MAX &&
              source != AUDIO_SOURCE_HOTWORD &&
-             source != AUDIO_SOURCE_FM_TUNER)) {
+             source != AUDIO_SOURCE_FM_TUNER &&
+             source != AUDIO_SOURCE_ECHO_REFERENCE)) {
         ALOGE("addSourceDefaultEffect(): Unsupported source type %d", source);
         return BAD_VALUE;
     }
@@ -397,8 +397,7 @@ status_t AudioPolicyEffects::addStreamDefaultEffect(const effect_uuid_t *type,
         ALOGE("addStreamDefaultEffect(): Null uuid or type uuid pointer");
         return BAD_VALUE;
     }
-
-    audio_stream_type_t stream = audio_usage_to_stream_type(usage);
+    audio_stream_type_t stream = AudioSystem::attributesToStreamType(attributes_initializer(usage));
 
     if (stream < AUDIO_STREAM_MIN || stream >= AUDIO_STREAM_PUBLIC_CNT) {
         ALOGE("addStreamDefaultEffect(): Unsupported stream type %d", stream);
@@ -534,7 +533,8 @@ void AudioPolicyEffects::EffectVector::setProcessorEnabled(bool enabled)
     CAMCORDER_SRC_TAG,
     VOICE_REC_SRC_TAG,
     VOICE_COMM_SRC_TAG,
-    UNPROCESSED_SRC_TAG
+    UNPROCESSED_SRC_TAG,
+    VOICE_PERFORMANCE_SRC_TAG
 };
 
 // returns the audio_source_t enum corresponding to the input source name or
