@@ -188,7 +188,9 @@ sp<MediaExtractor> MediaExtractor::CreateFromService(
     }
 
     MediaExtractor *ret = NULL;
-    if ((ret = AVFactory::get()->createExtendedExtractor(source, mime, meta, flags)) != NULL) {
+    if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_FLAC)) {
+        ret = new FLACExtractor(source);
+    } else if ((ret = AVFactory::get()->createExtendedExtractor(source, mime, meta, flags)) != NULL) {
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
             || !strcasecmp(mime, "audio/mp4")) {
         ret = new MPEG4Extractor(source);
