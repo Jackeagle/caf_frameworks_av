@@ -804,12 +804,10 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
 
     sp<SwAudioOutputDescriptor> desc;
     if (mPolicyMixes.getOutputForAttr(attributes, uid, desc) == NO_ERROR) {
-        routing_strategy strategy = (routing_strategy) getStrategyForAttr(&attributes);
-        audio_devices_t device = getDeviceForStrategy(strategy, false /*fromCache*/);
         ALOG_ASSERT(desc != 0, "Invalid desc returned by getOutputForAttr");
         if (((((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) != 0) &&
                   ((flags & AUDIO_OUTPUT_FLAG_DIRECT) != 0)) &&
-                  (attributes.usage == AUDIO_USAGE_MEDIA)) || (device & AUDIO_DEVICE_OUT_USB_HEADSET)) {
+                  (attributes.usage == AUDIO_USAGE_MEDIA))) {
             ALOGW("getOutputForAttr() select legacy media compress offload or direct output");
         } else {
             if (!audio_has_proportional_frames(config->format)) {
