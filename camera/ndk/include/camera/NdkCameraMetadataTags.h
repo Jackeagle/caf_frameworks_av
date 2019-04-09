@@ -3046,6 +3046,28 @@ typedef enum acamera_metadata_tag {
      */
     ACAMERA_REQUEST_AVAILABLE_SESSION_KEYS =                    // int32[n]
             ACAMERA_REQUEST_START + 16,
+    /**
+     * <p>A subset of the available request keys that can be overridden for
+     * physical devices backing a logical multi-camera.</p>
+     *
+     * <p>Type: int32[n]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>This is a subset of ACAMERA_REQUEST_AVAILABLE_REQUEST_KEYS which contains a list
+     * of keys that can be overridden using <a href="https://developer.android.com/reference/CaptureRequest/Builder.html#setPhysicalCameraKey">Builder#setPhysicalCameraKey</a>.
+     * The respective value of such request key can be obtained by calling
+     * <a href="https://developer.android.com/reference/CaptureRequest/Builder.html#getPhysicalCameraKey">Builder#getPhysicalCameraKey</a>. Capture requests that contain
+     * individual physical device requests must be built via
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraDevice.html#createCaptureRequest(int,">Set)</a>.</p>
+     *
+     * @see ACAMERA_REQUEST_AVAILABLE_REQUEST_KEYS
+     */
+    ACAMERA_REQUEST_AVAILABLE_PHYSICAL_CAMERA_REQUEST_KEYS =    // int32[n]
+            ACAMERA_REQUEST_START + 17,
     ACAMERA_REQUEST_END,
 
     /**
@@ -5688,13 +5710,17 @@ typedef enum acamera_metadata_tag {
      *
      * <p>The ID of the active physical camera that's backing the logical camera. All camera
      * streams and metadata that are not physical camera specific will be originating from this
-     * physical camera. This must be one of valid physical IDs advertised in the physicalIds
-     * static tag.</p>
+     * physical camera.</p>
      * <p>For a logical camera made up of physical cameras where each camera's lenses have
      * different characteristics, the camera device may choose to switch between the physical
      * cameras when application changes FOCAL_LENGTH or SCALER_CROP_REGION.
      * At the time of lens switch, this result metadata reflects the new active physical camera
      * ID.</p>
+     * <p>This key will be available if the camera device advertises this key via {@link ACAMERA_REQUEST_AVAILABLE_RESULT_KEYS }.
+     * When available, this must be one of valid physical IDs backing this logical multi-camera.
+     * If this key is not available for a logical multi-camera, the camera device implementation
+     * may still switch between different active physical cameras based on use case, but the
+     * current active physical camera information won't be available to the application.</p>
      */
     ACAMERA_LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID =           // byte
             ACAMERA_LOGICAL_MULTI_CAMERA_START + 2,
@@ -7736,7 +7762,9 @@ typedef enum acamera_metadata_enum_acamera_scaler_cropping_type {
 typedef enum acamera_metadata_enum_acamera_scaler_available_recommended_stream_configurations {
     /**
      * <p>Preview must only include non-stalling processed stream configurations with
-     * output formats like YUV_420_888, IMPLEMENTATION_DEFINED, etc.</p>
+     * output formats like
+     * {@link AIMAGE_FORMAT_YUV_420_888 },
+     * {@link AIMAGE_FORMAT_PRIVATE }, etc.</p>
      */
     ACAMERA_SCALER_AVAILABLE_RECOMMENDED_STREAM_CONFIGURATIONS_PREVIEW
                                                                       = 0x0,
@@ -7751,19 +7779,20 @@ typedef enum acamera_metadata_enum_acamera_scaler_available_recommended_stream_c
 
     /**
      * <p>Video snapshot must include stream configurations at least as big as
-     * the maximum RECORD resolutions and only with format BLOB + DATASPACE_JFIF
-     * format/dataspace combination (JPEG). Additionally the configurations shouldn't cause
-     * preview glitches and also be able to run at 30 fps.</p>
+     * the maximum RECORD resolutions and only with
+     * {@link AIMAGE_FORMAT_JPEG JPEG output format}.
+     * Additionally the configurations shouldn't cause preview glitches and also be able to
+     * run at 30 fps.</p>
      */
     ACAMERA_SCALER_AVAILABLE_RECOMMENDED_STREAM_CONFIGURATIONS_VIDEO_SNAPSHOT
                                                                       = 0x2,
 
     /**
      * <p>Recommended snapshot stream configurations must include at least one with
-     * size close to ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE with BLOB + DATASPACE_JFIF
-     * format/dataspace combination (JPEG). Taking into account restrictions on aspect
-     * ratio, alignment etc. the area of the maximum suggested size shouldn’t be less than
-     * 97% of the sensor array size area.</p>
+     * size close to ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE and
+     * {@link AIMAGE_FORMAT_JPEG JPEG output format}.
+     * Taking into account restrictions on aspect ratio, alignment etc. the area of the
+     * maximum suggested size shouldn’t be less than 97% of the sensor array size area.</p>
      *
      * @see ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE
      */
@@ -7782,8 +7811,19 @@ typedef enum acamera_metadata_enum_acamera_scaler_available_recommended_stream_c
      */
     ACAMERA_SCALER_AVAILABLE_RECOMMENDED_STREAM_CONFIGURATIONS_RAW   = 0x5,
 
-    ACAMERA_SCALER_AVAILABLE_RECOMMENDED_STREAM_CONFIGURATIONS_PUBLIC_END
+    /**
+     * <p>If supported, the recommended low latency stream configurations must have
+     * end-to-end latency that does not exceed 200 ms. under standard operating conditions
+     * (reasonable light levels, not loaded system) and using template
+     * TEMPLATE_STILL_CAPTURE. This is primarily for listing configurations for the
+     * {@link AIMAGE_FORMAT_JPEG JPEG output format}
+     * however other supported output formats can be added as well.</p>
+     */
+    ACAMERA_SCALER_AVAILABLE_RECOMMENDED_STREAM_CONFIGURATIONS_LOW_LATENCY_SNAPSHOT
                                                                       = 0x6,
+
+    ACAMERA_SCALER_AVAILABLE_RECOMMENDED_STREAM_CONFIGURATIONS_PUBLIC_END
+                                                                      = 0x7,
 
     /**
      * <p>Vendor defined use cases. These depend on the vendor implementation.</p>
