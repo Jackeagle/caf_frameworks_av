@@ -65,10 +65,11 @@ cc_library_shared {
     ],
 
     shared_libs: [
+        "libandroid_runtime_lazy",
         "libbinder",
         "libmedia",
         "libmedia_omx",
-        "libmedia_jni",
+        "libmedia_jni_utils",
         "libmediadrm",
         "libmediaextractor",
         "libstagefright",
@@ -76,11 +77,16 @@ cc_library_shared {
         "liblog",
         "libutils",
         "libcutils",
-        "libandroid",
-        "libandroid_runtime",
+        "libnativewindow",
         "libbinder",
         "libgui",
         "libui",
+    ],
+
+    required: [
+        // libmediandk may be used by Java and non-Java things. When lower-level things use it,
+        // they shouldn't have to take on the cost of loading libandroid_runtime.
+        "libandroid_runtime",
     ],
 
     export_include_dirs: ["include"],
@@ -95,6 +101,10 @@ cc_library_shared {
         symbol_file: "libmediandk.map.txt",
         versions: ["29"],
     },
+
+    // Bug: http://b/124522995 libmediandk has linker errors when built with
+    // coverage
+    native_coverage: false,
 }
 
 llndk_library {
