@@ -25,8 +25,8 @@
 #include <cutils/atomic.h>
 #include <utils/Log.h>
 #include <android_media_Utils.h>
-#include <android_runtime/android_view_Surface.h>
-#include <android_runtime/android_hardware_HardwareBuffer.h>
+#include <ui/PublicFormat.h>
+#include <private/android/AHardwareBufferHelpers.h>
 #include <grallocusage/GrallocUsageConversion.h>
 
 using namespace android;
@@ -261,9 +261,9 @@ AImageReader::AImageReader(int32_t width,
 media_status_t
 AImageReader::init() {
     PublicFormat publicFormat = static_cast<PublicFormat>(mFormat);
-    mHalFormat = android_view_Surface_mapPublicFormatToHalFormat(publicFormat);
-    mHalDataSpace = android_view_Surface_mapPublicFormatToHalDataspace(publicFormat);
-    mHalUsage = android_hardware_HardwareBuffer_convertToGrallocUsageBits(mUsage);
+    mHalFormat = mapPublicFormatToHalFormat(publicFormat);
+    mHalDataSpace = mapPublicFormatToHalDataspace(publicFormat);
+    mHalUsage = AHardwareBuffer_convertToGrallocUsageBits(mUsage);
 
     sp<IGraphicBufferProducer> gbProducer;
     sp<IGraphicBufferConsumer> gbConsumer;

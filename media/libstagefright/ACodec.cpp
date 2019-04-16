@@ -1247,6 +1247,7 @@ status_t ACodec::allocateOutputBuffersFromNativeWindow() {
         info.mRenderInfo = NULL;
         info.mGraphicBuffer = graphicBuffer;
         info.mNewGraphicBuffer = false;
+        info.mDequeuedAt = mDequeueCounter;
 
         // TODO: We shouln't need to create MediaCodecBuffer. In metadata mode
         //       OMX doesn't use the shared memory buffer, but some code still
@@ -7920,6 +7921,10 @@ bool ACodec::OutputPortSettingsChangedState::onOMXEvent(
                     err = mCodec->mOMXNode->sendCommand(
                             OMX_CommandPortEnable, kPortIndexOutput);
                 }
+
+                // Clear the RenderQueue in which queued GraphicBuffers hold the
+                // actual buffer references in order to free them early.
+                mCodec->mRenderTracker.clear(systemTime(CLOCK_MONOTONIC));
 
                 if (err == OK) {
                     err = mCodec->allocateBuffersOnPort(kPortIndexOutput);
