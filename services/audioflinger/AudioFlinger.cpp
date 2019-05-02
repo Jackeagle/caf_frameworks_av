@@ -718,10 +718,12 @@ sp<IAudioTrack> AudioFlinger::createTrack(const CreateTrackInput& input,
     }
 
     // further format checks are performed by createTrack_l() depending on the thread type
-    if (!audio_is_valid_format(input.config.format)) {
-        ALOGE("createTrack() invalid format %#x", input.config.format);
-        lStatus = BAD_VALUE;
-        goto Exit;
+    if ((!audio_is_valid_format(input.config.format)) &&
+         ((property_get_bool("audio.aptx.aac_latm.decoder.enabled", false)) &&
+         (!(input.config.format == AUDIO_FORMAT_AAC_LATM_LC || input.config.format == AUDIO_FORMAT_APTX)))) {
+            ALOGE("createTrack() invalid format %#x", input.config.format);
+            lStatus = BAD_VALUE;
+            goto Exit;
     }
 
     {
@@ -3001,6 +3003,8 @@ sp<IEffect> AudioFlinger::createEffect(
     }
 
     {
+        Mutex::Autolock _l(mLock);
+
         if (!EffectsFactoryHalInterface::isNullUuid(&pDesc->uuid)) {
             // if uuid is specified, request effect descriptor
             lStatus = mEffectsFactoryHal->getDescriptor(&pDesc->uuid, &desc);
@@ -3056,6 +3060,8 @@ sp<IEffect> AudioFlinger::createEffect(
                 desc = d;
             }
         }
+    }
+    {
 
         // Do not allow auxiliary effects on a session different from 0 (output mix)
         if (sessionId != AUDIO_SESSION_OUTPUT_MIX &&

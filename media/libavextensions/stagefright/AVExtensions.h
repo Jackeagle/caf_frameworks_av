@@ -129,7 +129,7 @@ struct AVUtils {
 
     virtual audio_format_t updateAudioFormat(audio_format_t audioFormat,
             const sp<AMessage> &);
-    virtual bool canOffloadAPE(const sp<MetaData> &meta);
+    virtual bool canOffloadStream(const sp<MetaData> &meta);
     virtual bool useQCHWEncoder(const sp<AMessage> &,Vector<AString> *) { return false; }
 
     virtual int32_t getAudioMaxInputBufferSize(audio_format_t audioFormat,
@@ -147,11 +147,14 @@ struct AVUtils {
             const CameraParameters& /*params*/, sp<MetaData> &/*meta*/) {}
     virtual void printFileName(int /*fd*/) {}
 
-    // deprecate this and use one with MediaBufferBase
+    // deprecate these two use one with 3 arguments
     virtual void addDecodingTimesFromBatch(MediaBuffer * /*buf*/,
             List<int64_t> &/*decodeTimeQueue*/) {}
     virtual void addDecodingTimesFromBatch(MediaBufferBase * /*buf*/,
             List<int64_t> &/*decodeTimeQueue*/) {}
+
+    virtual void addDecodingTimesFromBatch(MediaBufferBase * /*buf*/,
+            List<int64_t> &/*decodeTimeQueue*/, int64_t /*time-offset-us*/) {}
 
     virtual bool canDeferRelease(const sp<MetaData> &/*meta*/) { return false; }
     virtual void setDeferRelease(sp<MetaData> &/*meta*/) {}
