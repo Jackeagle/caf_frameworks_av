@@ -22,17 +22,24 @@ cc_library {
         "ProcessInfo.cpp",
         "SchedulingPolicyService.cpp",
     ],
+    static_libs: [
+        "libc_malloc_debug_backtrace",
+    ],
     shared_libs: [
         "libbinder",
         "liblog",
         "libutils",
-        "libmemunreachable",
     ],
 
     cflags: [
         "-Wall",
         "-Wextra",
         "-Werror",
+    ],
+
+    include_dirs: [
+        // For android_mallopt definitions.
+        "bionic/libc/private"
     ],
 
     local_include_dirs: ["include"],
