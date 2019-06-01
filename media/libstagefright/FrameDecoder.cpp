@@ -40,7 +40,7 @@
 namespace android {
 
 static const int64_t kBufferTimeOutUs = 10000ll; // 10 msec
-static const size_t kRetryCount = 50; // must be >0
+static const size_t kRetryCount = 100; // must be >0
 
 sp<IMemory> allocVideoFrame(const sp<MetaData>& trackMeta,
         int32_t width, int32_t height, int32_t tileWidth, int32_t tileHeight,
@@ -178,7 +178,8 @@ FrameDecoder::FrameDecoder(
         const AString &componentName,
         const sp<MetaData> &trackMeta,
         const sp<IMediaSource> &source)
-    : mComponentName(componentName),
+    : mIDRSent(false),
+      mComponentName(componentName),
       mTrackMeta(trackMeta),
       mSource(source),
       mDstFormat(OMX_COLOR_Format16bitRGB565),
@@ -306,8 +307,10 @@ status_t FrameDecoder::extractInternal() {
                     (void)mDecoder->queueInputBuffer(
                             index, 0, 0, 0, MediaCodec::BUFFER_FLAG_EOS);
                     err = OK;
+                    flags |= MediaCodec::BUFFER_FLAG_EOS;
+                    mHaveMoreInputs = true;
                 } else {
-                    ALOGW("Input Error: err=%d", err);
+                    ALOGE("Input Error: err=%d", err);
                 }
                 break;
             }
@@ -459,6 +462,7 @@ sp<AMessage> VideoFrameDecoder::onGetFormatAndSeekOptions(
     if (!isSeekingClosest) {
         videoFormat->setInt32("android._num-input-buffers", 1);
         videoFormat->setInt32("android._num-output-buffers", 1);
+        videoFormat->setInt32("thumbnail-mode", 1);
     }
     return videoFormat;
 }
@@ -474,11 +478,11 @@ status_t VideoFrameDecoder::onInputReceived(
         ALOGV("Seeking closest: targetTimeUs=%lld", (long long)mTargetTimeUs);
     }
 
-    if (mIsAvcOrHevc && !isSeekingClosest
-            && IsIDR(codecBuffer->data(), codecBuffer->size())) {
+    if ((mIsAvcOrHevc && !isSeekingClosest
+            && IsIDR(codecBuffer->data(), codecBuffer->size())) || (mIDRSent ==  true)){
         // Only need to decode one IDR frame, unless we're seeking with CLOSEST
         // option, in which case we need to actually decode to targetTimeUs.
-        *flags |= MediaCodec::BUFFER_FLAG_EOS;
+        mIDRSent == false ? mIDRSent = true : *flags |= MediaCodec::BUFFER_FLAG_EOS;
     }
     return OK;
 }
@@ -631,6 +635,7 @@ sp<AMessage> ImageDecoder::onGetFormatAndSeekOptions(
     if ((mGridRows == 1) && (mGridCols == 1)) {
         videoFormat->setInt32("android._num-input-buffers", 1);
         videoFormat->setInt32("android._num-output-buffers", 1);
+        videoFormat->setInt32("thumbnail-mode", 1);
     }
     return videoFormat;
 }
