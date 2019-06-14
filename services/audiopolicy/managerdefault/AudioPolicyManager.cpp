@@ -840,11 +840,9 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
         /* BUG 73287368: Support compress-offload playback with bus device routing */
         routing_strategy strategy = (routing_strategy) getStrategyForAttr(&attributes);
         audio_devices_t device = getDeviceForStrategy(strategy, false /*fromCache*/);
-        if (((device & AUDIO_DEVICE_OUT_BUS) &&
-            (((*flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) != 0) ||
-                  ((*flags & AUDIO_OUTPUT_FLAG_DIRECT) != 0)) &&
-            (attributes.usage == AUDIO_USAGE_MEDIA)) || (device & AUDIO_DEVICE_OUT_USB_HEADSET))  {
-            ALOGW("getOutputForAttr() select legacy media compress offload or direct output for bus device");
+        if (((device & AUDIO_DEVICE_OUT_BUS) && (isOffloadSupported(config->offload_info))) ||
+            (device & AUDIO_DEVICE_OUT_USB_HEADSET)) {
+            ALOGW("getOutputForAttr() bypass policy mix for bus/usb devices, fallback to offloadable output");
         } else {
             if (!audio_has_proportional_frames(config->format)) {
                 return BAD_VALUE;
