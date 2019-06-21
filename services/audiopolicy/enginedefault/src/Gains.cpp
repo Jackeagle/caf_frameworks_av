@@ -50,7 +50,7 @@ Gains::sExtMediaSystemVolumeCurve[Volume::VOLCNT] = {
 
 const VolumeCurvePoint
 Gains::sSpeakerMediaVolumeCurve[Volume::VOLCNT] = {
-    {1, -56.0f}, {20, -34.0f}, {60, -11.0f}, {100, 0.0f}
+    {1, -56.0f}, {20, -44.0f}, {60, -31.0f}, {100, -24.0f}
 };
 
 const VolumeCurvePoint
@@ -60,7 +60,7 @@ Gains::sSpeakerMediaVolumeCurveDrc[Volume::VOLCNT] = {
 
 const VolumeCurvePoint
 Gains::sSpeakerSonificationVolumeCurve[Volume::VOLCNT] = {
-    {1, -29.7f}, {33, -20.1f}, {66, -10.2f}, {100, 0.0f}
+    {1, -29.7f}, {33, -26.1f}, {66, -23.2f}, {100, -20.0f}
 };
 
 const VolumeCurvePoint
@@ -75,7 +75,7 @@ Gains::sSpeakerSonificationVolumeCurveDrc[Volume::VOLCNT] = {
 
 const VolumeCurvePoint
 Gains::sDefaultSystemVolumeCurve[Volume::VOLCNT] = {
-    {1, -24.0f}, {33, -18.0f}, {66, -12.0f}, {100, -6.0f}
+    {1, -26.0f}, {33, -23.0f}, {66, -21.0f}, {100, -18.0f}
 };
 
 const VolumeCurvePoint
@@ -95,7 +95,7 @@ Gains::sDefaultVoiceVolumeCurve[Volume::VOLCNT] = {
 
 const VolumeCurvePoint
 Gains::sSpeakerVoiceVolumeCurve[Volume::VOLCNT] = {
-    {0, -24.0f}, {33, -16.0f}, {66, -8.0f}, {100, 0.0f}
+    {0, -24.0f}, {33, -21.0f}, {66, -18.0f}, {100, -14.0f}
 };
 
 const VolumeCurvePoint
