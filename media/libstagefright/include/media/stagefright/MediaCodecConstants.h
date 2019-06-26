@@ -265,6 +265,7 @@ constexpr char FEATURE_AdaptivePlayback[]       = "adaptive-playback";
 constexpr char FEATURE_IntraRefresh[] = "intra-refresh";
 constexpr char FEATURE_PartialFrame[] = "partial-frame";
 constexpr char FEATURE_SecurePlayback[]         = "secure-playback";
+constexpr char FEATURE_SecureEncode[]           = "secure-encode";
 constexpr char FEATURE_TunneledPlayback[]       = "tunneled-playback";
 
 // from MediaFormat.java
