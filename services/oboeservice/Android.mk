@@ -14,7 +14,6 @@ LOCAL_C_INCLUDES := \
     $(call include-path-for, audio-utils) \
     frameworks/native/include \
     system/core/base/include \
-    $(TOP)/frameworks/native/media/libaaudio/include/include \
     $(TOP)/frameworks/av/media/libaaudio/include \
     $(TOP)/frameworks/av/media/utils/include \
     frameworks/native/include \
@@ -47,7 +46,7 @@ LOCAL_CFLAGS += -Wno-unused-parameter
 LOCAL_CFLAGS += -Wall -Werror
 
 LOCAL_SHARED_LIBRARIES :=  \
-    libaaudio \
+    libaaudio_internal \
     libaudioflinger \
     libaudioclient \
     libbinder \
