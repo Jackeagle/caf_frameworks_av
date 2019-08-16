@@ -428,7 +428,7 @@ sp<IOMXObserver> OMXNodeInstance::observer() {
 
 status_t OMXNodeInstance::freeNode() {
     CLOG_LIFE(freeNode, "handle=%p", mHandle);
-    static int32_t kMaxNumIterations = 10;
+    static int32_t kMaxNumIterations = 25;
 
     // Transition the node from its current state all the way down
     // to "Loaded".
