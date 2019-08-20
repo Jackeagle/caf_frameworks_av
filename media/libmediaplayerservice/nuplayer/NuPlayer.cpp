@@ -66,6 +66,9 @@
 
 namespace android {
 
+// maximum time to pause renderer to wait for video pre-roll
+static constexpr int64_t kDefaultVideoPrerollMaxUs = 2000000LL;
+
 struct NuPlayer::Action : public RefBase {
     Action() {}
 
@@ -1053,6 +1056,15 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 if (mSourceFlags & Source::FLAG_DYNAMIC_DURATION) {
                     schedulePollDuration();
                 }
+
+                // Pause the renderer till video queue pre-rolls
+                if (!mPaused && mVideoDecoder != NULL && mAudioDecoder != NULL) {
+                    ALOGI("NOTE: Pausing Renderer after decoders instantiated..");
+                    mRenderer->pause();
+                    // wake up renderer if timed out
+                    sp<AMessage> msg = new AMessage(kWhatWakeupRendererFromPreroll, this);
+                    msg->post(kDefaultVideoPrerollMaxUs);
+                }
             }
 
             status_t err;
@@ -1268,6 +1280,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                             // Only video track has error. Audio track could be still good to play.
                             notifyListener(MEDIA_INFO, MEDIA_INFO_PLAY_VIDEO_ERROR, err);
                         }
+                        if (mRenderer != NULL && !mRenderer->isVideoPrerollCompleted()) {
+                            // wake up renderer immediately. it's still waiting for video preroll,
+                            // but video is already gone.
+                            sp<AMessage> msg = new AMessage(kWhatWakeupRendererFromPreroll, this);
+                            msg->post();
+                        }
                         mVideoDecoderError = true;
                     }
                 }
@@ -1346,6 +1364,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             } else if (what == Renderer::kWhatMediaRenderingStart) {
                 ALOGV("media rendering started");
                 notifyListener(MEDIA_STARTED, 0, 0);
+            } else if (!mPaused && what == Renderer::kWhatVideoPrerollComplete) {
+                // If NuPlayer is paused too, don't resume renderer. The pause may be called by
+                // client, wait for client to resume NuPlayer
+                ALOGI("NOTE: Video preroll complete.. resume renderer..");
+                mRenderer->resume();
             } else if (what == Renderer::kWhatAudioTearDown) {
                 int32_t reason;
                 CHECK(msg->findInt32("reason", &reason));
@@ -1509,6 +1532,23 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             in.writeFloat(playbackRate);
 
             notifyListener(MEDIA_TIME_DISCONTINUITY, 0, 0, &in);
+            break;
+        }
+
+        case kWhatWakeupRendererFromPreroll:
+        {
+            // don't break pause if client requested renderer to pause too.
+            if (!mPaused && mRenderer != NULL && !mRenderer->isVideoPrerollCompleted()) {
+                ALOGI("NOTE: Video preroll timed out or video encounterred error, "
+                    "resume renderer and shutdown video decoder");
+                mRenderer->resume();
+                // Flush video decoder when preroll timeout, make playback audio only. If still keep
+                // video track, will see framedrop when video buffer coming.
+                mDeferredActions.push_back(
+                    new FlushDecoderAction(FLUSH_CMD_NONE /* audio */,
+                                        FLUSH_CMD_SHUTDOWN /*video */));
+                processDeferredActions();
+            }
             break;
         }
 
@@ -1957,9 +1997,10 @@ status_t NuPlayer::instantiateDecoder(
         return OK;
     }
 
-    sp<AMessage> format = mSource->getFormat(audio);
+    sp<AMessage> format = (mSource != NULL) ? mSource->getFormat(audio) : NULL;
 
     if (format == NULL) {
+        ALOGW("%s: getFormat called when source is gone or not set", __func__);
         return UNKNOWN_ERROR;
     } else {
         status_t err;
@@ -2066,6 +2107,7 @@ status_t NuPlayer::instantiateDecoder(
             }
         }
 
+        params->setFloat("playback-speed", mPlaybackSettings.mSpeed);
         if (params->countEntries() > 0) {
             (*decoder)->setParameters(params);
         }
