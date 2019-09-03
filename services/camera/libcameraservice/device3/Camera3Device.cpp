@@ -2310,11 +2310,13 @@ void Camera3Device::sendPartialCaptureResult(const camera_metadata_t * partialRe
         const AeTriggerCancelOverride_t &aeTriggerCancelOverride) {
     Mutex::Autolock l(mOutputLock);
 
-    CaptureResult captureResult;
-    captureResult.mResultExtras = resultExtras;
-    captureResult.mMetadata = partialResult;
+    PartialResultCache partial_cache;
+    partial_cache.resultExtras = resultExtras;
+    partial_cache.metadata = partialResult;
+    partial_cache.aeTriggerCancelOverride = aeTriggerCancelOverride;
+    partial_cache.frameNumber = frameNumber;
 
-    insertResultLocked(&captureResult, frameNumber, aeTriggerCancelOverride);
+    mPartialResultCache.push_back(partial_cache);
 }
 
 
@@ -2716,6 +2718,18 @@ void Camera3Device::notifyShutter(const camera3_shutter_msg_t &msg,
 
             r.shutterTimestamp = msg.timestamp;
 
+            for (auto it = mPartialResultCache.begin(); it != mPartialResultCache.end(); it++) {
+                if(it->frameNumber == msg.frame_number) {
+                    it->metadata.update(
+                        ANDROID_SENSOR_TIMESTAMP, &(r.shutterTimestamp), 1);
+                    CaptureResult captureResult;
+                    captureResult.mResultExtras = it->resultExtras;
+                    captureResult.mMetadata = it->metadata;
+                    insertResultLocked(&captureResult, it->frameNumber, it->aeTriggerCancelOverride);
+                } else if (it->frameNumber + 10 < msg.frame_number) {
+                    mPartialResultCache.erase(it--);
+                }
+            }
             // send pending result and buffers
             sendCaptureResult(r.pendingMetadata, r.resultExtras,
                 r.collectedPartialResult, msg.frame_number,

@@ -300,6 +300,15 @@ class Camera3Device :
     };
     typedef List<sp<CaptureRequest> > RequestList;
 
+    struct PartialResultCache {
+        CameraMetadata metadata;
+        CaptureResultExtras resultExtras;
+        AeTriggerCancelOverride_t aeTriggerCancelOverride;
+        uint32_t frameNumber;
+    };
+
+    Vector<PartialResultCache> mPartialResultCache;
+
     status_t checkStatusOkToCaptureLocked();
 
     status_t convertMetadataListToRequestListLocked(
