@@ -816,7 +816,8 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
 
             *stream = streamTypefromAttributesInt(&attributes);
             *output = desc->mIoHandle;
-            auto deviceAddress = desc->mPolicyMix ? desc->mPolicyMix->mDeviceAddress : String8("");
+            sp<AudioPolicyMix> policyMix = desc->mPolicyMix.promote();
+            auto deviceAddress = (policyMix != NULL) ? policyMix->mDeviceAddress : String8("");
             DeviceVector outputDevices = mAvailableOutputDevices.
                      getDevicesFromTypeAddr(desc->device(), deviceAddress);
             *selectedDeviceId = outputDevices.size() > 0 ? outputDevices.itemAt(0)->getId()
