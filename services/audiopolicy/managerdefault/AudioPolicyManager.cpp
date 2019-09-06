@@ -849,9 +849,7 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
             }
             *stream = streamTypefromAttributesInt(&attributes);
             *output = desc->mIoHandle;
-            const auto deviceAddress = desc->mPolicyMix ? desc->mPolicyMix->mDeviceAddress : String8("");
-            const DeviceVector outputDevices = mAvailableOutputDevices.
-                     getDevicesFromTypeAddr(desc->device(), deviceAddress);
+            DeviceVector outputDevices = mAvailableOutputDevices.getDevicesFromType(device);
             *selectedDeviceId = outputDevices.size() > 0 ? outputDevices.itemAt(0)->getId()
                     : AUDIO_PORT_HANDLE_NONE;
             ALOGV("getOutputForAttr() returns output %d", *output);
