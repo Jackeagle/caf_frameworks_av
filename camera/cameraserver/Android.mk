@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ifneq ($(TARGET_USES_IOTCC_HEADLESS),true)
 LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -41,3 +42,4 @@ LOCAL_CFLAGS += -Wall -Wextra -Werror -Wno-unused-parameter
 LOCAL_INIT_RC := cameraserver.rc
 
 include $(BUILD_EXECUTABLE)
+endif
