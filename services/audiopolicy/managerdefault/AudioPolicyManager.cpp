@@ -2396,8 +2396,7 @@ void AudioPolicyManager::checkCloseInputs() {
     for (size_t i = 0; i < mInputs.size(); i++) {
         const sp<AudioInputDescriptor> input = mInputs.valueAt(i);
         if (input->clientsList().size() == 0
-                || !mAvailableInputDevices.containsAtLeastOne(input->supportedDevices())
-                || (input->getAudioPort()->getFlags() & AUDIO_INPUT_FLAG_MMAP_NOIRQ) != 0) {
+                || !mAvailableInputDevices.containsAtLeastOne(input->supportedDevices())) {
             inputsToClose.push_back(mInputs.keyAt(i));
         } else {
             bool close = false;
