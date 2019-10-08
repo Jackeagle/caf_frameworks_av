@@ -20,6 +20,9 @@ LOCAL_SRC_FILES:= \
     MediaDrmService.cpp \
     main_mediadrmserver.cpp
 
+LOCAL_HEADER_LIBRARIES:= \
+    libmediadrm_headers
+
 LOCAL_SHARED_LIBRARIES:= \
     libbinder \
     liblog \
@@ -27,9 +30,9 @@ LOCAL_SHARED_LIBRARIES:= \
     libutils \
     libhidlbase \
     libhidlmemory \
-    libhidltransport \
     android.hardware.drm@1.0 \
-    android.hardware.drm@1.1
+    android.hardware.drm@1.1 \
+    android.hardware.drm@1.2
 
 LOCAL_CFLAGS += -Wall -Wextra -Werror
 

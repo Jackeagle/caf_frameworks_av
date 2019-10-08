@@ -21,8 +21,8 @@
 
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaError.h>
+#include <media/NdkMediaFormatPriv.h>
 #include "NdkMediaCryptoPriv.h"
-#include "NdkMediaFormatPriv.h"
 
 #include <utils/Log.h>
 #include <utils/StrongPointer.h>
@@ -244,8 +244,8 @@ void CodecHandler::onMessageReceived(const sp<AMessage> &msg) {
                          ALOGE("CB_ERROR: err is expected.");
                          break;
                      }
-                     if (!msg->findInt32("action", &actionCode)) {
-                         ALOGE("CB_ERROR: action is expected.");
+                     if (!msg->findInt32("actionCode", &actionCode)) {
+                         ALOGE("CB_ERROR: actionCode is expected.");
                          break;
                      }
                      msg->findString("detail", &detail);

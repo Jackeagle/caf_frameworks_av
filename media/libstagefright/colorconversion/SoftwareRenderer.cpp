@@ -31,9 +31,14 @@
 
 namespace android {
 
-static int ALIGN(int x, int y) {
-    // y must be a power of 2.
-    return (x + y - 1) & ~(y - 1);
+inline void initDstYUV(
+        const android_ycbcr &ycbcr, int32_t cropTop, int32_t cropLeft,
+        uint8_t **dst_y, uint8_t **dst_u, uint8_t **dst_v) {
+    *dst_y = (uint8_t *)ycbcr.y + cropTop * ycbcr.ystride + cropLeft;
+
+    int32_t c_offset = (cropTop / 2) * ycbcr.cstride + cropLeft / 2;
+    *dst_v = (uint8_t *)ycbcr.cr + c_offset;
+    *dst_u = (uint8_t *)ycbcr.cb + c_offset;
 }
 
 SoftwareRenderer::SoftwareRenderer(
@@ -44,6 +49,7 @@ SoftwareRenderer::SoftwareRenderer(
       mNativeWindow(nativeWindow),
       mWidth(0),
       mHeight(0),
+      mStride(0),
       mCropLeft(0),
       mCropTop(0),
       mCropRight(0),
@@ -67,9 +73,10 @@ void SoftwareRenderer::resetFormatIfChanged(
     int32_t colorFormatNew;
     CHECK(format->findInt32("color-format", &colorFormatNew));
 
-    int32_t widthNew, heightNew;
-    CHECK(format->findInt32("stride", &widthNew));
+    int32_t widthNew, heightNew, strideNew;
+    CHECK(format->findInt32("width", &widthNew));
     CHECK(format->findInt32("slice-height", &heightNew));
+    CHECK(format->findInt32("stride", &strideNew));
 
     int32_t cropLeftNew, cropTopNew, cropRightNew, cropBottomNew;
     if (!format->findRect(
@@ -106,6 +113,7 @@ void SoftwareRenderer::resetFormatIfChanged(
     mColorFormat = static_cast<OMX_COLOR_FORMATTYPE>(colorFormatNew);
     mWidth = widthNew;
     mHeight = heightNew;
+    mStride = strideNew;
     mCropLeft = cropLeftNew;
     mCropTop = cropTopNew;
     mCropRight = cropRightNew;
@@ -287,83 +295,62 @@ std::list<FrameRenderTracker::Info> SoftwareRenderer::render(
     if (mConverter) {
         mConverter->convert(
                 data,
-                mWidth, mHeight,
+                mWidth, mHeight, mStride,
                 mCropLeft, mCropTop, mCropRight, mCropBottom,
                 dst,
-                buf->stride, buf->height,
+                buf->stride, buf->height, 0,
                 0, 0, mCropWidth - 1, mCropHeight - 1);
     } else if (mColorFormat == OMX_COLOR_FormatYUV420Planar) {
-        const uint8_t *src_y = (const uint8_t *)data;
-        const uint8_t *src_u =
-                (const uint8_t *)data + mWidth * mHeight;
-        const uint8_t *src_v = src_u + (mWidth / 2 * mHeight / 2);
+        const uint8_t *src_y = (const uint8_t *)data + mCropTop * mStride + mCropLeft;
+        const uint8_t *src_u = (const uint8_t *)data + mStride * mHeight + mCropTop * mStride / 4;
+        const uint8_t *src_v = (const uint8_t *)src_u + mStride * mHeight / 4;
 
-        src_y +=mCropLeft + mCropTop * mWidth;
-        src_u +=(mCropLeft + mCropTop * mWidth / 2)/2;
-        src_v +=(mCropLeft + mCropTop * mWidth / 2)/2;
-
-        uint8_t *dst_y = (uint8_t *)ycbcr.y;
-        uint8_t *dst_v = (uint8_t *)ycbcr.cr;
-        uint8_t *dst_u = (uint8_t *)ycbcr.cb;
-        size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
-
-        dst_y += mCropTop * buf->stride + mCropLeft;
-        dst_v += (mCropTop/2) * dst_c_stride + mCropLeft/2;
-        dst_u += (mCropTop/2) * dst_c_stride + mCropLeft/2;
+        uint8_t *dst_y, *dst_u, *dst_v;
+        initDstYUV(ycbcr, mCropTop, mCropLeft, &dst_y, &dst_u, &dst_v);
 
         for (int y = 0; y < mCropHeight; ++y) {
             memcpy(dst_y, src_y, mCropWidth);
 
-            src_y += mWidth;
-            dst_y += buf->stride;
+            src_y += mStride;
+            dst_y += ycbcr.ystride;
         }
 
         for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
             memcpy(dst_u, src_u, (mCropWidth + 1) / 2);
             memcpy(dst_v, src_v, (mCropWidth + 1) / 2);
 
-            src_u += mWidth / 2;
-            src_v += mWidth / 2;
-            dst_u += dst_c_stride;
-            dst_v += dst_c_stride;
+            src_u += mStride / 2;
+            src_v += mStride / 2;
+            dst_u += ycbcr.cstride;
+            dst_v += ycbcr.cstride;
         }
     } else if (mColorFormat == OMX_COLOR_FormatYUV420Planar16) {
-        const uint16_t *src_y = (const uint16_t *)data;
-        const uint16_t *src_u = (const uint16_t *)data + mWidth * mHeight;
-        const uint16_t *src_v = src_u + (mWidth / 2 * mHeight / 2);
+        const uint8_t *src_y = (const uint8_t *)data + mCropTop * mStride + mCropLeft * 2;
+        const uint8_t *src_u = (const uint8_t *)data + mStride * mHeight + mCropTop * mStride / 4;
+        const uint8_t *src_v = (const uint8_t *)src_u + mStride * mHeight / 4;
 
-        src_y += mCropLeft + mCropTop * mWidth;
-        src_u += (mCropLeft + mCropTop * mWidth / 2) / 2;
-        src_v += (mCropLeft + mCropTop * mWidth / 2) / 2;
-
-        uint8_t *dst_y = (uint8_t *)ycbcr.y;
-        uint8_t *dst_v = (uint8_t *)ycbcr.cr;
-        uint8_t *dst_u = (uint8_t *)ycbcr.cb;
-        size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
-
-        dst_y += mCropTop * buf->stride + mCropLeft;
-        dst_v += (mCropTop / 2) * dst_c_stride + mCropLeft / 2;
-        dst_u += (mCropTop / 2) * dst_c_stride + mCropLeft / 2;
+        uint8_t *dst_y, *dst_u, *dst_v;
+        initDstYUV(ycbcr, mCropTop, mCropLeft, &dst_y, &dst_u, &dst_v);
 
         for (int y = 0; y < mCropHeight; ++y) {
             for (int x = 0; x < mCropWidth; ++x) {
-                dst_y[x] = (uint8_t)(src_y[x] >> 2);
+                dst_y[x] = (uint8_t)(((uint16_t *)src_y)[x] >> 2);
             }
 
-            src_y += mWidth;
-            dst_y += buf->stride;
+            src_y += mStride;
+            dst_y += ycbcr.ystride;
         }
 
         for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
             for (int x = 0; x < (mCropWidth + 1) / 2; ++x) {
-                dst_u[x] = (uint8_t)(src_u[x] >> 2);
-                dst_v[x] = (uint8_t)(src_v[x] >> 2);
+                dst_u[x] = (uint8_t)(((uint16_t *)src_u)[x] >> 2);
+                dst_v[x] = (uint8_t)(((uint16_t *)src_v)[x] >> 2);
             }
 
-            src_u += mWidth / 2;
-            src_v += mWidth / 2;
-            dst_u += dst_c_stride;
-            dst_v += dst_c_stride;
+            src_u += mStride / 2;
+            src_v += mStride / 2;
+            dst_u += ycbcr.cstride;
+            dst_v += ycbcr.cstride;
         }
     } else if (mColorFormat == OMX_TI_COLOR_FormatYUV420PackedSemiPlanar
             || mColorFormat == OMX_COLOR_FormatYUV420SemiPlanar) {
@@ -374,20 +361,14 @@ std::list<FrameRenderTracker::Info> SoftwareRenderer::render(
         src_y += mCropLeft + mCropTop * mWidth;
         src_uv += (mCropLeft + mCropTop * mWidth) / 2;
 
-        uint8_t *dst_y = (uint8_t *)ycbcr.y;
-        uint8_t *dst_v = (uint8_t *)ycbcr.cr;
-        uint8_t *dst_u = (uint8_t *)ycbcr.cb;
-        size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
-
-        dst_y += mCropTop * buf->stride + mCropLeft;
-        dst_v += (mCropTop/2) * dst_c_stride + mCropLeft/2;
-        dst_u += (mCropTop/2) * dst_c_stride + mCropLeft/2;
+        uint8_t *dst_y, *dst_u, *dst_v;
+        initDstYUV(ycbcr, mCropTop, mCropLeft, &dst_y, &dst_u, &dst_v);
 
         for (int y = 0; y < mCropHeight; ++y) {
             memcpy(dst_y, src_y, mCropWidth);
 
             src_y += mWidth;
-            dst_y += buf->stride;
+            dst_y += ycbcr.ystride;
         }
 
         for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
@@ -398,8 +379,8 @@ std::list<FrameRenderTracker::Info> SoftwareRenderer::render(
             }
 
             src_uv += mWidth;
-            dst_u += dst_c_stride;
-            dst_v += dst_c_stride;
+            dst_u += ycbcr.cstride;
+            dst_v += ycbcr.cstride;
         }
     } else if (mColorFormat == OMX_COLOR_Format24bitRGB888) {
         uint8_t* srcPtr = (uint8_t*)data + mWidth * mCropTop * 3 + mCropLeft * 3;
