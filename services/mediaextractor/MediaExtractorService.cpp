@@ -20,15 +20,19 @@
 
 #include <utils/Vector.h>
 
+#include <datasource/DataSourceFactory.h>
 #include <media/DataSource.h>
-#include <media/MediaExtractor.h>
-#include <media/stagefright/DataSourceFactory.h>
 #include <media/stagefright/InterfaceUtils.h>
 #include <media/stagefright/MediaExtractorFactory.h>
 #include <media/stagefright/RemoteDataSource.h>
 #include "MediaExtractorService.h"
 
 namespace android {
+
+MediaExtractorService::MediaExtractorService()
+        : BnMediaExtractorService() {
+    MediaExtractorFactory::LoadExtractors();
+}
 
 sp<IMediaExtractor> MediaExtractorService::makeExtractor(
         const sp<IDataSource> &remoteSource, const char *mime) {
@@ -53,6 +57,10 @@ sp<IDataSource> MediaExtractorService::makeIDataSource(int fd, int64_t offset, i
 {
     sp<DataSource> source = DataSourceFactory::CreateFromFd(fd, offset, length);
     return CreateIDataSourceFromDataSource(source);
+}
+
+std::unordered_set<std::string> MediaExtractorService::getSupportedTypes() {
+    return MediaExtractorFactory::getSupportedTypes();
 }
 
 status_t MediaExtractorService::dump(int fd, const Vector<String16>& args) {

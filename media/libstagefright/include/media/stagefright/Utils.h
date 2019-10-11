@@ -30,6 +30,8 @@ namespace android {
 
 struct AMessage;
 status_t convertMetaDataToMessage(
+        const MetaDataBase *meta, sp<AMessage> *format);
+status_t convertMetaDataToMessage(
         const sp<MetaData> &meta, sp<AMessage> *format);
 void convertMessageToMetaData(
         const sp<AMessage> &format, sp<MetaData> &meta);
@@ -38,8 +40,6 @@ void convertMessageToMetaData(
 // a pointer to the end of the buffer if the start code is not found.
 // TODO: combine this with avc_utils::getNextNALUnit
 const uint8_t *findNextNalStartCode(const uint8_t *data, size_t length);
-
-AString MakeUserAgent();
 
 // Convert a MIME type to a AudioSystem::audio_format
 status_t mapMimeToAudioFormat(audio_format_t& format, const char* mime);
@@ -50,11 +50,13 @@ void mapAACProfileToAudioFormat(audio_format_t& format, uint64_t eAacProfile);
 // Send information from MetaData to the HAL via AudioSink
 status_t sendMetaDataToHal(sp<MediaPlayerBase::AudioSink>& sink, const sp<MetaData>& meta);
 
+// Return |audio_offload_info_t| filled from given metadata
+status_t getAudioOffloadInfo(const sp<MetaData>& meta, bool hasVideo,
+        bool isStreaming, audio_stream_type_t streamType, audio_offload_info_t *info);
+
 // Check whether the stream defined by meta can be offloaded to hardware
 bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
                       bool isStreaming, audio_stream_type_t streamType);
-
-AString uriDebugString(const AString &uri, bool incognito = false);
 
 struct HLSTime {
     int32_t mSeq;
@@ -79,7 +81,6 @@ void readFromAMessage(
 void writeToAMessage(const sp<AMessage> &msg, const BufferingSettings &buffering);
 void readFromAMessage(const sp<AMessage> &msg, BufferingSettings *buffering /* nonnull */);
 
-AString nameForFd(int fd);
 }  // namespace android
 
 #endif  // UTILS_H_

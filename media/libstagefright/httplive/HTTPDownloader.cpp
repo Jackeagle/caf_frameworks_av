@@ -21,13 +21,13 @@
 #include "HTTPDownloader.h"
 #include "M3UParser.h"
 
+#include <datasource/ClearMediaHTTP.h>
+#include <datasource/ClearFileSource.h>
 #include <media/DataSource.h>
 #include <media/MediaHTTPConnection.h>
 #include <media/MediaHTTPService.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
-#include <media/stagefright/MediaHTTP.h>
-#include <media/stagefright/FileSource.h>
 #include <openssl/aes.h>
 #include <openssl/md5.h>
 #include <utils/Mutex.h>
@@ -38,7 +38,7 @@ namespace android {
 HTTPDownloader::HTTPDownloader(
         const sp<MediaHTTPService> &httpService,
         const KeyedVector<String8, String8> &headers) :
-    mHTTPDataSource(new MediaHTTP(httpService->makeHTTPConnection())),
+    mHTTPDataSource(new ClearMediaHTTP(httpService->makeHTTPConnection())),
     mExtraHeaders(headers),
     mDisconnecting(false) {
 }
@@ -91,7 +91,7 @@ ssize_t HTTPDownloader::fetchBlock(
 
     if (reconnect) {
         if (!strncasecmp(url, "file://", 7)) {
-            mDataSource = new FileSource(url + 7);
+            mDataSource = new ClearFileSource(url + 7);
         } else if (strncasecmp(url, "http://", 7)
                 && strncasecmp(url, "https://", 8)) {
             return ERROR_UNSUPPORTED;

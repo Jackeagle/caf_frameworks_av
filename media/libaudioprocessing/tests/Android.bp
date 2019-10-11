@@ -5,11 +5,13 @@ cc_defaults {
 
     header_libs: ["libbase_headers"],
     shared_libs: [
-        "libaudioutils",
+        "libaudioclient",
         "libaudioprocessing",
+        "libaudioutils",
         "libcutils",
         "liblog",
         "libutils",
+        "libvibrator",
     ],
 
     cflags: [

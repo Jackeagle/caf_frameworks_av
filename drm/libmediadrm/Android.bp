@@ -2,9 +2,16 @@
 // libmediadrm
 //
 
-// TODO: change it back to cc_library_shared when MediaPlayer2 switches to
-// using NdkMediaDrm, instead of MediaDrm.java.
-cc_library {
+cc_library_headers {
+    name: "libmediadrm_headers",
+
+    export_include_dirs: [
+        "interface"
+    ],
+
+}
+
+cc_library_shared {
     name: "libmediadrm",
 
     srcs: [
@@ -19,6 +26,15 @@ cc_library {
         "CryptoHal.cpp",
     ],
 
+    local_include_dirs: [
+        "include",
+        "interface"
+    ],
+
+    export_include_dirs: [
+        "include"
+    ],
+
     shared_libs: [
         "libbinder",
         "libcutils",
@@ -27,14 +43,13 @@ cc_library {
         "libmediadrmmetrics_lite",
         "libmediametrics",
         "libmediautils",
-        "libprotobuf-cpp-lite",
         "libstagefright_foundation",
         "libutils",
         "android.hardware.drm@1.0",
         "android.hardware.drm@1.1",
+        "android.hardware.drm@1.2",
         "libhidlallocatorutils",
         "libhidlbase",
-        "libhidltransport",
     ],
 
     cflags: [
@@ -52,6 +67,10 @@ cc_library_shared {
         "protos/metrics.proto",
     ],
 
+    local_include_dirs: [
+        "include"
+    ],
+
     proto: {
         export_proto_headers: true,
         type: "lite",
@@ -59,13 +78,12 @@ cc_library_shared {
     shared_libs: [
         "android.hardware.drm@1.0",
         "android.hardware.drm@1.1",
-        "libbase",
+        "android.hardware.drm@1.2",
         "libbinder",
         "libhidlbase",
         "liblog",
         "libmediametrics",
         "libprotobuf-cpp-lite",
-        "libstagefright_foundation",
         "libutils",
     ],
     cflags: [
@@ -84,6 +102,10 @@ cc_library_shared {
         "protos/metrics.proto",
     ],
 
+    local_include_dirs: [
+        "include"
+    ],
+
     proto: {
         export_proto_headers: true,
         type: "full",
@@ -91,6 +113,7 @@ cc_library_shared {
     shared_libs: [
         "android.hardware.drm@1.0",
         "android.hardware.drm@1.1",
+        "android.hardware.drm@1.2",
         "libbase",
         "libbinder",
         "libhidlbase",
