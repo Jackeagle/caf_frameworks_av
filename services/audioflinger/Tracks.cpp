@@ -513,7 +513,8 @@ AudioFlinger::PlaybackThread::Track::Track(
             uid_t uid,
             audio_output_flags_t flags,
             track_type type,
-            audio_port_handle_t portId)
+            audio_port_handle_t portId,
+            size_t frameCountToBeReady)
     :   TrackBase(thread, client, attr, sampleRate, format, channelMask, frameCount,
                   (sharedBuffer != 0) ? sharedBuffer->pointer() : buffer,
                   (sharedBuffer != 0) ? sharedBuffer->size() : bufferSize,
@@ -532,6 +533,7 @@ AudioFlinger::PlaybackThread::Track::Track(
     mVolumeHandler(new media::VolumeHandler(sampleRate)),
     mOpPlayAudioMonitor(OpPlayAudioMonitor::createIfNeeded(uid, attr, id(), streamType)),
     // mSinkTimestamp
+    mFrameCountToBeReady(frameCountToBeReady),
     mFastIndex(-1),
     mCachedVolume(1.0),
     /* The track might not play immediately after being active, similarly as if its volume was 0.
@@ -832,7 +834,7 @@ void AudioFlinger::PlaybackThread::Track::interceptBuffer(
     auto spent = ceil<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
     using namespace std::chrono_literals;
     // Average is ~20us per track, this should virtually never be logged (Logging takes >200us)
-    ALOGD_IF(spent > 200us, "%s: took %lldus to intercept %zu tracks", __func__,
+    ALOGD_IF(spent > 500us, "%s: took %lldus to intercept %zu tracks", __func__,
              spent.count(), mTeePatches.size());
 }
 
@@ -885,8 +887,12 @@ bool AudioFlinger::PlaybackThread::Track::isReady() const {
         return true;
     }
 
-    if (framesReady() >= mServerProxy->getBufferSizeInFrames() ||
-            (mCblk->mFlags & CBLK_FORCEREADY)) {
+    size_t bufferSizeInFrames = mServerProxy->getBufferSizeInFrames();
+    size_t framesToBeReady = std::min(mFrameCountToBeReady, bufferSizeInFrames);
+
+    if (framesReady() >= framesToBeReady || (mCblk->mFlags & CBLK_FORCEREADY)) {
+        ALOGV("%s(%d): consider track ready with %zu/%zu, target was %zu)",
+              __func__, mId, framesReady(), bufferSizeInFrames, framesToBeReady);
         mFillingUpStatus = FS_FILLED;
         android_atomic_and(~CBLK_FORCEREADY, &mCblk->mFlags);
         return true;
@@ -1388,6 +1394,7 @@ void AudioFlinger::PlaybackThread::Track::invalidate()
 
 void AudioFlinger::PlaybackThread::Track::disable()
 {
+    // TODO(b/142394888): the filling status should also be reset to filling
     signalClientFlag(CBLK_DISABLED);
 }
 
@@ -1765,12 +1772,14 @@ AudioFlinger::PlaybackThread::PatchTrack::PatchTrack(PlaybackThread *playbackThr
                                                      void *buffer,
                                                      size_t bufferSize,
                                                      audio_output_flags_t flags,
-                                                     const Timeout& timeout)
+                                                     const Timeout& timeout,
+                                                     size_t frameCountToBeReady)
     :   Track(playbackThread, NULL, streamType,
               audio_attributes_t{} /* currently unused for patch track */,
               sampleRate, format, channelMask, frameCount,
               buffer, bufferSize, nullptr /* sharedBuffer */,
-              AUDIO_SESSION_NONE, getpid(), AID_AUDIOSERVER, flags, TYPE_PATCH),
+              AUDIO_SESSION_NONE, getpid(), AID_AUDIOSERVER, flags, TYPE_PATCH,
+              AUDIO_PORT_HANDLE_NONE, frameCountToBeReady),
         PatchTrackBase(new ClientProxy(mCblk, mBuffer, frameCount, mFrameSize, true, true),
                        *playbackThread, timeout)
 {
@@ -1863,7 +1872,6 @@ void AudioFlinger::PlaybackThread::PatchTrack::releaseBuffer(Proxy::Buffer* buff
 {
     mProxy->releaseBuffer(buffer);
     restartIfDisabled();
-    android_atomic_or(CBLK_FORCEREADY, &mCblk->mFlags);
 }
 
 void AudioFlinger::PlaybackThread::PatchTrack::restartIfDisabled()
@@ -2414,7 +2422,6 @@ status_t AudioFlinger::RecordThread::PassthruPatchRecord::obtainBuffer(
     if (!stream) return NO_INIT;  // If there is no stream, RecordThread is not reading.
 
     status_t result = NO_ERROR;
-    struct timespec newTimeOut = *timeOut;
     size_t bytesRead = 0;
     {
         ATRACE_NAME("read");
@@ -2437,15 +2444,16 @@ status_t AudioFlinger::RecordThread::PassthruPatchRecord::obtainBuffer(
     ALOGW_IF(buffer->mFrameCount < bytesRead / mFrameSize,
             "Lost %zu frames obtained from HAL", bytesRead / mFrameSize - buffer->mFrameCount);
     mUnconsumedFrames = buffer->mFrameCount;
-    // Correct newTimeOut by elapsed time.
+    struct timespec newTimeOut;
     if (startTimeNs) {
-        nsecs_t newTimeOutNs =
-                audio_utils_ns_from_timespec(&newTimeOut) - (systemTime() - startTimeNs);
+        // Correct the timeout by elapsed time.
+        nsecs_t newTimeOutNs = audio_utils_ns_from_timespec(timeOut) - (systemTime() - startTimeNs);
         if (newTimeOutNs < 0) newTimeOutNs = 0;
         newTimeOut.tv_sec = newTimeOutNs / NANOS_PER_SECOND;
         newTimeOut.tv_nsec = newTimeOutNs - newTimeOut.tv_sec * NANOS_PER_SECOND;
+        timeOut = &newTimeOut;
     }
-    return PatchRecord::obtainBuffer(buffer, &newTimeOut);
+    return PatchRecord::obtainBuffer(buffer, timeOut);
 
 stream_error:
     stream->standby();
