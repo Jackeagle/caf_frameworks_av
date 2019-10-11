@@ -64,9 +64,15 @@ public:
     static const char * const keyPresentationId;
     static const char * const keyProgramId;
 
-    //  keyStreamConnect / Disconnect: value is an int in audio_devices_t
-    static const char * const keyStreamConnect;
-    static const char * const keyStreamDisconnect;
+    //  keyAudioLanguagePreferred: Preferred audio language
+    static const char * const keyAudioLanguagePreferred;
+
+    //  keyDeviceConnect / Disconnect: value is an int in audio_devices_t
+    static const char * const keyDeviceConnect;
+    static const char * const keyDeviceDisconnect;
+    //  Need to be here because vendors still use them.
+    static const char * const keyStreamConnect;  // Deprecated: DO NOT USE.
+    static const char * const keyStreamDisconnect;  // Deprecated: DO NOT USE.
 
     // For querying stream capabilities. All the returned values are lists.
     //   keyStreamSupportedFormats: audio_format_t

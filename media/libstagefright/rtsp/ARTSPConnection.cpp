@@ -19,13 +19,16 @@
 #include <utils/Log.h>
 
 #include "ARTSPConnection.h"
+#include "NetworkUtils.h"
 
+#include <datasource/HTTPBase.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/base64.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/Utils.h>
+#include <media/stagefright/FoundationUtils.h>
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -33,7 +36,6 @@
 #include <openssl/md5.h>
 #include <sys/socket.h>
 
-#include "include/HTTPBase.h"
 
 namespace android {
 
@@ -59,8 +61,8 @@ ARTSPConnection::~ARTSPConnection() {
     if (mSocket >= 0) {
         ALOGE("Connection is still open, closing the socket.");
         if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-            HTTPBase::UnRegisterSocketUserMark(mSocket);
+            NetworkUtils::UnRegisterSocketUserTag(mSocket);
+            NetworkUtils::UnRegisterSocketUserMark(mSocket);
         }
         close(mSocket);
         mSocket = -1;
@@ -214,8 +216,8 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
 
     if (mState != DISCONNECTED) {
         if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-            HTTPBase::UnRegisterSocketUserMark(mSocket);
+            NetworkUtils::UnRegisterSocketUserTag(mSocket);
+            NetworkUtils::UnRegisterSocketUserMark(mSocket);
         }
         close(mSocket);
         mSocket = -1;
@@ -254,7 +256,7 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
 
     struct hostent *ent = gethostbyname(host.c_str());
     if (ent == NULL) {
-        ALOGE("Unknown host %s", host.c_str());
+        ALOGE("Unknown host %s", uriDebugString(host).c_str());
 
         reply->setInt32("result", -ENOENT);
         reply->post();
@@ -266,9 +268,9 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
     mSocket = socket(AF_INET, SOCK_STREAM, 0);
 
     if (mUIDValid) {
-        HTTPBase::RegisterSocketUserTag(mSocket, mUID,
+        NetworkUtils::RegisterSocketUserTag(mSocket, mUID,
                                         (uint32_t)*(uint32_t*) "RTSP");
-        HTTPBase::RegisterSocketUserMark(mSocket, mUID);
+        NetworkUtils::RegisterSocketUserMark(mSocket, mUID);
     }
 
     MakeSocketBlocking(mSocket, false);
@@ -297,8 +299,8 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
         mState = DISCONNECTED;
 
         if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-            HTTPBase::UnRegisterSocketUserMark(mSocket);
+            NetworkUtils::UnRegisterSocketUserTag(mSocket);
+            NetworkUtils::UnRegisterSocketUserMark(mSocket);
         }
         close(mSocket);
         mSocket = -1;
@@ -315,8 +317,8 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
 
 void ARTSPConnection::performDisconnect() {
     if (mUIDValid) {
-        HTTPBase::UnRegisterSocketUserTag(mSocket);
-        HTTPBase::UnRegisterSocketUserMark(mSocket);
+        NetworkUtils::UnRegisterSocketUserTag(mSocket);
+        NetworkUtils::UnRegisterSocketUserMark(mSocket);
     }
     close(mSocket);
     mSocket = -1;
@@ -389,8 +391,8 @@ void ARTSPConnection::onCompleteConnection(const sp<AMessage> &msg) {
 
         mState = DISCONNECTED;
         if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-            HTTPBase::UnRegisterSocketUserMark(mSocket);
+            NetworkUtils::UnRegisterSocketUserTag(mSocket);
+            NetworkUtils::UnRegisterSocketUserMark(mSocket);
         }
         close(mSocket);
         mSocket = -1;
