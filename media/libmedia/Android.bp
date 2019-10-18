@@ -60,10 +60,8 @@ cc_library_shared {
     srcs: [
         ":libmedia_omx_aidl",
 
-        "IMediaCodecList.cpp",
         "IOMX.cpp",
         "MediaCodecBuffer.cpp",
-        "MediaCodecInfo.cpp",
         "OMXBuffer.cpp",
         "omx/1.0/WGraphicBufferSource.cpp",
         "omx/1.0/WOmxBufferSource.cpp",
@@ -217,6 +215,49 @@ cc_library_static {
     },
 }
 
+cc_library_shared {
+    name: "libmedia_codeclist",
+
+    srcs: [
+        "IMediaCodecList.cpp",
+        "MediaCodecInfo.cpp",
+    ],
+
+    local_include_dirs: [
+        "include",
+    ],
+
+    shared_libs: [
+        "android.hardware.media.omx@1.0",
+        "libbinder",
+        "liblog",
+        "libstagefright_foundation",
+        "libutils",
+    ],
+
+    include_dirs: [
+        "system/libhidl/transport/token/1.0/utils/include",
+    ],
+
+    export_include_dirs: [
+        "include",
+    ],
+
+    cflags: [
+        "-Werror",
+        "-Wno-error=deprecated-declarations",
+        "-Wall",
+    ],
+
+    sanitize: {
+        misc_undefined: [
+            "unsigned-integer-overflow",
+            "signed-integer-overflow",
+        ],
+        cfi: true,
+    },
+}
+
 cc_library {
     name: "libmedia",
 
@@ -291,6 +332,7 @@ cc_library {
         "libdl",
         "libaudioutils",
         "libaudioclient",
+        "libmedia_codeclist",
         "libmedia_omx",
     ],
 
