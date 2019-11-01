@@ -49,6 +49,11 @@
 namespace android {
 
 status_t AVUtils::convertMetaDataToMessage(
+        const MetaDataBase *, sp<AMessage> *) {
+    return OK;
+}
+
+status_t AVUtils::convertMetaDataToMessage(
         const sp<MetaData> &, sp<AMessage> *) {
     return OK;
 }
@@ -113,7 +118,7 @@ bool AVUtils::mapAACProfileToAudioFormat(const sp<AMessage> &,  audio_format_t &
     return false ;
 }
 
-bool AVUtils::canOffloadAPE(const sp<MetaData> &) {
+bool AVUtils::canOffloadStream(const sp<MetaData> &) {
    return true;
 }
 

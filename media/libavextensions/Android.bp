@@ -18,12 +18,14 @@ cc_library_static {
     include_dirs: [
         "frameworks/av/media/libavextensions",
         "external/flac/include",
-        "hardware/qcom/media/mm-core/inc",
     ],
     cflags: [
         "-Wno-multichar",
         "-Werror",
     ],
+    sanitize: {
+        cfi: true,
+    },
 }
 
 cc_library_static {
@@ -51,6 +53,7 @@ cc_library_static {
          "android.hidl.memory@1.0",
     ],
     header_libs:[
+        "media_ndk_headers",
         "media_plugin_headers",
         "libbase_headers",
         "libstagefright_headers",
@@ -59,13 +62,15 @@ cc_library_static {
         "frameworks/av/media/libstagefright/mpeg2ts",
         "frameworks/av/media/libavextensions",
         "external/flac/include",
-        "hardware/qcom/media/mm-core/inc",
         "frameworks/av/media/libstagefright/omx/include/media/stagefright",
     ],
     cflags: [
         "-Wno-multichar",
         "-Werror",
     ],
+    sanitize: {
+        cfi: true,
+    },
 }
 
 cc_library_static {
@@ -98,10 +103,12 @@ cc_library_static {
         "frameworks/av/media/libmediaplayerservice",
         "frameworks/av/media/libavextensions",
         "external/flac/include",
-        "hardware/qcom/media/mm-core/inc",
     ],
     cflags: [
         "-Wno-multichar",
         "-Werror",
     ],
+    sanitize: {
+        cfi: true,
+    },
 }

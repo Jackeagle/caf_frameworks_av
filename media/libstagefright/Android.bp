@@ -101,6 +101,7 @@ cc_library_static {
         "-Werror",
         "-Wno-error=deprecated-declarations",
         "-Wall",
+        "-D__NO_AVEXTENSIONS__",
     ],
 
     sanitize: {
@@ -203,6 +204,7 @@ cc_library {
         "libhidlbase",
         "libhidlmemory",
         "android.hidl.allocator@1.0",
+        "android.hidl.memory@1.0",
         "android.hardware.cas.native@1.0",
         "android.hardware.media.omx@1.0",
     ],
@@ -313,6 +315,7 @@ cc_library_static {
         "-Werror",
         "-Wno-error=deprecated-declarations",
         "-Wall",
+        "-D__NO_AVEXTENSIONS__",
     ],
 
     product_variables: {
