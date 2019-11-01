@@ -31,6 +31,7 @@
 
 namespace android {
 
+const char *MEDIA_MIMETYPE_AUDIO_MHAS = "audio/mhas";
 const char *MEDIA_MIMETYPE_AUDIO_EVRC = "audio/evrc";
 const char *MEDIA_MIMETYPE_VIDEO_WMV = "video/x-ms-wmv";
 const char *MEDIA_MIMETYPE_VIDEO_WMV_VC1 = "video/wvc1";
@@ -49,7 +50,6 @@ const char *MEDIA_MIMETYPE_AUDIO_DTS = "audio/dts";
 const char *MEDIA_MIMETYPE_AUDIO_DTS_LBR = "audio/dts-lbr";
 const char *MEDIA_MIMETYPE_AUDIO_AMR_WB_PLUS = "audio/amr-wb-plus";
 const char *MEDIA_MIMETYPE_AUDIO_AIFF = "audio/x-aiff";
-const char *MEDIA_MIMETYPE_AUDIO_ALAC = "audio/alac";
 const char *MEDIA_MIMETYPE_AUDIO_APE = "audio/x-ape";
 const char *MEDIA_MIMETYPE_CONTAINER_QCAMR_NB = "audio/qc-amr";
 const char *MEDIA_MIMETYPE_CONTAINER_QCAMR_WB = "audio/qc-amr-wb";
