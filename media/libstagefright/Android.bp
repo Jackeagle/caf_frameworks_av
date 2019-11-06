@@ -127,7 +127,6 @@ cc_library {
         "ACodecBufferChannel.cpp",
         "AHierarchicalStateMachine.cpp",
         "AMRWriter.cpp",
-        "AudioPlayer.cpp",
         "AudioSource.cpp",
         "BufferImpl.cpp",
         "CallbackDataSource.cpp",
@@ -162,7 +161,6 @@ cc_library {
         "SimpleDecodingSource.cpp",
         "SkipCutBuffer.cpp",
         "StagefrightMediaScanner.cpp",
-        "StagefrightMetadataRetriever.cpp",
         "StagefrightPluginLoader.cpp",
         "SurfaceUtils.cpp",
         "ThrottledSource.cpp",
@@ -214,7 +212,6 @@ cc_library {
         "libogg",
         "libwebm",
         "libstagefright_id3",
-        "libFLAC",
     ],
 
     header_libs:[
