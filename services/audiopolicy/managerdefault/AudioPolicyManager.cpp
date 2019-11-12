@@ -970,21 +970,32 @@ status_t AudioPolicyManager::getOutputForAttrInt(
     bool usePrimaryOutputFromPolicyMixes = requestedDevice == nullptr && policyDesc != nullptr;
 
     // FIXME: in case of RENDER policy, the output capabilities should be checked
-    if ((usePrimaryOutputFromPolicyMixes || !secondaryDescs->empty())
-        && !audio_is_linear_pcm(config->format)) {
+    if (!secondaryDescs->empty() && !audio_is_linear_pcm(config->format)) {
         ALOGD("%s: rejecting request as dynamic audio policy only support pcm", __func__);
         return BAD_VALUE;
     }
     if (usePrimaryOutputFromPolicyMixes) {
-        *output = policyDesc->mIoHandle;
-        sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
-        sp<DeviceDescriptor> deviceDesc =
-                mAvailableOutputDevices.getDevice(mix->mDeviceType,
-                                                  mix->mDeviceAddress,
-                                                  AUDIO_FORMAT_DEFAULT);
-        *selectedDeviceId = deviceDesc != 0 ? deviceDesc->getId() : AUDIO_PORT_HANDLE_NONE;
-        ALOGV("getOutputForAttr() returns output %d", *output);
-        return NO_ERROR;
+        if (audio_is_linear_pcm(config->format)) {
+            *output = policyDesc->mIoHandle;
+            sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
+            sp<DeviceDescriptor> deviceDesc =
+                    mAvailableOutputDevices.getDevice(mix->mDeviceType,
+                                                      mix->mDeviceAddress,
+                                                      AUDIO_FORMAT_DEFAULT);
+            *selectedDeviceId = deviceDesc != 0 ? deviceDesc->getId() : AUDIO_PORT_HANDLE_NONE;
+            ALOGV("getOutputForAttr() returns output %d", *output);
+            return NO_ERROR;
+        } else {
+            /* BUG 73287368: Support compress-offload playback with bus device routing */
+            outputDevices = mEngine->getOutputDevicesForAttributes(*resultAttr, requestedDevice, false);
+            if ((outputDevices.types() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
+                (isOffloadSupported(config->offload_info))) {
+                ALOGW("getOutputForAttr() bypass dynamic policies for bus devices, try offload output");
+            } else {
+                ALOGD("%s: rejecting request as offload output is not supported", __func__);
+                return BAD_VALUE;
+            }
+        }
     }
     // Virtual sources must always be dynamicaly or explicitly routed
     if (resultAttr->usage == AUDIO_USAGE_VIRTUAL_SOURCE) {
