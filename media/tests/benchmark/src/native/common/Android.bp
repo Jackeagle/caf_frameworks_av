@@ -24,6 +24,7 @@ cc_library_static {
     srcs: [
         "BenchmarkCommon.cpp",
         "Stats.cpp",
+        "utils/Timers.cpp",
     ],
 
     export_include_dirs: ["."],
@@ -49,12 +50,44 @@ cc_defaults {
     shared_libs: [
         "libmediandk",
         "liblog",
-        "libutils",
     ],
 
     cflags: [
         "-Wall",
         "-Werror",
+    ]
+}
+
+cc_library_static {
+    name: "libmediabenchmark_codec2_common",
+    defaults: [
+        "libmediabenchmark_codec2_common-defaults",
+    ],
+
+    srcs: [
+        "BenchmarkC2Common.cpp",
+    ],
+
+    export_include_dirs: ["."],
+
+    ldflags: ["-Wl,-Bsymbolic"]
+}
+
+cc_defaults {
+    name: "libmediabenchmark_codec2_common-defaults",
+
+    defaults: [
+        "libmediabenchmark_common-defaults",
+        "libcodec2-hidl-client-defaults",
+        "libmediabenchmark_soft_sanitize_all-defaults",
+    ],
+
+    include_dirs: [
+        "frameworks/av/media/codec2/hidl/client/include",
+    ],
+
+    shared_libs: [
+        "libcodec2_client",
     ]
 }
 
