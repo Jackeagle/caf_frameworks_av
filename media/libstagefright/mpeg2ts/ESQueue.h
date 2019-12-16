@@ -78,7 +78,7 @@ struct ElementaryStreamQueue {
 
     void signalNewSampleAesKey(const sp<AMessage> &keyItem);
 
-private:
+protected:
     struct RangeInfo {
         int64_t mTimestampUs;
         size_t mLength;
