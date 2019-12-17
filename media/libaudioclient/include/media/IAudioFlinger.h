@@ -27,6 +27,7 @@
 #include <binder/Parcel.h>
 #include <binder/Parcelable.h>
 #include <media/AudioClient.h>
+#include <media/DeviceDescriptorBase.h>
 #include <media/IAudioTrack.h>
 #include <media/IAudioFlingerClient.h>
 #include <system/audio.h>
@@ -404,8 +405,7 @@ public:
     virtual status_t openOutput(audio_module_handle_t module,
                                 audio_io_handle_t *output,
                                 audio_config_t *config,
-                                audio_devices_t *devices,
-                                const String8& address,
+                                const sp<DeviceDescriptorBase>& device,
                                 uint32_t *latencyMs,
                                 audio_output_flags_t flags) = 0;
     virtual audio_io_handle_t openDuplicateOutput(audio_io_handle_t output1,
@@ -511,6 +511,8 @@ public:
 
     /* List available microphones and their characteristics */
     virtual status_t getMicrophones(std::vector<media::MicrophoneInfo> *microphones) = 0;
+
+    virtual status_t setAudioHalPids(const std::vector<pid_t>& pids) = 0;
 };
 
 

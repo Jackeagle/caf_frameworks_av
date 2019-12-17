@@ -17,8 +17,10 @@
 #ifndef ANDROID_AUDIOPOLICY_INTERFACE_H
 #define ANDROID_AUDIOPOLICY_INTERFACE_H
 
+#include <media/AudioDeviceTypeAddr.h>
 #include <media/AudioSystem.h>
 #include <media/AudioPolicy.h>
+#include <media/DeviceDescriptorBase.h>
 #include <utils/String8.h>
 
 namespace android {
@@ -269,6 +271,14 @@ public:
 
     virtual status_t getVolumeGroupFromAudioAttributes(const AudioAttributes &aa,
                                                        volume_group_t &volumeGroup) = 0;
+
+    virtual status_t setPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   const AudioDeviceTypeAddr &device) = 0;
+
+    virtual status_t removePreferredDeviceForStrategy(product_strategy_t strategy) = 0;
+
+    virtual status_t getPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   AudioDeviceTypeAddr &device) = 0;
 };
 
 
@@ -296,8 +306,7 @@ public:
     virtual status_t openOutput(audio_module_handle_t module,
                                 audio_io_handle_t *output,
                                 audio_config_t *config,
-                                audio_devices_t *devices,
-                                const String8& address,
+                                const sp<DeviceDescriptorBase>& device,
                                 uint32_t *latencyMs,
                                 audio_output_flags_t flags) = 0;
     // creates a special output that is duplicated to the two outputs passed as arguments. The duplication is performed by
