@@ -224,6 +224,15 @@ public:
 
     virtual status_t removeUidDeviceAffinities(uid_t uid);
 
+    virtual status_t setPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   const AudioDeviceTypeAddr &device);
+
+    virtual status_t removePreferredDeviceForStrategy(product_strategy_t strategy);
+
+
+    virtual status_t getPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   AudioDeviceTypeAddr &device);
+
     virtual status_t startAudioSource(const struct audio_port_config *source,
                                       const audio_attributes_t *attributes,
                                       audio_port_handle_t *portId);
@@ -622,8 +631,7 @@ private:
         virtual status_t openOutput(audio_module_handle_t module,
                                     audio_io_handle_t *output,
                                     audio_config_t *config,
-                                    audio_devices_t *devices,
-                                    const String8& address,
+                                    const sp<DeviceDescriptorBase>& device,
                                     uint32_t *latencyMs,
                                     audio_output_flags_t flags);
         // creates a special output that is duplicated to the two outputs passed as arguments. The duplication is performed by

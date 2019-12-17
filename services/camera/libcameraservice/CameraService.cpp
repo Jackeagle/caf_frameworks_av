@@ -153,8 +153,6 @@ void CameraService::onFirstRef()
         mInitialized = true;
     }
 
-    CameraService::pingCameraServiceProxy();
-
     mUidPolicy = new UidPolicy(this);
     mUidPolicy->registerSelf();
     mSensorPrivacyPolicy = new SensorPrivacyPolicy(this);
@@ -164,6 +162,11 @@ void CameraService::onFirstRef()
         ALOGE("%s: Failed to register default android.frameworks.cameraservice.service@1.0",
               __FUNCTION__);
     }
+
+    // This needs to be last call in this function, so that it's as close to
+    // ServiceManager::addService() as possible.
+    CameraService::pingCameraServiceProxy();
+    ALOGI("CameraService pinged cameraservice proxy");
 }
 
 status_t CameraService::enumerateProviders() {
@@ -3271,9 +3274,21 @@ void CameraService::updateStatus(StatusInternal status, const String8& cameraId,
         return;
     }
     bool isHidden = isPublicallyHiddenSecureCamera(cameraId);
+    bool supportsHAL3 = false;
+    // supportsCameraApi also holds mInterfaceMutex, we can't call it in the
+    // HIDL onStatusChanged wrapper call (we'll hold mStatusListenerLock and
+    // mInterfaceMutex together, which can lead to deadlocks)
+    binder::Status sRet =
+            supportsCameraApi(String16(cameraId), hardware::ICameraService::API_VERSION_2,
+                    &supportsHAL3);
+    if (!sRet.isOk()) {
+        ALOGW("%s: Failed to determine if device supports HAL3 %s, supportsCameraApi call failed",
+                __FUNCTION__, cameraId.string());
+        return;
+    }
     // Update the status for this camera state, then send the onStatusChangedCallbacks to each
     // of the listeners with both the mStatusStatus and mStatusListenerLock held
-    state->updateStatus(status, cameraId, rejectSourceStates, [this,&isHidden]
+    state->updateStatus(status, cameraId, rejectSourceStates, [this, &isHidden, &supportsHAL3]
             (const String8& cameraId, StatusInternal status) {
 
             if (status != StatusInternal::ENUMERATING) {
@@ -3295,8 +3310,8 @@ void CameraService::updateStatus(StatusInternal status, const String8& cameraId,
             Mutex::Autolock lock(mStatusListenerLock);
 
             for (auto& listener : mListenerList) {
-                if (!listener.first &&  isHidden) {
-                    ALOGV("Skipping camera discovery callback for system-only camera %s",
+                if (!listener.first &&  (isHidden || !supportsHAL3)) {
+                    ALOGV("Skipping camera discovery callback for system-only / HAL1 camera %s",
                           cameraId.c_str());
                     continue;
                 }

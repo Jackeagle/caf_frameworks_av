@@ -19,6 +19,7 @@
 
 #include <sys/types.h>
 
+#include <media/AudioDeviceTypeAddr.h>
 #include <media/AudioPolicy.h>
 #include <media/AudioProductStrategy.h>
 #include <media/AudioVolumeGroup.h>
@@ -395,6 +396,23 @@ public:
                                                       volume_group_t &volumeGroup);
 
     static status_t setRttEnabled(bool enabled);
+
+     /**
+     * Send audio HAL server process pids to native audioserver process for use
+     * when generating audio HAL servers tombstones
+     */
+    static status_t setAudioHalPids(const std::vector<pid_t>& pids);
+
+    static status_t setPreferredDeviceForStrategy(product_strategy_t strategy,
+            const AudioDeviceTypeAddr &device);
+
+    static status_t removePreferredDeviceForStrategy(product_strategy_t strategy);
+
+    static status_t getPreferredDeviceForStrategy(product_strategy_t strategy,
+            AudioDeviceTypeAddr &device);
+
+    static status_t getDeviceForStrategy(product_strategy_t strategy,
+            AudioDeviceTypeAddr &device);
 
     // ----------------------------------------------------------------------------
 
