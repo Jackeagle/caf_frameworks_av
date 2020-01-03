@@ -61,6 +61,8 @@
 
 #include "ESDS.h"
 #include <media/stagefright/Utils.h>
+#include "mediaplayerservice/AVNuExtensions.h"
+#define MAX_OUTPUT_FRAME_RATE 60
 
 namespace android {
 
@@ -237,7 +239,7 @@ void NuPlayer::setDataSourceAsync(const sp<IStreamSource> &source) {
     mDataSourceType = DATA_SOURCE_TYPE_STREAM;
 }
 
-static bool IsHTTPLiveURL(const char *url) {
+bool NuPlayer::IsHTTPLiveURL(const char *url) {
     if (!strncasecmp("http://", url, 7)
             || !strncasecmp("https://", url, 8)
             || !strncasecmp("file://", url, 7)) {
@@ -1337,6 +1339,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                         FLUSH_CMD_SHUTDOWN /* video */));
 
             mDeferredActions.push_back(
+                    new SimpleAction(&NuPlayer::closeAudioSink));
+            mDeferredActions.push_back(
                     new SimpleAction(&NuPlayer::performReset));
 
             processDeferredActions();
@@ -1582,7 +1586,7 @@ void NuPlayer::onStart(int64_t startPositionUs, MediaPlayerSeekMode mode) {
     sp<AMessage> notify = new AMessage(kWhatRendererNotify, this);
     ++mRendererGeneration;
     notify->setInt32("generation", mRendererGeneration);
-    mRenderer = new Renderer(mAudioSink, mMediaClock, notify, flags);
+    mRenderer = AVNuFactory::get()->createRenderer(mAudioSink, mMediaClock, notify, flags);
     mRendererLooper = new ALooper;
     mRendererLooper->setName("NuPlayerRenderer");
     mRendererLooper->start(false, false, ANDROID_PRIORITY_AUDIO);
@@ -1598,6 +1602,7 @@ void NuPlayer::onStart(int64_t startPositionUs, MediaPlayerSeekMode mode) {
 
     float rate = getFrameRate();
     if (rate > 0) {
+        rate = (rate > 60) ? MAX_OUTPUT_FRAME_RATE : rate;
         mRenderer->setVideoFrameRate(rate);
     }
 
@@ -1934,6 +1939,8 @@ status_t NuPlayer::instantiateDecoder(
         if (rate > 0) {
             format->setFloat("operating-rate", rate * mPlaybackSettings.mSpeed);
         }
+        rate = (rate > 0 && rate <= 60) ? rate : MAX_OUTPUT_FRAME_RATE;
+        format->setInt32("output-frame-rate", rate);
     }
 
     Mutex::Autolock autoLock(mDecoderLock);
@@ -1951,12 +1958,12 @@ status_t NuPlayer::instantiateDecoder(
 
             const bool hasVideo = (mSource->getFormat(false /*audio */) != NULL);
             format->setInt32("has-video", hasVideo);
-            *decoder = new DecoderPassThrough(notify, mSource, mRenderer);
-            ALOGV("instantiateDecoder audio DecoderPassThrough  hasVideo: %d", hasVideo);
+            *decoder = AVNuFactory::get()->createPassThruDecoder(notify, mSource, mRenderer);
+            ALOGV("instantiateDecoder audio DecoderPassThrough hasVideo: %d", hasVideo);
         } else {
             mSource->setOffloadAudio(false /* offload */);
 
-            *decoder = new Decoder(notify, mSource, mPID, mUID, mRenderer);
+            *decoder = AVNuFactory::get()->createDecoder(notify, mSource, mPID, mUID, mRenderer);
             ALOGV("instantiateDecoder audio Decoder");
         }
         mAudioDecoderError = false;
