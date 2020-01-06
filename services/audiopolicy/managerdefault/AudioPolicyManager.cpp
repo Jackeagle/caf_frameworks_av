@@ -975,7 +975,15 @@ status_t AudioPolicyManager::getOutputForAttrInt(
         return BAD_VALUE;
     }
     if (usePrimaryOutputFromPolicyMixes) {
-        if (audio_is_linear_pcm(config->format)) {
+        /* BUG 73287368: Support compress-offload playback with dynamic audio policy */
+        outputDevices = mEngine->getOutputDevicesForAttributes(*resultAttr, requestedDevice, false);
+        audio_config_base_t baseConfig = {.sample_rate = config->sample_rate,
+                                          .format = config->format,
+                                          .channel_mask = config->channel_mask};
+        if ((outputDevices.types() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
+            (isOffloadSupported(config->offload_info) || isDirectOutputSupported(baseConfig, *resultAttr))) {
+            ALOGW("getOutputForAttr() bypass dynamic policies for bus devices, try offload/direct output");
+        } else if (audio_is_linear_pcm(config->format)) {
             *output = policyDesc->mIoHandle;
             sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
             sp<DeviceDescriptor> deviceDesc =
@@ -986,15 +994,8 @@ status_t AudioPolicyManager::getOutputForAttrInt(
             ALOGV("getOutputForAttr() returns output %d", *output);
             return NO_ERROR;
         } else {
-            /* BUG 73287368: Support compress-offload playback with bus device routing */
-            outputDevices = mEngine->getOutputDevicesForAttributes(*resultAttr, requestedDevice, false);
-            if ((outputDevices.types() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
-                (isOffloadSupported(config->offload_info))) {
-                ALOGW("getOutputForAttr() bypass dynamic policies for bus devices, try offload output");
-            } else {
-                ALOGD("%s: rejecting request as offload output is not supported", __func__);
-                return BAD_VALUE;
-            }
+            ALOGD("%s: rejecting request as neither offload/direct nor pcm is supported", __func__);
+            return BAD_VALUE;
         }
     }
     // Virtual sources must always be dynamicaly or explicitly routed
