@@ -970,21 +970,32 @@ status_t AudioPolicyManager::getOutputForAttrInt(
     bool usePrimaryOutputFromPolicyMixes = requestedDevice == nullptr && policyDesc != nullptr;
 
     // FIXME: in case of RENDER policy, the output capabilities should be checked
-    if ((usePrimaryOutputFromPolicyMixes || !secondaryDescs->empty())
-        && !audio_is_linear_pcm(config->format)) {
+    if (!secondaryDescs->empty() && !audio_is_linear_pcm(config->format)) {
         ALOGD("%s: rejecting request as dynamic audio policy only support pcm", __func__);
         return BAD_VALUE;
     }
     if (usePrimaryOutputFromPolicyMixes) {
-        *output = policyDesc->mIoHandle;
-        sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
-        sp<DeviceDescriptor> deviceDesc =
-                mAvailableOutputDevices.getDevice(mix->mDeviceType,
-                                                  mix->mDeviceAddress,
-                                                  AUDIO_FORMAT_DEFAULT);
-        *selectedDeviceId = deviceDesc != 0 ? deviceDesc->getId() : AUDIO_PORT_HANDLE_NONE;
-        ALOGV("getOutputForAttr() returns output %d", *output);
-        return NO_ERROR;
+        if (audio_is_linear_pcm(config->format)) {
+            *output = policyDesc->mIoHandle;
+            sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
+            sp<DeviceDescriptor> deviceDesc =
+                    mAvailableOutputDevices.getDevice(mix->mDeviceType,
+                                                      mix->mDeviceAddress,
+                                                      AUDIO_FORMAT_DEFAULT);
+            *selectedDeviceId = deviceDesc != 0 ? deviceDesc->getId() : AUDIO_PORT_HANDLE_NONE;
+            ALOGV("getOutputForAttr() returns output %d", *output);
+            return NO_ERROR;
+        } else {
+            /* BUG 73287368: Support compress-offload playback with bus device routing */
+            outputDevices = mEngine->getOutputDevicesForAttributes(*resultAttr, requestedDevice, false);
+            if ((outputDevices.types() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
+                (isOffloadSupported(config->offload_info))) {
+                ALOGW("getOutputForAttr() bypass dynamic policies for bus devices, try offload output");
+            } else {
+                ALOGD("%s: rejecting request as offload output is not supported", __func__);
+                return BAD_VALUE;
+            }
+        }
     }
     // Virtual sources must always be dynamicaly or explicitly routed
     if (resultAttr->usage == AUDIO_USAGE_VIRTUAL_SOURCE) {
@@ -4234,7 +4245,7 @@ uint32_t AudioPolicyManager::nextAudioPortGeneration()
 
 // Treblized audio policy xml config will be located in /odm/etc or /vendor/etc.
 static const char *kConfigLocationList[] =
-        {"/odm/etc", "/vendor/etc", "/system/etc"};
+        {"/odm/etc", "/vendor/etc/audio", "/vendor/etc", "/system/etc"};
 static const int kConfigLocationListSize =
         (sizeof(kConfigLocationList) / sizeof(kConfigLocationList[0]));
 
@@ -5690,8 +5701,9 @@ float AudioPolicyManager::computeVolume(IVolumeCurves &curves,
     const auto ringVolumeSrc = toVolumeSource(AUDIO_STREAM_RING);
     const auto musicVolumeSrc = toVolumeSource(AUDIO_STREAM_MUSIC);
     const auto alarmVolumeSrc = toVolumeSource(AUDIO_STREAM_ALARM);
+    const auto a11yVolumeSrc = toVolumeSource(AUDIO_STREAM_ACCESSIBILITY);
 
-    if (volumeSource == toVolumeSource(AUDIO_STREAM_ACCESSIBILITY)
+    if (volumeSource == a11yVolumeSrc
             && (AUDIO_MODE_RINGTONE == mEngine->getPhoneState()) &&
             mOutputs.isActive(ringVolumeSrc, 0)) {
         auto &ringCurves = getVolumeCurves(AUDIO_STREAM_RING);
@@ -5708,7 +5720,7 @@ float AudioPolicyManager::computeVolume(IVolumeCurves &curves,
              volumeSource == toVolumeSource(AUDIO_STREAM_NOTIFICATION) ||
              volumeSource == toVolumeSource(AUDIO_STREAM_ENFORCED_AUDIBLE) ||
              volumeSource == toVolumeSource(AUDIO_STREAM_DTMF) ||
-             volumeSource == toVolumeSource(AUDIO_STREAM_ACCESSIBILITY))) {
+             volumeSource == a11yVolumeSrc)) {
         auto &voiceCurves = getVolumeCurves(callVolumeSrc);
         int voiceVolumeIndex = voiceCurves.getVolumeIndex(device);
         const float maxVoiceVolDb =
@@ -5720,7 +5732,9 @@ float AudioPolicyManager::computeVolume(IVolumeCurves &curves,
         // VOICE_CALL stream has minVolumeIndex > 0 : Users cannot set the volume of voice calls to
         // 0. We don't want to cap volume when the system has programmatically muted the voice call
         // stream. See setVolumeCurveIndex() for more information.
-        bool exemptFromCapping = (volumeSource == ringVolumeSrc) && (voiceVolumeIndex == 0);
+        bool exemptFromCapping =
+                ((volumeSource == ringVolumeSrc) || (volumeSource == a11yVolumeSrc))
+                && (voiceVolumeIndex == 0);
         ALOGV_IF(exemptFromCapping, "%s volume source %d at vol=%f not capped", __func__,
                  volumeSource, volumeDb);
         if ((volumeDb > maxVoiceVolDb) && !exemptFromCapping) {

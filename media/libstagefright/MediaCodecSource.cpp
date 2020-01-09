@@ -38,6 +38,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include <stagefright/AVExtensions.h>
 
 namespace android {
 
@@ -513,11 +514,13 @@ status_t MediaCodecSource::initEncoder() {
                     MediaCodec::CONFIGURE_FLAG_ENCODE);
     } else {
         Vector<AString> matchingCodecs;
-        MediaCodecList::findMatchingCodecs(
-                outputMIME.c_str(), true /* encoder */,
-                ((mFlags & FLAG_PREFER_SOFTWARE_CODEC) ? MediaCodecList::kPreferSoftwareCodecs : 0),
-                &matchingCodecs);
-
+        bool useQcHwEnc = AVUtils::get()->useQCHWEncoder(mOutputFormat, &matchingCodecs);
+        if (!useQcHwEnc) {
+            MediaCodecList::findMatchingCodecs(
+                    outputMIME.c_str(), true /* encoder */,
+                    ((mFlags & FLAG_PREFER_SOFTWARE_CODEC) ? MediaCodecList::kPreferSoftwareCodecs : 0),
+                    &matchingCodecs);
+        }
         for (size_t ix = 0; ix < matchingCodecs.size(); ++ix) {
             mEncoder = MediaCodec::CreateByComponentName(
                     mCodecLooper, matchingCodecs[ix]);
@@ -714,6 +717,9 @@ status_t MediaCodecSource::feedEncoderInputBuffers() {
             // push decoding time for video, or drift time for audio
             if (mIsVideo) {
                 mDecodingTimeQueue.push_back(timeUs);
+                if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
+                    AVUtils::get()->addDecodingTimesFromBatch(mbuf, mDecodingTimeQueue, mInputBufferTimeOffsetUs);
+                }
             } else {
 #if DEBUG_DRIFT_TIME
                 if (mFirstSampleTimeUs < 0ll) {
@@ -913,7 +919,10 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
                 break;
             }
 
-            MediaBufferBase *mbuf = new MediaBuffer(outbuf->size());
+            MediaBuffer *mbuf = new MediaBuffer(outbuf->size());
+            sp<MetaData> meta = new MetaData(mbuf->meta_data());
+            AVUtils::get()->setDeferRelease(meta);
+
             mbuf->setObserver(this);
             mbuf->add_ref();
 
