@@ -23,6 +23,7 @@
 #include <utils/RefBase.h>
 #include <utils/Errors.h>
 #include <binder/IInterface.h>
+#include <media/AudioDeviceTypeAddr.h>
 #include <media/AudioSystem.h>
 #include <media/AudioPolicy.h>
 #include <media/IAudioPolicyServiceClient.h>
@@ -222,6 +223,14 @@ public:
                                                        volume_group_t &volumeGroup) = 0;
 
     virtual status_t setRttEnabled(bool enabled) = 0;
+
+    virtual status_t setPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   const AudioDeviceTypeAddr &device) = 0;
+
+    virtual status_t removePreferredDeviceForStrategy(product_strategy_t strategy) = 0;
+
+    virtual status_t getPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   AudioDeviceTypeAddr &device) = 0;
 };
 
 

@@ -63,7 +63,10 @@ static bool checkRecordingInternal(const String16& opPackageName, pid_t pid,
         uid_t uid, bool start) {
     // Okay to not track in app ops as audio server is us and if
     // device is rooted security model is considered compromised.
-    if (isAudioServerOrRootUid(uid)) return true;
+    // system_server loses its RECORD_AUDIO permission when a secondary
+    // user is active, but it is a core system service so let it through.
+    // TODO(b/141210120): UserManager.DISALLOW_RECORD_AUDIO should not affect system user 0
+    if (isAudioServerOrSystemServerOrRootUid(uid)) return true;
 
     // We specify a pid and uid here as mediaserver (aka MediaRecorder or StageFrightRecorder)
     // may open a record track on behalf of a client.  Note that pid may be a tid.
@@ -171,12 +174,19 @@ bool modifyAudioRoutingAllowed() {
 }
 
 bool modifyDefaultAudioEffectsAllowed() {
+    return modifyDefaultAudioEffectsAllowed(
+        IPCThreadState::self()->getCallingPid(), IPCThreadState::self()->getCallingUid());
+}
+
+bool modifyDefaultAudioEffectsAllowed(pid_t pid, uid_t uid) {
+    if (isAudioServerUid(IPCThreadState::self()->getCallingUid())) return true;
+
     static const String16 sModifyDefaultAudioEffectsAllowed(
             "android.permission.MODIFY_DEFAULT_AUDIO_EFFECTS");
     // IMPORTANT: Use PermissionCache - not a runtime permission and may not change.
-    bool ok = PermissionCache::checkCallingPermission(sModifyDefaultAudioEffectsAllowed);
-
-    if (!ok) ALOGE("android.permission.MODIFY_DEFAULT_AUDIO_EFFECTS");
+    bool ok = PermissionCache::checkPermission(sModifyDefaultAudioEffectsAllowed, pid, uid);
+    ALOGE_IF(!ok, "%s(): android.permission.MODIFY_DEFAULT_AUDIO_EFFECTS denied for uid %d",
+            __func__, uid);
     return ok;
 }
 

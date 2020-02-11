@@ -18,12 +18,16 @@ package com.android.media.benchmark.tests;
 
 import com.android.media.benchmark.R;
 import com.android.media.benchmark.library.Extractor;
+import com.android.media.benchmark.library.Native;
+import com.android.media.benchmark.library.Stats;
 
 import android.content.Context;
+import android.media.MediaFormat;
 import android.util.Log;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -31,19 +35,23 @@ import org.junit.runners.Parameterized;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+
+import static org.junit.Assert.assertTrue;
 
 @RunWith(Parameterized.class)
 public class ExtractorTest {
     private static Context mContext =
             InstrumentationRegistry.getInstrumentation().getTargetContext();
     private static final String mInputFilePath = mContext.getString(R.string.input_file_path);
+    private static final String mStatsFile = mContext.getExternalFilesDir(null) + "/Extractor."
+            + System.currentTimeMillis() + ".csv";
     private static final String TAG = "ExtractorTest";
     private String mInputFileName;
     private int mTrackId;
@@ -62,7 +70,7 @@ public class ExtractorTest {
                 {"bbb_44100hz_2ch_600kbps_flac_5mins.flac", 0},
                 {"bbb_8000hz_1ch_8kbps_amrnb_5mins.3gp", 0},
                 {"bbb_16000hz_1ch_9kbps_amrwb_5mins.3gp", 0},
-                {"bbb_44100hz_2ch_80kbps_vorbis_5mins.mp4", 0},
+                {"bbb_44100hz_2ch_80kbps_vorbis_5mins.webm", 0},
                 {"bbb_48000hz_2ch_100kbps_opus_5mins.webm", 0}});
     }
 
@@ -71,22 +79,43 @@ public class ExtractorTest {
         this.mTrackId = track;
     }
 
+    @BeforeClass
+    public static void writeStatsHeaderToFile() throws IOException {
+        Stats mStats = new Stats();
+        boolean status = mStats.writeStatsHeader(mStatsFile);
+        assertTrue("Unable to open stats file for writing!", status);
+        Log.d(TAG, "Saving Benchmark results in: " + mStatsFile);
+    }
+
     @Test
-    public void sampleExtractTest() throws IOException {
-        int status = -1;
+    public void testExtractor() throws IOException {
         File inputFile = new File(mInputFilePath + mInputFileName);
-        if (inputFile.exists()) {
-            FileInputStream fileInput = new FileInputStream(inputFile);
-            FileDescriptor fileDescriptor = fileInput.getFD();
-            Extractor extractor = new Extractor();
-            extractor.setUpExtractor(fileDescriptor);
-            status = extractor.extractSample(mTrackId);
-            extractor.deinitExtractor();
-            extractor.dumpStatistics(mInputFileName);
-            fileInput.close();
-        } else {
-            Log.e(TAG, "Cannot find " + mInputFileName + " in directory " + mInputFilePath);
-        }
-        assertThat(status, is(equalTo(0)));
+        assertTrue("Cannot find " + mInputFileName + " in directory " + mInputFilePath,
+                inputFile.exists());
+        FileInputStream fileInput = new FileInputStream(inputFile);
+        FileDescriptor fileDescriptor = fileInput.getFD();
+        Extractor extractor = new Extractor();
+        extractor.setUpExtractor(fileDescriptor);
+        MediaFormat format = extractor.getFormat(mTrackId);
+        String mime = format.getString(MediaFormat.KEY_MIME);
+        int status = extractor.extractSample(mTrackId);
+        assertEquals("Extraction failed for " + mInputFileName, 0, status);
+        Log.i(TAG, "Extracted " + mInputFileName + " successfully.");
+        extractor.deinitExtractor();
+        extractor.dumpStatistics(mInputFileName, mime, mStatsFile);
+        fileInput.close();
+    }
+
+    @Test
+    public void testNativeExtractor() throws IOException {
+        Native nativeExtractor = new Native();
+        File inputFile = new File(mInputFilePath + mInputFileName);
+        assertTrue("Cannot find " + mInputFileName + " in directory " + mInputFilePath,
+                inputFile.exists());
+        FileInputStream fileInput = new FileInputStream(inputFile);
+        int status = nativeExtractor.Extract(mInputFilePath, mInputFileName, mStatsFile);
+        fileInput.close();
+        assertEquals("Extraction failed for " + mInputFileName, 0, status);
+        Log.i(TAG, "Extracted " + mInputFileName + " successfully.");
     }
 }

@@ -43,6 +43,7 @@
 #include <binder/PermissionController.h>
 #include <binder/ProcessInfoService.h>
 #include <binder/IResultReceiver.h>
+#include <binderthreadstate/CallerUtils.h>
 #include <cutils/atomic.h>
 #include <cutils/properties.h>
 #include <cutils/misc.h>
@@ -56,7 +57,6 @@
 #include <media/IMediaHTTPService.h>
 #include <media/mediaplayer.h>
 #include <mediautils/BatteryNotifier.h>
-#include <sensorprivacy/SensorPrivacyManager.h>
 #include <utils/Errors.h>
 #include <utils/Log.h>
 #include <utils/String16.h>
@@ -153,8 +153,6 @@ void CameraService::onFirstRef()
         mInitialized = true;
     }
 
-    CameraService::pingCameraServiceProxy();
-
     mUidPolicy = new UidPolicy(this);
     mUidPolicy->registerSelf();
     mSensorPrivacyPolicy = new SensorPrivacyPolicy(this);
@@ -164,6 +162,11 @@ void CameraService::onFirstRef()
         ALOGE("%s: Failed to register default android.frameworks.cameraservice.service@1.0",
               __FUNCTION__);
     }
+
+    // This needs to be last call in this function, so that it's as close to
+    // ServiceManager::addService() as possible.
+    CameraService::pingCameraServiceProxy();
+    ALOGI("CameraService pinged cameraservice proxy");
 }
 
 status_t CameraService::enumerateProviders() {
@@ -253,6 +256,15 @@ void CameraService::onNewProviderRegistered() {
     enumerateProviders();
 }
 
+bool CameraService::isPublicallyHiddenSecureCamera(const String8& cameraId) {
+    auto state = getCameraState(cameraId);
+    if (state != nullptr) {
+        return state->isPublicallyHiddenSecureCamera();
+    }
+    // Hidden physical camera ids won't have CameraState
+    return mCameraProviderManager->isPublicallyHiddenSecureCamera(cameraId.c_str());
+}
+
 void CameraService::updateCameraNumAndIds() {
     Mutex::Autolock l(mServiceLock);
     mNumberOfCameras = mCameraProviderManager->getCameraCount();
@@ -268,6 +280,8 @@ void CameraService::addStates(const String8 id) {
         ALOGE("Failed to query device resource cost: %s (%d)", strerror(-res), res);
         return;
     }
+    bool isPublicallyHiddenSecureCamera =
+            mCameraProviderManager->isPublicallyHiddenSecureCamera(id.string());
     std::set<String8> conflicting;
     for (size_t i = 0; i < cost.conflictingDevices.size(); i++) {
         conflicting.emplace(String8(cost.conflictingDevices[i].c_str()));
@@ -276,7 +290,8 @@ void CameraService::addStates(const String8 id) {
     {
         Mutex::Autolock lock(mCameraStatesLock);
         mCameraStates.emplace(id, std::make_shared<CameraState>(id, cost.resourceCost,
-                                                                conflicting));
+                                                                conflicting,
+                                                                isPublicallyHiddenSecureCamera));
     }
 
     if (mFlashlight->hasFlashUnit(id)) {
@@ -514,8 +529,16 @@ Status CameraService::getCameraCharacteristics(const String16& cameraId,
                 "Camera subsystem is not available");;
     }
 
-    Status ret{};
+    if (shouldRejectHiddenCameraConnection(String8(cameraId))) {
+        ALOGW("Attempting to retrieve characteristics for system-only camera id %s, rejected",
+              String8(cameraId).string());
+        return STATUS_ERROR_FMT(ERROR_DISCONNECTED,
+                                "No camera device with ID \"%s\" currently available",
+                                String8(cameraId).string());
 
+    }
+
+    Status ret{};
     status_t res = mCameraProviderManager->getCameraCharacteristics(
             String8(cameraId).string(), cameraInfo);
     if (res != OK) {
@@ -1007,7 +1030,7 @@ Status CameraService::validateClientPermissionsLocked(const String8& cameraId,
 
     // Only allow clients who are being used by the current foreground device user, unless calling
     // from our own process OR the caller is using the cameraserver's HIDL interface.
-    if (!hardware::IPCThreadState::self()->isServingCall() && callingPid != getpid() &&
+    if (getCurrentServingCall() != BinderCallType::HWBINDER && callingPid != getpid() &&
             (mAllowedUsers.find(clientUserId) == mAllowedUsers.end())) {
         ALOGE("CameraService::connect X (PID %d) rejected (cannot connect from "
                 "device user %d, currently allowed device users: %s)", callingPid, clientUserId,
@@ -1149,6 +1172,8 @@ status_t CameraService::handleEvictionsLocked(const String8& cameraId, int clien
                 clientPid,
                 states[states.size() - 1]);
 
+        resource_policy::ClientPriority clientPriority = clientDescriptor->getPriority();
+
         // Find clients that would be evicted
         auto evicted = mActiveClientManager.wouldEvict(clientDescriptor);
 
@@ -1166,8 +1191,7 @@ status_t CameraService::handleEvictionsLocked(const String8& cameraId, int clien
             String8 msg = String8::format("%s : DENIED connect device %s client for package %s "
                     "(PID %d, score %d state %d) due to eviction policy", curTime.string(),
                     cameraId.string(), packageName.string(), clientPid,
-                    priorityScores[priorityScores.size() - 1],
-                    states[states.size() - 1]);
+                    clientPriority.getScore(), clientPriority.getState());
 
             for (auto& i : incompatibleClients) {
                 msg.appendFormat("\n   - Blocked by existing device %s client for package %s"
@@ -1212,9 +1236,8 @@ status_t CameraService::handleEvictionsLocked(const String8& cameraId, int clien
                     i->getKey().string(), String8{clientSp->getPackageName()}.string(),
                     i->getOwnerId(), i->getPriority().getScore(),
                     i->getPriority().getState(), cameraId.string(),
-                    packageName.string(), clientPid,
-                    priorityScores[priorityScores.size() - 1],
-                    states[states.size() - 1]));
+                    packageName.string(), clientPid, clientPriority.getScore(),
+                    clientPriority.getState()));
 
             // Notify the client of disconnection
             clientSp->notifyError(hardware::camera2::ICameraDeviceCallbacks::ERROR_CAMERA_DISCONNECTED,
@@ -1328,9 +1351,9 @@ bool CameraService::shouldRejectHiddenCameraConnection(const String8 & cameraId)
     // If the thread serving this call is not a hwbinder thread and the caller
     // isn't the cameraserver itself, and the camera id being requested is to be
     // publically hidden, we should reject the connection.
-    if (!hardware::IPCThreadState::self()->isServingCall() &&
+    if (getCurrentServingCall() != BinderCallType::HWBINDER &&
             CameraThreadState::getCallingPid() != getpid() &&
-            mCameraProviderManager->isPublicallyHiddenSecureCamera(cameraId.c_str())) {
+            isPublicallyHiddenSecureCamera(cameraId)) {
         return true;
     }
     return false;
@@ -1348,14 +1371,20 @@ Status CameraService::connectDevice(
     Status ret = Status::ok();
     String8 id = String8(cameraId);
     sp<CameraDeviceClient> client = nullptr;
+    String16 clientPackageNameAdj = clientPackageName;
 
+    if (getCurrentServingCall() == BinderCallType::HWBINDER) {
+        std::string vendorClient =
+                StringPrintf("vendor.client.pid<%d>", CameraThreadState::getCallingPid());
+        clientPackageNameAdj = String16(vendorClient.c_str());
+    }
     ret = connectHelper<hardware::camera2::ICameraDeviceCallbacks,CameraDeviceClient>(cameraCb, id,
             /*api1CameraId*/-1,
-            CAMERA_HAL_API_VERSION_UNSPECIFIED, clientPackageName,
+            CAMERA_HAL_API_VERSION_UNSPECIFIED, clientPackageNameAdj,
             clientUid, USE_CALLING_PID, API_2, /*shimUpdateOnly*/ false, /*out*/client);
 
     if(!ret.isOk()) {
-        logRejected(id, CameraThreadState::getCallingPid(), String8(clientPackageName),
+        logRejected(id, CameraThreadState::getCallingPid(), String8(clientPackageNameAdj),
                 ret.toString8());
         return ret;
     }
@@ -1799,15 +1828,24 @@ Status CameraService::addListenerHelper(const sp<ICameraServiceListener>& listen
     {
         Mutex::Autolock lock(mCameraStatesLock);
         for (auto& i : mCameraStates) {
-            if (!isVendorListener &&
-                mCameraProviderManager->isPublicallyHiddenSecureCamera(i.first.c_str())) {
-                ALOGV("Cannot add public listener for hidden system-only %s for pid %d",
-                      i.first.c_str(), CameraThreadState::getCallingPid());
-                continue;
-            }
             cameraStatuses->emplace_back(i.first, mapToInterface(i.second->getStatus()));
         }
     }
+
+    // Remove the camera statuses that should be hidden from the client, we do
+    // this after collecting the states in order to avoid holding
+    // mCameraStatesLock and mInterfaceLock (held in
+    // isPublicallyHiddenSecureCamera()) at the same time.
+    cameraStatuses->erase(std::remove_if(cameraStatuses->begin(), cameraStatuses->end(),
+                [this, &isVendorListener](const hardware::CameraStatus& s) {
+                    bool ret = !isVendorListener && isPublicallyHiddenSecureCamera(s.cameraId);
+                    if (ret) {
+                        ALOGV("Cannot add public listener for hidden system-only %s for pid %d",
+                                s.cameraId.c_str(), CameraThreadState::getCallingPid());
+                    }
+                    return ret;
+                }),
+                cameraStatuses->end());
 
     /*
      * Immediately signal current torch status to this listener only
@@ -2368,11 +2406,7 @@ CameraService::BasicClient::BasicClient(const sp<CameraService>& cameraService,
         }
         mClientPackageName = packages[0];
     }
-    if (hardware::IPCThreadState::self()->isServingCall()) {
-        std::string vendorClient =
-                StringPrintf("vendor.client.pid<%d>", CameraThreadState::getCallingPid());
-        mClientPackageName = String16(vendorClient.c_str());
-    } else {
+    if (getCurrentServingCall() != BinderCallType::HWBINDER) {
         mAppOpsManager = std::make_unique<AppOpsManager>();
     }
 }
@@ -2820,10 +2854,9 @@ void CameraService::SensorPrivacyPolicy::registerSelf() {
     if (mRegistered) {
         return;
     }
-    SensorPrivacyManager spm;
-    spm.addSensorPrivacyListener(this);
-    mSensorPrivacyEnabled = spm.isSensorPrivacyEnabled();
-    status_t res = spm.linkToDeath(this);
+    mSpm.addSensorPrivacyListener(this);
+    mSensorPrivacyEnabled = mSpm.isSensorPrivacyEnabled();
+    status_t res = mSpm.linkToDeath(this);
     if (res == OK) {
         mRegistered = true;
         ALOGV("SensorPrivacyPolicy: Registered with SensorPrivacyManager");
@@ -2832,9 +2865,8 @@ void CameraService::SensorPrivacyPolicy::registerSelf() {
 
 void CameraService::SensorPrivacyPolicy::unregisterSelf() {
     Mutex::Autolock _l(mSensorPrivacyLock);
-    SensorPrivacyManager spm;
-    spm.removeSensorPrivacyListener(this);
-    spm.unlinkToDeath(this);
+    mSpm.removeSensorPrivacyListener(this);
+    mSpm.unlinkToDeath(this);
     mRegistered = false;
     ALOGV("SensorPrivacyPolicy: Unregistered with SensorPrivacyManager");
 }
@@ -2870,8 +2902,9 @@ void CameraService::SensorPrivacyPolicy::binderDied(const wp<IBinder>& /*who*/) 
 // ----------------------------------------------------------------------------
 
 CameraService::CameraState::CameraState(const String8& id, int cost,
-        const std::set<String8>& conflicting) : mId(id),
-        mStatus(StatusInternal::NOT_PRESENT), mCost(cost), mConflicting(conflicting) {}
+        const std::set<String8>& conflicting, bool isHidden) : mId(id),
+        mStatus(StatusInternal::NOT_PRESENT), mCost(cost), mConflicting(conflicting),
+        mIsPublicallyHiddenSecureCamera(isHidden) {}
 
 CameraService::CameraState::~CameraState() {}
 
@@ -2898,6 +2931,10 @@ std::set<String8> CameraService::CameraState::getConflicting() const {
 
 String8 CameraService::CameraState::getId() const {
     return mId;
+}
+
+bool CameraService::CameraState::isPublicallyHiddenSecureCamera() const {
+    return mIsPublicallyHiddenSecureCamera;
 }
 
 // ----------------------------------------------------------------------------
@@ -2992,7 +3029,7 @@ CameraService::DescriptorPtr CameraService::CameraClientManager::makeClientDescr
         const std::set<String8>& conflictingKeys, int32_t score, int32_t ownerId,
         int32_t state) {
 
-    bool isVendorClient = hardware::IPCThreadState::self()->isServingCall();
+    bool isVendorClient = getCurrentServingCall() == BinderCallType::HWBINDER;
     int32_t score_adj = isVendorClient ? kVendorClientScore : score;
     int32_t state_adj = isVendorClient ? kVendorClientState: state;
 
@@ -3235,10 +3272,22 @@ void CameraService::updateStatus(StatusInternal status, const String8& cameraId,
                 cameraId.string());
         return;
     }
-
+    bool isHidden = isPublicallyHiddenSecureCamera(cameraId);
+    bool supportsHAL3 = false;
+    // supportsCameraApi also holds mInterfaceMutex, we can't call it in the
+    // HIDL onStatusChanged wrapper call (we'll hold mStatusListenerLock and
+    // mInterfaceMutex together, which can lead to deadlocks)
+    binder::Status sRet =
+            supportsCameraApi(String16(cameraId), hardware::ICameraService::API_VERSION_2,
+                    &supportsHAL3);
+    if (!sRet.isOk()) {
+        ALOGW("%s: Failed to determine if device supports HAL3 %s, supportsCameraApi call failed",
+                __FUNCTION__, cameraId.string());
+        return;
+    }
     // Update the status for this camera state, then send the onStatusChangedCallbacks to each
     // of the listeners with both the mStatusStatus and mStatusListenerLock held
-    state->updateStatus(status, cameraId, rejectSourceStates, [this]
+    state->updateStatus(status, cameraId, rejectSourceStates, [this, &isHidden, &supportsHAL3]
             (const String8& cameraId, StatusInternal status) {
 
             if (status != StatusInternal::ENUMERATING) {
@@ -3260,9 +3309,8 @@ void CameraService::updateStatus(StatusInternal status, const String8& cameraId,
             Mutex::Autolock lock(mStatusListenerLock);
 
             for (auto& listener : mListenerList) {
-                if (!listener.first &&
-                    mCameraProviderManager->isPublicallyHiddenSecureCamera(cameraId.c_str())) {
-                    ALOGV("Skipping camera discovery callback for system-only camera %s",
+                if (!listener.first &&  (isHidden || !supportsHAL3)) {
+                    ALOGV("Skipping camera discovery callback for system-only / HAL1 camera %s",
                           cameraId.c_str());
                     continue;
                 }

@@ -29,6 +29,9 @@
 #define CLOGE(fmt, ...) ALOGE("Camera %s: %s: " fmt, mId.string(), __FUNCTION__, \
             ##__VA_ARGS__)
 
+#define CLOGW(fmt, ...) ALOGW("Camera %s: %s: " fmt, mId.string(), __FUNCTION__, \
+            ##__VA_ARGS__)
+
 // Convenience macros for transitioning to the error state
 #define SET_ERR(fmt, ...) setErrorState(   \
     "%s: " fmt, __FUNCTION__,              \
@@ -2162,7 +2165,9 @@ void Camera3Device::internalUpdateStatusLocked(Status status) {
 }
 
 void Camera3Device::pauseStateNotify(bool enable) {
-    Mutex::Autolock il(mInterfaceLock);
+    // We must not hold mInterfaceLock here since this function is called from
+    // RequestThread::threadLoop and holding mInterfaceLock could lead to
+    // deadlocks (http://b/143513518)
     Mutex::Autolock l(mLock);
 
     mPauseStateNotify = enable;
@@ -2739,7 +2744,9 @@ bool Camera3Device::reconfigureCamera(const CameraMetadata& sessionParams) {
     ATRACE_CALL();
     bool ret = false;
 
-    Mutex::Autolock il(mInterfaceLock);
+    // We must not hold mInterfaceLock here since this function is called from
+    // RequestThread::threadLoop and holding mInterfaceLock could lead to
+    // deadlocks (http://b/143513518)
     nsecs_t maxExpectedDuration = getExpectedInFlightDuration();
 
     Mutex::Autolock l(mLock);
@@ -3267,14 +3274,19 @@ void Camera3Device::removeInFlightRequestIfReadyLocked(int idx) {
         ALOGVV("%s: removed frame %d from InFlightMap", __FUNCTION__, frameNumber);
      }
 
-    // Sanity check - if we have too many in-flight frames, something has
-    // likely gone wrong
-    if (!mIsConstrainedHighSpeedConfiguration && mInFlightMap.size() > kInFlightWarnLimit) {
-        CLOGE("In-flight list too large: %zu", mInFlightMap.size());
-    } else if (mIsConstrainedHighSpeedConfiguration && mInFlightMap.size() >
-            kInFlightWarnLimitHighSpeed) {
-        CLOGE("In-flight list too large for high speed configuration: %zu",
-                mInFlightMap.size());
+    // Sanity check - if we have too many in-flight frames with long total inflight duration,
+    // something has likely gone wrong. This might still be legit only if application send in
+    // a long burst of long exposure requests.
+    if (mExpectedInflightDuration > kMinWarnInflightDuration) {
+        if (!mIsConstrainedHighSpeedConfiguration && mInFlightMap.size() > kInFlightWarnLimit) {
+            CLOGW("In-flight list too large: %zu, total inflight duration %" PRIu64,
+                    mInFlightMap.size(), mExpectedInflightDuration);
+        } else if (mIsConstrainedHighSpeedConfiguration && mInFlightMap.size() >
+                kInFlightWarnLimitHighSpeed) {
+            CLOGW("In-flight list too large for high speed configuration: %zu,"
+                    "total inflight duration %" PRIu64,
+                    mInFlightMap.size(), mExpectedInflightDuration);
+        }
     }
 }
 
@@ -5363,6 +5375,9 @@ bool Camera3Device::RequestThread::updateSessionParameters(const CameraMetadata&
 bool Camera3Device::RequestThread::threadLoop() {
     ATRACE_CALL();
     status_t res;
+    // Any function called from threadLoop() must not hold mInterfaceLock since
+    // it could lead to deadlocks (disconnect() -> hold mInterfaceMutex -> wait for request thread
+    // to finish -> request thread waits on mInterfaceMutex) http://b/143513518
 
     // Handle paused state.
     if (waitIfPaused()) {

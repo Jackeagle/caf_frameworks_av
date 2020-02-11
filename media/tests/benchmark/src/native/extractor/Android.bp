@@ -15,13 +15,30 @@
  */
 
 cc_library_static {
-    name: "libbenchmark_extractor",
+    name: "libmediabenchmark_extractor",
     defaults: [
-        "libbenchmark_common-defaults",
-        "libbenchmark_soft_sanitize_all-defaults",
+        "libmediabenchmark_common-defaults",
+        "libmediabenchmark_soft_sanitize_all-defaults",
     ],
 
     srcs: ["Extractor.cpp"],
+
+    export_include_dirs: ["."],
+
+    ldflags: ["-Wl,-Bsymbolic"]
+}
+
+cc_library_static {
+    name: "libmediabenchmark_codec2_extractor",
+    defaults: [
+        "libmediabenchmark_codec2_common-defaults",
+    ],
+
+    srcs: ["Extractor.cpp"],
+
+    static_libs: [
+        "libmediabenchmark_codec2_common",
+    ],
 
     export_include_dirs: ["."],
 

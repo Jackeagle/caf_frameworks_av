@@ -20,7 +20,6 @@
 #include <system/audio-base.h>
 #include "IOProfile.h"
 #include "HwModule.h"
-#include "AudioGain.h"
 #include "TypeConverter.h"
 
 namespace android {
@@ -108,7 +107,9 @@ bool IOProfile::isCompatibleProfile(const DeviceVector &devices,
 
 void IOProfile::dump(String8 *dst) const
 {
-    AudioPort::dump(dst, 4);
+    std::string portStr;
+    AudioPort::dump(&portStr, 4);
+    dst->append(portStr.c_str());
 
     dst->appendFormat("    - flags: 0x%04x", getFlags());
     std::string flagsLiteral;

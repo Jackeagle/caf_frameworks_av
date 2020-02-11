@@ -48,6 +48,7 @@
 #include <media/stagefright/foundation/avc_utils.h>
 #include <media/stagefright/foundation/hexdump.h>
 #include <media/stagefright/ACodec.h>
+#include <media/stagefright/BatteryChecker.h>
 #include <media/stagefright/BufferProducerWrapper.h>
 #include <media/stagefright/MediaCodec.h>
 #include <media/stagefright/MediaCodecList.h>
@@ -57,7 +58,6 @@
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/PersistentSurface.h>
 #include <media/stagefright/SurfaceUtils.h>
-#include <mediautils/BatteryNotifier.h>
 #include <private/android_filesystem_config.h>
 #include <utils/Singleton.h>
 
@@ -166,8 +166,9 @@ private:
     DISALLOW_EVIL_CONSTRUCTORS(ResourceManagerClient);
 };
 
-MediaCodec::ResourceManagerServiceProxy::ResourceManagerServiceProxy(pid_t pid)
-        : mPid(pid) {
+MediaCodec::ResourceManagerServiceProxy::ResourceManagerServiceProxy(
+        pid_t pid, uid_t uid)
+        : mPid(pid), mUid(uid) {
     if (mPid == MediaCodec::kNoPid) {
         mPid = IPCThreadState::self()->getCallingPid();
     }
@@ -204,15 +205,25 @@ void MediaCodec::ResourceManagerServiceProxy::addResource(
     if (mService == NULL) {
         return;
     }
-    mService->addResource(mPid, clientId, client, resources);
+    mService->addResource(mPid, mUid, clientId, client, resources);
 }
 
-void MediaCodec::ResourceManagerServiceProxy::removeResource(int64_t clientId) {
+void MediaCodec::ResourceManagerServiceProxy::removeResource(
+        int64_t clientId,
+        const Vector<MediaResource> &resources) {
     Mutex::Autolock _l(mLock);
     if (mService == NULL) {
         return;
     }
-    mService->removeResource(mPid, clientId);
+    mService->removeResource(mPid, clientId, resources);
+}
+
+void MediaCodec::ResourceManagerServiceProxy::removeClient(int64_t clientId) {
+    Mutex::Autolock _l(mLock);
+    if (mService == NULL) {
+        return;
+    }
+    mService->removeClient(mPid, clientId);
 }
 
 bool MediaCodec::ResourceManagerServiceProxy::reclaimResource(
@@ -516,10 +527,7 @@ MediaCodec::MediaCodec(const sp<ALooper> &looper, pid_t pid, uid_t uid)
       mFlags(0),
       mStickyError(OK),
       mSoftRenderer(NULL),
-      mAnalyticsItem(NULL),
-      mResourceManagerClient(new ResourceManagerClient(this)),
-      mResourceManagerService(new ResourceManagerServiceProxy(pid)),
-      mBatteryStatNotified(false),
+      mMetricsHandle(0),
       mIsVideo(false),
       mVideoWidth(0),
       mVideoHeight(0),
@@ -537,20 +545,22 @@ MediaCodec::MediaCodec(const sp<ALooper> &looper, pid_t pid, uid_t uid)
     } else {
         mUid = uid;
     }
+    mResourceManagerClient = new ResourceManagerClient(this);
+    mResourceManagerService = new ResourceManagerServiceProxy(pid, mUid);
 
-    initAnalyticsItem();
+    initMediametrics();
 }
 
 MediaCodec::~MediaCodec() {
     CHECK_EQ(mState, UNINITIALIZED);
-    mResourceManagerService->removeResource(getId(mResourceManagerClient));
+    mResourceManagerService->removeClient(getId(mResourceManagerClient));
 
-    flushAnalyticsItem();
+    flushMediametrics();
 }
 
-void MediaCodec::initAnalyticsItem() {
-    if (mAnalyticsItem == NULL) {
-        mAnalyticsItem = MediaAnalyticsItem::create(kCodecKeyName);
+void MediaCodec::initMediametrics() {
+    if (mMetricsHandle == 0) {
+        mMetricsHandle = mediametrics_create(kCodecKeyName);
     }
 
     mLatencyHist.setup(kLatencyHistBuckets, kLatencyHistWidth, kLatencyHistFloor);
@@ -564,38 +574,39 @@ void MediaCodec::initAnalyticsItem() {
     }
 }
 
-void MediaCodec::updateAnalyticsItem() {
-    ALOGV("MediaCodec::updateAnalyticsItem");
-    if (mAnalyticsItem == NULL) {
+void MediaCodec::updateMediametrics() {
+    ALOGV("MediaCodec::updateMediametrics");
+    if (mMetricsHandle == 0) {
         return;
     }
 
+
     if (mLatencyHist.getCount() != 0 ) {
-        mAnalyticsItem->setInt64(kCodecLatencyMax, mLatencyHist.getMax());
-        mAnalyticsItem->setInt64(kCodecLatencyMin, mLatencyHist.getMin());
-        mAnalyticsItem->setInt64(kCodecLatencyAvg, mLatencyHist.getAvg());
-        mAnalyticsItem->setInt64(kCodecLatencyCount, mLatencyHist.getCount());
+        mediametrics_setInt64(mMetricsHandle, kCodecLatencyMax, mLatencyHist.getMax());
+        mediametrics_setInt64(mMetricsHandle, kCodecLatencyMin, mLatencyHist.getMin());
+        mediametrics_setInt64(mMetricsHandle, kCodecLatencyAvg, mLatencyHist.getAvg());
+        mediametrics_setInt64(mMetricsHandle, kCodecLatencyCount, mLatencyHist.getCount());
 
         if (kEmitHistogram) {
             // and the histogram itself
             std::string hist = mLatencyHist.emit();
-            mAnalyticsItem->setCString(kCodecLatencyHist, hist.c_str());
+            mediametrics_setCString(mMetricsHandle, kCodecLatencyHist, hist.c_str());
         }
     }
     if (mLatencyUnknown > 0) {
-        mAnalyticsItem->setInt64(kCodecLatencyUnknown, mLatencyUnknown);
+        mediametrics_setInt64(mMetricsHandle, kCodecLatencyUnknown, mLatencyUnknown);
     }
 
 #if 0
     // enable for short term, only while debugging
-    updateEphemeralAnalytics(mAnalyticsItem);
+    updateEphemeralMediametrics(mMetricsHandle);
 #endif
 }
 
-void MediaCodec::updateEphemeralAnalytics(MediaAnalyticsItem *item) {
-    ALOGD("MediaCodec::updateEphemeralAnalytics()");
+void MediaCodec::updateEphemeralMediametrics(mediametrics_handle_t item) {
+    ALOGD("MediaCodec::updateEphemeralMediametrics()");
 
-    if (item == NULL) {
+    if (item == 0) {
         return;
     }
 
@@ -618,28 +629,27 @@ void MediaCodec::updateEphemeralAnalytics(MediaAnalyticsItem *item) {
 
     // spit the data (if any) into the supplied analytics record
     if (recentHist.getCount()!= 0 ) {
-        item->setInt64(kCodecRecentLatencyMax, recentHist.getMax());
-        item->setInt64(kCodecRecentLatencyMin, recentHist.getMin());
-        item->setInt64(kCodecRecentLatencyAvg, recentHist.getAvg());
-        item->setInt64(kCodecRecentLatencyCount, recentHist.getCount());
+        mediametrics_setInt64(item, kCodecRecentLatencyMax, recentHist.getMax());
+        mediametrics_setInt64(item, kCodecRecentLatencyMin, recentHist.getMin());
+        mediametrics_setInt64(item, kCodecRecentLatencyAvg, recentHist.getAvg());
+        mediametrics_setInt64(item, kCodecRecentLatencyCount, recentHist.getCount());
 
         if (kEmitHistogram) {
             // and the histogram itself
             std::string hist = recentHist.emit();
-            item->setCString(kCodecRecentLatencyHist, hist.c_str());
+            mediametrics_setCString(item, kCodecRecentLatencyHist, hist.c_str());
         }
     }
 }
 
-void MediaCodec::flushAnalyticsItem() {
-    updateAnalyticsItem();
-    if (mAnalyticsItem != NULL) {
-        // don't log empty records
-        if (mAnalyticsItem->count() > 0) {
-            mAnalyticsItem->selfrecord();
+void MediaCodec::flushMediametrics() {
+    updateMediametrics();
+    if (mMetricsHandle != 0) {
+        if (mediametrics_count(mMetricsHandle) > 0) {
+            mediametrics_selfRecord(mMetricsHandle);
         }
-        delete mAnalyticsItem;
-        mAnalyticsItem = NULL;
+        mediametrics_delete(mMetricsHandle);
+        mMetricsHandle = 0;
     }
 }
 
@@ -742,6 +752,12 @@ void MediaCodec::statsBufferSent(int64_t presentationUs) {
         return;
     }
 
+    if (mBatteryChecker != nullptr) {
+        mBatteryChecker->onCodecActivity([this] () {
+            addResource(MediaResource::kBattery, MediaResource::kVideoCodec, 1);
+        });
+    }
+
     const int64_t nowNs = systemTime(SYSTEM_TIME_MONOTONIC);
     BufferFlightTiming_t startdata = { presentationUs, nowNs };
 
@@ -774,6 +790,12 @@ void MediaCodec::statsBufferReceived(int64_t presentationUs) {
         ALOGV("-- returned buffer timestamp %" PRId64 " <= 0, ignore it", presentationUs);
         mLatencyUnknown++;
         return;
+    }
+
+    if (mBatteryChecker != nullptr) {
+        mBatteryChecker->onCodecActivity([this] () {
+            addResource(MediaResource::kBattery, MediaResource::kVideoCodec, 1);
+        });
     }
 
     BufferFlightTiming_t startdata;
@@ -959,9 +981,14 @@ status_t MediaCodec::init(const AString &name) {
     // ".secure"
     msg->setString("name", name);
 
-    if (mAnalyticsItem != NULL) {
-        mAnalyticsItem->setCString(kCodecCodec, name.c_str());
-        mAnalyticsItem->setCString(kCodecMode, mIsVideo ? kCodecModeVideo : kCodecModeAudio);
+    if (mMetricsHandle != 0) {
+        mediametrics_setCString(mMetricsHandle, kCodecCodec, name.c_str());
+        mediametrics_setCString(mMetricsHandle, kCodecMode,
+                                mIsVideo ? kCodecModeVideo : kCodecModeAudio);
+    }
+
+    if (mIsVideo) {
+        mBatteryChecker = new BatteryChecker(new AMessage(kWhatCheckBatteryStats, this));
     }
 
     status_t err;
@@ -1018,16 +1045,17 @@ status_t MediaCodec::configure(
         uint32_t flags) {
     sp<AMessage> msg = new AMessage(kWhatConfigure, this);
 
-    if (mAnalyticsItem != NULL) {
+    if (mMetricsHandle != 0) {
         int32_t profile = 0;
         if (format->findInt32("profile", &profile)) {
-            mAnalyticsItem->setInt32(kCodecProfile, profile);
+            mediametrics_setInt32(mMetricsHandle, kCodecProfile, profile);
         }
         int32_t level = 0;
         if (format->findInt32("level", &level)) {
-            mAnalyticsItem->setInt32(kCodecLevel, level);
+            mediametrics_setInt32(mMetricsHandle, kCodecLevel, level);
         }
-        mAnalyticsItem->setInt32(kCodecEncoder, (flags & CONFIGURE_FLAG_ENCODE) ? 1 : 0);
+        mediametrics_setInt32(mMetricsHandle, kCodecEncoder,
+                              (flags & CONFIGURE_FLAG_ENCODE) ? 1 : 0);
     }
 
     if (mIsVideo) {
@@ -1037,17 +1065,17 @@ status_t MediaCodec::configure(
             mRotationDegrees = 0;
         }
 
-        if (mAnalyticsItem != NULL) {
-            mAnalyticsItem->setInt32(kCodecWidth, mVideoWidth);
-            mAnalyticsItem->setInt32(kCodecHeight, mVideoHeight);
-            mAnalyticsItem->setInt32(kCodecRotation, mRotationDegrees);
+        if (mMetricsHandle != 0) {
+            mediametrics_setInt32(mMetricsHandle, kCodecWidth, mVideoWidth);
+            mediametrics_setInt32(mMetricsHandle, kCodecHeight, mVideoHeight);
+            mediametrics_setInt32(mMetricsHandle, kCodecRotation, mRotationDegrees);
             int32_t maxWidth = 0;
             if (format->findInt32("max-width", &maxWidth)) {
-                mAnalyticsItem->setInt32(kCodecMaxWidth, maxWidth);
+                mediametrics_setInt32(mMetricsHandle, kCodecMaxWidth, maxWidth);
             }
             int32_t maxHeight = 0;
             if (format->findInt32("max-height", &maxHeight)) {
-                mAnalyticsItem->setInt32(kCodecMaxHeight, maxHeight);
+                mediametrics_setInt32(mMetricsHandle, kCodecMaxHeight, maxHeight);
             }
         }
 
@@ -1069,8 +1097,8 @@ status_t MediaCodec::configure(
         } else {
             msg->setPointer("descrambler", descrambler.get());
         }
-        if (mAnalyticsItem != NULL) {
-            mAnalyticsItem->setInt32(kCodecCrypto, 1);
+        if (mMetricsHandle != 0) {
+            mediametrics_setInt32(mMetricsHandle, kCodecCrypto, 1);
         }
     } else if (mFlags & kFlagIsSecure) {
         ALOGW("Crypto or descrambler should be given for secure codec");
@@ -1219,6 +1247,13 @@ void MediaCodec::addResource(
     resources.push_back(MediaResource(type, subtype, value));
     mResourceManagerService->addResource(
             getId(mResourceManagerClient), mResourceManagerClient, resources);
+}
+
+void MediaCodec::removeResource(
+        MediaResource::Type type, MediaResource::SubType subtype, uint64_t value) {
+    Vector<MediaResource> resources;
+    resources.push_back(MediaResource(type, subtype, value));
+    mResourceManagerService->removeResource(getId(mResourceManagerClient), resources);
 }
 
 status_t MediaCodec::start() {
@@ -1528,22 +1563,22 @@ status_t MediaCodec::getCodecInfo(sp<MediaCodecInfo> *codecInfo) const {
     return OK;
 }
 
-status_t MediaCodec::getMetrics(MediaAnalyticsItem * &reply) {
+status_t MediaCodec::getMetrics(mediametrics_handle_t &reply) {
 
-    reply = NULL;
+    reply = 0;
 
     // shouldn't happen, but be safe
-    if (mAnalyticsItem == NULL) {
+    if (mMetricsHandle == 0) {
         return UNKNOWN_ERROR;
     }
 
     // update any in-flight data that's not carried within the record
-    updateAnalyticsItem();
+    updateMediametrics();
 
     // send it back to the caller.
-    reply = mAnalyticsItem->dup();
+    reply = mediametrics_dup(mMetricsHandle);
 
-    updateEphemeralAnalytics(reply);
+    updateEphemeralMediametrics(reply);
 
     return OK;
 }
@@ -1682,6 +1717,59 @@ void MediaCodec::requestCpuBoostIfNeeded() {
     }
 }
 
+BatteryChecker::BatteryChecker(const sp<AMessage> &msg, int64_t timeoutUs)
+    : mTimeoutUs(timeoutUs)
+    , mLastActivityTimeUs(-1ll)
+    , mBatteryStatNotified(false)
+    , mBatteryCheckerGeneration(0)
+    , mIsExecuting(false)
+    , mBatteryCheckerMsg(msg) {}
+
+void BatteryChecker::onCodecActivity(std::function<void()> batteryOnCb) {
+    if (!isExecuting()) {
+        // ignore if not executing
+        return;
+    }
+    if (!mBatteryStatNotified) {
+        batteryOnCb();
+        mBatteryStatNotified = true;
+        sp<AMessage> msg = mBatteryCheckerMsg->dup();
+        msg->setInt32("generation", mBatteryCheckerGeneration);
+
+        // post checker and clear last activity time
+        msg->post(mTimeoutUs);
+        mLastActivityTimeUs = -1ll;
+    } else {
+        // update last activity time
+        mLastActivityTimeUs = ALooper::GetNowUs();
+    }
+}
+
+void BatteryChecker::onCheckBatteryTimer(
+        const sp<AMessage> &msg, std::function<void()> batteryOffCb) {
+    // ignore if this checker already expired because the client resource was removed
+    int32_t generation;
+    if (!msg->findInt32("generation", &generation)
+            || generation != mBatteryCheckerGeneration) {
+        return;
+    }
+
+    if (mLastActivityTimeUs < 0ll) {
+        // timed out inactive, do not repost checker
+        batteryOffCb();
+        mBatteryStatNotified = false;
+    } else {
+        // repost checker and clear last activity time
+        msg->post(mTimeoutUs + mLastActivityTimeUs - ALooper::GetNowUs());
+        mLastActivityTimeUs = -1ll;
+    }
+}
+
+void BatteryChecker::onClientRemoved() {
+    mBatteryStatNotified = false;
+    mBatteryCheckerGeneration++;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void MediaCodec::cancelPendingDequeueOperations() {
@@ -1804,10 +1892,11 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                         case CONFIGURING:
                         {
                             if (actionCode == ACTION_CODE_FATAL) {
-                                mAnalyticsItem->setInt32(kCodecError, err);
-                                mAnalyticsItem->setCString(kCodecErrorState, stateString(mState).c_str());
-                                flushAnalyticsItem();
-                                initAnalyticsItem();
+                                mediametrics_setInt32(mMetricsHandle, kCodecError, err);
+                                mediametrics_setCString(mMetricsHandle, kCodecErrorState,
+                                                        stateString(mState).c_str());
+                                flushMediametrics();
+                                initMediametrics();
                             }
                             setState(actionCode == ACTION_CODE_FATAL ?
                                     UNINITIALIZED : INITIALIZED);
@@ -1817,10 +1906,11 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                         case STARTING:
                         {
                             if (actionCode == ACTION_CODE_FATAL) {
-                                mAnalyticsItem->setInt32(kCodecError, err);
-                                mAnalyticsItem->setCString(kCodecErrorState, stateString(mState).c_str());
-                                flushAnalyticsItem();
-                                initAnalyticsItem();
+                                mediametrics_setInt32(mMetricsHandle, kCodecError, err);
+                                mediametrics_setCString(mMetricsHandle, kCodecErrorState,
+                                                        stateString(mState).c_str());
+                                flushMediametrics();
+                                initMediametrics();
                             }
                             setState(actionCode == ACTION_CODE_FATAL ?
                                     UNINITIALIZED : CONFIGURED);
@@ -1858,10 +1948,11 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                         case FLUSHING:
                         {
                             if (actionCode == ACTION_CODE_FATAL) {
-                                mAnalyticsItem->setInt32(kCodecError, err);
-                                mAnalyticsItem->setCString(kCodecErrorState, stateString(mState).c_str());
-                                flushAnalyticsItem();
-                                initAnalyticsItem();
+                                mediametrics_setInt32(mMetricsHandle, kCodecError, err);
+                                mediametrics_setCString(mMetricsHandle, kCodecErrorState,
+                                                        stateString(mState).c_str());
+                                flushMediametrics();
+                                initMediametrics();
 
                                 setState(UNINITIALIZED);
                             } else {
@@ -1891,10 +1982,11 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                                 setState(INITIALIZED);
                                 break;
                             default:
-                                mAnalyticsItem->setInt32(kCodecError, err);
-                                mAnalyticsItem->setCString(kCodecErrorState, stateString(mState).c_str());
-                                flushAnalyticsItem();
-                                initAnalyticsItem();
+                                mediametrics_setInt32(mMetricsHandle, kCodecError, err);
+                                mediametrics_setCString(mMetricsHandle, kCodecErrorState,
+                                                        stateString(mState).c_str());
+                                flushMediametrics();
+                                initMediametrics();
                                 setState(UNINITIALIZED);
                                 break;
                             }
@@ -1951,7 +2043,8 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                     CHECK(msg->findString("componentName", &mComponentName));
 
                     if (mComponentName.c_str()) {
-                        mAnalyticsItem->setCString(kCodecCodec, mComponentName.c_str());
+                        mediametrics_setCString(mMetricsHandle, kCodecCodec,
+                                                mComponentName.c_str());
                     }
 
                     const char *owner = mCodecInfo->getOwnerName();
@@ -1967,11 +2060,11 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                     if (mComponentName.endsWith(".secure")) {
                         mFlags |= kFlagIsSecure;
                         resourceType = MediaResource::kSecureCodec;
-                        mAnalyticsItem->setInt32(kCodecSecure, 1);
+                        mediametrics_setInt32(mMetricsHandle, kCodecSecure, 1);
                     } else {
                         mFlags &= ~kFlagIsSecure;
                         resourceType = MediaResource::kNonSecureCodec;
-                        mAnalyticsItem->setInt32(kCodecSecure, 0);
+                        mediametrics_setInt32(mMetricsHandle, kCodecSecure, 0);
                     }
 
                     if (mIsVideo) {
@@ -2019,14 +2112,15 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                     (new AMessage)->postReply(mReplyID);
 
                     // augment our media metrics info, now that we know more things
-                    if (mAnalyticsItem != NULL) {
+                    if (mMetricsHandle != 0) {
                         sp<AMessage> format;
                         if (mConfigureMsg != NULL &&
                             mConfigureMsg->findMessage("format", &format)) {
                                 // format includes: mime
                                 AString mime;
                                 if (format->findString("mime", &mime)) {
-                                    mAnalyticsItem->setCString(kCodecMime, mime.c_str());
+                                    mediametrics_setCString(mMetricsHandle, kCodecMime,
+                                                            mime.c_str());
                                 }
                             }
                     }
@@ -2318,7 +2412,12 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
 
                     mFlags &= ~kFlagIsComponentAllocated;
 
-                    mResourceManagerService->removeResource(getId(mResourceManagerClient));
+                    // off since we're removing all resources including the battery on
+                    if (mBatteryChecker != nullptr) {
+                        mBatteryChecker->onClientRemoved();
+                    }
+
+                    mResourceManagerService->removeClient(getId(mResourceManagerClient));
 
                     (new AMessage)->postReply(mReplyID);
                     break;
@@ -3029,6 +3128,16 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatCheckBatteryStats:
+        {
+            if (mBatteryChecker != nullptr) {
+                mBatteryChecker->onCheckBatteryTimer(msg, [this] () {
+                    removeResource(MediaResource::kBattery, MediaResource::kVideoCodec, 1);
+                });
+            }
+            break;
+        }
+
         default:
             TRESPASS();
     }
@@ -3125,9 +3234,11 @@ void MediaCodec::setState(State newState) {
 
     mState = newState;
 
-    cancelPendingDequeueOperations();
+    if (mBatteryChecker != nullptr) {
+        mBatteryChecker->setExecuting(isExecuting());
+    }
 
-    updateBatteryStat();
+    cancelPendingDequeueOperations();
 }
 
 void MediaCodec::returnBuffersToCodec(bool isReclaim) {
@@ -3629,20 +3740,6 @@ status_t MediaCodec::amendOutputFormatWithCodecSpecificData(
     }
 
     return OK;
-}
-
-void MediaCodec::updateBatteryStat() {
-    if (!mIsVideo) {
-        return;
-    }
-
-    if (mState == CONFIGURED && !mBatteryStatNotified) {
-        BatteryNotifier::getInstance().noteStartVideo(mUid);
-        mBatteryStatNotified = true;
-    } else if (mState == UNINITIALIZED && mBatteryStatNotified) {
-        BatteryNotifier::getInstance().noteStopVideo(mUid);
-        mBatteryStatNotified = false;
-    }
 }
 
 std::string MediaCodec::stateString(State state) {

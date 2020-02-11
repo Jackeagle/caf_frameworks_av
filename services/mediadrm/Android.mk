@@ -21,11 +21,13 @@ LOCAL_SRC_FILES:= \
     main_mediadrmserver.cpp
 
 LOCAL_HEADER_LIBRARIES:= \
+    libmedia_headers \
     libmediadrm_headers
 
 LOCAL_SHARED_LIBRARIES:= \
     libbinder \
     liblog \
+    libmedia \
     libmediadrm \
     libutils \
     libhidlbase \

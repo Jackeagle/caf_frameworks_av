@@ -34,6 +34,7 @@ void Encoder::onInputAvailable(AMediaCodec *mediaCodec, int32_t bufIdx) {
         size_t bufSize = 0;
         char *buf = (char *)AMediaCodec_getInputBuffer(mCodec, bufIdx, &bufSize);
         if (!buf) {
+            mErrorCode = AMEDIA_ERROR_IO;
             mSignalledError = true;
             mEncoderDoneCondition.notify_one();
             return;
@@ -41,6 +42,7 @@ void Encoder::onInputAvailable(AMediaCodec *mediaCodec, int32_t bufIdx) {
 
         if (mInputBufferSize < mOffset) {
             ALOGE("Out of bound access of input buffer\n");
+            mErrorCode = AMEDIA_ERROR_MALFORMED;
             mSignalledError = true;
             mEncoderDoneCondition.notify_one();
             return;
@@ -51,6 +53,7 @@ void Encoder::onInputAvailable(AMediaCodec *mediaCodec, int32_t bufIdx) {
         }
         if (bufSize < bytesRead) {
             ALOGE("bytes to read %zu bufSize %zu \n", bytesRead, bufSize);
+            mErrorCode = AMEDIA_ERROR_MALFORMED;
             mSignalledError = true;
             mEncoderDoneCondition.notify_one();
             return;
@@ -58,6 +61,7 @@ void Encoder::onInputAvailable(AMediaCodec *mediaCodec, int32_t bufIdx) {
         if (bytesRead < mParams.frameSize && mNumInputFrame < mParams.numFrames - 1) {
             ALOGE("Partial frame at frameID %d bytesRead %zu frameSize %d total numFrames %d\n",
                   mNumInputFrame, bytesRead, mParams.frameSize, mParams.numFrames);
+            mErrorCode = AMEDIA_ERROR_MALFORMED;
             mSignalledError = true;
             mEncoderDoneCondition.notify_one();
             return;
@@ -66,6 +70,7 @@ void Encoder::onInputAvailable(AMediaCodec *mediaCodec, int32_t bufIdx) {
         size_t bytesgcount = mEleStream->gcount();
         if (bytesgcount != bytesRead) {
             ALOGE("bytes to read %zu actual bytes read %zu \n", bytesRead, bytesgcount);
+            mErrorCode = AMEDIA_ERROR_MALFORMED;
             mSignalledError = true;
             mEncoderDoneCondition.notify_one();
             return;
@@ -89,9 +94,10 @@ void Encoder::onInputAvailable(AMediaCodec *mediaCodec, int32_t bufIdx) {
         ALOGV("%s bytesRead : %zd presentationTimeUs : %" PRIu64 " mSawInputEOS : %s", __FUNCTION__,
               bytesRead, presentationTimeUs, mSawInputEOS ? "TRUE" : "FALSE");
 
-        int status = AMediaCodec_queueInputBuffer(mCodec, bufIdx, 0 /* offset */, bytesRead,
-                                                  presentationTimeUs, flag);
+        media_status_t status = AMediaCodec_queueInputBuffer(mCodec, bufIdx, 0 /* offset */,
+                                                             bytesRead, presentationTimeUs, flag);
         if (AMEDIA_OK != status) {
+            mErrorCode = status;
             mSignalledError = true;
             mEncoderDoneCondition.notify_one();
             return;
@@ -133,16 +139,27 @@ void Encoder::onFormatChanged(AMediaCodec *mediaCodec, AMediaFormat *format) {
     }
 }
 
+void Encoder::onError(AMediaCodec *mediaCodec, media_status_t err) {
+    ALOGV("In %s", __func__);
+    if (mediaCodec == mCodec && mediaCodec) {
+        ALOGE("Received Error %d", err);
+        mErrorCode = err;
+        mSignalledError = true;
+        mEncoderDoneCondition.notify_one();
+    }
+}
+
 void Encoder::setupEncoder() {
     if (!mFormat) mFormat = AMediaFormat_new();
 }
 
 void Encoder::deInitCodec() {
-    int64_t sTime = mStats->getCurTime();
     if (mFormat) {
         AMediaFormat_delete(mFormat);
         mFormat = nullptr;
     }
+    if (!mCodec) return;
+    int64_t sTime = mStats->getCurTime();
     AMediaCodec_stop(mCodec);
     AMediaCodec_delete(mCodec);
     int64_t eTime = mStats->getCurTime();
@@ -158,13 +175,14 @@ void Encoder::resetEncoder() {
     memset(&mParams, 0, sizeof mParams);
 }
 
-void Encoder::dumpStatistics(string inputReference, int64_t durationUs) {
+void Encoder::dumpStatistics(string inputReference, int64_t durationUs, string componentName,
+                             string mode, string statsFile) {
     string operation = "encode";
-    mStats->dumpStatistics(operation, inputReference, durationUs);
+    mStats->dumpStatistics(operation, inputReference, durationUs, componentName, mode, statsFile);
 }
 
-int32_t Encoder::encode(string &codecName, ifstream &eleStream, size_t eleSize,
-                        bool asyncMode, encParameter encParams, char *mime) {
+int32_t Encoder::encode(string &codecName, ifstream &eleStream, size_t eleSize, bool asyncMode,
+                        encParameter encParams, char *mime) {
     ALOGV("In %s", __func__);
     mEleStream = &eleStream;
     mInputBufferSize = eleSize;
@@ -184,13 +202,14 @@ int32_t Encoder::encode(string &codecName, ifstream &eleStream, size_t eleSize,
             AMediaFormat_setInt32(mFormat, AMEDIAFORMAT_KEY_PROFILE, mParams.profile);
             AMediaFormat_setInt32(mFormat, AMEDIAFORMAT_KEY_LEVEL, mParams.level);
         }
+        AMediaFormat_setInt32(mFormat, AMEDIAFORMAT_KEY_COLOR_FORMAT, mParams.colorFormat);
     } else {
         AMediaFormat_setInt32(mFormat, AMEDIAFORMAT_KEY_SAMPLE_RATE, mParams.sampleRate);
         AMediaFormat_setInt32(mFormat, AMEDIAFORMAT_KEY_CHANNEL_COUNT, mParams.numChannels);
         AMediaFormat_setInt32(mFormat, AMEDIAFORMAT_KEY_BIT_RATE, mParams.bitrate);
     }
     const char *s = AMediaFormat_toString(mFormat);
-    ALOGV("Input format: %s\n", s);
+    ALOGI("Input format: %s\n", s);
 
     int64_t sTime = mStats->getCurTime();
     mCodec = createMediaCodec(mFormat, mMime, codecName, true /*isEncoder*/);
@@ -235,7 +254,8 @@ int32_t Encoder::encode(string &codecName, ifstream &eleStream, size_t eleSize,
                 ssize_t inIdx = AMediaCodec_dequeueInputBuffer(mCodec, kQueueDequeueTimeoutUs);
                 if (inIdx < 0 && inIdx != AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
                     ALOGE("AMediaCodec_dequeueInputBuffer returned invalid index %zd\n", inIdx);
-                    return AMEDIA_ERROR_IO;
+                    mErrorCode = (media_status_t)inIdx;
+                    return mErrorCode;
                 } else if (inIdx >= 0) {
                     mStats->addInputTime();
                     onInputAvailable(mCodec, inIdx);
@@ -255,12 +275,17 @@ int32_t Encoder::encode(string &codecName, ifstream &eleStream, size_t eleSize,
             } else if (!(outIdx == AMEDIACODEC_INFO_TRY_AGAIN_LATER ||
                          outIdx == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED)) {
                 ALOGE("AMediaCodec_dequeueOutputBuffer returned invalid index %zd\n", outIdx);
-                return AMEDIA_ERROR_IO;
+                mErrorCode = (media_status_t)outIdx;
+                return mErrorCode;
             }
         }
     } else {
         unique_lock<mutex> lock(mMutex);
         mEncoderDoneCondition.wait(lock, [this]() { return (mSawOutputEOS || mSignalledError); });
+    }
+    if (mSignalledError) {
+        ALOGE("Received Error while Encoding");
+        return mErrorCode;
     }
 
     if (codecName.empty()) {

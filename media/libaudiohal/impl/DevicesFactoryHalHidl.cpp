@@ -20,6 +20,7 @@
 #define LOG_TAG "DevicesFactoryHalHidl"
 //#define LOG_NDEBUG 0
 
+#include <android/hidl/manager/1.0/IServiceManager.h>
 #include PATH(android/hardware/audio/FILE_VERSION/IDevice.h)
 #include <media/audiohal/hidl/HalDeathHandler.h>
 #include <utils/Log.h>
@@ -28,6 +29,8 @@
 #include "DeviceHalHidl.h"
 #include "DevicesFactoryHalHidl.h"
 
+#include <set>
+
 using ::android::hardware::audio::CPP_VERSION::IDevice;
 using ::android::hardware::audio::CPP_VERSION::Result;
 using ::android::hardware::Return;
@@ -35,13 +38,10 @@ using ::android::hardware::Return;
 namespace android {
 namespace CPP_VERSION {
 
-DevicesFactoryHalHidl::DevicesFactoryHalHidl() {
-    sp<IDevicesFactory> defaultFactory{IDevicesFactory::getService()};
-    if (!defaultFactory) {
-        ALOGE("Failed to obtain IDevicesFactory/default service, terminating process.");
-        exit(1);
-    }
-    mDeviceFactories.push_back(defaultFactory);
+DevicesFactoryHalHidl::DevicesFactoryHalHidl(sp<IDevicesFactory> devicesFactory) {
+    ALOG_ASSERT(devicesFactory != nullptr, "Provided IDevicesFactory service is NULL");
+
+    mDeviceFactories.push_back(devicesFactory);
     if (MAJOR_VERSION >= 4) {
         // The MSD factory is optional and only available starting at HAL 4.0
         sp<IDevicesFactory> msdFactory{IDevicesFactory::getService(AUDIO_HAL_SERVICE_NAME_MSD)};
@@ -109,6 +109,30 @@ status_t DevicesFactoryHalHidl::openDevice(const char *name, sp<DeviceHalInterfa
     }
     ALOGW("The specified device name is not recognized: \"%s\"", name);
     return BAD_VALUE;
+}
+
+status_t DevicesFactoryHalHidl::getHalPids(std::vector<pid_t> *pids) {
+    std::set<pid_t> pidsSet;
+
+    for (const auto& factory : mDeviceFactories) {
+        using ::android::hidl::base::V1_0::DebugInfo;
+        using android::hidl::manager::V1_0::IServiceManager;
+
+        DebugInfo debugInfo;
+        auto ret = factory->getDebugInfo([&] (const auto &info) {
+               debugInfo = info;
+            });
+        if (!ret.isOk()) {
+           return INVALID_OPERATION;
+        }
+        if (debugInfo.pid == (int)IServiceManager::PidConstant::NO_PID) {
+            continue;
+        }
+        pidsSet.insert(debugInfo.pid);
+    }
+
+    *pids = {pidsSet.begin(), pidsSet.end()};
+    return NO_ERROR;
 }
 
 } // namespace CPP_VERSION

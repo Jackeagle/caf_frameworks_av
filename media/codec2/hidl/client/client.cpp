@@ -125,6 +125,9 @@ public:
         if (!mClient) {
             mClient = Codec2Client::_CreateFromIndex(mIndex);
         }
+        CHECK(mClient) << "Failed to create Codec2Client to service \""
+                       << GetServiceNames()[mIndex] << "\". (Index = "
+                       << mIndex << ").";
         return mClient;
     }
 
@@ -832,6 +835,7 @@ std::shared_ptr<Codec2Client> Codec2Client::_CreateFromIndex(size_t index) {
 
 c2_status_t Codec2Client::ForAllServices(
         const std::string &key,
+        size_t numberOfAttempts,
         std::function<c2_status_t(const std::shared_ptr<Codec2Client>&)>
             predicate) {
     c2_status_t status = C2_NO_INIT;  // no IComponentStores present
@@ -860,33 +864,45 @@ c2_status_t Codec2Client::ForAllServices(
 
     for (size_t index : indices) {
         Cache& cache = Cache::List()[index];
-        std::shared_ptr<Codec2Client> client{cache.getClient()};
-        if (client) {
+        for (size_t tries = numberOfAttempts; tries > 0; --tries) {
+            std::shared_ptr<Codec2Client> client{cache.getClient()};
             status = predicate(client);
             if (status == C2_OK) {
                 std::scoped_lock lock{key2IndexMutex};
                 key2Index[key] = index; // update last known client index
                 return C2_OK;
+            } else if (status == C2_TRANSACTION_FAILED) {
+                LOG(WARNING) << "\"" << key << "\" failed for service \""
+                             << client->getName()
+                             << "\" due to transaction failure. "
+                             << "(Service may have crashed.)"
+                             << (tries > 1 ? " Retrying..." : "");
+                cache.invalidate();
+                continue;
             }
-        }
-        if (wasMapped) {
-            LOG(INFO) << "Could not find \"" << key << "\""
-                         " in the last instance. Retrying...";
-            wasMapped = false;
-            cache.invalidate();
+            if (wasMapped) {
+                LOG(INFO) << "\"" << key << "\" became invalid in service \""
+                          << client->getName() << "\". Retrying...";
+                wasMapped = false;
+            }
+            break;
         }
     }
-    return status;  // return the last status from a valid client
+    return status; // return the last status from a valid client
 }
 
 std::shared_ptr<Codec2Client::Component>
         Codec2Client::CreateComponentByName(
         const char* componentName,
         const std::shared_ptr<Listener>& listener,
-        std::shared_ptr<Codec2Client>* owner) {
+        std::shared_ptr<Codec2Client>* owner,
+        size_t numberOfAttempts) {
+    std::string key{"create:"};
+    key.append(componentName);
     std::shared_ptr<Component> component;
     c2_status_t status = ForAllServices(
-            componentName,
+            key,
+            numberOfAttempts,
             [owner, &component, componentName, &listener](
                     const std::shared_ptr<Codec2Client> &client)
                         -> c2_status_t {
@@ -907,8 +923,9 @@ std::shared_ptr<Codec2Client::Component>
                 return status;
             });
     if (status != C2_OK) {
-        LOG(DEBUG) << "Could not create component \"" << componentName << "\". "
-                      "Status = " << status << ".";
+        LOG(DEBUG) << "Failed to create component \"" << componentName
+                   << "\" from all known services. "
+                      "Last returned status = " << status << ".";
     }
     return component;
 }
@@ -916,10 +933,14 @@ std::shared_ptr<Codec2Client::Component>
 std::shared_ptr<Codec2Client::Interface>
         Codec2Client::CreateInterfaceByName(
         const char* interfaceName,
-        std::shared_ptr<Codec2Client>* owner) {
+        std::shared_ptr<Codec2Client>* owner,
+        size_t numberOfAttempts) {
+    std::string key{"create:"};
+    key.append(interfaceName);
     std::shared_ptr<Interface> interface;
     c2_status_t status = ForAllServices(
-            interfaceName,
+            key,
+            numberOfAttempts,
             [owner, &interface, interfaceName](
                     const std::shared_ptr<Codec2Client> &client)
                         -> c2_status_t {
@@ -939,8 +960,9 @@ std::shared_ptr<Codec2Client::Interface>
                 return status;
             });
     if (status != C2_OK) {
-        LOG(DEBUG) << "Could not create interface \"" << interfaceName << "\". "
-                      "Status = " << status << ".";
+        LOG(DEBUG) << "Failed to create interface \"" << interfaceName
+                   << "\" from all known services. "
+                      "Last returned status = " << status << ".";
     }
     return interface;
 }

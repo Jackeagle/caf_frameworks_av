@@ -31,15 +31,14 @@
 #include <utils/SortedVector.h>
 #include <media/AudioParameter.h>
 #include <media/AudioPolicy.h>
+#include <media/AudioProfile.h>
 #include <media/PatchBuilder.h>
 #include "AudioPolicyInterface.h"
 
 #include <AudioPolicyManagerObserver.h>
-#include <AudioGain.h>
 #include <AudioPolicyConfig.h>
-#include <AudioPort.h>
+#include <PolicyAudioPort.h>
 #include <AudioPatch.h>
-#include <AudioProfile.h>
 #include <DeviceDescriptor.h>
 #include <IOProfile.h>
 #include <HwModule.h>
@@ -177,7 +176,7 @@ public:
                                      IVolumeCurves &volumeCurves);
 
         status_t getVolumeIndex(const IVolumeCurves &curves, int &index,
-                                audio_devices_t device) const;
+                                const DeviceTypeSet& deviceTypes) const;
 
         // return the strategy corresponding to a given stream type
         virtual uint32_t getStrategyForStream(audio_stream_type_t stream)
@@ -234,7 +233,10 @@ public:
         virtual status_t getAudioPort(struct audio_port *port);
         virtual status_t createAudioPatch(const struct audio_patch *patch,
                                            audio_patch_handle_t *handle,
-                                           uid_t uid);
+                                           uid_t uid) {
+            return createAudioPatchInternal(patch, handle, uid);
+        }
+
         virtual status_t releaseAudioPatch(audio_patch_handle_t handle,
                                               uid_t uid);
         virtual status_t listAudioPatches(unsigned int *num_patches,
@@ -258,6 +260,12 @@ public:
         virtual status_t setUidDeviceAffinities(uid_t uid,
                 const Vector<AudioDeviceTypeAddr>& devices);
         virtual status_t removeUidDeviceAffinities(uid_t uid);
+
+        virtual status_t setPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   const AudioDeviceTypeAddr &device);
+        virtual status_t removePreferredDeviceForStrategy(product_strategy_t strategy);
+        virtual status_t getPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   AudioDeviceTypeAddr &device);
 
         virtual status_t startAudioSource(const struct audio_port_config *source,
                                           const audio_attributes_t *attributes,
@@ -423,7 +431,7 @@ protected:
         virtual float computeVolume(IVolumeCurves &curves,
                                     VolumeSource volumeSource,
                                     int index,
-                                    audio_devices_t device);
+                                    const DeviceTypeSet& deviceTypes);
 
         // rescale volume index from srcStream within range of dstStream
         int rescaleVolumeIndex(int srcIndex,
@@ -433,12 +441,13 @@ protected:
         virtual status_t checkAndSetVolume(IVolumeCurves &curves,
                                            VolumeSource volumeSource, int index,
                                            const sp<AudioOutputDescriptor>& outputDesc,
-                                           audio_devices_t device,
+                                           DeviceTypeSet deviceTypes,
                                            int delayMs = 0, bool force = false);
 
         // apply all stream volumes to the specified output and device
         void applyStreamVolumes(const sp<AudioOutputDescriptor>& outputDesc,
-                                audio_devices_t device, int delayMs = 0, bool force = false);
+                                const DeviceTypeSet& deviceTypes,
+                                int delayMs = 0, bool force = false);
 
         /**
          * @brief setStrategyMute Mute or unmute all active clients on the considered output
@@ -453,7 +462,7 @@ protected:
                              bool on,
                              const sp<AudioOutputDescriptor>& outputDesc,
                              int delayMs = 0,
-                             audio_devices_t device = AUDIO_DEVICE_NONE);
+                             DeviceTypeSet deviceTypes = DeviceTypeSet());
 
         /**
          * @brief setVolumeSourceMute Mute or unmute the volume source on the specified output
@@ -468,7 +477,7 @@ protected:
                                  bool on,
                                  const sp<AudioOutputDescriptor>& outputDesc,
                                  int delayMs = 0,
-                                 audio_devices_t device = AUDIO_DEVICE_NONE);
+                                 DeviceTypeSet deviceTypes = DeviceTypeSet());
 
         audio_mode_t getPhoneState();
 
@@ -496,11 +505,17 @@ protected:
         // close an input.
         void closeInput(audio_io_handle_t input);
 
-        // runs all the checks required for accomodating changes in devices and outputs
+        // runs all the checks required for accommodating changes in devices and outputs
         // if 'onOutputsChecked' callback is provided, it is executed after the outputs
         // check via 'checkOutputForAllStrategies'. If the callback returns 'true',
         // A2DP suspend status is rechecked.
         void checkForDeviceAndOutputChanges(std::function<bool()> onOutputsChecked = nullptr);
+
+        /**
+         * @brief updates routing for all outputs (including call if call in progress).
+         * @param delayMs delay for unmuting if required
+         */
+        void updateCallAndOutputRouting(bool forceVolumeReeval = true, uint32_t delayMs = 0);
 
         /**
          * @brief checkOutputForAttributes checks and if necessary changes outputs used for the
@@ -647,16 +662,13 @@ protected:
         }
         String8 getFirstDeviceAddress(const DeviceVector &devices) const
         {
-            return (devices.size() > 0) ? devices.itemAt(0)->address() : String8("");
+            return (devices.size() > 0) ?
+                    String8(devices.itemAt(0)->address().c_str()) : String8("");
         }
 
         uint32_t updateCallRouting(const DeviceVector &rxDevices, uint32_t delayMs = 0);
         sp<AudioPatch> createTelephonyPatch(bool isRx, const sp<DeviceDescriptor> &device,
                                             uint32_t delayMs);
-        sp<DeviceDescriptor> findDevice(
-                const DeviceVector& devices, audio_devices_t device) const;
-        audio_devices_t getModuleDeviceTypes(
-                const DeviceVector& devices, const char *moduleId) const;
         bool isDeviceOfModule(const sp<DeviceDescriptor>& devDesc, const char *moduleId) const;
 
         status_t startSource(const sp<SwAudioOutputDescriptor>& outputDesc,
@@ -763,7 +775,7 @@ protected:
 private:
         // Add or remove AC3 DTS encodings based on user preferences.
         void modifySurroundFormats(const sp<DeviceDescriptor>& devDesc, FormatVector *formatsPtr);
-        void modifySurroundChannelMasks(ChannelsVector *channelMasksPtr);
+        void modifySurroundChannelMasks(ChannelMaskSet *channelMasksPtr);
 
         // Support for Multi-Stream Decoder (MSD) module
         sp<DeviceDescriptor> getMsdAudioInDevice() const;
@@ -859,6 +871,29 @@ private:
             param.addInt(String8(AudioParameter::keyMonoOutput), (int)mMasterMono);
             mpClientInterface->setParameters(output, param.toString());
         }
+
+        /**
+         * @brief createAudioPatchInternal internal function to manage audio patch creation
+         * @param[in] patch structure containing sink and source ports configuration
+         * @param[out] handle patch handle to be provided if patch installed correctly
+         * @param[in] uid of the client
+         * @param[in] delayMs if required
+         * @param[in] sourceDesc [optional] in case of external source, source client to be
+         * configured by the patch, i.e. assigning an Output (HW or SW)
+         * @return NO_ERROR if patch installed correclty, error code otherwise.
+         */
+        status_t createAudioPatchInternal(const struct audio_patch *patch,
+                                          audio_patch_handle_t *handle,
+                                          uid_t uid, uint32_t delayMs = 0,
+                                          const sp<SourceClientDescriptor>& sourceDesc = nullptr);
+        /**
+         * @brief releaseAudioPatchInternal internal function to remove an audio patch
+         * @param[in] handle of the patch to be removed
+         * @param[in] delayMs if required
+         * @return NO_ERROR if patch removed correclty, error code otherwise.
+         */
+        status_t releaseAudioPatchInternal(audio_patch_handle_t handle, uint32_t delayMs = 0);
+
         status_t installPatch(const char *caller,
                 audio_patch_handle_t *patchHandle,
                 AudioIODescriptorInterface *ioDescriptor,

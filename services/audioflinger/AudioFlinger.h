@@ -65,7 +65,10 @@
 #include <media/audiohal/EffectBufferHalInterface.h>
 #include <media/audiohal/StreamHalInterface.h>
 #include <media/AudioBufferProvider.h>
+#include <media/AudioContainers.h>
+#include <media/AudioDeviceTypeAddr.h>
 #include <media/AudioMixer.h>
+#include <media/DeviceDescriptorBase.h>
 #include <media/ExtendedAudioBufferProvider.h>
 #include <media/LinearMap.h>
 #include <media/VolumeShaper.h>
@@ -175,8 +178,7 @@ public:
     virtual status_t openOutput(audio_module_handle_t module,
                                 audio_io_handle_t *output,
                                 audio_config_t *config,
-                                audio_devices_t *devices,
-                                const String8& address,
+                                const sp<DeviceDescriptorBase>& device,
                                 uint32_t *latencyMs,
                                 audio_output_flags_t flags);
 
@@ -230,6 +232,7 @@ public:
                         int32_t priority,
                         audio_io_handle_t io,
                         audio_session_t sessionId,
+                        const AudioDeviceTypeAddr& device,
                         const String16& opPackageName,
                         pid_t pid,
                         status_t *status /*non-NULL*/,
@@ -279,6 +282,8 @@ public:
 
     virtual status_t getMicrophones(std::vector<media::MicrophoneInfo> *microphones);
 
+    virtual status_t setAudioHalPids(const std::vector<pid_t>& pids);
+
     virtual     status_t    onTransact(
                                 uint32_t code,
                                 const Parcel& data,
@@ -303,6 +308,12 @@ public:
 
     static int onExternalVibrationStart(const sp<os::ExternalVibration>& externalVibration);
     static void onExternalVibrationStop(const sp<os::ExternalVibration>& externalVibration);
+
+    status_t addEffectToHal(audio_port_handle_t deviceId,
+            audio_module_handle_t hwModuleId, sp<EffectHalInterface> effect);
+    status_t removeEffectFromHal(audio_port_handle_t deviceId,
+            audio_module_handle_t hwModuleId, sp<EffectHalInterface> effect);
+
 private:
     // FIXME The 400 is temporarily too high until a leak of writers in media.log is fixed.
     static const size_t kLogMemorySize = 400 * 1024;
@@ -372,7 +383,7 @@ private:
     virtual     void        onFirstRef();
 
     AudioHwDevice*          findSuitableHwDev_l(audio_module_handle_t module,
-                                                audio_devices_t devices);
+                                                audio_devices_t deviceType);
 
     // Set kEnableExtendedChannels to true to enable greater than stereo output
     // for the MixerThread and device sink.  Number of channels allowed is
@@ -528,9 +539,14 @@ private:
     class AsyncCallbackThread;
     class Track;
     class RecordTrack;
+    class EffectBase;
     class EffectModule;
     class EffectHandle;
     class EffectChain;
+    class DeviceEffectProxy;
+    class DeviceEffectManager;
+    class PatchPanel;
+    class DeviceEffectManagerCallback;
 
     struct AudioStreamIn;
     struct TeePatch;
@@ -568,9 +584,11 @@ using effect_buffer_t = int16_t;
 
 #include "Threads.h"
 
+#include "PatchPanel.h"
+
 #include "Effects.h"
 
-#include "PatchPanel.h"
+#include "DeviceEffectManager.h"
 
     // Find io handle by session id.
     // Preference is given to an io handle with a matching effect chain to session id.
@@ -678,11 +696,11 @@ using effect_buffer_t = int16_t;
                                            audio_devices_t outputDevice,
                                            const String8& outputDeviceAddress);
               sp<ThreadBase> openOutput_l(audio_module_handle_t module,
-                                              audio_io_handle_t *output,
-                                              audio_config_t *config,
-                                              audio_devices_t devices,
-                                              const String8& address,
-                                              audio_output_flags_t flags);
+                                          audio_io_handle_t *output,
+                                          audio_config_t *config,
+                                          audio_devices_t deviceType,
+                                          const String8& address,
+                                          audio_output_flags_t flags);
 
               void closeOutputFinish(const sp<PlaybackThread>& thread);
               void closeInputFinish(const sp<RecordThread>& thread);
@@ -717,7 +735,7 @@ using effect_buffer_t = int16_t;
 
               // return thread associated with primary hardware device, or NULL
               PlaybackThread *primaryPlaybackThread_l() const;
-              audio_devices_t primaryOutputDevice_l() const;
+              DeviceTypeSet primaryOutputDevice_l() const;
 
               // return the playback thread with smallest HAL buffer size, and prefer fast
               PlaybackThread *fastPlaybackThread_l() const;
@@ -751,6 +769,7 @@ using effect_buffer_t = int16_t;
                 std::vector< sp<EffectModule> > purgeStaleEffects_l();
 
                 void broacastParametersToRecordThreads_l(const String8& keyValuePairs);
+                void updateOutDevicesForRecordThreads_l(const DeviceDescriptorBaseVector& devices);
                 void forwardParametersToDownstreamPatches_l(
                         audio_io_handle_t upStream, const String8& keyValuePairs,
                         std::function<bool(const sp<PlaybackThread>&)> useThread = nullptr);
@@ -914,6 +933,8 @@ private:
     // protected by mLock
     PatchPanel mPatchPanel;
     sp<EffectsFactoryHalInterface> mEffectsFactoryHal;
+
+    DeviceEffectManager mDeviceEffectManager;
 
     bool       mSystemReady;
 

@@ -15,31 +15,6 @@ cc_library_headers {
     ],
 }
 
-cc_library {
-    name: "libmedia_helper",
-    vendor_available: true,
-    vndk: {
-        enabled: true,
-    },
-    double_loadable: true,
-    srcs: ["AudioParameter.cpp", "TypeConverter.cpp"],
-    cflags: [
-        "-Werror",
-        "-Wno-error=deprecated-declarations",
-        "-Wall",
-    ],
-    shared_libs: ["libutils", "liblog"],
-    header_libs: [
-        "libmedia_headers",
-        "libaudioclient_headers",
-        "libaudio_system_headers",
-    ],
-    export_header_lib_headers: [
-        "libmedia_headers",
-    ],
-    clang: true,
-}
-
 filegroup {
     name: "libmedia_omx_aidl",
     srcs: [
@@ -197,6 +172,7 @@ cc_library_static {
     ],
 
     header_libs: [
+        "libmedia_headers",
         "media_ndk_headers",
     ],
 
@@ -285,8 +261,6 @@ cc_library {
         "mediarecorder.cpp",
         "IMediaMetadataRetriever.cpp",
         "mediametadataretriever.cpp",
-        "MidiDeviceInfo.cpp",
-        "JetPlayer.cpp",
         "MediaScanner.cpp",
         "MediaScannerClient.cpp",
         "CharacterEncodingDetector.cpp",
@@ -294,7 +268,6 @@ cc_library {
         "MediaProfiles.cpp",
         "MediaResource.cpp",
         "MediaResourcePolicy.cpp",
-        "Visualizer.cpp",
         "StringArray.cpp",
         "NdkMediaFormatPriv.cpp",
         "NdkMediaErrorPriv.cpp",
@@ -330,7 +303,6 @@ cc_library {
         "libstagefright_foundation",
         "libgui",
         "libdl",
-        "libaudioutils",
         "libaudioclient",
         "libmedia_codeclist",
         "libmedia_omx",
@@ -346,7 +318,6 @@ cc_library {
 
     static_libs: [
         "libc_malloc_debug_backtrace",  // for memory heap analysis
-        "libmedia_midiiowrapper",
     ],
 
     export_include_dirs: [
