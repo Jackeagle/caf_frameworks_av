@@ -90,9 +90,11 @@ enum {
     SET_MASTER_BALANCE,
     GET_MASTER_BALANCE,
     SET_EFFECT_SUSPENDED,
+    SET_AUDIO_HAL_PIDS
 };
 
 #define MAX_ITEMS_PER_LIST 1024
+
 
 class BpAudioFlinger : public BpInterface<IAudioFlinger>
 {
@@ -392,20 +394,18 @@ public:
     virtual status_t openOutput(audio_module_handle_t module,
                                 audio_io_handle_t *output,
                                 audio_config_t *config,
-                                audio_devices_t *devices,
-                                const String8& address,
+                                const sp<DeviceDescriptorBase>& device,
                                 uint32_t *latencyMs,
                                 audio_output_flags_t flags)
     {
-        if (output == NULL || config == NULL || devices == NULL || latencyMs == NULL) {
+        if (output == nullptr || config == nullptr || device == nullptr || latencyMs == nullptr) {
             return BAD_VALUE;
         }
         Parcel data, reply;
         data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
         data.writeInt32(module);
         data.write(config, sizeof(audio_config_t));
-        data.writeInt32(*devices);
-        data.writeString8(address);
+        data.writeParcelable(*device);
         data.writeInt32((int32_t) flags);
         status_t status = remote()->transact(OPEN_OUTPUT, data, &reply);
         if (status != NO_ERROR) {
@@ -420,7 +420,6 @@ public:
         *output = (audio_io_handle_t)reply.readInt32();
         ALOGV("openOutput() returned output, %d", *output);
         reply.read(config, sizeof(audio_config_t));
-        *devices = (audio_devices_t)reply.readInt32();
         *latencyMs = reply.readInt32();
         return NO_ERROR;
     }
@@ -659,6 +658,7 @@ public:
                                     int32_t priority,
                                     audio_io_handle_t output,
                                     audio_session_t sessionId,
+                                    const AudioDeviceTypeAddr& device,
                                     const String16& opPackageName,
                                     pid_t pid,
                                     status_t *status,
@@ -667,12 +667,11 @@ public:
     {
         Parcel data, reply;
         sp<IEffect> effect;
-
         if (pDesc == NULL) {
             if (status != NULL) {
                 *status = BAD_VALUE;
             }
-            return effect;
+            return nullptr;
         }
 
         data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
@@ -681,6 +680,12 @@ public:
         data.writeInt32(priority);
         data.writeInt32((int32_t) output);
         data.writeInt32(sessionId);
+        if (data.writeParcelable(device) != NO_ERROR) {
+            if (status != NULL) {
+                *status = NO_INIT;
+            }
+            return nullptr;
+        }
         data.writeString16(opPackageName);
         data.writeInt32((int32_t) pid);
 
@@ -903,6 +908,20 @@ public:
         status = reply.readParcelableVector(microphones);
         return status;
     }
+    virtual status_t setAudioHalPids(const std::vector<pid_t>& pids)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
+        data.writeInt32(pids.size());
+        for (auto pid : pids) {
+            data.writeInt32(pid);
+        }
+        status_t status = remote()->transact(SET_AUDIO_HAL_PIDS, data, &reply);
+        if (status != NO_ERROR) {
+            return status;
+        }
+        return static_cast <status_t> (reply.readInt32());
+    }
 };
 
 IMPLEMENT_META_INTERFACE(AudioFlinger, "android.media.IAudioFlinger");
@@ -958,7 +977,8 @@ status_t BnAudioFlinger::onTransact(
         case SET_MODE:
         case SET_MIC_MUTE:
         case SET_LOW_RAM_DEVICE:
-        case SYSTEM_READY: {
+        case SYSTEM_READY:
+        case SET_AUDIO_HAL_PIDS: {
             if (!isServiceUid(IPCThreadState::self()->getCallingUid())) {
                 ALOGW("%s: transaction %d received from PID %d unauthorized UID %d",
                       __func__, code, IPCThreadState::self()->getCallingPid(),
@@ -1200,19 +1220,21 @@ status_t BnAudioFlinger::onTransact(
             if (data.read(&config, sizeof(audio_config_t)) != NO_ERROR) {
                 ALOGE("b/23905951");
             }
-            audio_devices_t devices = (audio_devices_t)data.readInt32();
-            String8 address(data.readString8());
+            sp<DeviceDescriptorBase> device = new DeviceDescriptorBase(AUDIO_DEVICE_NONE);
+            status_t status = NO_ERROR;
+            if ((status = data.readParcelable(device.get())) != NO_ERROR) {
+                reply->writeInt32((int32_t)status);
+                return NO_ERROR;
+            }
             audio_output_flags_t flags = (audio_output_flags_t) data.readInt32();
             uint32_t latencyMs = 0;
             audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
-            status_t status = openOutput(module, &output, &config,
-                                         &devices, address, &latencyMs, flags);
+            status = openOutput(module, &output, &config, device, &latencyMs, flags);
             ALOGV("OPEN_OUTPUT output, %d", output);
             reply->writeInt32((int32_t)status);
             if (status == NO_ERROR) {
                 reply->writeInt32((int32_t)output);
                 reply->write(&config, sizeof(audio_config_t));
-                reply->writeInt32(devices);
                 reply->writeInt32(latencyMs);
             }
             return NO_ERROR;
@@ -1362,14 +1384,18 @@ status_t BnAudioFlinger::onTransact(
             int32_t priority = data.readInt32();
             audio_io_handle_t output = (audio_io_handle_t) data.readInt32();
             audio_session_t sessionId = (audio_session_t) data.readInt32();
+            AudioDeviceTypeAddr device;
+            status_t status = NO_ERROR;
+            if ((status = data.readParcelable(&device)) != NO_ERROR) {
+                return status;
+            }
             const String16 opPackageName = data.readString16();
             pid_t pid = (pid_t)data.readInt32();
 
-            status_t status = NO_ERROR;
             int id = 0;
             int enabled = 0;
 
-            sp<IEffect> effect = createEffect(&desc, client, priority, output, sessionId,
+            sp<IEffect> effect = createEffect(&desc, client, priority, output, sessionId, device,
                     opPackageName, pid, &status, &id, &enabled);
             reply->writeInt32(status);
             reply->writeInt32(id);
@@ -1541,6 +1567,31 @@ status_t BnAudioFlinger::onTransact(
             if (status == NO_ERROR) {
                 reply->writeParcelableVector(microphones);
             }
+            return NO_ERROR;
+        }
+        case SET_AUDIO_HAL_PIDS: {
+            CHECK_INTERFACE(IAudioFlinger, data, reply);
+            std::vector<pid_t> pids;
+            int32_t size;
+            status_t status = data.readInt32(&size);
+            if (status != NO_ERROR) {
+                return status;
+            }
+            if (size < 0) {
+                return BAD_VALUE;
+            }
+            if (size > MAX_ITEMS_PER_LIST) {
+                size = MAX_ITEMS_PER_LIST;
+            }
+            for (int32_t i = 0; i < size; i++) {
+                int32_t pid;
+                status =  data.readInt32(&pid);
+                if (status != NO_ERROR) {
+                    return status;
+                }
+                pids.push_back(pid);
+            }
+            reply->writeInt32(setAudioHalPids(pids));
             return NO_ERROR;
         }
         default:

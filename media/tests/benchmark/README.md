@@ -9,14 +9,16 @@ Run the following steps to build the test suite:
 ```
 mmm frameworks/av/media/tests/benchmark/
 ```
-To run the test suite for measuring performance of the native layer, follow the following steps:
+
 # NDK
 
-The binaries will be created in the following path : ${OUT}/data/nativetest64/
+To run the test suite for measuring performance of the native layer, follow the following steps:
 
-adb push $(OUT)/data/nativetest64/* /data/local/tmp/
+The binaries will be created in the following path : $OUT/data/nativetest64/
 
-Eg. adb push $(OUT)/data/nativetest64/extractorTest/extractorTest /data/local/tmp/
+adb push $OUT/data/nativetest64/* /data/local/tmp/
+
+Eg. adb push $OUT/data/nativetest64/extractorTest/extractorTest /data/local/tmp/
 
 To run the binary, follow the commands mentioned below under each module.
 
@@ -76,13 +78,13 @@ adb shell /data/local/tmp/encoderTest -P /data/local/tmp/MediaBenchmark/res/
 To run the test suite for measuring performance of the SDK APIs, follow the following steps:
 
 The apk will be created at the following path:
-${OUT}/testcases/MediaBenchmarkApp/arm64/
+$OUT/testcases/MediaBenchmarkTest/arm64/
 
 To get the resorce files for the test follow instructions given in [NDK](#NDK)
 
 For installing the apk, run the command:
 ```
-adb install -f -r ${OUT}/testcases/MediaBenchmarkApp/arm64/MediaBenchmarkApp.apk
+adb install -f -r $OUT/testcases/MediaBenchmarkTest/arm64/MediaBenchmarkTest.apk
 ```
 
 For running all the tests, run the command:
@@ -95,4 +97,60 @@ adb shell am instrument -w -r -e package com.android.media.benchmark.tests com.a
 The test extracts elementary stream and benchmarks the extractors available in SDK.
 ```
 adb shell am instrument -w -r -e class 'com.android.media.benchmark.tests.ExtractorTest' com.android.media.benchmark/androidx.test.runner.AndroidJUnitRunner
+```
+
+## Decoder
+
+The test decodes input stream and benchmarks the decoders available in SDK.
+```
+adb shell am instrument -w -r -e class 'com.android.media.benchmark.tests.DecoderTest' com.android.media.benchmark/androidx.test.runner.AndroidJUnitRunner
+```
+
+## Muxer
+
+The test muxes elementary stream and benchmarks different writers available in SDK.
+```
+adb shell am instrument -w -r -e class 'com.android.media.benchmark.tests.MuxerTest' com.android.media.benchmark/androidx.test.runner.AndroidJUnitRunner
+```
+
+## Encoder
+
+The test encodes input stream and benchmarks the encoders available in SDK.
+```
+adb shell am instrument -w -r -e class 'com.android.media.benchmark.tests.EncoderTest' com.android.media.benchmark/androidx.test.runner.AndroidJUnitRunner
+```
+
+# Codec2
+To run the test suite for measuring performance of the codec2 layer, follow the following steps:
+
+The 32-bit binaries will be created in the following path : ${OUT}/data/nativetest/
+The 64-bit binaries will be created in the following path : ${OUT}/data/nativetest64/
+
+To test 64-bit binary push binaries from nativetest64.
+adb push $(OUT)/data/nativetest64/* /data/local/tmp/
+Eg. adb push $(OUT)/data/nativetest64/C2DecoderTest/C2DecoderTest /data/local/tmp/
+
+To test 32-bit binary push binaries from nativetest.
+adb push $(OUT)/data/nativetest/* /data/local/tmp/
+Eg. adb push $(OUT)/data/nativetest/C2DecoderTest/C2DecoderTest /data/local/tmp/
+
+To get the resource files for the test follow instructions given in [NDK](#NDK)
+
+## C2 Decoder
+
+The test decodes input stream and benchmarks the codec2 decoders available in device.
+
+Setup steps are same as [extractor](#extractor).
+
+```
+adb shell /data/local/tmp/C2DecoderTest -P /data/local/tmp/MediaBenchmark/res/
+```
+## C2 Encoder
+
+The test encodes input stream and benchmarks the codec2 encoders available in device.
+
+Setup steps are same as [extractor](#extractor).
+
+```
+adb shell /data/local/tmp/C2EncoderTest -P /data/local/tmp/MediaBenchmark/res/
 ```

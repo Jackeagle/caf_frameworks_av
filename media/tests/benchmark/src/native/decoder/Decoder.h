@@ -38,6 +38,7 @@ class Decoder : public CallBackHandle {
           mSawInputEOS(false),
           mSawOutputEOS(false),
           mSignalledError(false),
+          mErrorCode(AMEDIA_OK),
           mInputBuffer(nullptr),
           mOutFp(nullptr) {
         mExtractor = new Extractor();
@@ -56,10 +57,14 @@ class Decoder : public CallBackHandle {
 
     void resetDecoder();
 
+    AMediaFormat *getFormat();
+
     // Async callback APIs
     void onInputAvailable(AMediaCodec *codec, int32_t index) override;
 
     void onFormatChanged(AMediaCodec *codec, AMediaFormat *format) override;
+
+    void onError(AMediaCodec *mediaCodec, media_status_t err) override;
 
     void onOutputAvailable(AMediaCodec *codec, int32_t index,
                            AMediaCodecBufferInfo *bufferInfo) override;
@@ -68,7 +73,8 @@ class Decoder : public CallBackHandle {
     int32_t decode(uint8_t *inputBuffer, vector<AMediaCodecBufferInfo> &frameInfo,
                    string &codecName, bool asyncMode, FILE *outFp = nullptr);
 
-    void dumpStatistics(string inputReference);
+    void dumpStatistics(string inputReference, string componentName = "", string mode = "",
+                        string statsFile = "");
 
   private:
     AMediaCodec *mCodec;
@@ -82,6 +88,7 @@ class Decoder : public CallBackHandle {
     bool mSawInputEOS;
     bool mSawOutputEOS;
     bool mSignalledError;
+    media_status_t mErrorCode;
 
     int32_t mOffset;
     uint8_t *mInputBuffer;

@@ -23,9 +23,6 @@
 #include <LVM.h>
 #include <limits.h>
 
-#if __cplusplus
-extern "C" {
-#endif
 
 #define FIVEBAND_NUMBANDS          5
 #define MAX_NUM_BANDS              5
@@ -110,6 +107,14 @@ struct BundledEffectContext{
 #ifdef SUPPORT_MC
     LVM_INT32                       ChMask;
 #endif
+
+    /* Bitmask whether drain is in progress due to disabling the effect.
+       The corresponding bit to an effect is set by 1 << lvm_effect_en. */
+    int                             effectInDrain;
+
+    /* Bitmask whether process() was called for a particular effect.
+       The corresponding bit to an effect is set by 1 << lvm_effect_en. */
+    int                             effectProcessCalled;
 };
 
 /* SessionContext : One session */
@@ -220,9 +225,6 @@ static const float LimitLevel_bassBoostEnergyCoefficient = 9.00;
 
 static const float LimitLevel_virtualizerContribution = 1.9;
 
-#if __cplusplus
-}  // extern "C"
-#endif
 
 
 #endif /*ANDROID_EFFECTBUNDLE_H_*/

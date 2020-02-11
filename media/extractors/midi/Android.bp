@@ -1,9 +1,13 @@
-cc_library_shared {
+cc_library {
 
     srcs: ["MidiExtractor.cpp"],
 
     include_dirs: [
         "frameworks/av/media/libstagefright/include",
+    ],
+
+    header_libs: [
+        "libmedia_headers",
     ],
 
     shared_libs: [

@@ -102,6 +102,10 @@ cc_library_static {
         "include",
     ],
 
+    header_libs: [
+        "libmedia_helper_headers",
+    ],
+
     cflags: [
         "-Wno-multichar",
         "-Werror",
@@ -127,7 +131,6 @@ cc_library {
         "ACodecBufferChannel.cpp",
         "AHierarchicalStateMachine.cpp",
         "AMRWriter.cpp",
-        "AudioPlayer.cpp",
         "AudioSource.cpp",
         "BufferImpl.cpp",
         "CallbackDataSource.cpp",
@@ -162,7 +165,6 @@ cc_library {
         "SimpleDecodingSource.cpp",
         "SkipCutBuffer.cpp",
         "StagefrightMediaScanner.cpp",
-        "StagefrightMetadataRetriever.cpp",
         "StagefrightPluginLoader.cpp",
         "SurfaceUtils.cpp",
         "ThrottledSource.cpp",

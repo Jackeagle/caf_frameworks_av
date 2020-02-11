@@ -351,12 +351,17 @@ status_t AudioPolicyService::getInputForAttr(const audio_attributes_t *attr,
         return NO_INIT;
     }
 
+    audio_source_t inputSource = attr->source;
+    if (inputSource == AUDIO_SOURCE_DEFAULT) {
+        inputSource = AUDIO_SOURCE_MIC;
+    }
+
     // already checked by client, but double-check in case the client wrapper is bypassed
-    if ((attr->source < AUDIO_SOURCE_DEFAULT)
-            || (attr->source >= AUDIO_SOURCE_CNT
-                && attr->source != AUDIO_SOURCE_HOTWORD
-                && attr->source != AUDIO_SOURCE_FM_TUNER
-                && attr->source != AUDIO_SOURCE_ECHO_REFERENCE)) {
+    if ((inputSource < AUDIO_SOURCE_DEFAULT)
+            || (inputSource >= AUDIO_SOURCE_CNT
+                && inputSource != AUDIO_SOURCE_HOTWORD
+                && inputSource != AUDIO_SOURCE_FM_TUNER
+                && inputSource != AUDIO_SOURCE_ECHO_REFERENCE)) {
         return BAD_VALUE;
     }
 
@@ -385,16 +390,16 @@ status_t AudioPolicyService::getInputForAttr(const audio_attributes_t *attr,
     }
 
     bool canCaptureOutput = captureAudioOutputAllowed(pid, uid);
-    if ((attr->source == AUDIO_SOURCE_VOICE_UPLINK ||
-        attr->source == AUDIO_SOURCE_VOICE_DOWNLINK ||
-        attr->source == AUDIO_SOURCE_VOICE_CALL ||
-        attr->source == AUDIO_SOURCE_ECHO_REFERENCE) &&
+    if ((inputSource == AUDIO_SOURCE_VOICE_UPLINK ||
+        inputSource == AUDIO_SOURCE_VOICE_DOWNLINK ||
+        inputSource == AUDIO_SOURCE_VOICE_CALL ||
+        inputSource == AUDIO_SOURCE_ECHO_REFERENCE) &&
         !canCaptureOutput) {
         return PERMISSION_DENIED;
     }
 
     bool canCaptureHotword = captureHotwordAllowed(opPackageName, pid, uid);
-    if ((attr->source == AUDIO_SOURCE_HOTWORD) && !canCaptureHotword) {
+    if ((inputSource == AUDIO_SOURCE_HOTWORD) && !canCaptureHotword) {
         return BAD_VALUE;
     }
 
@@ -459,7 +464,7 @@ status_t AudioPolicyService::getInputForAttr(const audio_attributes_t *attr,
 
     if (audioPolicyEffects != 0) {
         // create audio pre processors according to input source
-        status_t status = audioPolicyEffects->addInputEffects(*input, attr->source, session);
+        status_t status = audioPolicyEffects->addInputEffects(*input, inputSource, session);
         if (status != NO_ERROR && status != ALREADY_EXISTS) {
             ALOGW("Failed to add effects on input %d", *input);
         }
@@ -1323,6 +1328,35 @@ status_t AudioPolicyService::setRttEnabled(bool enabled)
     Mutex::Autolock _l(mLock);
     mUidPolicy->setRttEnabled(enabled);
     return NO_ERROR;
+}
+
+status_t AudioPolicyService::setPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   const AudioDeviceTypeAddr &device)
+{
+    if (mAudioPolicyManager == NULL) {
+        return NO_INIT;
+    }
+    Mutex::Autolock _l(mLock);
+    return mAudioPolicyManager->setPreferredDeviceForStrategy(strategy, device);
+}
+
+status_t AudioPolicyService::removePreferredDeviceForStrategy(product_strategy_t strategy)
+{
+    if (mAudioPolicyManager == NULL) {
+        return NO_INIT;
+    }
+    Mutex::Autolock _l(mLock);
+    return mAudioPolicyManager->removePreferredDeviceForStrategy(strategy);
+}
+
+status_t AudioPolicyService::getPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                   AudioDeviceTypeAddr &device)
+{
+    if (mAudioPolicyManager == NULL) {
+        return NO_INIT;
+    }
+    Mutex::Autolock _l(mLock);
+    return mAudioPolicyManager->getPreferredDeviceForStrategy(strategy, device);
 }
 
 } // namespace android

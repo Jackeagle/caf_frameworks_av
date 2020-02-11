@@ -613,8 +613,9 @@ status_t MPEG4Writer::addSource(const sp<MediaSource> &source) {
 
     CHECK(source.get() != NULL);
 
-    const char *mime;
-    source->getFormat()->findCString(kKeyMIMEType, &mime);
+    const char *mime = NULL;
+    sp<MetaData> meta = source->getFormat();
+    meta->findCString(kKeyMIMEType, &mime);
 
     if (Track::getFourCCForMime(mime) == NULL) {
         ALOGE("Unsupported mime '%s'", mime);
@@ -1635,8 +1636,13 @@ status_t MPEG4Writer::setCaptureRate(float captureFps) {
         return BAD_VALUE;
     }
 
+    // Increase moovExtraSize once only irrespective of how many times
+    // setCaptureRate is called.
+    bool containsCaptureFps = mMetaKeys->contains(kMetaKey_CaptureFps);
     mMetaKeys->setFloat(kMetaKey_CaptureFps, captureFps);
-    mMoovExtraSize += sizeof(kMetaKey_CaptureFps) + 4 + 32;
+    if (!containsCaptureFps) {
+        mMoovExtraSize += sizeof(kMetaKey_CaptureFps) + 4 + 32;
+    }
 
     return OK;
 }

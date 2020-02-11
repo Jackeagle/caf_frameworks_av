@@ -689,6 +689,7 @@ static std::vector<std::pair<const char *, uint32_t>> int32Mappings {
         { "temporal-layer-id", kKeyTemporalLayerId },
         { "thumbnail-width", kKeyThumbnailWidth },
         { "thumbnail-height", kKeyThumbnailHeight },
+        { "track-id", kKeyTrackID },
         { "valid-samples", kKeyValidSamples },
     }
 };
@@ -894,12 +895,6 @@ status_t convertMetaDataToMessage(
     int32_t isSync;
     if (meta->findInt32(kKeyIsSyncFrame, &isSync) && isSync != 0) {
         msg->setInt32("is-sync-frame", 1);
-    }
-
-    // this only needs to be translated from meta to message as it is an extractor key
-    int32_t trackID;
-    if (meta->findInt32(kKeyTrackID, &trackID)) {
-        msg->setInt32("track-id", trackID);
     }
 
     const char *lang;
@@ -1806,7 +1801,7 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     if (msg->findInt32("frame-rate", &fps) && fps > 0) {
         meta->setInt32(kKeyFrameRate, fps);
     } else if (msg->findFloat("frame-rate", &fpsFloat)
-            && fpsFloat >= 1 && fpsFloat <= INT32_MAX) {
+            && fpsFloat >= 1 && static_cast<int32_t>(fpsFloat) <= INT32_MAX) {
         // truncate values to distinguish between e.g. 24 vs 23.976 fps
         meta->setInt32(kKeyFrameRate, (int32_t)fpsFloat);
     }

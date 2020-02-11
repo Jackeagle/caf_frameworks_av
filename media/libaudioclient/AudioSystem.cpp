@@ -1392,6 +1392,12 @@ status_t AudioSystem::getMicrophones(std::vector<media::MicrophoneInfo> *microph
     return af->getMicrophones(microphones);
 }
 
+status_t AudioSystem::setAudioHalPids(const std::vector<pid_t>& pids) {
+  const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
+  if (af == nullptr) return PERMISSION_DENIED;
+  return af->setAudioHalPids(pids);
+}
+
 status_t AudioSystem::getSurroundFormats(unsigned int *numSurroundFormats,
                                          audio_format_t *surroundFormats,
                                          bool *surroundFormatsEnabled,
@@ -1485,7 +1491,14 @@ audio_stream_type_t AudioSystem::attributesToStreamType(const audio_attributes_t
             }
         }
     }
-    ALOGE("invalid attributes %s when converting to stream",  toString(attr).c_str());
+    switch (attr.usage) {
+        case AUDIO_USAGE_VIRTUAL_SOURCE:
+            // virtual source is not expected to have an associated product strategy
+            break;
+        default:
+            ALOGE("invalid attributes %s when converting to stream",  toString(attr).c_str());
+            break;
+    }
     return AUDIO_STREAM_MUSIC;
 }
 
@@ -1517,6 +1530,35 @@ status_t AudioSystem::setRttEnabled(bool enabled)
     const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
     if (aps == 0) return PERMISSION_DENIED;
     return aps->setRttEnabled(enabled);
+}
+
+status_t AudioSystem::setPreferredDeviceForStrategy(product_strategy_t strategy,
+                                                    const AudioDeviceTypeAddr &device)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) {
+        return PERMISSION_DENIED;
+    }
+    return aps->setPreferredDeviceForStrategy(strategy, device);
+}
+
+status_t AudioSystem::removePreferredDeviceForStrategy(product_strategy_t strategy)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) {
+        return PERMISSION_DENIED;
+    }
+    return aps->removePreferredDeviceForStrategy(strategy);
+}
+
+status_t AudioSystem::getPreferredDeviceForStrategy(product_strategy_t strategy,
+        AudioDeviceTypeAddr &device)
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) {
+        return PERMISSION_DENIED;
+    }
+    return aps->getPreferredDeviceForStrategy(strategy, device);
 }
 
 // ---------------------------------------------------------------------------

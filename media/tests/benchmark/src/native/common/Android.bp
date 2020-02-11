@@ -15,57 +15,95 @@
  */
 
 cc_library_static {
-    name: "libbenchmark_common",
+    name: "libmediabenchmark_common",
     defaults: [
-        "libbenchmark-defaults",
-        "libbenchmark_soft_sanitize_all-defaults",
+        "libmediabenchmark-defaults",
+        "libmediabenchmark_soft_sanitize_all-defaults",
     ],
 
     srcs: [
         "BenchmarkCommon.cpp",
         "Stats.cpp",
+        "utils/Timers.cpp",
     ],
 
     export_include_dirs: ["."],
 
-    ldflags: ["-Wl,-Bsymbolic"]
+    ldflags: ["-Wl,-Bsymbolic"],
 }
 
 cc_defaults {
-    name: "libbenchmark_common-defaults",
+    name: "libmediabenchmark_common-defaults",
 
     defaults: [
-        "libbenchmark-defaults",
+        "libmediabenchmark-defaults",
     ],
 
     static_libs: [
-        "libbenchmark_common",
+        "libmediabenchmark_common",
     ],
 }
 
 cc_defaults {
-    name: "libbenchmark-defaults",
-
-    header_libs: [
-        "media_ndk_headers",
-    ],
+    name: "libmediabenchmark-defaults",
 
     shared_libs: [
         "libmediandk",
         "liblog",
-        "libutils",
     ],
 
     cflags: [
         "-Wall",
         "-Werror",
-    ]
+    ],
+}
+
+cc_library_static {
+    name: "libmediabenchmark_codec2_common",
+    defaults: [
+        "libmediabenchmark_codec2_common-defaults",
+    ],
+
+    srcs: [
+        "BenchmarkC2Common.cpp",
+        "BenchmarkCommon.cpp",
+        "Stats.cpp",
+        "utils/Timers.cpp",
+    ],
+
+    export_include_dirs: ["."],
+
+    ldflags: ["-Wl,-Bsymbolic"],
+}
+
+cc_defaults {
+    name: "libmediabenchmark_codec2_common-defaults",
+
+    defaults: [
+        "libcodec2-hidl-client-defaults",
+        "libmediabenchmark_soft_sanitize_all-defaults",
+    ],
+
+    include_dirs: [
+        "frameworks/av/media/codec2/hidl/client/include",
+    ],
+
+    shared_libs: [
+        "libcodec2_client",
+        "libmediandk",
+        "liblog",
+    ],
+
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
 }
 
 // public dependency for native implementation
 // to be used by code under media/benchmark/* only
 cc_defaults {
-    name: "libbenchmark_soft_sanitize_all-defaults",
+    name: "libmediabenchmark_soft_sanitize_all-defaults",
 
     sanitize: {
         misc_undefined: [
@@ -73,6 +111,5 @@ cc_defaults {
             "signed-integer-overflow",
         ],
         cfi: true,
-        address: true,
-    }
+    },
 }
