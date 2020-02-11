@@ -977,25 +977,42 @@ status_t AudioPolicyManager::getOutputForAttrInt(
     }
     if (usePrimaryOutputFromPolicyMixes) {
         /* BUG 73287368: Support compress-offload playback with dynamic audio policy */
-        outputDevices = mEngine->getOutputDevicesForAttributes(*resultAttr, requestedDevice, false);
-        audio_config_base_t baseConfig = {.sample_rate = config->sample_rate,
-                                          .format = config->format,
-                                          .channel_mask = config->channel_mask};
-        if ((outputDevices.types() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
-            (isOffloadSupported(config->offload_info) || isDirectOutputSupported(baseConfig, *resultAttr))) {
-            ALOGW("getOutputForAttr() bypass dynamic policies for bus devices, try offload/direct output");
+        sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
+        sp<DeviceDescriptor> deviceDesc =
+                mAvailableOutputDevices.getDevice(mix->mDeviceType,
+                                                  mix->mDeviceAddress,
+                                                  AUDIO_FORMAT_DEFAULT);
+        if (deviceDesc == nullptr) {
+            ALOGD("%s could not find in dynamic audio policy device for type 0x%x, address %s",
+                    __func__, mix->mDeviceType, mix->mDeviceAddress.string());
+            return BAD_VALUE;
+        }
+
+        bool requestOffloadOrDirect =
+            (*flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) || (*flags & AUDIO_OUTPUT_FLAG_DIRECT);
+        sp<IOProfile> profile = getProfileForOutput(DeviceVector(deviceDesc),
+                                                config->sample_rate,
+                                                config->format,
+                                                config->channel_mask,
+                                                (audio_output_flags_t)*flags,
+                                                requestOffloadOrDirect);
+        ALOGV("%s() profile %sfound with name: %s, device: 0x%x, address: %s, "
+            "sample rate: %u, format: 0x%x, channel_mask: 0x%x, flags: 0x%x",
+            __FUNCTION__, profile != 0 ? "" : "NOT ",
+            (profile != 0 ? profile->getTagName().string() : "null"),
+            deviceDesc->type(), deviceDesc->address().string(),
+            config->sample_rate, config->format, config->channel_mask, *flags);
+        if ((deviceDesc->type() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
+                (profile != 0) && (requestOffloadOrDirect)) {
+            ALOGW("getOutputForAttr() bypass dynamic audio policy for device 0x%x address %s, query engine for output",
+                deviceDesc->type(), deviceDesc->address().string());
         } else if (audio_is_linear_pcm(config->format)) {
             *output = policyDesc->mIoHandle;
-            sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
-            sp<DeviceDescriptor> deviceDesc =
-                    mAvailableOutputDevices.getDevice(mix->mDeviceType,
-                                                      mix->mDeviceAddress,
-                                                      AUDIO_FORMAT_DEFAULT);
             *selectedDeviceId = deviceDesc != 0 ? deviceDesc->getId() : AUDIO_PORT_HANDLE_NONE;
             ALOGV("getOutputForAttr() returns output %d", *output);
             return NO_ERROR;
         } else {
-            ALOGD("%s: rejecting request as neither offload/direct nor pcm is supported", __func__);
+            ALOGD("%s: rejecting request as output is not supported by dynamic audio policy or engine", __func__);
             return BAD_VALUE;
         }
     }
