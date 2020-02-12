@@ -864,9 +864,10 @@ sp<IOProfile> AudioPolicyManager::getProfileForOutput(
                 continue;
             }
             if (!directOnly) return curProfile;
-            // when searching for direct outputs, if several profiles are compatible, give priority
-            // to one with offload capability
-            if (profile != 0 && ((curProfile->getFlags() & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0)) {
+            // if several profiles are compatible, give priority to one with offload capability
+            // exact match is also not skipped as it should be preferred over any existing selection
+            if (profile != 0 && ((curProfile->getFlags() & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0) &&
+               (curProfile->getFlags() != flags)) {
                 continue;
             }
             profile = curProfile;
@@ -970,21 +971,33 @@ status_t AudioPolicyManager::getOutputForAttrInt(
     bool usePrimaryOutputFromPolicyMixes = requestedDevice == nullptr && policyDesc != nullptr;
 
     // FIXME: in case of RENDER policy, the output capabilities should be checked
-    if ((usePrimaryOutputFromPolicyMixes || !secondaryDescs->empty())
-        && !audio_is_linear_pcm(config->format)) {
+    if (!secondaryDescs->empty() && !audio_is_linear_pcm(config->format)) {
         ALOGD("%s: rejecting request as dynamic audio policy only support pcm", __func__);
         return BAD_VALUE;
     }
     if (usePrimaryOutputFromPolicyMixes) {
-        *output = policyDesc->mIoHandle;
-        sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
-        sp<DeviceDescriptor> deviceDesc =
-                mAvailableOutputDevices.getDevice(mix->mDeviceType,
-                                                  mix->mDeviceAddress,
-                                                  AUDIO_FORMAT_DEFAULT);
-        *selectedDeviceId = deviceDesc != 0 ? deviceDesc->getId() : AUDIO_PORT_HANDLE_NONE;
-        ALOGV("getOutputForAttr() returns output %d", *output);
-        return NO_ERROR;
+        /* BUG 73287368: Support compress-offload playback with dynamic audio policy */
+        outputDevices = mEngine->getOutputDevicesForAttributes(*resultAttr, requestedDevice, false);
+        audio_config_base_t baseConfig = {.sample_rate = config->sample_rate,
+                                          .format = config->format,
+                                          .channel_mask = config->channel_mask};
+        if ((outputDevices.types() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
+            (isOffloadSupported(config->offload_info) || isDirectOutputSupported(baseConfig, *resultAttr))) {
+            ALOGW("getOutputForAttr() bypass dynamic policies for bus devices, try offload/direct output");
+        } else if (audio_is_linear_pcm(config->format)) {
+            *output = policyDesc->mIoHandle;
+            sp<AudioPolicyMix> mix = policyDesc->mPolicyMix.promote();
+            sp<DeviceDescriptor> deviceDesc =
+                    mAvailableOutputDevices.getDevice(mix->mDeviceType,
+                                                      mix->mDeviceAddress,
+                                                      AUDIO_FORMAT_DEFAULT);
+            *selectedDeviceId = deviceDesc != 0 ? deviceDesc->getId() : AUDIO_PORT_HANDLE_NONE;
+            ALOGV("getOutputForAttr() returns output %d", *output);
+            return NO_ERROR;
+        } else {
+            ALOGD("%s: rejecting request as neither offload/direct nor pcm is supported", __func__);
+            return BAD_VALUE;
+        }
     }
     // Virtual sources must always be dynamicaly or explicitly routed
     if (resultAttr->usage == AUDIO_USAGE_VIRTUAL_SOURCE) {
@@ -1160,8 +1173,8 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevices(
         goto non_direct_output;
     }
 
-    // Do not allow offloading if one non offloadable effect is enabled or MasterMono is enabled.
-    // This prevents creating an offloaded track and tearing it down immediately after start
+    // Do not allow Direct Output if one non offloadable effect is enabled or MasterMono is enabled.
+    // This prevents creating an direct track and tearing it down immediately after start
     // when audioflinger detects there is an active non offloadable effect.
     // FIXME: We should check the audio session here but we do not have it in this context.
     // This may prevent offloading in rare situations where effects are left active by apps
@@ -1189,7 +1202,7 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevices(
                     (channelMask == desc->mChannelMask) &&
                     (session == desc->mDirectClientSession)) {
                     desc->mDirectOpenCount++;
-                    ALOGI("%s reusing direct output %d for session %d", __func__, 
+                    ALOGI("%s reusing direct output %d for session %d", __func__,
                         mOutputs.keyAt(i), session);
                     return mOutputs.keyAt(i);
                 }
@@ -2665,9 +2678,10 @@ audio_io_handle_t AudioPolicyManager::selectOutputForMusicEffects()
     // 1: An offloaded output. If the effect ends up not being offloadable,
     //    AudioFlinger will invalidate the track and the offloaded output
     //    will be closed causing the effect to be moved to a PCM output.
-    // 2: A deep buffer output
-    // 3: The primary output
-    // 4: the first output in the list
+    // 2: Non offloaded Direct output
+    // 3: A deep buffer output
+    // 4: The primary output
+    // 5: the first output in the list
 
     DeviceVector devices = mEngine->getOutputDevicesForAttributes(
                 attributes_initializer(AUDIO_USAGE_MEDIA), nullptr, false /*fromCache*/);
@@ -2682,6 +2696,7 @@ audio_io_handle_t AudioPolicyManager::selectOutputForMusicEffects()
 
     while (output == AUDIO_IO_HANDLE_NONE) {
         audio_io_handle_t outputOffloaded = AUDIO_IO_HANDLE_NONE;
+        audio_io_handle_t outputDirect = AUDIO_IO_HANDLE_NONE;
         audio_io_handle_t outputDeepBuffer = AUDIO_IO_HANDLE_NONE;
         audio_io_handle_t outputPrimary = AUDIO_IO_HANDLE_NONE;
 
@@ -2695,6 +2710,9 @@ audio_io_handle_t AudioPolicyManager::selectOutputForMusicEffects()
             if ((desc->mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) != 0) {
                 outputOffloaded = output;
             }
+            if ((desc->mFlags == AUDIO_OUTPUT_FLAG_DIRECT) != 0) {
+                outputDirect = output;
+            }
             if ((desc->mFlags & AUDIO_OUTPUT_FLAG_DEEP_BUFFER) != 0) {
                 outputDeepBuffer = output;
             }
@@ -2704,7 +2722,9 @@ audio_io_handle_t AudioPolicyManager::selectOutputForMusicEffects()
         }
         if (outputOffloaded != AUDIO_IO_HANDLE_NONE) {
             output = outputOffloaded;
-        } else if (outputDeepBuffer != AUDIO_IO_HANDLE_NONE) {
+        } else if (outputDirect != AUDIO_IO_HANDLE_NONE) {
+            output = outputDirect;
+        }  else if (outputDeepBuffer != AUDIO_IO_HANDLE_NONE) {
             output = outputDeepBuffer;
         } else if (outputPrimary != AUDIO_IO_HANDLE_NONE) {
             output = outputPrimary;
@@ -3975,7 +3995,8 @@ status_t AudioPolicyManager::setMasterMono(bool mono)
         Vector<audio_io_handle_t> offloaded;
         for (size_t i = 0; i < mOutputs.size(); ++i) {
             sp<SwAudioOutputDescriptor> desc = mOutputs.valueAt(i);
-            if (desc->mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
+            if (desc->mFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD ||
+                desc->mFlags == AUDIO_OUTPUT_FLAG_DIRECT) {
                 offloaded.push(desc->mIoHandle);
             }
         }
@@ -4234,7 +4255,7 @@ uint32_t AudioPolicyManager::nextAudioPortGeneration()
 
 // Treblized audio policy xml config will be located in /odm/etc or /vendor/etc.
 static const char *kConfigLocationList[] =
-        {"/odm/etc", "/vendor/etc", "/system/etc"};
+        {"/odm/etc", "/vendor/etc/audio", "/vendor/etc", "/system/etc"};
 static const int kConfigLocationListSize =
         (sizeof(kConfigLocationList) / sizeof(kConfigLocationList[0]));
 
@@ -5690,8 +5711,9 @@ float AudioPolicyManager::computeVolume(IVolumeCurves &curves,
     const auto ringVolumeSrc = toVolumeSource(AUDIO_STREAM_RING);
     const auto musicVolumeSrc = toVolumeSource(AUDIO_STREAM_MUSIC);
     const auto alarmVolumeSrc = toVolumeSource(AUDIO_STREAM_ALARM);
+    const auto a11yVolumeSrc = toVolumeSource(AUDIO_STREAM_ACCESSIBILITY);
 
-    if (volumeSource == toVolumeSource(AUDIO_STREAM_ACCESSIBILITY)
+    if (volumeSource == a11yVolumeSrc
             && (AUDIO_MODE_RINGTONE == mEngine->getPhoneState()) &&
             mOutputs.isActive(ringVolumeSrc, 0)) {
         auto &ringCurves = getVolumeCurves(AUDIO_STREAM_RING);
@@ -5708,7 +5730,7 @@ float AudioPolicyManager::computeVolume(IVolumeCurves &curves,
              volumeSource == toVolumeSource(AUDIO_STREAM_NOTIFICATION) ||
              volumeSource == toVolumeSource(AUDIO_STREAM_ENFORCED_AUDIBLE) ||
              volumeSource == toVolumeSource(AUDIO_STREAM_DTMF) ||
-             volumeSource == toVolumeSource(AUDIO_STREAM_ACCESSIBILITY))) {
+             volumeSource == a11yVolumeSrc)) {
         auto &voiceCurves = getVolumeCurves(callVolumeSrc);
         int voiceVolumeIndex = voiceCurves.getVolumeIndex(device);
         const float maxVoiceVolDb =
@@ -5720,7 +5742,9 @@ float AudioPolicyManager::computeVolume(IVolumeCurves &curves,
         // VOICE_CALL stream has minVolumeIndex > 0 : Users cannot set the volume of voice calls to
         // 0. We don't want to cap volume when the system has programmatically muted the voice call
         // stream. See setVolumeCurveIndex() for more information.
-        bool exemptFromCapping = (volumeSource == ringVolumeSrc) && (voiceVolumeIndex == 0);
+        bool exemptFromCapping =
+                ((volumeSource == ringVolumeSrc) || (volumeSource == a11yVolumeSrc))
+                && (voiceVolumeIndex == 0);
         ALOGV_IF(exemptFromCapping, "%s volume source %d at vol=%f not capped", __func__,
                  volumeSource, volumeDb);
         if ((volumeDb > maxVoiceVolDb) && !exemptFromCapping) {

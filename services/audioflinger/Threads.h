@@ -747,6 +747,7 @@ protected:
                 // is safe to do so. That will drop the final ref count and destroy the tracks.
     virtual     mixer_state prepareTracks_l(Vector< sp<Track> > *tracksToRemove) = 0;
                 void        removeTracks_l(const Vector< sp<Track> >& tracksToRemove);
+                status_t    handleVoipVolume_l(float *volume);
 
     // StreamOutHalInterfaceCallback implementation
     virtual     void        onWriteReady();
@@ -862,7 +863,7 @@ public:
 
     virtual     size_t      frameCount() const { return mNormalFrameCount; }
 
-                status_t    getTimestamp_l(AudioTimestamp& timestamp);
+    virtual     status_t    getTimestamp_l(AudioTimestamp& timestamp);
 
                 void        addPatchTrack(const sp<PatchTrack>& track);
                 void        deletePatchTrack(const sp<PatchTrack>& track);
@@ -1317,6 +1318,10 @@ protected:
     float                   mMasterBalanceLeft = 1.f;
     float                   mMasterBalanceRight = 1.f;
 
+    uint64_t                mFramesWrittenAtStandby;// used to reset frames on track reset
+    uint64_t                mFramesWrittenForSleep; // used to reset frames on track removal
+                                                    // or underrun before entering standby
+
 public:
     virtual     bool        hasFastMixer() const { return false; }
 
@@ -1338,6 +1343,7 @@ public:
                     }
                     return INVALID_OPERATION;
                 }
+    virtual     status_t    getTimestamp_l(AudioTimestamp& timestamp) override;
 };
 
 class OffloadThread : public DirectOutputThread {
@@ -1552,7 +1558,8 @@ public:
                     audio_input_flags_t *flags,
                     pid_t tid,
                     status_t *status /*non-NULL*/,
-                    audio_port_handle_t portId);
+                    audio_port_handle_t portId,
+                    const String16& opPackageName);
 
             status_t    start(RecordTrack* recordTrack,
                               AudioSystem::sync_event_t event,

@@ -37,6 +37,8 @@
 #include <media/AudioSystem.h>
 #include <media/MediaAnalyticsItem.h>
 #include <media/TypeConverter.h>
+#include <binder/MemoryDealer.h>
+#include "media/AVMediaExtensions.h"
 
 #define WAIT_PERIOD_MS                  10
 #define WAIT_STREAM_END_TIMEOUT_SEC     120
@@ -281,7 +283,8 @@ AudioTrack::AudioTrack(
       mPreviousPriority(ANDROID_PRIORITY_NORMAL),
       mPreviousSchedulingGroup(SP_DEFAULT),
       mPausedPosition(0),
-      mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE)
+      mSelectedDeviceId(AUDIO_PORT_HANDLE_NONE),
+      mTrackOffloaded(false)
 {
     mAttributes = AUDIO_ATTRIBUTES_INITIALIZER;
 
@@ -1027,6 +1030,12 @@ status_t AudioTrack::setPlaybackRate(const AudioPlaybackRate &playbackRate)
     //set effective rates
     mProxy->setPlaybackRate(playbackRateTemp);
     mProxy->setSampleRate(effectiveRate); // FIXME: not quite "atomic" with setPlaybackRate
+
+    if (mTrackOffloaded &&
+        !isAudioPlaybackRateEqual(mPlaybackRate, AUDIO_PLAYBACK_RATE_DEFAULT)) {
+        ALOGD("invalidate track-offloaded track on setPlaybackRate");
+        android_atomic_or(CBLK_INVALID, &mCblk->mFlags);
+    }
     return NO_ERROR;
 }
 
@@ -1219,6 +1228,7 @@ status_t AudioTrack::getPosition(uint32_t *position)
     // There may be some latency differences between the HAL position and the proxy position.
     if (isOffloadedOrDirect_l() && !isPurePcmData_l()) {
         uint32_t dspFrames = 0;
+        status_t status;
 
         if (isOffloaded_l() && ((mState == STATE_PAUSED) || (mState == STATE_PAUSED_STOPPING))) {
             ALOGV("%s(%d): called in paused state, return cached position %u",
@@ -1229,8 +1239,11 @@ status_t AudioTrack::getPosition(uint32_t *position)
 
         if (mOutput != AUDIO_IO_HANDLE_NONE) {
             uint32_t halFrames; // actually unused
-            (void) AudioSystem::getRenderPosition(mOutput, &halFrames, &dspFrames);
-            // FIXME: on getRenderPosition() error, we return OK with frame position 0.
+            status = AudioSystem::getRenderPosition(mOutput, &halFrames, &dspFrames);
+            if (status != NO_ERROR) {
+                ALOGW("failed to getRenderPosition for offload session");
+                return INVALID_OPERATION;
+            }
         }
         // FIXME: dspFrames may not be zero in (mState == STATE_STOPPED || mState == STATE_FLUSHED)
         // due to hardware latency. We leave this behavior for now.
@@ -1452,6 +1465,12 @@ status_t AudioTrack::createTrack_l()
             input.clientInfo.clientTid = mAudioTrackThread->getTid();
         }
     }
+    // Set offload_info to defaults if track not already offloaded but can be offloaded
+    if (mOffloadInfo == NULL &&
+        audio_is_linear_pcm(mFormat) &&
+        isAudioPlaybackRateEqual(mPlaybackRate, AUDIO_PLAYBACK_RATE_DEFAULT)) {
+        input.config.offload_info = AUDIO_INFO_INITIALIZER;
+    }
     input.sharedBuffer = mSharedBuffer;
     input.notificationsPerBuffer = mNotificationsPerBufferReq;
     input.speed = 1.0;
@@ -1482,6 +1501,7 @@ status_t AudioTrack::createTrack_l()
     }
     ALOG_ASSERT(track != 0);
 
+    mTrackOffloaded = AVMediaUtils::get()->AudioTrackIsTrackOffloaded(output.outputId);
     mFrameCount = output.frameCount;
     mNotificationFramesAct = (uint32_t)output.notificationFrameCount;
     mRoutedDeviceId = output.selectedDeviceId;
@@ -2294,10 +2314,18 @@ status_t AudioTrack::restoreTrack_l(const char *from)
     // output parameters and new IAudioFlinger in createTrack_l()
     AudioSystem::clearAudioConfigCache();
 
-    if (isOffloadedOrDirect_l() || mDoNotReconnect) {
+    if (isOffloadedOrDirect_l() || mDoNotReconnect ||
+        (mOrigFlags & AUDIO_OUTPUT_FLAG_DIRECT) != 0) {
         // FIXME re-creation of offloaded and direct tracks is not yet implemented;
         // reconsider enabling for linear PCM encodings when position can be preserved.
-        return DEAD_OBJECT;
+
+        // Tear down sink only for non-internal invalidation.
+        // Since new track could again have invalidation on setPlayback rate causing
+        // continuous creation and tear down.
+        if (!mTrackOffloaded ||
+              isAudioPlaybackRateEqual(mPlaybackRate, AUDIO_PLAYBACK_RATE_DEFAULT)) {
+            return DEAD_OBJECT;
+        }
     }
 
     // Save so we can return count since creation.
