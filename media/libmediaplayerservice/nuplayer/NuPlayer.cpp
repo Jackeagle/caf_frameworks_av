@@ -860,10 +860,11 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
             readFromAMessage(msg, &rate);
             status_t err = OK;
             if (mRenderer != NULL) {
-                // AudioSink allows only 1.f and 0.f for offload mode.
-                // For other speed, switch to non-offload mode.
-                if (mOffloadAudio && ((rate.mSpeed != 0.f && rate.mSpeed != 1.f)
-                        || rate.mPitch != 1.f)) {
+                // AudioSink allows only 1.f and 0.f for offload and direct modes.
+                // For other speeds, restart audio to fallback to supported paths
+                if ((mOffloadAudio || (mAudioSink->getFlags() & AUDIO_OUTPUT_FLAG_DIRECT)) &&
+                        ((rate.mSpeed != 0.f && rate.mSpeed != 1.f) || rate.mPitch != 1.f)) {
+
                     int64_t currentPositionUs;
                     if (getCurrentPosition(&currentPositionUs) != OK) {
                         currentPositionUs = mPreviousSeekTimeUs;
@@ -1961,6 +1962,7 @@ status_t NuPlayer::instantiateDecoder(
             *decoder = AVNuFactory::get()->createPassThruDecoder(notify, mSource, mRenderer);
             ALOGV("instantiateDecoder audio DecoderPassThrough hasVideo: %d", hasVideo);
         } else {
+            AVNuUtils::get()->setCodecOutputFormat(format);
             mSource->setOffloadAudio(false /* offload */);
 
             *decoder = AVNuFactory::get()->createDecoder(notify, mSource, mPID, mUID, mRenderer);

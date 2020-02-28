@@ -591,6 +591,7 @@ public:
      */
             static const char * convertTransferToText(transfer_type transferType);
 
+public:
     /* Returns a handle on the audio output used by this AudioTrack.
      *
      * Parameters:
@@ -600,9 +601,7 @@ public:
      *  handle on audio hardware output, or AUDIO_IO_HANDLE_NONE if the
      *  track needed to be re-created but that failed
      */
-private:
             audio_io_handle_t    getOutput() const;
-public:
 
     /* Selects the audio device to use for output of this AudioTrack. A value of
      * AUDIO_PORT_HANDLE_NONE indicates default (AudioPolicyManager) routing.
@@ -1245,6 +1244,7 @@ private:
         std::unique_ptr<MediaAnalyticsItem> mAnalyticsItem;
     };
     MediaMetrics mMediaMetrics;
+    bool                    mTrackOffloaded;
 };
 
 }; // namespace android

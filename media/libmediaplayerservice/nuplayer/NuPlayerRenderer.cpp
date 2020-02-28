@@ -35,6 +35,7 @@
 #include <media/MediaCodecBuffer.h>
 
 #include <inttypes.h>
+#include "mediaplayerservice/AVNuExtensions.h"
 #include "stagefright/AVExtensions.h"
 
 namespace android {
@@ -102,6 +103,10 @@ static audio_format_t constexpr audioFormatFromEncoding(int32_t pcmEncoding) {
         return AUDIO_FORMAT_PCM_16_BIT;
     case kAudioEncodingPcm8bit:
         return AUDIO_FORMAT_PCM_8_BIT; // TODO: do we want to support this?
+    case kAudioEncodingPcm24bitPacked:
+        return AUDIO_FORMAT_PCM_24_BIT_PACKED;
+    case kAudioEncodingPcm32bit:
+        return AUDIO_FORMAT_PCM_32_BIT;
     default:
         ALOGE("%s: Invalid encoding: %d", __func__, pcmEncoding);
         return AUDIO_FORMAT_INVALID;
@@ -573,9 +578,11 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
 
             if (onDrainAudioQueue()) {
                 uint32_t numFramesPlayed;
-                CHECK_EQ(mAudioSink->getPosition(&numFramesPlayed),
-                         (status_t)OK);
-
+                if (mAudioSink->getPosition(&numFramesPlayed) != OK) {
+                    ALOGE("Error in time stamp query, return from here.\
+                             Fillbuffer is called as part of session recreation");
+                    break;
+                }
                 // Handle AudioTrack race when start is immediately called after flush.
                 uint32_t numFramesPendingPlayout =
                     (mNumFramesWritten > numFramesPlayed ?
@@ -925,10 +932,16 @@ size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
 
     if (mAudioFirstAnchorTimeMediaUs >= 0) {
         int64_t nowUs = ALooper::GetNowUs();
-        int64_t nowMediaUs =
-            mAudioFirstAnchorTimeMediaUs + mAudioSink->getPlayedOutDurationUs(nowUs);
+        int64_t nowMediaUs = -1;
+        int64_t playedDuration = mAudioSink->getPlayedOutDurationUs(nowUs);
+        if (playedDuration >= 0) {
+            nowMediaUs = mAudioFirstAnchorTimeMediaUs + playedDuration;
+        } else {
+            mMediaClock->getMediaTime(nowUs, &nowMediaUs);
+        }
         // we don't know how much data we are queueing for offloaded tracks.
         mMediaClock->updateAnchor(nowMediaUs, nowUs, INT64_MAX);
+        mAnchorTimeMediaUs = nowMediaUs;
     }
 
     // for non-offloaded audio, we need to compute the frames written because
