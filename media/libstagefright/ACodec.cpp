@@ -1739,8 +1739,6 @@ status_t ACodec::configureCodec(
             InitOMXParams(&params);
             params.nPortIndex = kPortIndexInput;
             params.bStoreMetaData = OMX_TRUE;
-            // TODO:: commeneted out for compilation issue
-            /*
             err = mOMX->setParameter(
                     mNode, (OMX_INDEXTYPE)OMX_QTIIndexParamIMSVTVideoMetaBufferMode, &params, sizeof(params));
 
@@ -1753,7 +1751,6 @@ status_t ACodec::configureCodec(
                 }
                 ALOGI("ignoring failure to use internal MediaCodec key.");
             }
-            */
         }
         // For this specific case we could be using camera source even if storeMetaDataInBuffers
         // returns Gralloc source. Pretend that we are; this will force us to use nBufferSize.
