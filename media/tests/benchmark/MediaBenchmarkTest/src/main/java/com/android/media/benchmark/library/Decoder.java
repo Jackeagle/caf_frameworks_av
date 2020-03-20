@@ -134,7 +134,6 @@ public class Decoder {
                     mStats.addOutputTime();
                     onOutputAvailable(mediaCodec, outputBufferId, bufferInfo);
                     if (mSawOutputEOS) {
-                        Log.i(TAG, "Saw output EOS");
                         synchronized (mLock) { mLock.notify(); }
                     }
                 }
@@ -211,9 +210,6 @@ public class Decoder {
                     }
                     onOutputAvailable(mCodec, outputBufferId, outputBufferInfo);
                 }
-                if (outputBufferInfo.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM) {
-                    Log.i(TAG, "Saw output EOS");
-                }
             }
         }
         mInputBuffer.clear();
@@ -239,11 +235,16 @@ public class Decoder {
      * Prints out the statistics in the information log
      *
      * @param inputReference The operation being performed, in this case decode
+     * @param componentName  Name of the component/codec
+     * @param mode           The operating mode: Sync/Async
      * @param durationUs     Duration of the clip in microseconds
+     * @param statsFile      The output file where the stats data is written
      */
-    public void dumpStatistics(String inputReference, long durationUs) {
+    public void dumpStatistics(String inputReference, String componentName, String mode,
+            long durationUs, String statsFile) throws IOException {
         String operation = "decode";
-        mStats.dumpStatistics(operation, inputReference, durationUs);
+        mStats.dumpStatistics(
+                inputReference, operation, componentName, mode, durationUs, statsFile);
     }
 
     /**
@@ -251,14 +252,21 @@ public class Decoder {
      */
     public void resetDecoder() { mStats.reset(); }
 
+    /**
+     * Returns the format of the output buffers
+     */
+    public MediaFormat getFormat() {
+        return mCodec.getOutputFormat();
+    }
+
     private void onInputAvailable(int inputBufferId, MediaCodec mediaCodec) {
         if ((inputBufferId >= 0) && !mSawInputEOS) {
             ByteBuffer inputCodecBuffer = mediaCodec.getInputBuffer(inputBufferId);
             BufferInfo bufInfo = mInputBufferInfo.get(mIndex);
             inputCodecBuffer.put(mInputBuffer.get(mIndex).array());
             mIndex++;
-            if (bufInfo.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM) {
-                mSawInputEOS = true;
+            mSawInputEOS = (bufInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
+            if (mSawInputEOS) {
                 Log.i(TAG, "Saw input EOS");
             }
             mStats.addFrameSize(bufInfo.size);
@@ -296,6 +304,9 @@ public class Decoder {
             }
         }
         mediaCodec.releaseOutputBuffer(outputBufferId, false);
-        mSawOutputEOS = (outputBufferInfo.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+        mSawOutputEOS = (outputBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
+        if (mSawOutputEOS) {
+            Log.i(TAG, "Saw output EOS");
+        }
     }
 }

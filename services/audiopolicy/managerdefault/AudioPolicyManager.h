@@ -233,7 +233,10 @@ public:
         virtual status_t getAudioPort(struct audio_port *port);
         virtual status_t createAudioPatch(const struct audio_patch *patch,
                                            audio_patch_handle_t *handle,
-                                           uid_t uid);
+                                           uid_t uid) {
+            return createAudioPatchInternal(patch, handle, uid);
+        }
+
         virtual status_t releaseAudioPatch(audio_patch_handle_t handle,
                                               uid_t uid);
         virtual status_t listAudioPatches(unsigned int *num_patches,
@@ -311,6 +314,8 @@ public:
             volumeGroup = mEngine->getVolumeGroupForAttributes(aa.getAttributes());
             return volumeGroup != VOLUME_GROUP_NONE ? NO_ERROR : BAD_VALUE;
         }
+
+        void onNewAudioModulesAvailable() override;
 
         status_t initialize();
 
@@ -714,6 +719,8 @@ protected:
         SwAudioOutputCollection mPreviousOutputs;
         AudioInputCollection mInputs;     // list of input descriptors
 
+        DeviceVector  mOutputDevicesAll; // all output devices from the config
+        DeviceVector  mInputDevicesAll;  // all input devices from the config
         DeviceVector  mAvailableOutputDevices; // all available output devices
         DeviceVector  mAvailableInputDevices;  // all available input devices
 
@@ -724,9 +731,8 @@ protected:
 
         EffectDescriptorCollection mEffects;  // list of registered audio effects
         sp<DeviceDescriptor> mDefaultOutputDevice; // output device selected by default at boot time
-        HwModuleCollection mHwModules; // contains only modules that have been loaded successfully
-        HwModuleCollection mHwModulesAll; // normally not needed, used during construction and for
-                                          // dumps
+        HwModuleCollection mHwModules; // contains modules that have been loaded successfully
+        HwModuleCollection mHwModulesAll; // contains all modules declared in the config
 
         AudioPolicyConfig mConfig;
 
@@ -868,6 +874,29 @@ private:
             param.addInt(String8(AudioParameter::keyMonoOutput), (int)mMasterMono);
             mpClientInterface->setParameters(output, param.toString());
         }
+
+        /**
+         * @brief createAudioPatchInternal internal function to manage audio patch creation
+         * @param[in] patch structure containing sink and source ports configuration
+         * @param[out] handle patch handle to be provided if patch installed correctly
+         * @param[in] uid of the client
+         * @param[in] delayMs if required
+         * @param[in] sourceDesc [optional] in case of external source, source client to be
+         * configured by the patch, i.e. assigning an Output (HW or SW)
+         * @return NO_ERROR if patch installed correclty, error code otherwise.
+         */
+        status_t createAudioPatchInternal(const struct audio_patch *patch,
+                                          audio_patch_handle_t *handle,
+                                          uid_t uid, uint32_t delayMs = 0,
+                                          const sp<SourceClientDescriptor>& sourceDesc = nullptr);
+        /**
+         * @brief releaseAudioPatchInternal internal function to remove an audio patch
+         * @param[in] handle of the patch to be removed
+         * @param[in] delayMs if required
+         * @return NO_ERROR if patch removed correclty, error code otherwise.
+         */
+        status_t releaseAudioPatchInternal(audio_patch_handle_t handle, uint32_t delayMs = 0);
+
         status_t installPatch(const char *caller,
                 audio_patch_handle_t *patchHandle,
                 AudioIODescriptorInterface *ioDescriptor,

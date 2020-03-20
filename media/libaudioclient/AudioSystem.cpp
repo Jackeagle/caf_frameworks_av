@@ -783,6 +783,13 @@ const sp<IAudioPolicyService> AudioSystem::get_audio_policy_service()
 
 // ---------------------------------------------------------------------------
 
+void AudioSystem::onNewAudioModulesAvailable()
+{
+    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
+    if (aps == 0) return;
+    aps->onNewAudioModulesAvailable();
+}
+
 status_t AudioSystem::setDeviceConnectionState(audio_devices_t device,
                                                audio_policy_dev_state_t state,
                                                const char *device_address,
@@ -1491,7 +1498,14 @@ audio_stream_type_t AudioSystem::attributesToStreamType(const audio_attributes_t
             }
         }
     }
-    ALOGE("invalid attributes %s when converting to stream",  toString(attr).c_str());
+    switch (attr.usage) {
+        case AUDIO_USAGE_VIRTUAL_SOURCE:
+            // virtual source is not expected to have an associated product strategy
+            break;
+        default:
+            ALOGE("invalid attributes %s when converting to stream",  toString(attr).c_str());
+            break;
+    }
     return AUDIO_STREAM_MUSIC;
 }
 

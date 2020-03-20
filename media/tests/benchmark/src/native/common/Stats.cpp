@@ -17,8 +17,10 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "Stats"
 
+#include <ctime>
 #include <iostream>
 #include <stdint.h>
+#include <fstream>
 
 #include "Stats.h"
 
@@ -28,16 +30,20 @@
  * \param operation      describes the operation performed on the input media
  *                       (i.e. extract/mux/decode/encode)
  * \param inputReference input media
- * \param duarationUs    is a duration of the input media in microseconds.
+ * \param durationUs     is a duration of the input media in microseconds.
+ * \param componentName  describes the codecName/muxFormat/mimeType.
+ * \param mode           the operating mode: sync/async.
+ * \param statsFile      the file where the stats data is to be written.
  */
-void Stats::dumpStatistics(std::string operation, std::string inputReference, int64_t duarationUs) {
+void Stats::dumpStatistics(string operation, string inputReference, int64_t durationUs,
+                           string componentName, string mode, string statsFile) {
     ALOGV("In %s", __func__);
     if (!mOutputTimer.size()) {
         ALOGE("No output produced");
         return;
     }
     nsecs_t totalTimeTakenNs = getTotalTime();
-    nsecs_t timeTakenPerSec = (totalTimeTakenNs * 1000000) / duarationUs;
+    nsecs_t timeTakenPerSec = (totalTimeTakenNs * 1000000) / durationUs;
     nsecs_t timeToFirstFrameNs = *mOutputTimer.begin() - mStartTimeNs;
     int32_t size = std::accumulate(mFrameSizes.begin(), mFrameSizes.end(), 0);
     // get min and max output intervals.
@@ -52,15 +58,32 @@ void Stats::dumpStatistics(std::string operation, std::string inputReference, in
         else if (maxTimeTakenNs < intervalNs) maxTimeTakenNs = intervalNs;
     }
 
-    // Print the Stats
-    std::cout << "Input Reference : " << inputReference << endl;
-    std::cout << "Setup Time in nano sec : " << mInitTimeNs << endl;
-    std::cout << "Average Time in nano sec : " << totalTimeTakenNs / mOutputTimer.size() << endl;
-    std::cout << "Time to first frame in nano sec : " << timeToFirstFrameNs << endl;
-    std::cout << "Time taken (in nano sec) to " << operation
-              << " 1 sec of content : " << timeTakenPerSec << endl;
-    std::cout << "Total bytes " << operation << "ed : " << size << endl;
-    std::cout << "Minimum Time in nano sec : " << minTimeTakenNs << endl;
-    std::cout << "Maximum Time in nano sec : " << maxTimeTakenNs << endl;
-    std::cout << "Destroy Time in nano sec : " << mDeInitTimeNs << endl;
+    // Write the stats data to file.
+    int64_t dataSize = size;
+    int64_t bytesPerSec = ((int64_t)dataSize * 1000000000) / totalTimeTakenNs;
+    string rowData = "";
+    rowData.append(to_string(systemTime(CLOCK_MONOTONIC)) + ", ");
+    rowData.append(inputReference + ", ");
+    rowData.append(operation + ", ");
+    rowData.append(componentName + ", ");
+    rowData.append("NDK, ");
+    rowData.append(mode + ", ");
+    rowData.append(to_string(mInitTimeNs) + ", ");
+    rowData.append(to_string(mDeInitTimeNs) + ", ");
+    rowData.append(to_string(minTimeTakenNs) + ", ");
+    rowData.append(to_string(maxTimeTakenNs) + ", ");
+    rowData.append(to_string(totalTimeTakenNs / mOutputTimer.size()) + ", ");
+    rowData.append(to_string(timeTakenPerSec) + ", ");
+    rowData.append(to_string(bytesPerSec) + ", ");
+    rowData.append(to_string(timeToFirstFrameNs) + ", ");
+    rowData.append(to_string(size) + ",");
+    rowData.append(to_string(totalTimeTakenNs) + ",\n");
+
+    ofstream out(statsFile, ios::out | ios::app);
+    if(out.bad()) {
+        ALOGE("Failed to open stats file for writing!");
+        return;
+    }
+    out << rowData;
+    out.close();
 }

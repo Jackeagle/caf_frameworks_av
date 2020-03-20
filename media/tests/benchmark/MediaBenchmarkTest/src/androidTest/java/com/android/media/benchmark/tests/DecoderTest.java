@@ -27,7 +27,10 @@ import com.android.media.benchmark.R;
 import com.android.media.benchmark.library.CodecUtils;
 import com.android.media.benchmark.library.Decoder;
 import com.android.media.benchmark.library.Extractor;
+import com.android.media.benchmark.library.Native;
+import com.android.media.benchmark.library.Stats;
 
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -44,12 +47,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+
 @RunWith(Parameterized.class)
 public class DecoderTest {
     private static final Context mContext =
             InstrumentationRegistry.getInstrumentation().getTargetContext();
     private static final String mInputFilePath = mContext.getString(R.string.input_file_path);
     private static final String mOutputFilePath = mContext.getString(R.string.output_file_path);
+    private static final String mStatsFile =
+            mContext.getExternalFilesDir(null) + "/Decoder." + System.currentTimeMillis() + ".csv";
     private static final String TAG = "DecoderTest";
     private static final long PER_TEST_TIMEOUT_MS = 60000;
     private static final boolean DEBUG = false;
@@ -70,7 +78,7 @@ public class DecoderTest {
                 {"bbb_44100hz_2ch_128kbps_mp3_30sec.mp3", false},
                 {"bbb_8000hz_1ch_8kbps_amrnb_30sec.3gp", false},
                 {"bbb_16000hz_1ch_9kbps_amrwb_30sec.3gp", false},
-                {"bbb_44100hz_2ch_80kbps_vorbis_30sec.mp4", false},
+                {"bbb_44100hz_2ch_80kbps_vorbis_30sec.webm", false},
                 {"bbb_44100hz_2ch_600kbps_flac_30sec.mp4", false},
                 {"bbb_48000hz_2ch_100kbps_opus_30sec.webm", false},
                 // Audio Async Test
@@ -78,7 +86,7 @@ public class DecoderTest {
                 {"bbb_44100hz_2ch_128kbps_mp3_30sec.mp3", true},
                 {"bbb_8000hz_1ch_8kbps_amrnb_30sec.3gp", true},
                 {"bbb_16000hz_1ch_9kbps_amrwb_30sec.3gp", true},
-                {"bbb_44100hz_2ch_80kbps_vorbis_30sec.mp4", true},
+                {"bbb_44100hz_2ch_80kbps_vorbis_30sec.webm", true},
                 {"bbb_44100hz_2ch_600kbps_flac_30sec.mp4", true},
                 {"bbb_48000hz_2ch_100kbps_opus_30sec.webm", true},
                 // Video Sync Test
@@ -101,97 +109,112 @@ public class DecoderTest {
                 {"crowd_1920x1080_25fps_4000kbps_h265.mkv", true}});
     }
 
+    @BeforeClass
+    public static void writeStatsHeaderToFile() throws IOException {
+        Stats mStats = new Stats();
+        boolean status = mStats.writeStatsHeader(mStatsFile);
+        assertTrue("Unable to open stats file for writing!", status);
+        Log.d(TAG, "Saving Benchmark results in: " + mStatsFile);
+    }
+
     @Test(timeout = PER_TEST_TIMEOUT_MS)
     public void testDecoder() throws IOException {
         File inputFile = new File(mInputFilePath + mInputFile);
-        if (inputFile.exists()) {
-            FileInputStream fileInput = new FileInputStream(inputFile);
-            FileDescriptor fileDescriptor = fileInput.getFD();
-            Extractor extractor = new Extractor();
-            int trackCount = extractor.setUpExtractor(fileDescriptor);
-            ArrayList<ByteBuffer> inputBuffer = new ArrayList<>();
-            ArrayList<MediaCodec.BufferInfo> frameInfo = new ArrayList<>();
-            if (trackCount <= 0) {
-                Log.e(TAG, "Extraction failed. No tracks for file: " + mInputFile);
-                return;
-            }
-            for (int currentTrack = 0; currentTrack < trackCount; currentTrack++) {
-                extractor.selectExtractorTrack(currentTrack);
-                MediaFormat format = extractor.getFormat(currentTrack);
-                String mime = format.getString(MediaFormat.KEY_MIME);
-                ArrayList<String> mediaCodecs = CodecUtils.selectCodecs(mime, false);
-                if (mediaCodecs.size() <= 0) {
-                    Log.e(TAG,
-                            "No suitable codecs found for file: " + mInputFile
-                                    + " track : " + currentTrack + " mime: " + mime);
-                    continue;
+        assertTrue("Cannot find " + mInputFile + " in directory " + mInputFilePath,
+                inputFile.exists());
+        FileInputStream fileInput = new FileInputStream(inputFile);
+        FileDescriptor fileDescriptor = fileInput.getFD();
+        Extractor extractor = new Extractor();
+        int trackCount = extractor.setUpExtractor(fileDescriptor);
+        assertTrue("Extraction failed. No tracks for file: " + mInputFile, (trackCount > 0));
+        ArrayList<ByteBuffer> inputBuffer = new ArrayList<>();
+        ArrayList<MediaCodec.BufferInfo> frameInfo = new ArrayList<>();
+        for (int currentTrack = 0; currentTrack < trackCount; currentTrack++) {
+            extractor.selectExtractorTrack(currentTrack);
+            MediaFormat format = extractor.getFormat(currentTrack);
+            String mime = format.getString(MediaFormat.KEY_MIME);
+            ArrayList<String> mediaCodecs = CodecUtils.selectCodecs(mime, false);
+            assertTrue("No suitable codecs found for file: " + mInputFile + " track : " +
+                    currentTrack + " mime: " + mime, (mediaCodecs.size() > 0));
+
+            // Get samples from extractor
+            int sampleSize;
+            do {
+                sampleSize = extractor.getFrameSample();
+                MediaCodec.BufferInfo bufInfo = new MediaCodec.BufferInfo();
+                MediaCodec.BufferInfo info = extractor.getBufferInfo();
+                ByteBuffer dataBuffer = ByteBuffer.allocate(info.size);
+                dataBuffer.put(extractor.getFrameBuffer().array(), 0, info.size);
+                bufInfo.set(info.offset, info.size, info.presentationTimeUs, info.flags);
+                inputBuffer.add(dataBuffer);
+                frameInfo.add(bufInfo);
+                if (DEBUG) {
+                    Log.d(TAG, "Extracted bufInfo: flag = " + bufInfo.flags + " timestamp = " +
+                            bufInfo.presentationTimeUs + " size = " + bufInfo.size);
                 }
-                // Get samples from extractor
-                int sampleSize;
-                do {
-                    sampleSize = extractor.getFrameSample();
-                    MediaCodec.BufferInfo bufInfo = new MediaCodec.BufferInfo();
-                    MediaCodec.BufferInfo info = extractor.getBufferInfo();
-                    ByteBuffer dataBuffer = ByteBuffer.allocate(info.size);
-                    dataBuffer.put(extractor.getFrameBuffer().array(), 0, info.size);
-                    bufInfo.set(info.offset, info.size, info.presentationTimeUs, info.flags);
-                    inputBuffer.add(dataBuffer);
-                    frameInfo.add(bufInfo);
-                    if (DEBUG) {
-                        Log.d(TAG,
-                                "Extracted bufInfo: flag = " + bufInfo.flags + " timestamp = "
-                                        + bufInfo.presentationTimeUs + " size = " + bufInfo.size);
+            } while (sampleSize > 0);
+            for (String codecName : mediaCodecs) {
+                FileOutputStream decodeOutputStream = null;
+                if (WRITE_OUTPUT) {
+                    if (!Paths.get(mOutputFilePath).toFile().exists()) {
+                        Files.createDirectories(Paths.get(mOutputFilePath));
                     }
-                } while (sampleSize > 0);
-                for (String codecName : mediaCodecs) {
-                    FileOutputStream decodeOutputStream = null;
-                    if (WRITE_OUTPUT) {
-                        if (!Paths.get(mOutputFilePath).toFile().exists()) {
-                            Files.createDirectories(Paths.get(mOutputFilePath));
-                        }
-                        File outFile = new File(mOutputFilePath + "decoder.out");
-                        if (outFile.exists()) {
-                            if (!outFile.delete()) {
-                                Log.e(TAG, " Unable to delete existing file" + outFile.toString());
-                            }
-                        }
-                        if (outFile.createNewFile()) {
-                            decodeOutputStream = new FileOutputStream(outFile);
-                        } else {
-                            Log.e(TAG, "Unable to create file: " + outFile.toString());
-                        }
+                    File outFile = new File(mOutputFilePath + "decoder.out");
+                    if (outFile.exists()) {
+                        assertTrue(" Unable to delete existing file" + outFile.toString(),
+                                outFile.delete());
                     }
-                    Decoder decoder = new Decoder();
-                    decoder.setupDecoder(decodeOutputStream);
-                    int status =
-                            decoder.decode(inputBuffer, frameInfo, mAsyncMode, format, codecName);
-                    decoder.deInitCodec();
-                    if (status == 0) {
-                        decoder.dumpStatistics(
-                                mInputFile + " " + codecName, extractor.getClipDuration());
-                        Log.i(TAG,
-                                "Decoding Successful for file: " + mInputFile
-                                        + " with codec: " + codecName);
-                    } else {
-                        Log.e(TAG,
-                                "Decoder returned error " + status + " for file: " + mInputFile
-                                        + " with codec: " + codecName);
-                    }
-                    decoder.resetDecoder();
-                    if (decodeOutputStream != null) {
-                        decodeOutputStream.close();
-                    }
+                    assertTrue("Unable to create file: " + outFile.toString(),
+                            outFile.createNewFile());
+                    decodeOutputStream = new FileOutputStream(outFile);
                 }
-                extractor.unselectExtractorTrack(currentTrack);
-                inputBuffer.clear();
-                frameInfo.clear();
+                Decoder decoder = new Decoder();
+                decoder.setupDecoder(decodeOutputStream);
+                int status = decoder.decode(inputBuffer, frameInfo, mAsyncMode, format, codecName);
+                decoder.deInitCodec();
+                assertEquals("Decoder returned error " + status + " for file: " + mInputFile +
+                        " with codec: " + codecName, 0, status);
+                decoder.dumpStatistics(mInputFile, codecName, (mAsyncMode ? "async" : "sync"),
+                        extractor.getClipDuration(), mStatsFile);
+                Log.i(TAG, "Decoding Successful for file: " + mInputFile + " with codec: " +
+                        codecName);
+                decoder.resetDecoder();
+                if (decodeOutputStream != null) {
+                    decodeOutputStream.close();
+                }
             }
-            extractor.deinitExtractor();
-            fileInput.close();
-        } else {
-            Log.w(TAG,
-                    "Warning: Test Skipped. Cannot find " + mInputFile + " in directory "
-                            + mInputFilePath);
+            extractor.unselectExtractorTrack(currentTrack);
+            inputBuffer.clear();
+            frameInfo.clear();
         }
+        extractor.deinitExtractor();
+        fileInput.close();
+    }
+
+    @Test
+    public void testNativeDecoder() throws IOException {
+        File inputFile = new File(mInputFilePath + mInputFile);
+        assertTrue("Cannot find " + mInputFile + " in directory " + mInputFilePath,
+                inputFile.exists());
+        FileInputStream fileInput = new FileInputStream(inputFile);
+        FileDescriptor fileDescriptor = fileInput.getFD();
+        Extractor extractor = new Extractor();
+        int trackCount = extractor.setUpExtractor(fileDescriptor);
+        assertTrue("Extraction failed. No tracks for file: ", trackCount > 0);
+        for (int currentTrack = 0; currentTrack < trackCount; currentTrack++) {
+            extractor.selectExtractorTrack(currentTrack);
+            MediaFormat format = extractor.getFormat(currentTrack);
+            String mime = format.getString(MediaFormat.KEY_MIME);
+            ArrayList<String> mediaCodecs = CodecUtils.selectCodecs(mime, false);
+            for (String codecName : mediaCodecs) {
+                Log.i("Test: %s\n", mInputFile);
+                Native nativeDecoder = new Native();
+                int status = nativeDecoder.Decode(
+                        mInputFilePath, mInputFile, mStatsFile, codecName, mAsyncMode);
+                assertEquals("Decoder returned error " + status + " for file: " + mInputFile, 0,
+                        status);
+            }
+        }
+        fileInput.close();
     }
 }

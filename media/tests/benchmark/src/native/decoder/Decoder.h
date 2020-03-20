@@ -57,6 +57,8 @@ class Decoder : public CallBackHandle {
 
     void resetDecoder();
 
+    AMediaFormat *getFormat();
+
     // Async callback APIs
     void onInputAvailable(AMediaCodec *codec, int32_t index) override;
 
@@ -71,7 +73,8 @@ class Decoder : public CallBackHandle {
     int32_t decode(uint8_t *inputBuffer, vector<AMediaCodecBufferInfo> &frameInfo,
                    string &codecName, bool asyncMode, FILE *outFp = nullptr);
 
-    void dumpStatistics(string inputReference);
+    void dumpStatistics(string inputReference, string componentName = "", string mode = "",
+                        string statsFile = "");
 
   private:
     AMediaCodec *mCodec;

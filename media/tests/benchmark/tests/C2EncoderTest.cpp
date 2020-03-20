@@ -17,7 +17,6 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2EncoderTest"
 
-#include <sys/stat.h>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -30,7 +29,19 @@ static BenchmarkTestEnvironment *gEnv = nullptr;
 
 class C2EncoderTest : public ::testing::TestWithParam<pair<string, string>> {
   public:
-    C2EncoderTest() : mEncoder(nullptr) { setupC2EncoderTest(); }
+    C2EncoderTest() : mEncoder(nullptr) {}
+
+    ~C2EncoderTest() {
+        if (!mCodecList.empty()) {
+            mCodecList.clear();
+        }
+        if (mEncoder) {
+            delete mEncoder;
+            mEncoder = nullptr;
+        }
+    }
+
+    virtual void SetUp() override { setupC2EncoderTest(); }
 
     void setupC2EncoderTest();
 
@@ -97,7 +108,7 @@ TEST_P(C2EncoderTest, Codec2Encode) {
         }
 
         string decName = "";
-        string outputFileName = "decode.out";
+        string outputFileName = "/data/local/tmp/decode.out";
         FILE *outFp = fopen(outputFileName.c_str(), "wb");
         ASSERT_NE(outFp, nullptr) << "Unable to open output file" << outputFileName
                                   << " for dumping decoder's output";
@@ -128,8 +139,9 @@ TEST_P(C2EncoderTest, Codec2Encode) {
 
                 mEncoder->deInitCodec();
                 int64_t durationUs = extractor->getClipDuration();
-                cout << "codec: " << codecName << endl;
-                mEncoder->dumpStatistics(GetParam().first, durationUs);
+                ALOGV("codec : %s", codecName.c_str());
+                mEncoder->dumpStatistics(GetParam().first, durationUs, codecName,
+                                         gEnv->getStatsFile());
                 mEncoder->resetEncoder();
             }
         }
@@ -143,26 +155,25 @@ TEST_P(C2EncoderTest, Codec2Encode) {
     extractor->deInitExtractor();
     delete decoder;
     delete mEncoder;
+    mEncoder = nullptr;
 }
 
 INSTANTIATE_TEST_SUITE_P(
         AudioEncoderTest, C2EncoderTest,
-        ::testing::Values(
-                make_pair("bbb_44100hz_2ch_128kbps_aac_30sec.mp4", "aac"),
-                make_pair("bbb_8000hz_1ch_8kbps_amrnb_30sec.3gp", "amrnb"),
-                make_pair("bbb_16000hz_1ch_9kbps_amrwb_30sec.3gp", "amrwb"),
-                make_pair("bbb_44100hz_2ch_600kbps_flac_30sec.mp4", "flac"),
-                make_pair("bbb_48000hz_2ch_100kbps_opus_30sec.webm", "opus")));
+        ::testing::Values(make_pair("bbb_44100hz_2ch_128kbps_aac_30sec.mp4", "aac"),
+                          make_pair("bbb_8000hz_1ch_8kbps_amrnb_30sec.3gp", "amrnb"),
+                          make_pair("bbb_16000hz_1ch_9kbps_amrwb_30sec.3gp", "amrwb"),
+                          make_pair("bbb_44100hz_2ch_600kbps_flac_30sec.mp4", "flac"),
+                          make_pair("bbb_48000hz_2ch_100kbps_opus_30sec.webm", "opus")));
 
 INSTANTIATE_TEST_SUITE_P(
         VideoEncoderTest, C2EncoderTest,
-        ::testing::Values(
-                make_pair("crowd_1920x1080_25fps_4000kbps_vp9.webm", "vp9"),
-                make_pair("crowd_1920x1080_25fps_4000kbps_vp8.webm", "vp8"),
-                make_pair("crowd_176x144_25fps_6000kbps_mpeg4.mp4", "mpeg4"),
-                make_pair("crowd_176x144_25fps_6000kbps_h263.3gp", "h263"),
-                make_pair("crowd_1920x1080_25fps_6700kbps_h264.ts", "avc"),
-                make_pair("crowd_1920x1080_25fps_4000kbps_h265.mkv", "hevc")));
+        ::testing::Values(make_pair("crowd_1920x1080_25fps_4000kbps_vp9.webm", "vp9"),
+                          make_pair("crowd_1920x1080_25fps_4000kbps_vp8.webm", "vp8"),
+                          make_pair("crowd_176x144_25fps_6000kbps_mpeg4.mp4", "mpeg4"),
+                          make_pair("crowd_176x144_25fps_6000kbps_h263.3gp", "h263"),
+                          make_pair("crowd_1920x1080_25fps_6700kbps_h264.ts", "avc"),
+                          make_pair("crowd_1920x1080_25fps_4000kbps_h265.mkv", "hevc")));
 
 int main(int argc, char **argv) {
     gEnv = new BenchmarkTestEnvironment();
@@ -170,6 +181,9 @@ int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     int status = gEnv->initFromOptions(argc, argv);
     if (status == 0) {
+        gEnv->setStatsFile("C2Encoder.csv");
+        status = gEnv->writeStatsHeader();
+        ALOGV("Stats file = %d\n", status);
         status = RUN_ALL_TESTS();
         ALOGV("C2 Encoder Test result = %d\n", status);
     }

@@ -658,6 +658,7 @@ public:
                                     int32_t priority,
                                     audio_io_handle_t output,
                                     audio_session_t sessionId,
+                                    const AudioDeviceTypeAddr& device,
                                     const String16& opPackageName,
                                     pid_t pid,
                                     status_t *status,
@@ -666,12 +667,11 @@ public:
     {
         Parcel data, reply;
         sp<IEffect> effect;
-
         if (pDesc == NULL) {
             if (status != NULL) {
                 *status = BAD_VALUE;
             }
-            return effect;
+            return nullptr;
         }
 
         data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
@@ -680,6 +680,12 @@ public:
         data.writeInt32(priority);
         data.writeInt32((int32_t) output);
         data.writeInt32(sessionId);
+        if (data.writeParcelable(device) != NO_ERROR) {
+            if (status != NULL) {
+                *status = NO_INIT;
+            }
+            return nullptr;
+        }
         data.writeString16(opPackageName);
         data.writeInt32((int32_t) pid);
 
@@ -1355,10 +1361,14 @@ status_t BnAudioFlinger::onTransact(
         }
         case GET_EFFECT_DESCRIPTOR: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
-            effect_uuid_t uuid;
-            data.read(&uuid, sizeof(effect_uuid_t));
-            effect_uuid_t type;
-            data.read(&type, sizeof(effect_uuid_t));
+            effect_uuid_t uuid = {};
+            if (data.read(&uuid, sizeof(effect_uuid_t)) != NO_ERROR) {
+                android_errorWriteLog(0x534e4554, "139417189");
+            }
+            effect_uuid_t type = {};
+            if (data.read(&type, sizeof(effect_uuid_t)) != NO_ERROR) {
+                android_errorWriteLog(0x534e4554, "139417189");
+            }
             uint32_t preferredTypeFlag = data.readUint32();
             effect_descriptor_t desc = {};
             status_t status = getEffectDescriptor(&uuid, &type, preferredTypeFlag, &desc);
@@ -1378,14 +1388,18 @@ status_t BnAudioFlinger::onTransact(
             int32_t priority = data.readInt32();
             audio_io_handle_t output = (audio_io_handle_t) data.readInt32();
             audio_session_t sessionId = (audio_session_t) data.readInt32();
+            AudioDeviceTypeAddr device;
+            status_t status = NO_ERROR;
+            if ((status = data.readParcelable(&device)) != NO_ERROR) {
+                return status;
+            }
             const String16 opPackageName = data.readString16();
             pid_t pid = (pid_t)data.readInt32();
 
-            status_t status = NO_ERROR;
             int id = 0;
             int enabled = 0;
 
-            sp<IEffect> effect = createEffect(&desc, client, priority, output, sessionId,
+            sp<IEffect> effect = createEffect(&desc, client, priority, output, sessionId, device,
                     opPackageName, pid, &status, &id, &enabled);
             reply->writeInt32(status);
             reply->writeInt32(id);
