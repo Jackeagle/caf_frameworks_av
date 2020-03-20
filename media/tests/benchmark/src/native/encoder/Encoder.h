@@ -23,8 +23,10 @@
 #include <queue>
 #include <thread>
 
+#include "media/NdkImage.h"
 #include "BenchmarkCommon.h"
 #include "Stats.h"
+
 
 struct encParameter {
     int32_t bitrate = -1;
@@ -38,6 +40,7 @@ struct encParameter {
     int32_t frameRate = -1;
     int32_t profile = 0;
     int32_t level = 0;
+    int32_t colorFormat = AIMAGE_FORMAT_YUV_420_888;
 };
 
 class Encoder : public CallBackHandle {
@@ -75,7 +78,8 @@ class Encoder : public CallBackHandle {
     int32_t encode(std::string &codecName, std::ifstream &eleStream, size_t eleSize, bool asyncMode,
                    encParameter encParams, char *mime);
 
-    void dumpStatistics(string inputReference, int64_t durationUs);
+    void dumpStatistics(string inputReference, int64_t durationUs, string codecName = "",
+                        string mode = "", string statsFile = "");
 
   private:
     AMediaCodec *mCodec;

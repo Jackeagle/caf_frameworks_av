@@ -29,6 +29,7 @@
 #include <string>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <thread>
 
 #include <android/os/IExternalVibratorService.h>
 #include <binder/IPCThreadState.h>
@@ -143,6 +144,19 @@ static sp<os::IExternalVibratorService> getExternalVibratorService() {
     return sExternalVibratorService;
 }
 
+class DevicesFactoryHalCallbackImpl : public DevicesFactoryHalCallback {
+  public:
+    void onNewDevicesAvailable() override {
+        // Start a detached thread to execute notification in parallel.
+        // This is done to prevent mutual blocking of audio_flinger and
+        // audio_policy services during system initialization.
+        std::thread notifier([]() {
+            AudioSystem::onNewAudioModulesAvailable();
+        });
+        notifier.detach();
+    }
+};
+
 // ----------------------------------------------------------------------------
 
 std::string formatToString(audio_format_t format) {
@@ -170,6 +184,7 @@ AudioFlinger::AudioFlinger()
       mClientSharedHeapSize(kMinimumClientSharedHeapSizeBytes),
       mGlobalEffectEnableTime(0),
       mPatchPanel(this),
+      mDeviceEffectManager(this),
       mSystemReady(false)
 {
     // unsigned instead of audio_unique_id_use_t, because ++ operator is unavailable for enum
@@ -220,6 +235,9 @@ void AudioFlinger::onFirstRef()
     mMode = AUDIO_MODE_NORMAL;
 
     gAudioFlinger = this;
+
+    mDevicesFactoryHalCallback = new DevicesFactoryHalCallbackImpl;
+    mDevicesFactoryHal->setCallbackOnce(mDevicesFactoryHalCallback);
 }
 
 status_t AudioFlinger::setAudioHalPids(const std::vector<pid_t>& pids) {
@@ -380,6 +398,24 @@ void AudioFlinger::onExternalVibrationStop(const sp<os::ExternalVibration>& exte
     if (evs != 0) {
         evs->onExternalVibrationStop(*externalVibration);
     }
+}
+
+status_t AudioFlinger::addEffectToHal(audio_port_handle_t deviceId,
+        audio_module_handle_t hwModuleId, sp<EffectHalInterface> effect) {
+    AudioHwDevice *audioHwDevice = mAudioHwDevs.valueFor(hwModuleId);
+    if (audioHwDevice == nullptr) {
+        return NO_INIT;
+    }
+    return audioHwDevice->hwDevice()->addDeviceEffect(deviceId, effect);
+}
+
+status_t AudioFlinger::removeEffectFromHal(audio_port_handle_t deviceId,
+        audio_module_handle_t hwModuleId, sp<EffectHalInterface> effect) {
+    AudioHwDevice *audioHwDevice = mAudioHwDevs.valueFor(hwModuleId);
+    if (audioHwDevice == nullptr) {
+        return NO_INIT;
+    }
+    return audioHwDevice->hwDevice()->removeDeviceEffect(deviceId, effect);
 }
 
 static const char * const audio_interfaces[] = {
@@ -557,6 +593,8 @@ status_t AudioFlinger::dump(int fd, const Vector<String16>& args)
         }
 
         mPatchPanel.dump(fd);
+
+        mDeviceEffectManager.dump(fd);
 
         // dump external setParameters
         auto dumpLogger = [fd](SimpleLog& logger, const char* name) {
@@ -2944,7 +2982,7 @@ std::vector<sp<AudioFlinger::EffectModule>> AudioFlinger::purgeStaleEffects_l() 
         Mutex::Autolock _l(t->mLock);
         for (size_t j = 0; j < t->mEffectChains.size(); j++) {
             sp<EffectChain> ec = t->mEffectChains[j];
-            if (ec->sessionId() > AUDIO_SESSION_OUTPUT_MIX) {
+            if (!audio_is_global_session(ec->sessionId())) {
                 chains.push(ec);
             }
         }
@@ -2971,7 +3009,7 @@ std::vector<sp<AudioFlinger::EffectModule>> AudioFlinger::purgeStaleEffects_l() 
     for (size_t i = 0; i < chains.size(); i++) {
         sp<EffectChain> ec = chains[i];
         int sessionid = ec->sessionId();
-        sp<ThreadBase> t = ec->mThread.promote();
+        sp<ThreadBase> t = ec->thread().promote();
         if (t == 0) {
             continue;
         }
@@ -2994,7 +3032,7 @@ std::vector<sp<AudioFlinger::EffectModule>> AudioFlinger::purgeStaleEffects_l() 
                 effect->unPin();
                 t->removeEffect_l(effect, /*release*/ true);
                 if (effect->purgeHandles()) {
-                    t->checkSuspendOnEffectEnabled_l(effect, false, effect->sessionId());
+                    effect->checkSuspendOnEffectEnabled(false, true /*threadLocked*/);
                 }
                 removedEffects.push_back(effect);
             }
@@ -3294,6 +3332,7 @@ sp<IEffect> AudioFlinger::createEffect(
         int32_t priority,
         audio_io_handle_t io,
         audio_session_t sessionId,
+        const AudioDeviceTypeAddr& device,
         const String16& opPackageName,
         pid_t pid,
         status_t *status,
@@ -3346,6 +3385,17 @@ sp<IEffect> AudioFlinger::createEffect(
             lStatus = BAD_VALUE;
             goto Exit;
         }
+    } else if (sessionId == AUDIO_SESSION_DEVICE) {
+        if (!modifyDefaultAudioEffectsAllowed(pid, callingUid)) {
+            ALOGE("%s: device effect permission denied for uid %d", __func__, callingUid);
+            lStatus = PERMISSION_DENIED;
+            goto Exit;
+        }
+        if (io != AUDIO_IO_HANDLE_NONE) {
+            ALOGE("%s: io handle should not be specified for device effect", __func__);
+            lStatus = BAD_VALUE;
+            goto Exit;
+        }
     } else {
         // general sessionId.
 
@@ -3381,7 +3431,7 @@ sp<IEffect> AudioFlinger::createEffect(
         // check recording permission for visualizer
         if ((memcmp(&desc.type, SL_IID_VISUALIZATION, sizeof(effect_uuid_t)) == 0) &&
             // TODO: Do we need to start/stop op - i.e. is there recording being performed?
-            !recordingAllowed(opPackageName, pid, IPCThreadState::self()->getCallingUid())) {
+            !recordingAllowed(opPackageName, pid, callingUid)) {
             lStatus = PERMISSION_DENIED;
             goto Exit;
         }
@@ -3397,6 +3447,23 @@ sp<IEffect> AudioFlinger::createEffect(
         }
 
         Mutex::Autolock _l(mLock);
+
+        if (sessionId == AUDIO_SESSION_DEVICE) {
+            sp<Client> client = registerPid(pid);
+            ALOGV("%s device type %d address %s", __func__, device.mType, device.getAddress());
+            handle = mDeviceEffectManager.createEffect_l(
+                    &desc, device, client, effectClient, mPatchPanel.patches_l(),
+                    enabled, &lStatus);
+            if (lStatus != NO_ERROR && lStatus != ALREADY_EXISTS) {
+                // remove local strong reference to Client with mClientLock held
+                Mutex::Autolock _cl(mClientLock);
+                client.clear();
+            } else {
+                // handle must be valid here, but check again to be safe.
+                if (handle.get() != nullptr && id != nullptr) *id = handle->id();
+            }
+            goto Register;
+        }
 
         // If output is not specified try to find a matching audio session ID in one of the
         // output threads.
@@ -3479,7 +3546,7 @@ sp<IEffect> AudioFlinger::createEffect(
         sp<Client> client = registerPid(pid);
 
         // create effect on selected output thread
-        bool pinned = (sessionId > AUDIO_SESSION_OUTPUT_MIX) && isSessionAcquired_l(sessionId);
+        bool pinned = !audio_is_global_session(sessionId) && isSessionAcquired_l(sessionId);
         handle = thread->createEffect_l(client, effectClient, priority, sessionId,
                 &desc, enabled, &lStatus, pinned);
         if (lStatus != NO_ERROR && lStatus != ALREADY_EXISTS) {
@@ -3492,9 +3559,10 @@ sp<IEffect> AudioFlinger::createEffect(
         }
     }
 
+Register:
     if (lStatus == NO_ERROR || lStatus == ALREADY_EXISTS) {
         // Check CPU and memory usage
-        sp<EffectModule> effect = handle->effect().promote();
+        sp<EffectBase> effect = handle->effect().promote();
         if (effect != nullptr) {
             status_t rStatus = effect->updatePolicyState();
             if (rStatus != NO_ERROR) {
@@ -3604,7 +3672,7 @@ status_t AudioFlinger::moveEffectChain_l(audio_session_t sessionId,
         // if the move request is not received from audio policy manager, the effect must be
         // re-registered with the new strategy and output
         if (dstChain == 0) {
-            dstChain = effect->chain().promote();
+            dstChain = effect->callback()->chain().promote();
             if (dstChain == 0) {
                 ALOGW("moveEffectChain_l() cannot get chain from effect %p", effect.get());
                 status = NO_INIT;
@@ -3654,7 +3722,7 @@ status_t AudioFlinger::moveAuxEffectToIo(int EffectId,
             goto Exit;
         }
 
-        dstChain = effect->chain().promote();
+        dstChain = effect->callback()->chain().promote();
         if (dstChain == 0) {
             thread->addEffect_l(effect);
             status = INVALID_OPERATION;
