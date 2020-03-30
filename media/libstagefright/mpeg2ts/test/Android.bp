@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,39 +14,50 @@
  * limitations under the License.
  */
 
-cc_test {
-    name: "writerTest",
+cc_test{
+    name: "Mpeg2tsUnitTest",
     gtest: true,
 
     srcs: [
-        "WriterUtility.cpp",
-        "WriterTest.cpp",
+        "Mpeg2tsUnitTest.cpp"
     ],
 
     shared_libs: [
-        "libbinder",
-        "libcutils",
+        "android.hardware.cas@1.0",
+        "android.hardware.cas.native@1.0",
+        "android.hidl.token@1.0-utils",
+        "android.hidl.allocator@1.0",
+        "libcrypto",
+        "libhidlbase",
+        "libhidlmemory",
         "liblog",
-        "libutils",
         "libmedia",
+        "libbinder",
+        "libbinder_ndk",
+        "libutils",
     ],
 
     static_libs: [
-        "libstagefright_webm",
         "libdatasource",
         "libstagefright",
         "libstagefright_foundation",
-        "libstagefright_esds",
-        "libogg",
+        "libstagefright_metadatautils",
+        "libstagefright_mpeg2support",
     ],
 
     include_dirs: [
-        "frameworks/av/media/libstagefright",
+        "frameworks/av/media/extractors/",
+        "frameworks/av/media/libstagefright/",
+    ],
+
+    header_libs: [
+        "libmedia_headers",
+        "libaudioclient_headers",
     ],
 
     cflags: [
-        "-Werror",
         "-Wall",
+        "-Werror",
     ],
 
     sanitize: {
