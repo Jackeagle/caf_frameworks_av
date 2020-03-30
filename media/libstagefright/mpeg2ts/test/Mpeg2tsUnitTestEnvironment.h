@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef __BENCHMARK_TEST_ENVIRONMENT_H__
-#define __BENCHMARK_TEST_ENVIRONMENT_H__
+#ifndef __MPEG2TS_UNIT_TEST_ENVIRONMENT_H__
+#define __MPEG2TS_UNIT_TEST_ENVIRONMENT_H__
 
 #include <gtest/gtest.h>
 
@@ -23,31 +23,22 @@
 
 using namespace std;
 
-class BenchmarkTestEnvironment : public ::testing::Environment {
+class Mpeg2tsUnitTestEnvironment : public::testing::Environment {
   public:
-    BenchmarkTestEnvironment()
-        : res("/data/local/tmp/MediaBenchmark/res/"),
-          statsFile("/data/local/tmp/MediaBenchmark/res/stats.csv") {}
+    Mpeg2tsUnitTestEnvironment() : res("/data/local/tmp/") {}
 
-    // Parses the command line argument
+    // Parses the command line arguments
     int initFromOptions(int argc, char **argv);
 
     void setRes(const char *_res) { res = _res; }
 
     const string getRes() const { return res; }
 
-    void setStatsFile(const string module) { statsFile = getRes() + module; }
-
-    const string getStatsFile() const { return statsFile; }
-
-    bool writeStatsHeader();
-
   private:
     string res;
-    string statsFile;
 };
 
-int BenchmarkTestEnvironment::initFromOptions(int argc, char **argv) {
+int Mpeg2tsUnitTestEnvironment::initFromOptions(int argc, char **argv) {
     static struct option options[] = {{"path", required_argument, 0, 'P'}, {0, 0, 0, 0}};
 
     while (true) {
@@ -79,26 +70,4 @@ int BenchmarkTestEnvironment::initFromOptions(int argc, char **argv) {
     return 0;
 }
 
-/**
- * Writes the stats header to a file
- * <p>
- * \param statsFile    file where the stats data is to be written
- **/
-bool BenchmarkTestEnvironment::writeStatsHeader() {
-    char statsHeader[] =
-        "currentTime, fileName, operation, componentName, NDK/SDK, sync/async, setupTime, "
-        "destroyTime, minimumTime, maximumTime, averageTime, timeToProcess1SecContent, "
-        "totalBytesProcessedPerSec, timeToFirstFrame, totalSizeInBytes, totalTime\n";
-    FILE *fpStats = fopen(statsFile.c_str(), "w");
-    if(!fpStats) {
-        return false;
-    }
-    int32_t numBytes = fwrite(statsHeader, sizeof(char), sizeof(statsHeader), fpStats);
-    fclose(fpStats);
-    if(numBytes != sizeof(statsHeader)) {
-        return false;
-    }
-    return true;
-}
-
-#endif  // __BENCHMARK_TEST_ENVIRONMENT_H__
+#endif  // __MPEG2TS_UNIT_TEST_ENVIRONMENT_H__
