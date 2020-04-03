@@ -837,17 +837,19 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
     sp<SwAudioOutputDescriptor> desc;
     if (mPolicyMixes.getOutputForAttr(attributes, uid, desc) == NO_ERROR) {
         ALOG_ASSERT(desc != 0, "Invalid desc returned by getOutputForAttr");
-        /* BUG 73287368: Support compress-offload playback with bus device routing */
+        /* BUG 73287368: Support compress-offload playback with dynamic audio policy */
+        *stream = streamTypefromAttributesInt(&attributes);
+        bool requestOffloadOrDirect =
+            (*flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) || (*flags & AUDIO_OUTPUT_FLAG_DIRECT);
         routing_strategy strategy = (routing_strategy) getStrategyForAttr(&attributes);
         audio_devices_t device = getDeviceForStrategy(strategy, false /*fromCache*/);
-        if (((device & AUDIO_DEVICE_OUT_BUS) && (isOffloadSupported(config->offload_info))) ||
-            (device & AUDIO_DEVICE_OUT_USB_HEADSET)) {
-            ALOGW("getOutputForAttr() bypass policy mix for bus/usb devices, fallback to offloadable output");
+        if (((desc->device() & AUDIO_DEVICE_OUT_BUS) && (*stream == AUDIO_STREAM_MUSIC) &&
+                (requestOffloadOrDirect)) || (device & AUDIO_DEVICE_OUT_ALL_USB)) {
+            ALOGW("getOutputForAttr() bypass dynamic audio policy for bus/usb devices, query engine for output");
         } else {
             if (!audio_has_proportional_frames(config->format)) {
                 return BAD_VALUE;
             }
-            *stream = streamTypefromAttributesInt(&attributes);
             *output = desc->mIoHandle;
             const auto deviceAddress = desc->mPolicyMix ? desc->mPolicyMix->mDeviceAddress : String8("");
             const DeviceVector outputDevices = mAvailableOutputDevices.
