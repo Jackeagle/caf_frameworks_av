@@ -13,19 +13,16 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<configuration description="Test module config for TimedText unit test">
-    <option name="test-suite-tag" value="TimedTextUnitTest" />
+<configuration description="Test module config for xml parser unit test">
+    <option name="test-suite-tag" value="XMLParserTest" />
     <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
         <option name="cleanup" value="true" />
-        <option name="push" value="TimedTextUnitTest->/data/local/tmp/TimedTextUnitTest" />
-        <option name="push-file"
-            key="https://storage.googleapis.com/android_media/frameworks/av/media/libstagefright/timedtext/test/TimedTextUnitTest.zip?unzip=true"
-            value="/data/local/tmp/TimedTextUnitTestRes/" />
+        <option name="push" value="media_codecs_unit_test.xml->/data/local/tmp/media_codecs_unit_test.xml" />
+        <option name="push" value="media_codecs_unit_test_caller.xml->/data/local/tmp/media_codecs_unit_test_caller.xml" />
+        <option name="push" value="XMLParserTest->/data/local/tmp/XMLParserTest" />
     </target_preparer>
-
-    <test class="com.android.tradefed.testtype.GTest" >
+   <test class="com.android.tradefed.testtype.GTest" >
         <option name="native-test-device-path" value="/data/local/tmp" />
-        <option name="module-name" value="TimedTextUnitTest" />
-        <option name="native-test-flag" value="-P /data/local/tmp/TimedTextUnitTestRes/" />
+        <option name="module-name" value="XMLParserTest" />
     </test>
 </configuration>
