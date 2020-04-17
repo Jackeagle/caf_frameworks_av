@@ -48,6 +48,7 @@
 #include <private/android_filesystem_config.h>
 #include <soundtrigger/SoundTrigger.h>
 #include <system/audio.h>
+#include <system/audio_config.h>
 #include "AudioPolicyManager.h"
 #include <Serializer.h>
 #include "TypeConverter.h"
@@ -3708,6 +3709,22 @@ status_t AudioPolicyManager::releaseAudioPatchInternal(audio_patch_handle_t hand
             removeAudioPatch(patchDesc->getHandle());
             nextAudioPortGeneration();
             mpClientInterface->onAudioPatchListUpdate();
+            // SW Bridge
+            if (patch->num_sources > 1 && patch->sources[1].type == AUDIO_PORT_TYPE_MIX) {
+                sp<SwAudioOutputDescriptor> outputDesc =
+                        mOutputs.getOutputFromId(patch->sources[1].id);
+                if (outputDesc == NULL) {
+                    ALOGE("%s output not found for id %d", __func__, patch->sources[0].id);
+                    return BAD_VALUE;
+                }
+                // Reset handle so that setOutputDevice will force new AF patch to reach the sink
+                outputDesc->setPatchHandle(AUDIO_PATCH_HANDLE_NONE);
+                setOutputDevices(outputDesc,
+                                 getNewOutputDevices(outputDesc, true /*fromCache*/),
+                                 true, /*force*/
+                                 0,
+                                 NULL);
+            }
         } else {
             return BAD_VALUE;
         }
@@ -4296,12 +4313,6 @@ uint32_t AudioPolicyManager::nextAudioPortGeneration()
     return mAudioPortGeneration++;
 }
 
-// Treblized audio policy xml config will be located in /odm/etc or /vendor/etc.
-static const char *kConfigLocationList[] =
-        {"/odm/etc", "/vendor/etc", "/system/etc"};
-static const int kConfigLocationListSize =
-        (sizeof(kConfigLocationList) / sizeof(kConfigLocationList[0]));
-
 static status_t deserializeAudioPolicyXmlConfig(AudioPolicyConfig &config) {
     char audioPolicyXmlConfigFile[AUDIO_POLICY_XML_CONFIG_FILE_PATH_MAX_LENGTH];
     std::vector<const char*> fileNames;
@@ -4323,9 +4334,9 @@ static status_t deserializeAudioPolicyXmlConfig(AudioPolicyConfig &config) {
     fileNames.push_back(AUDIO_POLICY_XML_CONFIG_FILE_NAME);
 
     for (const char* fileName : fileNames) {
-        for (int i = 0; i < kConfigLocationListSize; i++) {
+        for (const auto& path : audio_get_configuration_paths()) {
             snprintf(audioPolicyXmlConfigFile, sizeof(audioPolicyXmlConfigFile),
-                     "%s/%s", kConfigLocationList[i], fileName);
+                     "%s/%s", path.c_str(), fileName);
             ret = deserializeAudioPolicyFile(audioPolicyXmlConfigFile, &config);
             if (ret == NO_ERROR) {
                 config.setSource(audioPolicyXmlConfigFile);
