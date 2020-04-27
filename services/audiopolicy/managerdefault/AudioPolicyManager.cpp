@@ -3908,11 +3908,26 @@ static const char *kConfigLocationList[] =
         {"/odm/etc", "/vendor/etc/audio", "/vendor/etc", "/system/etc"};
 static const int kConfigLocationListSize =
         (sizeof(kConfigLocationList) / sizeof(kConfigLocationList[0]));
+#define A2DP_AUDIO_POLICY_XML_CONFIG_FILE_NAME "audio_policy_configuration_a2dp.xml"
 
 static status_t deserializeAudioPolicyXmlConfig(AudioPolicyConfig &config) {
     char audioPolicyXmlConfigFile[AUDIO_POLICY_XML_CONFIG_FILE_PATH_MAX_LENGTH];
     std::vector<const char*> fileNames;
     status_t ret;
+    bool splita2dp_enabled = property_get_bool("persist.vendor.btstack.enable.splita2dp", false);
+
+    if (!splita2dp_enabled) {
+        PolicySerializer serializer;
+        snprintf(audioPolicyXmlConfigFile,
+                sizeof(audioPolicyXmlConfigFile),
+                "%s/%s",
+                "vendor/etc/audio",
+                A2DP_AUDIO_POLICY_XML_CONFIG_FILE_NAME);
+        ret = serializer.deserialize(audioPolicyXmlConfigFile, config);
+        if (ret == NO_ERROR) {
+            return ret;
+        }
+    }
 
     if (property_get_bool("ro.bluetooth.a2dp_offload.supported", false) &&
         property_get_bool("persist.bluetooth.a2dp_offload.disabled", false)) {
