@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef __WRITER_TEST_ENVIRONMENT_H__
-#define __WRITER_TEST_ENVIRONMENT_H__
+#ifndef __HEVC_UTILS_TEST_ENVIRONMENT_H__
+#define __HEVC_UTILS_TEST_ENVIRONMENT_H__
 
 #include <gtest/gtest.h>
 
@@ -23,9 +23,9 @@
 
 using namespace std;
 
-class WriterTestEnvironment : public ::testing::Environment {
+class HEVCUtilsTestEnvironment : public::testing::Environment {
   public:
-    WriterTestEnvironment() : res("/data/local/tmp/"), deleteOutput(true) {}
+    HEVCUtilsTestEnvironment() : res("/data/local/tmp/") {}
 
     // Parses the command line arguments
     int initFromOptions(int argc, char **argv);
@@ -34,34 +34,25 @@ class WriterTestEnvironment : public ::testing::Environment {
 
     const string getRes() const { return res; }
 
-    bool cleanUp() const { return deleteOutput; }
-
   private:
     string res;
-    bool deleteOutput;
 };
 
-int WriterTestEnvironment::initFromOptions(int argc, char **argv) {
-    static struct option options[] = {{"res", required_argument, 0, 'P'},
-                                      {"cleanUp", optional_argument, 0, 'C'},
-                                      {0, 0, 0, 0}};
+int HEVCUtilsTestEnvironment::initFromOptions(int argc, char **argv) {
+    static struct option options[] = {{"path", required_argument, 0, 'P'}, {0, 0, 0, 0}};
 
     while (true) {
         int index = 0;
-        int c = getopt_long(argc, argv, "P:C:", options, &index);
+        int c = getopt_long(argc, argv, "P:", options, &index);
         if (c == -1) {
             break;
         }
 
         switch (c) {
-            case 'P':
+            case 'P': {
                 setRes(optarg);
                 break;
-            case 'C':
-                if (!strcmp(optarg, "false")) {
-                    deleteOutput = false;
-                }
-                break;
+            }
             default:
                 break;
         }
@@ -72,12 +63,11 @@ int WriterTestEnvironment::initFromOptions(int argc, char **argv) {
                 "unrecognized option: %s\n\n"
                 "usage: %s <gtest options> <test options>\n\n"
                 "test options are:\n\n"
-                "-P, --path: Resource files directory location\n"
-                "-C, default:true. Delete output file after test completes\n",
+                "-P, --path: Resource files directory location\n",
                 argv[optind ?: 1], argv[0]);
         return 2;
     }
     return 0;
 }
 
-#endif  // __WRITER_TEST_ENVIRONMENT_H__
+#endif  // __HEVC_UTILS_TEST_ENVIRONMENT_H__
