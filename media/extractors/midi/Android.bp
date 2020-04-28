@@ -6,10 +6,6 @@ cc_library_shared {
         "frameworks/av/media/libstagefright/include",
     ],
 
-    header_libs: [
-        "libmedia_headers",
-    ],
-
     shared_libs: [
         "liblog",
         "libmediandk",
@@ -18,7 +14,9 @@ cc_library_shared {
     static_libs: [
         "libmedia_midiiowrapper",
         "libsonivox",
-        "libstagefright_foundation"
+        "libstagefright_foundation",
+        "libwatchdog",
+        "libbase",
     ],
     name: "libmidiextractor",
     relative_install_path: "extractors",
@@ -39,5 +37,4 @@ cc_library_shared {
             "signed-integer-overflow",
         ],
     },
-
 }

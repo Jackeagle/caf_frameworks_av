@@ -54,14 +54,14 @@ bool statsd_audiorecord(MediaAnalyticsItem *item)
 
     // flesh out the protobuf we'll hand off with our data
     //
-    std::string encoding;
-    if (item->getString("android.media.audiorecord.encoding", &encoding)) {
-        metrics_proto.set_encoding(std::move(encoding));
+    char *encoding = NULL;
+    if (item->getCString("android.media.audiorecord.encoding", &encoding)) {
+        metrics_proto.set_encoding(encoding);
     }
 
-    std::string source;
-    if (item->getString("android.media.audiorecord.source", &source)) {
-        metrics_proto.set_source(std::move(source));
+    char *source = NULL;
+    if (item->getCString("android.media.audiorecord.source", &source)) {
+        metrics_proto.set_source(source);
     }
 
     int32_t latency = -1;
@@ -101,11 +101,11 @@ bool statsd_audiorecord(MediaAnalyticsItem *item)
         metrics_proto.set_error_code(errcode);
     }
 
-    std::string errfunc;
-    if (item->getString("android.media.audiorecord.errfunc", &errfunc)) {
-        metrics_proto.set_error_function(std::move(errfunc));
-    } else if (item->getString("android.media.audiorecord.lastError.at", &errfunc)) {
-        metrics_proto.set_error_function(std::move(errfunc));
+    char *errfunc = NULL;
+    if (item->getCString("android.media.audiorecord.errfunc", &errfunc)) {
+        metrics_proto.set_error_function(errfunc);
+    } else if (item->getCString("android.media.audiorecord.lastError.at", &errfunc)) {
+        metrics_proto.set_error_function(errfunc);
     }
 
     // portId (int32)
@@ -119,9 +119,9 @@ bool statsd_audiorecord(MediaAnalyticsItem *item)
         metrics_proto.set_frame_count(frameCount);
     }
     // attributes (string)
-    std::string attributes;
-    if (item->getString("android.media.audiorecord.attributes", &attributes)) {
-        metrics_proto.set_attributes(std::move(attributes));
+    char *attributes = NULL;
+    if (item->getCString("android.media.audiorecord.attributes", &attributes)) {
+        metrics_proto.set_attributes(attributes);
     }
     // channelMask (int64)
     int64_t channelMask = -1;
@@ -151,6 +151,12 @@ bool statsd_audiorecord(MediaAnalyticsItem *item)
     } else {
         ALOGV("NOT sending: private data (len=%zu)", strlen(serialized.c_str()));
     }
+
+    // must free the strings that we were given
+    free(encoding);
+    free(source);
+    free(errfunc);
+    free(attributes);
 
     return true;
 }

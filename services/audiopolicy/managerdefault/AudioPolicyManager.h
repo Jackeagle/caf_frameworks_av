@@ -34,6 +34,7 @@
 #include <media/PatchBuilder.h>
 #include "AudioPolicyInterface.h"
 
+#include <AudioPolicyManagerInterface.h>
 #include <AudioPolicyManagerObserver.h>
 #include <AudioGain.h>
 #include <AudioPolicyConfig.h>
@@ -48,7 +49,6 @@
 #include <AudioPolicyMix.h>
 #include <EffectDescriptor.h>
 #include <SoundTriggerSession.h>
-#include "EngineLibrary.h"
 #include "TypeConverter.h"
 
 namespace android {
@@ -307,8 +307,6 @@ public:
             return volumeGroup != VOLUME_GROUP_NONE ? NO_ERROR : BAD_VALUE;
         }
 
-        status_t initialize();
-
 protected:
         // A constructor that allows more fine-grained control over initialization process,
         // used in automatic tests.
@@ -323,6 +321,7 @@ protected:
         //   - initialize.
         AudioPolicyConfig& getConfig() { return mConfig; }
         void loadConfig();
+        status_t initialize();
 
         // From AudioPolicyManagerObserver
         virtual const AudioPatchCollection &getAudioPatches() const
@@ -347,7 +346,7 @@ protected:
         }
         virtual const DeviceVector getAvailableOutputDevices() const
         {
-            return mAvailableOutputDevices;
+            return mAvailableOutputDevices.filterForEngine();
         }
         virtual const DeviceVector getAvailableInputDevices() const
         {
@@ -753,7 +752,7 @@ protected:
         uint32_t nextAudioPortGeneration();
 
         // Audio Policy Engine Interface.
-        EngineInstance mEngine;
+        AudioPolicyManagerInterface *mEngine;
 
         // Surround formats that are enabled manually. Taken into account when
         // "encoded surround" is forced into "manual" mode.

@@ -22,13 +22,12 @@
 
 #include "ASessionDescription.h"
 
-#include <datasource/MediaHTTP.h>
 #include <media/MediaHTTPConnection.h>
 #include <media/MediaHTTPService.h>
+#include <media/stagefright/ClearMediaHTTP.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/Utils.h>
-#include <media/stagefright/FoundationUtils.h>
 
 #define DEFAULT_SDP_SIZE 100000
 
@@ -42,7 +41,7 @@ SDPLoader::SDPLoader(
       mFlags(flags),
       mNetLooper(new ALooper),
       mCancelled(false),
-      mHTTPDataSource(new MediaHTTP(httpService->makeHTTPConnection())) {
+      mHTTPDataSource(new ClearMediaHTTP(httpService->makeHTTPConnection())) {
     mNetLooper->setName("sdp net");
     mNetLooper->start(false /* runOnCallingThread */,
                       false /* canCallJava */,

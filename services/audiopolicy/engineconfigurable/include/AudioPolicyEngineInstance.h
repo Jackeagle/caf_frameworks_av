@@ -16,7 +16,7 @@
 
 #pragma once
 
-class EngineInterface;
+class AudioPolicyManagerInterface;
 class AudioPolicyPluginInterface;
 
 namespace android {
@@ -69,7 +69,7 @@ private:
  * Compile time error will claim if invalid interface is requested.
  */
 template <>
-EngineInterface *EngineInstance::queryInterface() const;
+AudioPolicyManagerInterface *EngineInstance::queryInterface() const;
 
 template <>
 AudioPolicyPluginInterface *EngineInstance::queryInterface() const;

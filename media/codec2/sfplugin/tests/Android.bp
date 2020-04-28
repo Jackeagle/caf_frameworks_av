@@ -33,10 +33,6 @@ cc_test {
         "frameworks/av/media/codec2/sfplugin",
     ],
 
-    header_libs: [
-        "libmediadrm_headers",
-    ],
-
     shared_libs: [
         "libbinder",
         "libcodec2",

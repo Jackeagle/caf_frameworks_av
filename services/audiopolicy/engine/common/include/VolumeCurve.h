@@ -18,6 +18,7 @@
 
 #include "IVolumeCurves.h"
 #include <policy.h>
+#include <AudioPolicyManagerInterface.h>
 #include <utils/RefBase.h>
 #include <HandleGenerator.h>
 #include <utils/String8.h>

@@ -1384,8 +1384,8 @@ void AudioFlinger::filterReservedParameters(String8& keyValuePairs, uid_t callin
         String8(AudioParameter::keyFrameCount),
         String8(AudioParameter::keyInputSource),
         String8(AudioParameter::keyMonoOutput),
-        String8(AudioParameter::keyDeviceConnect),
-        String8(AudioParameter::keyDeviceDisconnect),
+        String8(AudioParameter::keyStreamConnect),
+        String8(AudioParameter::keyStreamDisconnect),
         String8(AudioParameter::keyStreamSupportedFormats),
         String8(AudioParameter::keyStreamSupportedChannels),
         String8(AudioParameter::keyStreamSupportedSamplingRates),
@@ -1570,7 +1570,7 @@ size_t AudioFlinger::getInputBufferSize(uint32_t sampleRate, audio_format_t form
     proposed.format = format;
 
     sp<DeviceHalInterface> dev = mPrimaryHardwareDev->hwDevice();
-    size_t frames = 0;
+    size_t frames;
     for (;;) {
         // Note: config is currently a const parameter for get_input_buffer_size()
         // but we use a copy from proposed in case config changes from the call.

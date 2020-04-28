@@ -22,6 +22,7 @@
 
 #include <arpa/inet.h>
 
+#include <media/DataSourceBase.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ByteUtils.h>
 
@@ -354,7 +355,7 @@ status_t SampleIterator::findSampleTimeAndDuration(
     if (offset > 0) {
         *time += offset;
     } else {
-        *time -= (offset == INT32_MIN ? INT64_MAX : (-offset));
+        *time -= (offset == INT64_MIN ? INT64_MAX : (-offset));
     }
 
     *duration = mTTSDuration;

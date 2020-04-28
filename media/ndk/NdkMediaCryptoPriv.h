@@ -30,7 +30,7 @@
 
 #include <sys/types.h>
 #include <utils/StrongPointer.h>
-#include <mediadrm/ICrypto.h>
+#include <media/ICrypto.h>
 
 using namespace android;
 

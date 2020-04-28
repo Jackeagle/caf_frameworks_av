@@ -17,7 +17,7 @@
 #pragma once
 
 #include "EngineBase.h"
-#include <EngineInterface.h>
+#include <AudioPolicyManagerInterface.h>
 #include <AudioPolicyPluginInterface.h>
 #include "Collection.h"
 

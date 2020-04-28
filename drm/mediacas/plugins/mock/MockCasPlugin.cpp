@@ -111,12 +111,6 @@ MockCasPlugin::~MockCasPlugin() {
     MockSessionLibrary::get()->destroyPlugin(this);
 }
 
-status_t MockCasPlugin::setStatusCallback(
-    CasPluginStatusCallback /*callback*/) {
-    ALOGV("setStatusCallback");
-    return OK;
-}
-
 status_t MockCasPlugin::setPrivateData(const CasData& /*data*/) {
     ALOGV("setPrivateData");
     return OK;
@@ -124,13 +118,6 @@ status_t MockCasPlugin::setPrivateData(const CasData& /*data*/) {
 
 status_t MockCasPlugin::openSession(CasSessionId* sessionId) {
     ALOGV("openSession");
-    return MockSessionLibrary::get()->addSession(this, sessionId);
-}
-
-status_t MockCasPlugin::openSession(uint32_t intent, uint32_t mode,
-    CasSessionId* sessionId) {
-    ALOGV("openSession with intent=%d, mode=%d", intent, mode);
-    // Clear key plugin doesn't use intent and mode.
     return MockSessionLibrary::get()->addSession(this, sessionId);
 }
 

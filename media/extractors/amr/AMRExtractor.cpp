@@ -144,7 +144,6 @@ static bool SniffAMR(
 
 AMRExtractor::AMRExtractor(DataSourceHelper *source)
     : mDataSource(source),
-      mMeta(NULL),
       mInitCheck(NO_INIT),
       mOffsetTableLength(0) {
     float confidence;
@@ -192,9 +191,7 @@ AMRExtractor::AMRExtractor(DataSourceHelper *source)
 
 AMRExtractor::~AMRExtractor() {
     delete mDataSource;
-    if (mMeta) {
-        AMediaFormat_delete(mMeta);
-    }
+    AMediaFormat_delete(mMeta);
 }
 
 media_status_t AMRExtractor::getMetaData(AMediaFormat *meta) {

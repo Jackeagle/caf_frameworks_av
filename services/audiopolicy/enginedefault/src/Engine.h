@@ -17,7 +17,7 @@
 #pragma once
 
 #include "EngineBase.h"
-#include "EngineInterface.h"
+#include "AudioPolicyManagerInterface.h"
 #include <AudioGain.h>
 #include <policy.h>
 
@@ -48,9 +48,12 @@ public:
     Engine();
     virtual ~Engine() = default;
 
+    template <class RequestedInterface>
+    RequestedInterface *queryInterface();
+
 private:
     ///
-    /// from EngineBase, so from EngineInterface
+    /// from EngineBase, so from AudioPolicyManagerInterface
     ///
     status_t setForceUse(audio_policy_force_use_t usage,
                          audio_policy_forced_cfg_t config) override;

@@ -22,13 +22,13 @@
 
 #include "include/ESDS.h"
 
-#include <datasource/DataSourceFactory.h>
-#include <datasource/FileSource.h>
 #include <media/DataSource.h>
 #include <media/MediaSource.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
+#include <media/stagefright/DataSourceFactory.h>
+#include <media/stagefright/FileSource.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
@@ -36,7 +36,6 @@
 #include <media/stagefright/MediaExtractorFactory.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
-#include <media/stagefright/FoundationUtils.h>
 
 namespace android {
 
@@ -82,7 +81,7 @@ status_t NuMediaExtractor::setDataSource(
     }
 
     sp<DataSource> dataSource =
-        DataSourceFactory::getInstance()->CreateFromURI(httpService, path, headers);
+        DataSourceFactory::CreateFromURI(httpService, path, headers);
 
     if (dataSource == NULL) {
         return -ENOENT;

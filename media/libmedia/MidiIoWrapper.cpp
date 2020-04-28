@@ -17,6 +17,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "MidiIoWrapper"
 #include <utils/Log.h>
+#include <utils/RefBase.h>
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -49,7 +50,7 @@ MidiIoWrapper::MidiIoWrapper(int fd, off64_t offset, int64_t size) {
     mDataSource = nullptr;
 }
 
-class DataSourceUnwrapper {
+class DataSourceUnwrapper : public DataSourceBase {
 
 public:
     explicit DataSourceUnwrapper(CDataSource *csource) {

@@ -3,13 +3,8 @@
 cc_defaults {
     name: "libaudioprocessing_test_defaults",
 
-    header_libs: [
-        "libbase_headers",
-        "libmedia_headers",
-    ],
-
+    header_libs: ["libbase_headers"],
     shared_libs: [
-        "libaudioclient",
         "libaudioprocessing",
         "libaudioutils",
         "libcutils",

@@ -30,16 +30,7 @@
 
 using namespace android;
 
-TEST(AudioPolicyManagerTestInit, EngineFailure) {
-    AudioPolicyTestClient client;
-    AudioPolicyTestManager manager(&client);
-    manager.getConfig().setDefault();
-    manager.getConfig().setEngineLibraryNameSuffix("non-existent");
-    ASSERT_EQ(NO_INIT, manager.initialize());
-    ASSERT_EQ(NO_INIT, manager.initCheck());
-}
-
-TEST(AudioPolicyManagerTestInit, ClientFailure) {
+TEST(AudioPolicyManagerTestInit, Failure) {
     AudioPolicyTestClient client;
     AudioPolicyTestManager manager(&client);
     manager.getConfig().setDefault();

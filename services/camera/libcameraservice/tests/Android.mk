@@ -23,6 +23,7 @@ LOCAL_SHARED_LIBRARIES := \
     libcameraservice \
     libhidlbase \
     liblog \
+    libhidltransport \
     libcamera_client \
     libcamera_metadata \
     libutils \

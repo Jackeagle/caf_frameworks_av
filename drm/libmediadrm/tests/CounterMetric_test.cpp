@@ -16,7 +16,7 @@
 
 #include <gtest/gtest.h>
 
-#include <media/CounterMetric.h>
+#include "CounterMetric.h"
 
 namespace android {
 

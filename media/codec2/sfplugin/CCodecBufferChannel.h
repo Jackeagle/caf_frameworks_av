@@ -29,6 +29,7 @@
 #include <codec2/hidl/client.h>
 #include <media/stagefright/foundation/Mutexed.h>
 #include <media/stagefright/CodecBase.h>
+#include <media/ICrypto.h>
 
 #include "CCodecBuffers.h"
 #include "InputSurfaceWrapper.h"

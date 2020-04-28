@@ -2410,7 +2410,7 @@ status_t ACodec::setOperatingRate(float rateFloat, bool isVideo) {
         }
         rate = (OMX_U32)(rateFloat * 65536.0f + 0.5f);
     } else {
-        if (rateFloat > static_cast<float>(UINT_MAX)) {
+        if (rateFloat > UINT_MAX) {
             return BAD_VALUE;
         }
         rate = (OMX_U32)(rateFloat);
@@ -3316,7 +3316,6 @@ static const struct VideoCodingMapEntry {
     { MEDIA_MIMETYPE_VIDEO_VP9, OMX_VIDEO_CodingVP9 },
     { MEDIA_MIMETYPE_VIDEO_DOLBY_VISION, OMX_VIDEO_CodingDolbyVision },
     { MEDIA_MIMETYPE_IMAGE_ANDROID_HEIC, OMX_VIDEO_CodingImageHEIC },
-    { MEDIA_MIMETYPE_VIDEO_AV1, OMX_VIDEO_CodingAV1 },
 };
 
 static status_t GetVideoCodingTypeFromMime(
@@ -6902,7 +6901,7 @@ status_t ACodec::LoadedState::setupInputSurface() {
         }
     }
 
-    if (mCodec->mMaxPtsGapUs != 0LL) {
+    if (mCodec->mIsVideo && mCodec->mMaxPtsGapUs != 0LL) {
         OMX_PARAM_U32TYPE maxPtsGapParams;
         InitOMXParams(&maxPtsGapParams);
         maxPtsGapParams.nPortIndex = kPortIndexInput;

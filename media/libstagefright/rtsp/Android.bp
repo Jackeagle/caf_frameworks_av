@@ -21,7 +21,6 @@ cc_defaults {
 
     shared_libs: [
         "libcrypto",
-        "libdatasource",
         "libmedia",
     ],
 

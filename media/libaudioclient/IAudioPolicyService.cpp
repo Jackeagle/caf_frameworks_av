@@ -26,8 +26,8 @@
 #include <binder/Parcel.h>
 #include <media/AudioEffect.h>
 #include <media/IAudioPolicyService.h>
+#include <media/TimeCheck.h>
 #include <mediautils/ServiceUtilities.h>
-#include <mediautils/TimeCheck.h>
 #include <system/audio.h>
 
 namespace android {
@@ -1346,7 +1346,8 @@ status_t BnAudioPolicyService::onTransact(
         case GET_OFFLOAD_FORMATS_A2DP:
         case LIST_AUDIO_VOLUME_GROUPS:
         case GET_VOLUME_GROUP_FOR_ATTRIBUTES:
-        case SET_RTT_ENABLED: {
+        case SET_RTT_ENABLED:
+        case SET_ALLOWED_CAPTURE_POLICY: {
             if (!isServiceUid(IPCThreadState::self()->getCallingUid())) {
                 ALOGW("%s: transaction %d received from PID %d unauthorized UID %d",
                       __func__, code, IPCThreadState::self()->getCallingPid(),

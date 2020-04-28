@@ -69,10 +69,6 @@ cc_library_shared {
         "utils/LatencyHistogram.cpp",
     ],
 
-    header_libs: [
-        "libmediadrm_headers"
-    ],
-
     shared_libs: [
         "libbase",
         "libdl",
@@ -90,9 +86,10 @@ cc_library_shared {
         "libfmq",
         "libgui",
         "libhardware",
+        "libhwbinder",
         "libhidlbase",
+        "libhidltransport",
         "libjpeg",
-        "libmedia_codeclist",
         "libmedia_omx",
         "libmemunreachable",
         "libsensorprivacy",

@@ -17,6 +17,7 @@
 #ifndef FLAC_EXTRACTOR_H_
 #define FLAC_EXTRACTOR_H_
 
+#include <media/DataSourceBase.h>
 #include <media/MediaExtractorPluginApi.h>
 #include <media/MediaExtractorPluginHelper.h>
 #include <media/NdkMediaFormat.h>

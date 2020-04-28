@@ -42,7 +42,7 @@ cc_library_shared {
         // AIDL files for audioclient interfaces
         // The headers for these interfaces will be available to any modules that
         // include libaudioclient, at the path "aidl/package/path/BnFoo.h"
-        ":libaudioclient_aidl_private",
+        "aidl/android/media/IAudioRecord.aidl",
         ":libaudioclient_aidl",
 
         "AudioEffect.cpp",
@@ -84,7 +84,6 @@ cc_library_shared {
     header_libs: [
         "libaudioclient_headers",
         "libbase_headers",
-        "libmedia_headers",
     ],
     export_header_lib_headers: ["libaudioclient_headers"],
 
@@ -111,15 +110,4 @@ filegroup {
     srcs: [
         "aidl/android/media/IPlayer.aidl",
     ],
-    path: "aidl",
-}
-
-// Used to strip the "aidl/" from the path, so the build system can predict the
-// output filename.
-filegroup {
-    name: "libaudioclient_aidl_private",
-    srcs: [
-        "aidl/android/media/IAudioRecord.aidl",
-    ],
-    path: "aidl",
 }

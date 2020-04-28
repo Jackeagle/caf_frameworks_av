@@ -2953,11 +2953,9 @@ ssize_t AudioFlinger::PlaybackThread::threadLoop_write()
             ALOG_ASSERT(mCallbackThread != 0);
             mCallbackThread->setWriteBlocked(mWriteAckSequence);
         }
-        ATRACE_BEGIN("write");
         // FIXME We should have an implementation of timestamps for direct output threads.
         // They are used e.g for multichannel PCM playback over HDMI.
         bytesWritten = mOutput->write((char *)mSinkBuffer + offset, mBytesRemaining);
-        ATRACE_END();
 
         if (mUseAsyncWrite &&
                 ((bytesWritten < 0) || (bytesWritten == (ssize_t)mBytesRemaining))) {
@@ -5303,11 +5301,11 @@ bool AudioFlinger::MixerThread::isTrackAllowed_l(
         return false;
     }
     // Check validity as we don't call AudioMixer::create() here.
-    if (!mAudioMixer->isValidFormat(format)) {
+    if (!AudioMixer::isValidFormat(format)) {
         ALOGW("%s: invalid format: %#x", __func__, format);
         return false;
     }
-    if (!mAudioMixer->isValidChannelMask(channelMask)) {
+    if (!AudioMixer::isValidChannelMask(channelMask)) {
         ALOGW("%s: invalid channelMask: %#x", __func__, channelMask);
         return false;
     }
@@ -5660,17 +5658,10 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
             minFrames = 1;
         }
 
-        const size_t framesReady = track->framesReady();
-        const int trackId = track->id();
-        if (ATRACE_ENABLED()) {
-            std::string traceName("nRdy");
-            traceName += std::to_string(trackId);
-            ATRACE_INT(traceName.c_str(), framesReady);
-        }
-        if ((framesReady >= minFrames) && track->isReady() && !track->isPaused() &&
+        if ((track->framesReady() >= minFrames) && track->isReady() && !track->isPaused() &&
                 !track->isStopping_2() && !track->isStopped())
         {
-            ALOGVV("track(%d) s=%08x [OK]", trackId, cblk->mServer);
+            ALOGVV("track(%d) s=%08x [OK]", track->id(), cblk->mServer);
 
             if (track->mFillingUpStatus == Track::FS_FILLED) {
                 track->mFillingUpStatus = Track::FS_ACTIVE;
@@ -5747,7 +5738,7 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
                 // fill a buffer, then remove it from active list.
                 // Only consider last track started for mixer state control
                 if (--(track->mRetryCount) <= 0) {
-                    ALOGV("BUFFER TIMEOUT: remove track(%d) from active list", trackId);
+                    ALOGV("BUFFER TIMEOUT: remove track(%d) from active list", track->id());
                     tracksToRemove->add(track);
                     // indicate to client process that the track was disabled because of underrun;
                     // it will then automatically call start() when data is available
@@ -5755,7 +5746,7 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
                 } else if (last) {
                     ALOGW("pause because of UNDERRUN, framesReady = %zu,"
                             "minFrames = %u, mFormat = %#x",
-                            framesReady, minFrames, mFormat);
+                            track->framesReady(), minFrames, mFormat);
                     mixerStatus = MIXER_TRACKS_ENABLED;
                     if (mHwSupportsPause && !mHwPaused && !mStandby) {
                         doHwPause = true;
@@ -6363,9 +6354,7 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::OffloadThread::prepareTr
             }
         }
         // compute volume for this track
-        if (track->isReady()) {  // check ready to prevent premature start.
-            processVolume_l(track, last);
-        }
+        processVolume_l(track, last);
     }
 
     // make sure the pause/flush/resume sequence is executed in the right order.
@@ -6679,7 +6668,6 @@ AudioFlinger::RecordThread::RecordThread(const sp<AudioFlinger>& audioFlinger,
                                          ) :
     ThreadBase(audioFlinger, id, outDevice, inDevice, RECORD, systemReady),
     mInput(input),
-    mSource(mInput),
     mActiveTracks(&this->mLocalLog),
     mRsmpInBuffer(NULL),
     // mRsmpInFrames, mRsmpInFramesP2, and mRsmpInFramesOA are set by readInputParameters_l()
@@ -7132,7 +7120,7 @@ reacquire_wakelock:
         } else {
             ATRACE_BEGIN("read");
             size_t bytesRead;
-            status_t result = mSource->read(
+            status_t result = mInput->stream->read(
                     (uint8_t*)mRsmpInBuffer + rear * mFrameSize, mBufferSize, &bytesRead);
             ATRACE_END();
             if (result < 0) {
@@ -7154,7 +7142,7 @@ reacquire_wakelock:
             int64_t position, time;
             if (mStandby) {
                 mTimestampVerifier.discontinuity();
-            } else if (mSource->getCapturePosition(&position, &time) == NO_ERROR
+            } else if (mInput->stream->getCapturePosition(&position, &time) == NO_ERROR
                     && time > mTimestamp.mTimeNs[ExtendedTimestamp::LOCATION_KERNEL]) {
 
                 mTimestampVerifier.add(position, time, mSampleRate);
@@ -7435,7 +7423,7 @@ void AudioFlinger::RecordThread::inputStandBy()
             sq->end(false /*didModify*/);
         }
     }
-    status_t result = mSource->standby();
+    status_t result = mInput->stream->standby();
     ALOGE_IF(result != OK, "Error when putting input stream into standby: %d", result);
 
     // If going into standby, flush the pipe source.
@@ -8421,17 +8409,11 @@ void AudioFlinger::RecordThread::addPatchTrack(const sp<PatchRecord>& record)
 {
     Mutex::Autolock _l(mLock);
     mTracks.add(record);
-    if (record->getSource()) {
-        mSource = record->getSource();
-    }
 }
 
 void AudioFlinger::RecordThread::deletePatchTrack(const sp<PatchRecord>& record)
 {
     Mutex::Autolock _l(mLock);
-    if (mSource == record->getSource()) {
-        mSource = mInput;
-    }
     destroyTrack_l(record);
 }
 

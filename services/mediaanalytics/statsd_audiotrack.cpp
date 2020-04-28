@@ -57,23 +57,23 @@ bool statsd_audiotrack(MediaAnalyticsItem *item)
 
     // static constexpr char kAudioTrackStreamType[] = "android.media.audiotrack.streamtype";
     // optional string streamType;
-    std::string streamtype;
-    if (item->getString("android.media.audiotrack.streamtype", &streamtype)) {
-        metrics_proto.set_stream_type(std::move(streamtype));
+    char *streamtype = NULL;
+    if (item->getCString("android.media.audiotrack.streamtype", &streamtype)) {
+        metrics_proto.set_stream_type(streamtype);
     }
 
     // static constexpr char kAudioTrackContentType[] = "android.media.audiotrack.type";
     // optional string contentType;
-    std::string contenttype;
-    if (item->getString("android.media.audiotrack.type", &contenttype)) {
-        metrics_proto.set_content_type(std::move(contenttype));
+    char *contenttype = NULL;
+    if (item->getCString("android.media.audiotrack.type", &contenttype)) {
+        metrics_proto.set_content_type(contenttype);
     }
 
     // static constexpr char kAudioTrackUsage[] = "android.media.audiotrack.usage";
     // optional string trackUsage;
-    std::string trackusage;
-    if (item->getString("android.media.audiotrack.usage", &trackusage)) {
-        metrics_proto.set_track_usage(std::move(trackusage));
+    char *trackusage = NULL;
+    if (item->getCString("android.media.audiotrack.usage", &trackusage)) {
+        metrics_proto.set_track_usage(trackusage);
     }
 
     // static constexpr char kAudioTrackSampleRate[] = "android.media.audiotrack.samplerate";
@@ -111,9 +111,9 @@ bool statsd_audiotrack(MediaAnalyticsItem *item)
         metrics_proto.set_port_id(port_id);
     }
     // encoding (string)
-    std::string encoding;
-    if (item->getString("android.media.audiotrack.encoding", &encoding)) {
-        metrics_proto.set_encoding(std::move(encoding));
+    char *encoding = NULL;
+    if (item->getCString("android.media.audiotrack.encoding", &encoding)) {
+        metrics_proto.set_encoding(encoding);
     }
     // frameCount (int32)
     int32_t frame_count = -1;
@@ -121,9 +121,9 @@ bool statsd_audiotrack(MediaAnalyticsItem *item)
         metrics_proto.set_frame_count(frame_count);
     }
     // attributes (string)
-    std::string attributes;
-    if (item->getString("android.media.audiotrack.attributes", &attributes)) {
-        metrics_proto.set_attributes(std::move(attributes));
+    char *attributes = NULL;
+    if (item->getCString("android.media.audiotrack.attributes", &attributes)) {
+        metrics_proto.set_attributes(attributes);
     }
 
     std::string serialized;
@@ -142,6 +142,13 @@ bool statsd_audiotrack(MediaAnalyticsItem *item)
     } else {
         ALOGV("NOT sending: private data (len=%zu)", strlen(serialized.c_str()));
     }
+
+    // must free the strings that we were given
+    free(streamtype);
+    free(contenttype);
+    free(trackusage);
+    free(encoding);
+    free(attributes);
 
     return true;
 }

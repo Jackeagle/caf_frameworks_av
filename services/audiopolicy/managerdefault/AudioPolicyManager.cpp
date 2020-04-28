@@ -42,12 +42,15 @@
 #include <set>
 #include <unordered_set>
 #include <vector>
+#include <AudioPolicyManagerInterface.h>
+#include <AudioPolicyEngineInstance.h>
 #include <cutils/properties.h>
 #include <utils/Log.h>
 #include <media/AudioParameter.h>
 #include <private/android_filesystem_config.h>
 #include <soundtrigger/SoundTrigger.h>
 #include <system/audio.h>
+#include <audio_policy_conf.h>
 #include "AudioPolicyManager.h"
 #include <Serializer.h>
 #include "TypeConverter.h"
@@ -94,7 +97,7 @@ void AudioPolicyManager::broadcastDeviceConnectionState(const sp<DeviceDescripto
 {
     AudioParameter param(device->address());
     const String8 key(state == AUDIO_POLICY_DEVICE_STATE_AVAILABLE ?
-                AudioParameter::keyDeviceConnect : AudioParameter::keyDeviceDisconnect);
+                AudioParameter::keyStreamConnect : AudioParameter::keyStreamDisconnect);
     param.addInt(key, device->type());
     mpClientInterface->setParameters(AUDIO_IO_HANDLE_NONE, param.toString());
 }
@@ -472,10 +475,6 @@ status_t AudioPolicyManager::getHwOffloadEncodingFormatsSupportedForA2DP(
     std::unordered_set<audio_format_t> formatSet;
     sp<HwModule> primaryModule =
             mHwModules.getModuleFromName(AUDIO_HARDWARE_MODULE_ID_PRIMARY);
-    if (primaryModule == nullptr) {
-        ALOGE("%s() unable to get primary module", __func__);
-        return NO_INIT;
-    }
     DeviceVector declaredDevices = primaryModule->getDeclaredDevices().getDevicesFromTypeMask(
             AUDIO_DEVICE_OUT_ALL_A2DP);
     for (const auto& device : declaredDevices) {
@@ -840,7 +839,7 @@ sp<IOProfile> AudioPolicyManager::getProfileForOutput(
         // if explicitly requested
         static const uint32_t kRelevantFlags =
                 (AUDIO_OUTPUT_FLAG_HW_AV_SYNC | AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD |
-                 AUDIO_OUTPUT_FLAG_VOIP_RX | AUDIO_OUTPUT_FLAG_MMAP_NOIRQ);
+                 AUDIO_OUTPUT_FLAG_VOIP_RX);
         flags =
             (audio_output_flags_t)((flags & kRelevantFlags) | AUDIO_OUTPUT_FLAG_DIRECT);
     }
@@ -1086,9 +1085,8 @@ status_t AudioPolicyManager::getOutputForAttr(const audio_attributes_t *attr,
     }
 
     audio_config_base_t clientConfig = {.sample_rate = config->sample_rate,
-        .channel_mask = config->channel_mask,
         .format = config->format,
-    };
+        .channel_mask = config->channel_mask };
     *portId = AudioPort::getNextUniqueId();
 
     sp<TrackClientDescriptor> clientDesc =
@@ -2241,22 +2239,16 @@ status_t AudioPolicyManager::startInput(audio_port_handle_t portId)
         return status;
     }
 
-    // increment activity count before calling getNewInputDevice() below as only active sessions
+  // increment activity count before calling getNewInputDevice() below as only active sessions
     // are considered for device selection
     inputDesc->setClientActive(client, true);
 
     // indicate active capture to sound trigger service if starting capture from a mic on
     // primary HW module
     sp<DeviceDescriptor> device = getNewInputDevice(inputDesc);
-    if (device != nullptr) {
-        status = setInputDevice(input, device, true /* force */);
-    } else {
-        ALOGW("%s no new input device can be found for descriptor %d",
-                __FUNCTION__, inputDesc->getId());
-        status = BAD_VALUE;
-    }
+    setInputDevice(input, device, true /* force */);
 
-    if (status == NO_ERROR && inputDesc->activeCount() == 1) {
+    if (inputDesc->activeCount()  == 1) {
         sp<AudioPolicyMix> policyMix = inputDesc->mPolicyMix.promote();
         // if input maps to a dynamic policy with an activity listener, notify of state change
         if ((policyMix != NULL)
@@ -2287,16 +2279,11 @@ status_t AudioPolicyManager::startInput(audio_port_handle_t portId)
                         address, "remote-submix", AUDIO_FORMAT_DEFAULT);
             }
         }
-    } else if (status != NO_ERROR) {
-        // Restore client activity state.
-        inputDesc->setClientActive(client, false);
-        inputDesc->stop();
     }
 
-    ALOGV("%s input %d source = %d status = %d exit",
-            __FUNCTION__, input, client->source(), status);
+    ALOGV("%s input %d source = %d exit", __FUNCTION__, input, client->source());
 
-    return status;
+    return NO_ERROR;
 }
 
 status_t AudioPolicyManager::stopInput(audio_port_handle_t portId)
@@ -4307,7 +4294,16 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
         : AudioPolicyManager(clientInterface, false /*forTesting*/)
 {
     loadConfig();
+    initialize();
 }
+
+//  This check is to catch any legacy platform updating to Q without having
+//  switched to XML since its deprecation on O.
+// TODO: after Q release, remove this check and flag as XML is now the only
+//        option and all legacy platform should have transitioned to XML.
+#ifndef USE_XML_AUDIO_POLICY_CONF
+#error Audio policy no longer supports legacy .conf configuration format
+#endif
 
 void AudioPolicyManager::loadConfig() {
     if (deserializeAudioPolicyXmlConfig(getConfig()) != NO_ERROR) {
@@ -4317,18 +4313,17 @@ void AudioPolicyManager::loadConfig() {
 }
 
 status_t AudioPolicyManager::initialize() {
-    {
-        auto engLib = EngineLibrary::load(
-                        "libaudiopolicyengine" + getConfig().getEngineLibraryNameSuffix() + ".so");
-        if (!engLib) {
-            ALOGE("%s: Failed to load the engine library", __FUNCTION__);
-            return NO_INIT;
-        }
-        mEngine = engLib->createEngine();
-        if (mEngine == nullptr) {
-            ALOGE("%s: Failed to instantiate the APM engine", __FUNCTION__);
-            return NO_INIT;
-        }
+    // Once policy config has been parsed, retrieve an instance of the engine and initialize it.
+    audio_policy::EngineInstance *engineInstance = audio_policy::EngineInstance::getInstance();
+    if (!engineInstance) {
+        ALOGE("%s:  Could not get an instance of policy engine", __FUNCTION__);
+        return NO_INIT;
+    }
+    // Retrieve the Policy Manager Interface
+    mEngine = engineInstance->queryInterface<AudioPolicyManagerInterface>();
+    if (mEngine == NULL) {
+        ALOGE("%s: Failed to get Policy Engine Interface", __FUNCTION__);
+        return NO_INIT;
     }
     mEngine->setObserver(this);
     status_t status = mEngine->initCheck();
@@ -5540,7 +5535,10 @@ uint32_t AudioPolicyManager::setOutputDevices(const sp<SwAudioOutputDescriptor>&
             patchBuilder.addSink(filteredDevice);
         }
 
-        installPatch(__func__, patchHandle, outputDesc.get(), patchBuilder.patch(), delayMs);
+        // Add half reported latency to delayMs when muteWaitMs is null in order
+        // to avoid disordered sequence of muting volume and changing devices.
+        installPatch(__func__, patchHandle, outputDesc.get(), patchBuilder.patch(),
+                muteWaitMs == 0 ? (delayMs + (outputDesc->latency() / 2)) : delayMs);
     }
 
     // update stream volumes according to new device

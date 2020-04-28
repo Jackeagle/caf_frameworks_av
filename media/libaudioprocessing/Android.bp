@@ -3,13 +3,20 @@ cc_defaults {
 
     export_include_dirs: ["include"],
 
-    header_libs: ["libaudioclient_headers"],
-
     shared_libs: [
+        "libaudiohal",
         "libaudioutils",
         "libcutils",
         "liblog",
+        "libnbaio",
+        "libnblog",
+        "libsonic",
         "libutils",
+        "libvibrator",
+    ],
+
+    header_libs: [
+        "libbase_headers",
     ],
 
     cflags: [
@@ -26,32 +33,18 @@ cc_library_shared {
     defaults: ["libaudioprocessing_defaults"],
 
     srcs: [
-        "AudioMixer.cpp",
         "BufferProviders.cpp",
         "RecordBufferConverter.cpp",
     ],
-
-    header_libs: [
-        "libbase_headers",
-        "libmedia_headers"
-    ],
-
-    shared_libs: [
-        "libaudiohal",
-        "libsonic",
-        "libvibrator",
-    ],
-
-    whole_static_libs: ["libaudioprocessing_base"],
+    whole_static_libs: ["libaudioprocessing_arm"],
 }
 
 cc_library_static {
-    name: "libaudioprocessing_base",
+    name: "libaudioprocessing_arm",
     defaults: ["libaudioprocessing_defaults"],
-    vendor_available: true,
 
     srcs: [
-        "AudioMixerBase.cpp",
+        "AudioMixer.cpp",
         "AudioResampler.cpp",
         "AudioResamplerCubic.cpp",
         "AudioResamplerSinc.cpp",

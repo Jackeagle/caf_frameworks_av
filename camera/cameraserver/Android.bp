@@ -17,10 +17,6 @@ cc_binary {
 
     srcs: ["main_cameraserver.cpp"],
 
-    header_libs: [
-        "libmedia_headers",
-    ],
-
     shared_libs: [
         "libcameraservice",
         "liblog",
@@ -29,6 +25,7 @@ cc_binary {
         "libgui",
         "libbinder",
         "libhidlbase",
+        "libhidltransport",
         "android.hardware.camera.common@1.0",
         "android.hardware.camera.provider@2.4",
         "android.hardware.camera.provider@2.5",

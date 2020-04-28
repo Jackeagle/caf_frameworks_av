@@ -25,14 +25,12 @@ cc_library {
         "ServiceUtilities.cpp",
         "TimeCheck.cpp",
     ],
-    static_libs: [
-        "libc_malloc_debug_backtrace",
-    ],
     shared_libs: [
         "libbinder",
         "libcutils",
         "liblog",
         "libutils",
+        "libmemunreachable",
         "libhidlbase",
         "android.hardware.graphics.bufferqueue@1.0",
         "android.hidl.token@1.0-utils",
@@ -46,11 +44,16 @@ cc_library {
         "-Werror",
     ],
 
-    header_libs: [
-        "bionic_libc_platform_headers",
-        "libmedia_headers",
-    ],
+    product_variables: {
+        product_is_iot: {
+            cflags: ["-DTARGET_ANDROID_THINGS"],
+        },
+    },
 
+    include_dirs: [
+        // For android_mallopt definitions.
+        "bionic/libc/private"
+    ],
     local_include_dirs: ["include"],
     export_include_dirs: ["include"],
 }

@@ -271,6 +271,8 @@ protected:
 
 private:
     void                interceptBuffer(const AudioBufferProvider::Buffer& buffer);
+    /** Write the source data in the buffer provider. @return written frame count. */
+    size_t              writeFrames(AudioBufferProvider* dest, const void* src, size_t frameCount);
     template <class F>
     void                forEachTeePatchTrack(F f) {
         for (auto& tp : mTeePatches) { f(tp.patchTrack); }
@@ -393,8 +395,6 @@ public:
                                                                     *  the lowest possible latency
                                                                     *  even if it might glitch. */);
     virtual             ~PatchTrack();
-
-            size_t      framesReady() const override;
 
     virtual status_t    start(AudioSystem::sync_event_t event =
                                     AudioSystem::SYNC_EVENT_NONE,

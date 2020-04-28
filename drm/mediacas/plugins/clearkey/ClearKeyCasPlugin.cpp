@@ -97,8 +97,7 @@ status_t ClearKeyDescramblerFactory::createPlugin(
 ///////////////////////////////////////////////////////////////////////////////
 ClearKeyCasPlugin::ClearKeyCasPlugin(
         void *appData, CasPluginCallback callback)
-    : mCallback(callback), mCallbackExt(NULL), mStatusCallback(NULL),
-    mAppData(appData) {
+    : mCallback(callback), mCallbackExt(NULL), mAppData(appData) {
     ALOGV("CTOR");
 }
 
@@ -111,13 +110,6 @@ ClearKeyCasPlugin::ClearKeyCasPlugin(
 ClearKeyCasPlugin::~ClearKeyCasPlugin() {
     ALOGV("DTOR");
     ClearKeySessionLibrary::get()->destroyPlugin(this);
-}
-
-status_t ClearKeyCasPlugin::setStatusCallback(
-    CasPluginStatusCallback callback) {
-    ALOGV("setStatusCallback");
-    mStatusCallback = callback;
-    return OK;
 }
 
 status_t ClearKeyCasPlugin::setPrivateData(const CasData &/*data*/) {
@@ -140,19 +132,6 @@ static String8 sessionIdToString(const std::vector<uint8_t> &array) {
 status_t ClearKeyCasPlugin::openSession(CasSessionId* sessionId) {
     ALOGV("openSession");
 
-    return ClearKeySessionLibrary::get()->addSession(this, sessionId);
-}
-
-status_t ClearKeyCasPlugin::openSession(uint32_t intent, uint32_t mode,
-    CasSessionId* sessionId) {
-    ALOGV("openSession with intent=%d, mode=%d", intent, mode);
-    // Echo the received information to the callback.
-    // Clear key plugin doesn't use any event, echo'ing for testing only.
-    if (mStatusCallback != NULL) {
-        mStatusCallback((void*)mAppData, intent, mode);
-    }
-
-    // Clear key plugin doesn't use intent and mode.
     return ClearKeySessionLibrary::get()->addSession(this, sessionId);
 }
 

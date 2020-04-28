@@ -27,7 +27,6 @@
 #include <aaudio/AAudioTesting.h>
 
 #include "AudioClock.h"
-#include "AudioGlobal.h"
 #include "AudioStreamBuilder.h"
 #include "AudioStream.h"
 #include "binding/AAudioCommon.h"
@@ -46,13 +45,62 @@ using namespace aaudio;
         return AAUDIO_ERROR_NULL; \
     }
 
+#define AAUDIO_CASE_ENUM(name) case name: return #name
+
 AAUDIO_API const char * AAudio_convertResultToText(aaudio_result_t returnCode) {
-    return AudioGlobal_convertResultToText(returnCode);
+    switch (returnCode) {
+        AAUDIO_CASE_ENUM(AAUDIO_OK);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_DISCONNECTED);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_ILLEGAL_ARGUMENT);
+        // reserved
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_INTERNAL);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_INVALID_STATE);
+        // reserved
+        // reserved
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_INVALID_HANDLE);
+         // reserved
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_UNIMPLEMENTED);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_UNAVAILABLE);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_NO_FREE_HANDLES);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_NO_MEMORY);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_NULL);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_TIMEOUT);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_WOULD_BLOCK);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_INVALID_FORMAT);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_OUT_OF_RANGE);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_NO_SERVICE);
+        AAUDIO_CASE_ENUM(AAUDIO_ERROR_INVALID_RATE);
+    }
+    return "Unrecognized AAudio error.";
 }
 
 AAUDIO_API const char * AAudio_convertStreamStateToText(aaudio_stream_state_t state) {
-    return AudioGlobal_convertStreamStateToText(state);
+    switch (state) {
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_UNINITIALIZED);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_UNKNOWN);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_OPEN);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_STARTING);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_STARTED);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_PAUSING);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_PAUSED);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_FLUSHING);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_FLUSHED);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_STOPPING);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_STOPPED);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_DISCONNECTED);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_CLOSING);
+        AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_CLOSED);
+    }
+    return "Unrecognized AAudio state.";
 }
+
+#undef AAUDIO_CASE_ENUM
+
+
+/******************************************
+ * Static globals.
+ */
+static aaudio_policy_t s_MMapPolicy = AAUDIO_UNSPECIFIED;
 
 static AudioStream *convertAAudioStreamToAudioStream(AAudioStream* stream)
 {
@@ -495,11 +543,23 @@ AAUDIO_API aaudio_result_t AAudioStream_getTimestamp(AAudioStream* stream,
 }
 
 AAUDIO_API aaudio_policy_t AAudio_getMMapPolicy() {
-    return AudioGlobal_getMMapPolicy();
+    return s_MMapPolicy;
 }
 
 AAUDIO_API aaudio_result_t AAudio_setMMapPolicy(aaudio_policy_t policy) {
-    return AudioGlobal_setMMapPolicy(policy);
+    aaudio_result_t result = AAUDIO_OK;
+    switch(policy) {
+        case AAUDIO_UNSPECIFIED:
+        case AAUDIO_POLICY_NEVER:
+        case AAUDIO_POLICY_AUTO:
+        case AAUDIO_POLICY_ALWAYS:
+            s_MMapPolicy = policy;
+            break;
+        default:
+            result = AAUDIO_ERROR_ILLEGAL_ARGUMENT;
+            break;
+    }
+    return result;
 }
 
 AAUDIO_API bool AAudioStream_isMMapUsed(AAudioStream* stream)

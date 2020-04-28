@@ -17,12 +17,9 @@
 #ifndef ANDROID_HARDWARE_DEVICES_FACTORY_HAL_HYBRID_H
 #define ANDROID_HARDWARE_DEVICES_FACTORY_HAL_HYBRID_H
 
-#include PATH(android/hardware/audio/FILE_VERSION/IDevicesFactory.h)
 #include <media/audiohal/DevicesFactoryHalInterface.h>
 #include <utils/Errors.h>
 #include <utils/RefBase.h>
-
-using ::android::hardware::audio::CPP_VERSION::IDevicesFactory;
 
 namespace android {
 namespace CPP_VERSION {
@@ -30,7 +27,7 @@ namespace CPP_VERSION {
 class DevicesFactoryHalHybrid : public DevicesFactoryHalInterface
 {
   public:
-    DevicesFactoryHalHybrid(sp<IDevicesFactory> hidlFactory);
+    DevicesFactoryHalHybrid();
 
     // Opens a device with the specified name. To close the device, it is
     // necessary to release references to the returned object.
@@ -40,6 +37,10 @@ class DevicesFactoryHalHybrid : public DevicesFactoryHalInterface
     sp<DevicesFactoryHalInterface> mLocalFactory;
     sp<DevicesFactoryHalInterface> mHidlFactory;
 };
+
+sp<DevicesFactoryHalInterface> createDevicesFactoryHal() {
+    return new DevicesFactoryHalHybrid();
+}
 
 } // namespace CPP_VERSION
 } // namespace android

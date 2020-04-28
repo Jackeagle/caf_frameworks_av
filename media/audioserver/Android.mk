@@ -9,11 +9,12 @@ LOCAL_SHARED_LIBRARIES := \
 	libaaudioservice \
 	libaudioflinger \
 	libaudiopolicyservice \
-	libaudioprocessing \
 	libbinder \
 	libcutils \
 	liblog \
 	libhidlbase \
+	libhidltransport \
+	libhwbinder \
 	libmedia \
 	libmedialogservice \
 	libmediautils \
@@ -33,11 +34,13 @@ LOCAL_C_INCLUDES := \
 	frameworks/av/services/audiopolicy/service \
 	frameworks/av/services/medialog \
 	frameworks/av/services/oboeservice \
+	frameworks/av/services/radio \
 	frameworks/av/services/soundtrigger \
 	frameworks/av/media/libaaudio/include \
 	frameworks/av/media/libaaudio/src \
 	frameworks/av/media/libaaudio/src/binding \
 	frameworks/av/media/libmedia \
+	$(call include-path-for, audio-utils) \
 	external/sonic \
 
 # If AUDIOSERVER_MULTILIB in device.mk is non-empty then it is used to control

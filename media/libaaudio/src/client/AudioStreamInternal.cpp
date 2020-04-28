@@ -36,7 +36,6 @@
 #include "binding/AAudioStreamConfiguration.h"
 #include "binding/IAAudioService.h"
 #include "binding/AAudioServiceMessage.h"
-#include "core/AudioGlobal.h"
 #include "core/AudioStreamBuilder.h"
 #include "fifo/FifoBuffer.h"
 #include "utility/AudioClock.h"

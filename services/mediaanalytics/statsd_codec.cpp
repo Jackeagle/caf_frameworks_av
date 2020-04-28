@@ -55,19 +55,19 @@ bool statsd_codec(MediaAnalyticsItem *item)
     // flesh out the protobuf we'll hand off with our data
     //
     // android.media.mediacodec.codec   string
-    std::string codec;
-    if (item->getString("android.media.mediacodec.codec", &codec)) {
-        metrics_proto.set_codec(std::move(codec));
+    char *codec = NULL;
+    if (item->getCString("android.media.mediacodec.codec", &codec)) {
+        metrics_proto.set_codec(codec);
     }
     // android.media.mediacodec.mime    string
-    std::string mime;
-    if (item->getString("android.media.mediacodec.mime", &mime)) {
-        metrics_proto.set_mime(std::move(mime));
+    char *mime = NULL;
+    if (item->getCString("android.media.mediacodec.mime", &mime)) {
+        metrics_proto.set_mime(mime);
     }
     // android.media.mediacodec.mode    string
-    std::string mode;
-    if ( item->getString("android.media.mediacodec.mode", &mode)) {
-        metrics_proto.set_mode(std::move(mode));
+    char *mode = NULL;
+    if ( item->getCString("android.media.mediacodec.mode", &mode)) {
+        metrics_proto.set_mode(mode);
     }
     // android.media.mediacodec.encoder int32
     int32_t encoder = -1;
@@ -125,9 +125,9 @@ bool statsd_codec(MediaAnalyticsItem *item)
         metrics_proto.set_error_code(errcode);
     }
     // android.media.mediacodec.errstate        string
-    std::string errstate;
-    if ( item->getString("android.media.mediacodec.errstate", &errstate)) {
-        metrics_proto.set_error_state(std::move(errstate));
+    char *errstate = NULL;
+    if ( item->getCString("android.media.mediacodec.errstate", &errstate)) {
+        metrics_proto.set_error_state(errstate);
     }
     // android.media.mediacodec.latency.max  int64
     int64_t latency_max = -1;
@@ -172,6 +172,12 @@ bool statsd_codec(MediaAnalyticsItem *item)
     } else {
         ALOGV("NOT sending: private data (len=%zu)", strlen(serialized.c_str()));
     }
+
+    // must free the strings that we were given
+    free(codec);
+    free(mime);
+    free(mode);
+    free(errstate);
 
     return true;
 }

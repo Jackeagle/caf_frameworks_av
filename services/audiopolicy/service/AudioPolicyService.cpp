@@ -29,6 +29,7 @@
 #include <utils/Log.h>
 #include <cutils/properties.h>
 #include <binder/IPCThreadState.h>
+#include <binder/ActivityManager.h>
 #include <binder/PermissionController.h>
 #include <binder/IResultReceiver.h>
 #include <utils/String16.h>
@@ -843,26 +844,28 @@ status_t AudioPolicyService::printHelp(int out) {
 // -----------  AudioPolicyService::UidPolicy implementation ----------
 
 void AudioPolicyService::UidPolicy::registerSelf() {
-    status_t res = mAm.linkToDeath(this);
-    mAm.registerUidObserver(this, ActivityManager::UID_OBSERVER_GONE
+    ActivityManager am;
+    am.registerUidObserver(this, ActivityManager::UID_OBSERVER_GONE
             | ActivityManager::UID_OBSERVER_IDLE
             | ActivityManager::UID_OBSERVER_ACTIVE
             | ActivityManager::UID_OBSERVER_PROCSTATE,
             ActivityManager::PROCESS_STATE_UNKNOWN,
             String16("audioserver"));
+    status_t res = am.linkToDeath(this);
     if (!res) {
         Mutex::Autolock _l(mLock);
         mObserverRegistered = true;
     } else {
         ALOGE("UidPolicy::registerSelf linkToDeath failed: %d", res);
 
-        mAm.unregisterUidObserver(this);
+        am.unregisterUidObserver(this);
     }
 }
 
 void AudioPolicyService::UidPolicy::unregisterSelf() {
-    mAm.unlinkToDeath(this);
-    mAm.unregisterUidObserver(this);
+    ActivityManager am;
+    am.unlinkToDeath(this);
+    am.unregisterUidObserver(this);
     Mutex::Autolock _l(mLock);
     mObserverRegistered = false;
 }

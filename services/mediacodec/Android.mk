@@ -39,7 +39,9 @@ LOCAL_SHARED_LIBRARIES := \
     libbase \
     libavservices_minijail_vendor \
     libcutils \
+    libhwbinder \
     libhidlbase \
+    libhidltransport \
     libstagefright_omx \
     libstagefright_xmlparser \
     android.hardware.media.omx@1.0 \
@@ -70,7 +72,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := mediacodec.policy
 LOCAL_MODULE_CLASS := ETC
 LOCAL_MODULE_PATH := $(TARGET_OUT)/etc/seccomp_policy
-LOCAL_REQUIRED_MODULES := crash_dump.policy
+LOCAL_REQUIRED_MODULES := crash_dump.policy code_coverage.policy
 # mediacodec runs in 32-bit combatibility mode. For 64 bit architectures,
 # use the 32 bit policy
 ifdef TARGET_2ND_ARCH

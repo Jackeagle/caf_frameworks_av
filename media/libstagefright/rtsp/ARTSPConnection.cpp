@@ -21,14 +21,12 @@
 #include "ARTSPConnection.h"
 #include "NetworkUtils.h"
 
-#include <datasource/HTTPBase.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/base64.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/Utils.h>
-#include <media/stagefright/FoundationUtils.h>
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -36,6 +34,7 @@
 #include <openssl/md5.h>
 #include <sys/socket.h>
 
+#include "include/HTTPBase.h"
 
 namespace android {
 
@@ -954,7 +953,7 @@ static void GetMethodAndURL(
     CHECK_GE(space2, 0);
 
     method->setTo(request, 0, space1);
-    url->setTo(request, space1 + 1, space2 - space1 - 1);
+    url->setTo(request, space1 + 1, space2 - space1);
 }
 
 void ARTSPConnection::addAuthentication(AString *request) {

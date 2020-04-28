@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <AudioPolicyManagerInterface.h>
 #include <VolumeCurve.h>
 #include <system/audio.h>
 #include <utils/RefBase.h>

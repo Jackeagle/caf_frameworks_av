@@ -33,8 +33,6 @@
 #include <AudioIODescriptorInterface.h>
 #include <ParameterManagerWrapper.h>
 
-#include <media/TypeConverter.h>
-
 using std::string;
 using std::map;
 
@@ -246,9 +244,9 @@ DeviceVector Engine::getDevicesForProductStrategy(product_strategy_t ps) const
     }
     if (devices == AUDIO_DEVICE_NONE ||
             (devices & availableOutputDevicesType) == AUDIO_DEVICE_NONE) {
-        auto defaultDevice = getApmObserver()->getDefaultOutputDevice();
-        ALOG_ASSERT(defaultDevice != nullptr, "no valid default device defined");
-        return DeviceVector(defaultDevice);
+        devices = getApmObserver()->getDefaultOutputDevice()->type();
+        ALOGE_IF(devices == AUDIO_DEVICE_NONE, "%s: no valid default device defined", __FUNCTION__);
+        return DeviceVector(getApmObserver()->getDefaultOutputDevice());
     }
     if (/*device_distinguishes_on_address(devices)*/ devices == AUDIO_DEVICE_OUT_BUS) {
         // We do expect only one device for these types of devices
@@ -256,14 +254,6 @@ DeviceVector Engine::getDevicesForProductStrategy(product_strategy_t ps) const
         // If this criterion is not wished, need to ensure this device is available
         const String8 address(productStrategies.getDeviceAddressForProductStrategy(ps).c_str());
         ALOGV("%s:device 0x%x %s %d", __FUNCTION__, devices, address.c_str(), ps);
-        auto busDevice = availableOutputDevices.getDevice(devices, address, AUDIO_FORMAT_DEFAULT);
-        if (busDevice == nullptr) {
-            ALOGE("%s:unavailable device 0x%x %s, fallback on default", __func__, devices,
-                  address.c_str());
-            auto defaultDevice = getApmObserver()->getDefaultOutputDevice();
-            ALOG_ASSERT(defaultDevice != nullptr, "Default Output Device NOT available");
-            return DeviceVector(defaultDevice);
-        }
         return DeviceVector(availableOutputDevices.getDevice(devices,
                                                              address,
                                                              AUDIO_FORMAT_DEFAULT));
@@ -371,7 +361,7 @@ bool Engine::setDeviceTypesForProductStrategy(product_strategy_t strategy, audio
 }
 
 template <>
-EngineInterface *Engine::queryInterface()
+AudioPolicyManagerInterface *Engine::queryInterface()
 {
     return this;
 }

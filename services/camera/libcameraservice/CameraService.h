@@ -25,7 +25,6 @@
 #include <cutils/multiuser.h>
 #include <utils/Vector.h>
 #include <utils/KeyedVector.h>
-#include <binder/ActivityManager.h>
 #include <binder/AppOpsManager.h>
 #include <binder/BinderService.h>
 #include <binder/IAppOpsCallback.h>
@@ -572,7 +571,6 @@ private:
 
         Mutex mUidLock;
         bool mRegistered;
-        ActivityManager mAm;
         wp<CameraService> mService;
         std::unordered_set<uid_t> mActiveUids;
         // Monitored uid map to cached procState and refCount pair
@@ -819,7 +817,9 @@ private:
     class ServiceListener : public virtual IBinder::DeathRecipient {
         public:
             ServiceListener(sp<CameraService> parent, sp<hardware::ICameraServiceListener> listener,
-                    int uid) : mParent(parent), mListener(listener), mListenerUid(uid) {}
+                    int uid, int pid, bool openCloseCallbackAllowed) : mParent(parent),
+                    mListener(listener), mListenerUid(uid), mListenerPid(pid),
+                    mOpenCloseCallbackAllowed(openCloseCallbackAllowed) {}
 
             status_t initialize() {
                 return IInterface::asBinder(mListener)->linkToDeath(this);
@@ -833,12 +833,16 @@ private:
             }
 
             int getListenerUid() { return mListenerUid; }
+            int getListenerPid() { return mListenerPid; }
             sp<hardware::ICameraServiceListener> getListener() { return mListener; }
+            bool isOpenCloseCallbackAllowed() { return mOpenCloseCallbackAllowed; }
 
         private:
             wp<CameraService> mParent;
             sp<hardware::ICameraServiceListener> mListener;
             int mListenerUid;
+            int mListenerPid;
+            bool mOpenCloseCallbackAllowed = false;
     };
 
     // Guarded by mStatusListenerMutex
@@ -860,6 +864,13 @@ private:
                 rejectedSourceStates);
     void updateStatus(StatusInternal status,
             const String8& cameraId);
+
+    /**
+     * Update the opened/closed status of the given camera id.
+     *
+     * This method acqiures mStatusListenerLock.
+     */
+    void updateOpenCloseStatus(const String8& cameraId, bool open, const String16& packageName);
 
     // flashlight control
     sp<CameraFlashlight> mFlashlight;

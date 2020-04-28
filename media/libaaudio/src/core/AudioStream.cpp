@@ -25,9 +25,8 @@
 #include "AudioStreamBuilder.h"
 #include "AudioStream.h"
 #include "AudioClock.h"
-#include "AudioGlobal.h"
 
-namespace aaudio {
+using namespace aaudio;
 
 
 // Sequential number assigned to streams solely for debugging purposes.
@@ -52,7 +51,7 @@ AudioStream::~AudioStream() {
                           || getState() == AAUDIO_STREAM_STATE_UNINITIALIZED
                           || getState() == AAUDIO_STREAM_STATE_DISCONNECTED),
                         "~AudioStream() - still in use, state = %s",
-                        AudioGlobal_convertStreamStateToText(getState()));
+                        AAudio_convertStreamStateToText(getState()));
 
     mPlayerBase->clearParentReference(); // remove reference to this AudioStream
 }
@@ -156,7 +155,7 @@ aaudio_result_t AudioStream::systemPause() {
         case AAUDIO_STREAM_STATE_CLOSED:
         default:
             ALOGW("safePause() stream not running, state = %s",
-                  AudioGlobal_convertStreamStateToText(getState()));
+                  AAudio_convertStreamStateToText(getState()));
             return AAUDIO_ERROR_INVALID_STATE;
     }
 
@@ -241,7 +240,7 @@ aaudio_result_t AudioStream::safeStop() {
         case AAUDIO_STREAM_STATE_CLOSED:
         default:
             ALOGW("%s() stream not running, state = %s", __func__,
-                  AudioGlobal_convertStreamStateToText(getState()));
+                  AAudio_convertStreamStateToText(getState()));
             return AAUDIO_ERROR_INVALID_STATE;
     }
 
@@ -474,7 +473,7 @@ AudioStream::MyPlayerBase::~MyPlayerBase() {
 
 void AudioStream::MyPlayerBase::registerWithAudioManager() {
     if (!mRegistered) {
-        init(android::PLAYER_TYPE_AAUDIO, AUDIO_USAGE_MEDIA);
+        init(android::PLAYER_TYPE_AAUDIO, AAudioConvert_usageToInternal(mParent->getUsage()));
         mRegistered = true;
     }
 }
@@ -489,5 +488,3 @@ void AudioStream::MyPlayerBase::unregisterWithAudioManager() {
 void AudioStream::MyPlayerBase::destroy() {
     unregisterWithAudioManager();
 }
-
-}  // namespace aaudio

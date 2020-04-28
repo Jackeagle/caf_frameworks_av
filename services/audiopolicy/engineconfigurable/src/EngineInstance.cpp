@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <EngineInterface.h>
+#include <AudioPolicyManagerInterface.h>
 #include <AudioPolicyPluginInterface.h>
 #include "AudioPolicyEngineInstance.h"
 #include "Engine.h"
@@ -45,9 +45,9 @@ Engine *EngineInstance::getEngine() const
 }
 
 template <>
-EngineInterface *EngineInstance::queryInterface() const
+AudioPolicyManagerInterface *EngineInstance::queryInterface() const
 {
-    return getEngine()->queryInterface<EngineInterface>();
+    return getEngine()->queryInterface<AudioPolicyManagerInterface>();
 }
 
 template <>
@@ -57,16 +57,5 @@ AudioPolicyPluginInterface *EngineInstance::queryInterface() const
 }
 
 } // namespace audio_policy
-
-extern "C" EngineInterface* createEngineInstance()
-{
-    return audio_policy::EngineInstance::getInstance()->queryInterface<EngineInterface>();
-}
-
-extern "C" void destroyEngineInstance(EngineInterface*)
-{
-    // The engine is a singleton.
-}
-
 } // namespace android
 

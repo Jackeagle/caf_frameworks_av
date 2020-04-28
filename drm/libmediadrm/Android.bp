@@ -2,16 +2,9 @@
 // libmediadrm
 //
 
-cc_library_headers {
-    name: "libmediadrm_headers",
-
-    export_include_dirs: [
-        "interface"
-    ],
-
-}
-
-cc_library_shared {
+// TODO: change it back to cc_library_shared when MediaPlayer2 switches to
+// using NdkMediaDrm, instead of MediaDrm.java.
+cc_library {
     name: "libmediadrm",
 
     srcs: [
@@ -24,19 +17,6 @@ cc_library_shared {
         "SharedLibrary.cpp",
         "DrmHal.cpp",
         "CryptoHal.cpp",
-    ],
-
-    local_include_dirs: [
-        "include",
-        "interface"
-    ],
-
-    export_include_dirs: [
-        "include"
-    ],
-
-    header_libs: [
-        "libmedia_headers",
     ],
 
     shared_libs: [
@@ -54,6 +34,7 @@ cc_library_shared {
         "android.hardware.drm@1.2",
         "libhidlallocatorutils",
         "libhidlbase",
+        "libhidltransport",
     ],
 
     cflags: [
@@ -71,17 +52,10 @@ cc_library_shared {
         "protos/metrics.proto",
     ],
 
-    local_include_dirs: [
-        "include"
-    ],
-
     proto: {
         export_proto_headers: true,
         type: "lite",
     },
-    header_libs: [
-        "libmedia_headers",
-    ],
     shared_libs: [
         "android.hardware.drm@1.0",
         "android.hardware.drm@1.1",
@@ -109,17 +83,10 @@ cc_library_shared {
         "protos/metrics.proto",
     ],
 
-    local_include_dirs: [
-        "include"
-    ],
-
     proto: {
         export_proto_headers: true,
         type: "full",
     },
-    header_libs: [
-        "libmedia_headers",
-    ],
     shared_libs: [
         "android.hardware.drm@1.0",
         "android.hardware.drm@1.1",

@@ -89,7 +89,7 @@ media_status_t AMediaExtractor_setDataSourceWithHeaders(AMediaExtractor *mData,
 
     ALOGV("setDataSource(%s)", uri);
 
-    sp<MediaHTTPService> httpService = createMediaHttpService(uri);
+    sp<MediaHTTPService> httpService = createMediaHttpService(uri, /* version = */ 1);
     if (httpService == NULL) {
         ALOGE("can't create http service");
         return AMEDIA_ERROR_UNSUPPORTED;

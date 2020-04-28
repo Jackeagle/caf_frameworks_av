@@ -273,7 +273,6 @@ public:
     bool isLogicalCamera(const std::string& id, std::vector<std::string>* physicalCameraIds);
 
     bool isPublicallyHiddenSecureCamera(const std::string& id) const;
-
     bool isHiddenPhysicalCamera(const std::string& cameraId) const;
 
     static const float kDepthARTolerance;

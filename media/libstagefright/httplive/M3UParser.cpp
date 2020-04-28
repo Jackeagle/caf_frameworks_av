@@ -27,7 +27,6 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/Utils.h>
-#include <media/stagefright/FoundationUtils.h>
 #include <media/mediaplayer.h>
 
 namespace android {
