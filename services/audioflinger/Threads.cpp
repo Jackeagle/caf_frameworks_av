@@ -5199,8 +5199,10 @@ void AudioFlinger::DirectOutputThread::threadLoop_sleepTime()
         }
     } else if (mBytesWritten != 0 && audio_has_proportional_frames(mFormat)) {
         memset(mSinkBuffer, 0, mFrameCount * mFrameSize);
-        mSleepTimeUs = 0;
-        mFramesWrittenForSleep += mFrameCount;
+        if (!audio_is_linear_pcm(mFormat)) {
+            mSleepTimeUs = 0;
+            mFramesWrittenForSleep += mFrameCount;
+        }
     }
 }
 
