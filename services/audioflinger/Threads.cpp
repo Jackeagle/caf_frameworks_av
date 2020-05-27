@@ -3366,7 +3366,7 @@ bool AudioFlinger::PlaybackThread::threadLoop()
                     // latency of 5 seconds).
                     const double minLatency = 0., maxLatency = 5000.;
                     if (latencyMs >= minLatency && latencyMs <= maxLatency) {
-                        ALOGV("new downstream latency %lf ms", latencyMs);
+                        ALOGVV("new downstream latency %lf ms", latencyMs);
                     } else {
                         ALOGD("out of range downstream latency %lf ms", latencyMs);
                         if (latencyMs < minLatency) latencyMs = minLatency;
@@ -3415,7 +3415,7 @@ bool AudioFlinger::PlaybackThread::threadLoop()
                         mSampleRate);
 
                 if (isTimestampCorrectionEnabled()) {
-                    ALOGV("TS_BEFORE: %d %lld %lld", id(),
+                    ALOGVV("TS_BEFORE: %d %lld %lld", id(),
                             (long long)timestamp.mTimeNs[ExtendedTimestamp::LOCATION_KERNEL],
                             (long long)timestamp.mPosition[ExtendedTimestamp::LOCATION_KERNEL]);
                     auto correctedTimestamp = mTimestampVerifier.getLastCorrectedTimestamp();
@@ -3423,7 +3423,7 @@ bool AudioFlinger::PlaybackThread::threadLoop()
                             = correctedTimestamp.mFrames;
                     timestamp.mTimeNs[ExtendedTimestamp::LOCATION_KERNEL]
                             = correctedTimestamp.mTimeNs;
-                    ALOGV("TS_AFTER: %d %lld %lld", id(),
+                    ALOGVV("TS_AFTER: %d %lld %lld", id(),
                             (long long)timestamp.mTimeNs[ExtendedTimestamp::LOCATION_KERNEL],
                             (long long)timestamp.mPosition[ExtendedTimestamp::LOCATION_KERNEL]);
 
@@ -6725,7 +6725,7 @@ AudioFlinger::RecordThread::RecordThread(const sp<AudioFlinger>& audioFlinger,
     snprintf(mThreadName, kThreadNameLength, "AudioIn_%X", id);
     mNBLogWriter = audioFlinger->newWriter_l(kLogSize, mThreadName);
 
-    if (mInput != nullptr && mInput->audioHwDev != nullptr) {
+    if (mInput->audioHwDev != nullptr) {
         mIsMsdDevice = strcmp(
                 mInput->audioHwDev->moduleName(), AUDIO_HARDWARE_MODULE_ID_MSD) == 0;
     }
@@ -7187,12 +7187,12 @@ reacquire_wakelock:
 
                 // Correct timestamps
                 if (isTimestampCorrectionEnabled()) {
-                    ALOGV("TS_BEFORE: %d %lld %lld",
+                    ALOGVV("TS_BEFORE: %d %lld %lld",
                             id(), (long long)time, (long long)position);
                     auto correctedTimestamp = mTimestampVerifier.getLastCorrectedTimestamp();
                     position = correctedTimestamp.mFrames;
                     time = correctedTimestamp.mTimeNs;
-                    ALOGV("TS_AFTER: %d %lld %lld",
+                    ALOGVV("TS_AFTER: %d %lld %lld",
                             id(), (long long)time, (long long)position);
                 }
 

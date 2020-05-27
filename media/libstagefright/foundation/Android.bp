@@ -2,6 +2,7 @@ cc_library_headers {
     name: "libstagefright_foundation_headers",
     export_include_dirs: ["include"],
     vendor_available: true,
+    host_supported: true,
 }
 
 cc_defaults {
@@ -10,6 +11,7 @@ cc_defaults {
     vndk: {
         enabled: true,
     },
+    host_supported: true,
     double_loadable: true,
     include_dirs: [
         "frameworks/av/include",
@@ -73,6 +75,20 @@ cc_defaults {
         "base64.cpp",
         "hexdump.cpp",
     ],
+
+    target: {
+        vendor: {
+            exclude_shared_libs: [
+                "libbinder",
+            ],
+            cflags: [
+                "-DNO_IMEMORY",
+            ],
+        },
+        darwin: {
+            enabled: false,
+        },
+    },
 
     clang: true,
 

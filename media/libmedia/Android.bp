@@ -15,6 +15,21 @@ cc_library_headers {
     ],
 }
 
+cc_library_headers {
+    name: "libmedia_datasource_headers",
+    export_include_dirs: ["include"],
+    host_supported: true,
+    target: {
+        darwin: {
+            enabled: false,
+        },
+    },
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media",
+    ],
+}
+
 filegroup {
     name: "libmedia_omx_aidl",
     srcs: [
@@ -341,4 +356,37 @@ cc_library {
         ],
         cfi: true,
     },
+}
+
+cc_library_static {
+    name: "libmedia_ndkformatpriv",
+
+    host_supported: true,
+
+    srcs: [
+        "NdkMediaFormatPriv.cpp",
+        "NdkMediaErrorPriv.cpp",
+    ],
+
+    header_libs: [
+        "libstagefright_foundation_headers",
+        "libstagefright_headers",
+        "media_ndk_headers",
+    ],
+
+    cflags: [
+        "-DEXPORT=__attribute__((visibility(\"default\")))",
+        "-Werror",
+        "-Wall",
+    ],
+
+    export_include_dirs: ["include"],
+
+    target: {
+        darwin: {
+            enabled: false,
+        },
+    },
+
+    apex_available: ["com.android.media"],
 }
