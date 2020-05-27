@@ -2,6 +2,12 @@ cc_library_headers {
     name: "libstagefright_headers",
     export_include_dirs: ["include"],
     vendor_available: true,
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media",
+        "com.android.media.swcodec",
+    ],
+    min_sdk_version: "29",
     host_supported: true,
     target: {
         darwin: {
@@ -12,6 +18,11 @@ cc_library_headers {
 
 cc_library_static {
     name: "libstagefright_esds",
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media",
+    ],
+    min_sdk_version: "29",
 
     srcs: ["ESDS.cpp"],
 
@@ -29,10 +40,21 @@ cc_library_static {
         "libstagefright_foundation",
         "libutils"
     ],
+    host_supported: true,
+    target: {
+        darwin: {
+            enabled: false,
+        },
+    },
 }
 
 cc_library_static {
     name: "libstagefright_metadatautils",
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media",
+    ],
+    min_sdk_version: "29",
 
     srcs: ["MetaDataUtils.cpp"],
 
@@ -47,7 +69,11 @@ cc_library_static {
         cfi: true,
     },
 
-    shared_libs: ["libmedia", "libmediandk"],
+    header_libs: [
+        "libstagefright_foundation_headers",
+    ],
+    shared_libs: ["libmediandk"],
+    export_include_dirs: ["include"],
 }
 
 cc_library_shared {
@@ -91,6 +117,11 @@ cc_library_shared {
 
 cc_library_static {
     name: "libstagefright_mpeg2extractor",
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media",
+    ],
+    min_sdk_version: "29",
 
     srcs: [
         "Utils.cpp",
@@ -100,8 +131,6 @@ cc_library_static {
 
     shared_libs: [
         "liblog",
-        "libmedia",
-        "libmedia_omx",
     ],
 
     export_include_dirs: [
@@ -109,7 +138,9 @@ cc_library_static {
     ],
 
     header_libs: [
-        "libmedia_helper_headers",
+        "libaudioclient_headers",
+        "libmedia_headers",
+        "media_ndk_headers",
     ],
 
     cflags: [
