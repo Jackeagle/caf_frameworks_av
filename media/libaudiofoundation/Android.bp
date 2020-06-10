@@ -1,6 +1,8 @@
 cc_library_headers {
     name: "libaudiofoundation_headers",
     vendor_available: true,
+    min_sdk_version: "29",
+
     export_include_dirs: ["include"],
     header_libs: [
         "libaudio_system_headers",
@@ -10,6 +12,12 @@ cc_library_headers {
         "libaudio_system_headers",
         "libmedia_helper_headers",
     ],
+    host_supported: true,
+    target: {
+        darwin: {
+            enabled: false,
+        },
+    },
 }
 
 cc_library {

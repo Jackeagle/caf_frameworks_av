@@ -2,6 +2,8 @@ cc_library_headers {
     name: "libstagefright_foundation_headers",
     export_include_dirs: ["include"],
     vendor_available: true,
+    host_supported: true,
+    min_sdk_version: "29",
 }
 
 cc_defaults {
@@ -10,6 +12,7 @@ cc_defaults {
     vndk: {
         enabled: true,
     },
+    host_supported: true,
     double_loadable: true,
     include_dirs: [
         "frameworks/av/include",
@@ -23,7 +26,6 @@ cc_defaults {
     ],
 
     header_libs: [
-        "libhardware_headers",
         "libstagefright_foundation_headers",
         "media_ndk_headers",
         "media_plugin_headers",
@@ -75,6 +77,20 @@ cc_defaults {
         "hexdump.cpp",
     ],
 
+    target: {
+        vendor: {
+            exclude_shared_libs: [
+                "libbinder",
+            ],
+            cflags: [
+                "-DNO_IMEMORY",
+            ],
+        },
+        darwin: {
+            enabled: false,
+        },
+    },
+
     clang: true,
 
     sanitize: {
@@ -89,11 +105,13 @@ cc_defaults {
 cc_library {
     name: "libstagefright_foundation",
     defaults: ["libstagefright_foundation_defaults"],
+    min_sdk_version: "29",
 }
 
 cc_library_static {
     name: "libstagefright_foundation_without_imemory",
     defaults: ["libstagefright_foundation_defaults"],
+    min_sdk_version: "29",
 
     cflags: [
         "-Wno-multichar",

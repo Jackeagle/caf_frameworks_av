@@ -1,6 +1,7 @@
 cc_binary {
     name: "mediaswcodec",
     vendor_available: true,
+    min_sdk_version: "29",
 
     srcs: [
         "main_swcodecservice.cpp",
@@ -58,5 +59,8 @@ prebuilt_etc {
             src: "seccomp_policy/mediacodec-x86.policy",
         },
     },
-    required: ["crash_dump.policy"],
+    required: [
+        "crash_dump.policy",
+        "code_coverage.policy",
+    ],
 }

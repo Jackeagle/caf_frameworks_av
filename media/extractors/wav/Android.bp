@@ -1,4 +1,7 @@
 cc_library {
+    name: "libwavextractor",
+
+    defaults: ["extractor-defaults"],
 
     srcs: ["WAVExtractor.cpp"],
 
@@ -8,8 +11,6 @@ cc_library {
 
     shared_libs: [
         "libbinder_ndk",
-        "liblog",
-        "libmediandk",
     ],
 
     static_libs: [
@@ -18,24 +19,10 @@ cc_library {
         "libstagefright_foundation",
     ],
 
-    name: "libwavextractor",
-    relative_install_path: "extractors",
-
-    compile_multilib: "first",
-
-    cflags: [
-        "-Werror",
-        "-Wall",
-        "-fvisibility=hidden",
-    ],
-    version_script: "exports.lds",
-
-    sanitize: {
-        cfi: true,
-        misc_undefined: [
-            "unsigned-integer-overflow",
-            "signed-integer-overflow",
-        ],
+    host_supported: true,
+    target: {
+        darwin: {
+            enabled: false,
+        },
     },
-
 }

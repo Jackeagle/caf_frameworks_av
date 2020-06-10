@@ -107,6 +107,7 @@ class WriterTest {
         }
         mBufferInfo.clear();
         if (mInputStream.is_open()) mInputStream.close();
+        if (gEnv->cleanUp()) remove(OUTPUT_FILE_NAME);
     }
 
     void setupWriterType(string writerFormat) {
@@ -465,7 +466,8 @@ class ListenerTest : public WriterTest,
 };
 
 TEST_P(ListenerTest, SetMaxFileLimitsTest) {
-    if (mDisableTest) return;
+    // TODO(b/151892414): Enable test for other writers
+    if (mDisableTest || mWriterName != MPEG4) return;
     ALOGV("Validates writer when max file limits are set");
 
     tuple<string, int32_t, float, float> params = GetParam();
