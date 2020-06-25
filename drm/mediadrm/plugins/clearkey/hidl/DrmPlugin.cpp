@@ -111,6 +111,8 @@ void DrmPlugin::initProperties() {
 // The content in this secure stop is implementation dependent, the clearkey
 // secureStop does not serve as a reference implementation.
 void DrmPlugin::installSecureStop(const hidl_vec<uint8_t>& sessionId) {
+    Mutex::Autolock lock(mSecureStopLock);
+
     ClearkeySecureStop clearkeySecureStop;
     clearkeySecureStop.id = uint32ToVector(++mNextSecureStopId);
     clearkeySecureStop.data.assign(sessionId.begin(), sessionId.end());
@@ -744,6 +746,7 @@ Return<void> DrmPlugin::getOfflineLicenseState(const KeySetId& keySetId,
 }
 
 Return<void> DrmPlugin::getSecureStops(getSecureStops_cb _hidl_cb) {
+    mSecureStopLock.lock();
     std::vector<SecureStop> stops;
     for (auto itr = mSecureStops.begin(); itr != mSecureStops.end(); ++itr) {
         ClearkeySecureStop clearkeyStop = itr->second;
@@ -755,26 +758,32 @@ Return<void> DrmPlugin::getSecureStops(getSecureStops_cb _hidl_cb) {
         stop.opaqueData = toHidlVec(stopVec);
         stops.push_back(stop);
     }
+    mSecureStopLock.unlock();
+
     _hidl_cb(Status::OK, stops);
     return Void();
 }
 
 Return<void> DrmPlugin::getSecureStop(const hidl_vec<uint8_t>& secureStopId,
         getSecureStop_cb _hidl_cb) {
-    SecureStop stop;
+    std::vector<uint8_t> stopVec;
+
+    mSecureStopLock.lock();
     auto itr = mSecureStops.find(toVector(secureStopId));
     if (itr != mSecureStops.end()) {
         ClearkeySecureStop clearkeyStop = itr->second;
-        std::vector<uint8_t> stopVec;
         stopVec.insert(stopVec.end(), clearkeyStop.id.begin(), clearkeyStop.id.end());
         stopVec.insert(stopVec.end(), clearkeyStop.data.begin(), clearkeyStop.data.end());
+    }
+    mSecureStopLock.unlock();
 
+    SecureStop stop;
+    if (!stopVec.empty()) {
         stop.opaqueData = toHidlVec(stopVec);
         _hidl_cb(Status::OK, stop);
     } else {
         _hidl_cb(Status::BAD_VALUE, stop);
     }
-
     return Void();
 }
 
@@ -787,10 +796,12 @@ Return<Status> DrmPlugin::releaseAllSecureStops() {
 }
 
 Return<void> DrmPlugin::getSecureStopIds(getSecureStopIds_cb _hidl_cb) {
+    mSecureStopLock.lock();
     std::vector<SecureStopId> ids;
     for (auto itr = mSecureStops.begin(); itr != mSecureStops.end(); ++itr) {
         ids.push_back(itr->first);
     }
+    mSecureStopLock.unlock();
 
     _hidl_cb(Status::OK, toHidlVec(ids));
     return Void();
@@ -818,6 +829,12 @@ Return<Status> DrmPlugin::releaseSecureStops(const SecureStopRelease& ssRelease)
     // and the drm service. The clearkey implementation consists of:
     //    count - number of secure stops
     //    list of fixed length secure stops
+    size_t countBufferSize = sizeof(uint32_t);
+    if (input.size() < countBufferSize) {
+        // SafetyNet logging
+        android_errorWriteLog(0x534e4554, "144766455");
+        return Status::BAD_VALUE;
+    }
     uint32_t count = 0;
     sscanf(reinterpret_cast<char*>(input.data()), "%04" PRIu32, &count);
 
@@ -850,6 +867,8 @@ Return<Status> DrmPlugin::releaseSecureStops(const SecureStopRelease& ssRelease)
 }
 
 Return<Status> DrmPlugin::removeSecureStop(const hidl_vec<uint8_t>& secureStopId) {
+    Mutex::Autolock lock(mSecureStopLock);
+
     if (1 != mSecureStops.erase(toVector(secureStopId))) {
         return Status::BAD_VALUE;
     }
@@ -857,6 +876,8 @@ Return<Status> DrmPlugin::removeSecureStop(const hidl_vec<uint8_t>& secureStopId
 }
 
 Return<Status> DrmPlugin::removeAllSecureStops() {
+    Mutex::Autolock lock(mSecureStopLock);
+
     mSecureStops.clear();
     mNextSecureStopId = kSecureStopIdStart;
     return Status::OK;
