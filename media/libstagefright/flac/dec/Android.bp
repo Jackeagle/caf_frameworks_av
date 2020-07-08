@@ -1,6 +1,8 @@
 cc_library {
     name: "libstagefright_flacdec",
     vendor_available: true,
+    min_sdk_version: "29",
+    host_supported: true,
 
     srcs: [
         "FLACDecoder.cpp",
@@ -18,29 +20,27 @@ cc_library {
         cfi: true,
     },
 
-    static: {
-        whole_static_libs: [
-            "libFLAC",
-            "libaudioutils",
-        ],
-    },
-
-    shared: {
-        static_libs: [
-            "libFLAC",
-            "libaudioutils",
-        ],
-        export_static_lib_headers: [
-            "libFLAC",
-        ],
-    },
-
     shared_libs: [
+        "libaudioutils",
         "liblog",
     ],
 
-    header_libs: [
-        "libmedia_headers",
-        "libFLAC-headers",
+    static_libs: [
+        "libFLAC",
     ],
+
+    export_static_lib_headers: [
+        "libFLAC",
+    ],
+
+    header_libs: [
+        "libstagefright_foundation_headers",
+        "libstagefright_headers",
+    ],
+
+    target: {
+        darwin: {
+            enabled: false,
+        },
+    },
 }
