@@ -1,6 +1,7 @@
 cc_binary {
     name: "mediaswcodec",
     vendor_available: true,
+    min_sdk_version: "29",
 
     srcs: [
         "main_swcodecservice.cpp",
@@ -13,18 +14,6 @@ cc_binary {
         "liblog",
         "libmedia_codecserviceregistrant",
     ],
-
-    target: {
-        android: {
-            product_variables: {
-                malloc_not_svelte: {
-                    // Scudo increases memory footprint, so only enable on
-                    // non-svelte devices.
-                    shared_libs: ["libc_scudo"],
-                },
-            },
-        },
-    },
 
     header_libs: [
         "libmedia_headers",
@@ -58,5 +47,8 @@ prebuilt_etc {
             src: "seccomp_policy/mediacodec-x86.policy",
         },
     },
-    required: ["crash_dump.policy"],
+    required: [
+        "crash_dump.policy",
+        "code_coverage.policy",
+    ],
 }

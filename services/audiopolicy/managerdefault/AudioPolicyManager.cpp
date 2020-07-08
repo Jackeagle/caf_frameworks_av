@@ -42,6 +42,7 @@
 #include <set>
 #include <unordered_set>
 #include <vector>
+#include <cutils/bitops.h>
 #include <cutils/properties.h>
 #include <utils/Log.h>
 #include <media/AudioParameter.h>
@@ -5266,6 +5267,12 @@ DeviceVector AudioPolicyManager::getNewOutputDevices(const sp<SwAudioOutputDescr
         }
     }
 
+    // Do not retrieve engine device for outputs through MSD
+    // TODO: support explicit routing requests by resetting MSD patch to engine device.
+    if (outputDesc->devices() == getMsdAudioOutDevices()) {
+        return outputDesc->devices();
+    }
+
     // Honor explicit routing requests only if no client using default routing is active on this
     // input: a specific app can not force routing for other apps by setting a preferred device.
     bool active; // unused
@@ -5614,7 +5621,10 @@ uint32_t AudioPolicyManager::setOutputDevices(const sp<SwAudioOutputDescriptor>&
             patchBuilder.addSink(filteredDevice);
         }
 
-        installPatch(__func__, patchHandle, outputDesc.get(), patchBuilder.patch(), delayMs);
+        // Add half reported latency to delayMs when muteWaitMs is null in order
+        // to avoid disordered sequence of muting volume and changing devices.
+        installPatch(__func__, patchHandle, outputDesc.get(), patchBuilder.patch(),
+                muteWaitMs == 0 ? (delayMs + (outputDesc->latency() / 2)) : delayMs);
     }
 
     // update stream volumes according to new device
